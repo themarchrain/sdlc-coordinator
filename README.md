@@ -39,6 +39,8 @@ go test ./...
 cd web && npm ci && npm test -- --run && npm run typecheck && npm run build
 ```
 
+GitHub Actions runs the same checks on `main` and pull requests.
+
 ## License
 
 Apache License 2.0. See [LICENSE](./LICENSE).
