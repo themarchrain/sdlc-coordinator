@@ -50,12 +50,14 @@ func TestBuildReviewerRunnerPromptPreservesReviewSemanticsWithoutLegacyTransport
 	if err != nil {
 		t.Fatalf("build reviewer runner prompt: %v", err)
 	}
-	for _, required := range []string{"任务包是唯一事件事实来源", "workspace-manifest.json", "git rev-list --reverse --topo-order <base_sha>..<head_sha> --not <target_sha>", "<target_sha>...<head_sha>", "大 MR", "严格使用以下六个编号章节", `"task_id": "task-runner-prompt"`} {
+	for _, required := range []string{"任务包是唯一事件事实来源", "workspace-manifest.json", "git rev-list --reverse --topo-order <base_sha>..<head_sha> --not <target_sha>", "<target_sha>...<head_sha>", "大 MR", "严格使用以下六个编号章节", `"task_id": "task-runner-prompt"`, "submit_reviewer_result"} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("prompt missing %q: %s", required, prompt)
 		}
 	}
-	for _, forbidden := range []string{"clone", "MCP", "callback", "submit_reviewer_result", "RESULT_SUBMITTED_VIA_MCP"} {
+	// submit_reviewer_result 自本分支起是结果提交主通道的 MCP 工具名；
+	// 仍被禁的是旧回调机制词形。
+	for _, forbidden := range []string{"legacy", "clone", "callback", "RESULT_SUBMITTED_VIA_MCP"} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("runner prompt contains legacy transport wording %q: %s", forbidden, prompt)
 		}

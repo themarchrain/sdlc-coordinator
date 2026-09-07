@@ -59,7 +59,7 @@ func BuildDeveloperRunnerPrompt(pkg agent.TaskPackage) (string, error) {
 		"- 禁止 clone、fetch、commit、push 或 force push；不得切换到其他提交，也不要读取或修改 Git 凭据配置。\n" +
 		"- 只能修改当前 repo 中与任务目标直接相关的文件，并运行必要的最小充分验证。\n" +
 		"- tests 只填写作为交付依据的通过验证（passed=true）；已确认与本次改动无关的既有失败（如环境或平台差异导致）写入 summary 说明，不得作为 tests 条目提交。\n" +
-		"- 最终响应必须严格匹配 result-schema.json；最终消息只能输出一段 JSON，禁止 Markdown 围栏、解释文字或前后缀；不要主动回调、调用 MCP 或输出 schema 之外的字段。\n" +
+		resultSubmissionPolicy(results.SubmitDeveloperResultTool) +
 		"\n任务包如下：\n```json\n" + string(raw) + "\n```", nil
 }
 
@@ -96,6 +96,16 @@ func BuildReviewerRunnerPrompt(pkg agent.TaskPackage) (string, error) {
 		"\n\n执行现场：\n" +
 		"- 当前目录由 Coordinator 按本次 Run 独立准备；代码和 workspace-manifest.json 是唯一 Git 事实来源。\n" +
 		"- 使用 workspace-manifest.json 中固定的 target_sha、base_sha、head_sha、effective_review_mode 和 diff_range，不使用运行中可能变化的远程分支引用。\n" +
-		"- 最终响应必须严格匹配 result-schema.json；最终消息只能输出一段 JSON，禁止 Markdown 围栏、解释文字或前后缀；不要输出 schema 之外的字段，也不要尝试主动提交或回调结果。\n" +
+		resultSubmissionPolicy(results.SubmitReviewerResultTool) +
 		"\n任务包如下：\n```json\n" + string(raw) + "\n```", nil
+}
+
+// resultSubmissionPolicy 是结果提交的三段式调用策略：MCP 工具为主通道，
+// 校验错误同会话自矫正，耗尽或不可用才降级为最终消息文本（因此契约描述
+// 必须保留在提示词中）。token 与端点由运行环境注入，绝不写进提示词。
+func resultSubmissionPolicy(toolName string) string {
+	return "\n结果提交方式（按顺序执行）：\n" +
+		"1. 主通道——调用 MCP 工具 " + toolName + " 提交结果：参数中的 task_id 与 run_id 必须与下方任务包中的值完全一致，其余参数按本提示词所述契约构造（字段名与形态以工具入参说明为准）。工具返回 accepted 即完成：立即停止，不要再调用，也不要再输出结果 JSON。" +
+		"2. 自矫正——工具返回 rejected 时，按 problems 中列出的问题逐条修正参数，在同一会话内重新调用；响应中的 attempts_remaining 是剩余矫正次数，耗尽时返回 rejected_final。" +
+		"3. 降级——仅当收到 rejected_final、工具不可用或调用报传输错误时，才把结果按 result-schema.json 写成最终消息（只能输出一段 JSON，禁止 Markdown 围栏、解释文字或前后缀，不输出 schema 之外的字段），然后停止。"
 }

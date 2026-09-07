@@ -19,12 +19,14 @@ func TestBuildDeveloperRunnerPromptUsesCoordinatorPreparedGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build developer runner prompt: %v", err)
 	}
-	for _, required := range []string{"Coordinator 已准备", "禁止 clone、fetch、commit、push", "result-schema.json", "最终消息只能输出一段 JSON"} {
+	for _, required := range []string{"Coordinator 已准备", "禁止 clone、fetch、commit、push", "result-schema.json", "只能输出一段 JSON", "submit_developer_result"} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("prompt missing %q: %s", required, prompt)
 		}
 	}
-	for _, forbidden := range []string{"submit_developer_result", "RESULT_SUBMITTED_VIA_MCP"} {
+	// submit_developer_result 自本分支起是结果提交主通道的 MCP 工具名；
+	// 仍被禁的是旧回调机制词形。
+	for _, forbidden := range []string{"legacy conversation workspace", "RESULT_SUBMITTED_VIA_MCP"} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("prompt retained legacy transport %q: %s", forbidden, prompt)
 		}
