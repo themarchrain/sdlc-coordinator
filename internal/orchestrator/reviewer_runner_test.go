@@ -257,12 +257,20 @@ func (f *fakeReviewerRunnerClient) Cancel(context.Context, string) (*runner.Exec
 }
 
 type recordingResultSubmitter struct {
-	calls   int
-	request SubmitResultRequest
+	calls    int
+	request  SubmitResultRequest
+	err      error
+	response *SubmitResultResponse
 }
 
 func (s *recordingResultSubmitter) SubmitResult(_ context.Context, request SubmitResultRequest) (*SubmitResultResponse, error) {
 	s.calls++
 	s.request = request
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.response != nil {
+		return s.response, nil
+	}
 	return &SubmitResultResponse{Submission: &model.ResultSubmission{SubmissionID: "submission-runner", Status: model.ResultSubmissionStatusSucceeded}}, nil
 }

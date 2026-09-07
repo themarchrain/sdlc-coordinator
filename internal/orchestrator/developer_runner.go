@@ -33,6 +33,7 @@ type DeveloperRunnerCoordinator struct {
 	finalizer DeveloperGitFinalizer
 	submitter ReviewerResultSubmitter
 	core      *AgentRunnerCoordinator
+	channel   *ResultChannelCoordinator
 	settings  ReviewerRunnerSettings
 }
 
@@ -59,6 +60,7 @@ func NewDeveloperRunnerCoordinator(
 	return &DeveloperRunnerCoordinator{
 		tasks: tasks, runs: runs, preparer: preparer, finalizer: finalizer, submitter: submitter,
 		core: NewAgentRunnerCoordinator(tasks, runs, executions, runnerClient), settings: settings,
+		channel: NewResultChannelCoordinator(finalizer, submitter, settings, "agent_runner"),
 	}
 }
 
@@ -121,57 +123,22 @@ func (c *DeveloperRunnerCoordinator) Reconcile(ctx context.Context, runID string
 	if err != nil {
 		return nil, err
 	}
-	agentContract := results.NewDeveloperAgentContract()
-	agentInput, err := agentContract.DecodeStrict(observation.Result.StructuredOutput)
+	outcome, err := c.channel.SubmitAgentResult(ctx, task, runRecord, results.SubmitDeveloperResultTool, observation.Result.StructuredOutput)
 	if err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("decode developer runner result: %w", err))
+		return result, err
 	}
-	if err := agentContract.Validate(task, runRecord, agentInput); err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("validate developer runner result: %w", err))
-	}
-	inputValue := agentInput.(*results.DeveloperAgentResultInput)
-	var developerInput *results.DeveloperResultInput
-	if inputValue.Outcome == "change_ready" || inputValue.Outcome == "rework_ready" {
-		workspaceRequest, err := buildDeveloperWorkspaceRequest(ctx, task, runRecord, c.settings)
-		if err != nil {
-			return result, fmt.Errorf("rebuild trusted developer workspace metadata: %w", err)
+	switch outcome.Decision {
+	case ChannelRejected:
+		switch outcome.Stage {
+		case ChannelStageFinalize:
+			return result, newDeliveryRunnerResultError(errors.New(outcome.Problems[0].Problem))
+		default:
+			return result, newInvalidRunnerResultError(errors.New(outcome.Problems[0].Problem))
 		}
-		delivery, err := c.finalizer.Finalize(ctx, workspace.DeveloperFinalizeRequest{
-			WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: runRecord.RunID,
-			Summary: inputValue.Summary, TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
-			TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
-			ExpectedInitialHeadSHA: workspaceRequest.ExpectedHeadSHA, Credential: workspaceRequest.Credential,
-		})
-		if err != nil {
-			return result, newDeliveryRunnerResultError(fmt.Errorf("finalize developer git delivery: %w", err))
-		}
-		developerInput, err = agentContract.WithDelivery(agentInput, results.DeliveryEvidence{
-			CommitSHA: delivery.CommitSHA, ChangedFiles: delivery.ChangedFiles, DiffSummary: delivery.DiffSummary,
-		})
-		if err != nil {
-			return result, err
-		}
-	} else {
-		developerInput, err = agentContract.WithoutDelivery(agentInput)
-		if err != nil {
-			return result, err
-		}
+	case ChannelFailed:
+		return result, fmt.Errorf("submit developer runner result: %w", outcome.Err)
 	}
-	contract := results.NewDeveloperContract()
-	if err := contract.Validate(task, runRecord, developerInput); err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("validate finalized developer result: %w", err))
-	}
-	canonical, err := contract.Normalize(task, runRecord, developerInput)
-	if err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("normalize finalized developer result: %w", err))
-	}
-	submission, err := c.submitter.SubmitResult(ctx, SubmitResultRequest{
-		Source: "agent_runner", ToolName: contract.ToolName(), RawPayload: append([]byte(nil), observation.Result.StructuredOutput...), Canonical: canonical,
-	})
-	if err != nil {
-		return result, fmt.Errorf("submit developer runner result: %w", err)
-	}
-	result.Submission = submission
+	result.Submission = outcome.Response
 	return result, nil
 }
 

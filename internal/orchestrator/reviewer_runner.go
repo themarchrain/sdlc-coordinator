@@ -51,6 +51,7 @@ type ReviewerRunnerCoordinator struct {
 	preparer  ReviewerWorkspacePreparer
 	submitter ReviewerResultSubmitter
 	core      *AgentRunnerCoordinator
+	channel   *ResultChannelCoordinator
 }
 
 type ReviewerRunnerStartRequest struct {
@@ -77,7 +78,8 @@ func NewReviewerRunnerCoordinator(
 ) *ReviewerRunnerCoordinator {
 	return &ReviewerRunnerCoordinator{
 		tasks: tasks, runs: runs, preparer: preparer, submitter: submitter,
-		core: NewAgentRunnerCoordinator(tasks, runs, executions, runnerClient),
+		core:    NewAgentRunnerCoordinator(tasks, runs, executions, runnerClient),
+		channel: NewResultChannelCoordinator(nil, submitter, ReviewerRunnerSettings{}, "agent_runner"),
 	}
 }
 
@@ -146,26 +148,17 @@ func (c *ReviewerRunnerCoordinator) Reconcile(ctx context.Context, runID string)
 	if err != nil {
 		return nil, err
 	}
-	contract := results.NewReviewerContract()
-	roleInput, err := contract.DecodeStrict(observation.Result.StructuredOutput)
+	outcome, err := c.channel.SubmitAgentResult(ctx, task, runRecord, results.SubmitReviewerResultTool, observation.Result.StructuredOutput)
 	if err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("decode reviewer runner result: %w", err))
+		return result, err
 	}
-	if err := contract.Validate(task, runRecord, roleInput); err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("validate reviewer runner result: %w", err))
+	switch outcome.Decision {
+	case ChannelRejected:
+		return result, newInvalidRunnerResultError(errors.New(outcome.Problems[0].Problem))
+	case ChannelFailed:
+		return result, fmt.Errorf("submit reviewer runner result: %w", outcome.Err)
 	}
-	canonical, err := contract.Normalize(task, runRecord, roleInput)
-	if err != nil {
-		return result, newInvalidRunnerResultError(fmt.Errorf("normalize reviewer runner result: %w", err))
-	}
-	submission, err := c.submitter.SubmitResult(ctx, SubmitResultRequest{
-		Source: "agent_runner", ToolName: contract.ToolName(),
-		RawPayload: append([]byte(nil), observation.Result.StructuredOutput...), Canonical: canonical,
-	})
-	if err != nil {
-		return result, fmt.Errorf("submit reviewer runner result: %w", err)
-	}
-	result.Submission = submission
+	result.Submission = outcome.Response
 	return result, nil
 }
 

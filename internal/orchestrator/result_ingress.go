@@ -23,6 +23,9 @@ type SubmitResultRequest struct {
 	ToolName   string
 	RawPayload []byte
 	Canonical  results.CanonicalResult
+	// NormalizationTrail records the thin-normalizer repair trail (JSON array
+	// of repairs); empty means the payload passed through byte identical.
+	NormalizationTrail string
 }
 
 type SubmitResultResponse struct {
@@ -77,6 +80,7 @@ func (o *Orchestrator) SubmitResult(ctx context.Context, req SubmitResultRequest
 	submission := &model.ResultSubmission{
 		TaskID: task.TaskID, RunID: run.RunID, Source: req.Source, ToolName: req.ToolName, Role: run.WorkerRole,
 		PayloadHash: hash, RawPayloadJSON: string(rawPayload), CanonicalJSON: string(canonicalJSON),
+		NormalizationJSON: req.NormalizationTrail,
 	}
 	if submission.Source == "" {
 		submission.Source = "unknown"
