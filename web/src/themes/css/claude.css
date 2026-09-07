@@ -1,0 +1,291 @@
+/* ============================================================
+   claude 主题令牌块 —— 自 claude 设计语言（暖调编辑风 / warm editorial）
+   逐 token 按骨架消费角色映射：claude 用语义无前缀命名
+   （--canvas/--ink/--primary/--surface-soft/--muted…），映射坐标为
+   "骨架里哪条规则消费该 var，就取 claude 源同选择器角色的有效值"。
+   claude 独有令牌（--accent-teal/--accent-amber/--surface-cream-strong/
+   --surface-dark-soft）追加在块尾；claude 的 --font-display（衬线展示）
+   与 --focus-ring 直接占用超集同名槽（注意 claude 原生 --focus-ring 是
+   box-shadow 形态，超集槽需要颜色，故取 :focus-visible 的 outline 色）。
+   ============================================================ */
+[data-theme="claude"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: StyreneB, Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, ui-monospace, "SFMono-Regular", monospace;
+  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+
+  /* ── Radius ───────────────────────────────── */
+  --radius-xs: 3px;      /* 图标提示 focus 圆角（claude term-hint 字面 3px） */
+  --radius-soft: 4px;    /* 登录预览小色块（claude --radius-xs） */
+  --radius-sm: 6px;      /* 内嵌小块（claude --radius-sm） */
+  --radius-md: 6px;      /* 行卡（claude 行卡用 --radius-sm） */
+  --radius-lg: 8px;      /* 指标卡（claude --radius-md） */
+  --radius-xl: 12px;     /* 面板（claude --radius-lg） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal（claude --radius-md） */
+  --radius-pill: 9999px; /* 迷你徽标（claude --radius-pill） */
+  --radius-panel: 16px;  /* 登录外壳（claude --radius-xl） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #faf9f5;                 /* claude --canvas 奶油画布 */
+  --canvas-soft: #f5f0e8;            /* claude --surface-soft */
+  --canvas-card: #faf9f5;            /* claude 面板 color-block：canvas 本身 */
+  --canvas-dark: #181715;            /* claude --surface-dark（代码面） */
+  --surface-sidebar: #f5f0e8;        /* claude 侧栏 --surface-soft */
+  --surface-bar: rgba(250, 249, 245, .92);
+  --surface-inset: #f5f0e8;
+  --surface-matrix: #f5f0e8;
+  --surface-tint: #f5f0e8;           /* 表格行 hover 用 soft 奶油 */
+  --surface-rail: #f5f0e8;
+  --surface-detail: #f5f0e8;
+  --surface-chip: #f5f0e8;
+  --surface-legacy: #f5f0e8;
+  --surface-draft: #efe9de;          /* claude --surface-card */
+  --surface-empty: #f5f0e8;
+  --surface-json-bar: #252320;       /* claude --surface-dark-elevated */
+  --tooltip-bg: #252320;
+
+  /* ── Ink & text ladder ────────────────────── */
+  /* claude 文本阶梯：--ink #141413（标题/强调）/ --body-strong #252523 /
+     --body #3d3d3a（正文）/ --muted #6c6a64 / --muted-soft #8e8b82。
+     :root 正文取 #3d3d3a，故超集 --ink 槽 = claude --body。 */
+  --ink: #3d3d3a;
+  --ink-strong: #141413;
+  --ink-display: #141413;
+  --ink-heading: #252523;
+  --ink-value: #141413;
+  --ink-repo: #252523;
+  --ink-step: #141413;
+  --ink-label-strong: #252523;
+  --ink-label: #141413;
+  --ink-row: #252523;
+  --ink-list: #3d3d3a;
+  --ink-data: #252523;
+  --ink-field: #252523;
+  --ink-rail: #3d3d3a;
+  --ink-rail-value: #141413;
+  --ink-secret: #6c6a64;
+  --ink-chip: #3d3d3a;
+  --body: #3d3d3a;
+  --body-alt: #6c6a64;
+  --body-soft: #6c6a64;
+  --mute: #6c6a64;
+  --mute-deep: #6c6a64;
+  --mute-inline: #8e8b82;
+  --mute-caption: #6c6a64;
+  --mute-intro: #6c6a64;
+  --mute-terse: #6c6a64;
+  --mute-quiet: #6c6a64;
+  --mute-soft: #6c6a64;
+  --mute-dim: #6c6a64;
+  --mute-draft: #6c6a64;
+  --mute-json: #a09d96;              /* claude --on-dark-soft（深色 bar 上） */
+  --mute-matrix: #6c6a64;
+  --faint: #8e8b82;
+  --faint-alt: #8e8b82;
+  --faint-soft: #8e8b82;
+  --faint-ghost: #8e8b82;
+  --faint-hint: #8e8b82;
+  --faint-meta: #6c6a64;
+  --faint-note: #6c6a64;
+  --faint-empty: #8e8b82;
+  --on-dark: #faf9f5;
+  --on-dark-soft: #faf9f5;           /* claude json 正文用 --on-dark 全亮 */
+  --on-dark-faint: #a09d96;
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #cc785c;                /* claude 珊瑚主色（与 antd colorPrimary 同源） */
+  --primary-active: #a9583e;
+  --on-primary: #ffffff;
+  --link: #cc785c;
+  --link-hover: #a9583e;
+  --focus-ring: rgba(204, 120, 92, .32);  /* claude :focus-visible outline 色 */
+  --primary-veil: #efe9de;           /* claude 导航选中底 --surface-card */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* claude 语境：状态点用辅色 teal（context-dot），样本警示为琥珀墨。 */
+  --success: #5db8a6;                /* claude --accent-teal（context-dot） */
+  --success-halo: 0 0 0 4px rgba(93, 184, 166, .16);
+  --warning: #8a5a22;                /* claude sample-warning 字面琥珀墨 */
+  --warning-soft: rgba(232, 165, 90, .20);
+  --error: #c64545;
+  --error-deep: #c64545;
+  --info: #8a5a22;                   /* claude inferred-mark 字面琥珀墨 */
+  --info-soft: rgba(232, 165, 90, .20);
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e6dfd8;
+  --hairline-soft: #ebe6df;
+  --hairline-strong: #d8cfc0;
+  --hairline-card: #e6dfd8;
+  --hairline-inset: #ebe6df;
+  --hairline-mid: #ebe6df;
+  --hairline-rail: #ebe6df;
+  --hairline-codex: #ebe6df;
+  --hairline-detail: #ebe6df;
+  --hairline-json: #e6dfd8;          /* json-viewer 深色边由下方片段覆写 */
+  --hairline-dashed: #d8cfc0;
+  --hairline-legacy: #d8cfc0;
+  --hairline-row: #ebe6df;
+  --hairline-draft: #e6dfd8;
+  --bar-value: #d8cfc0;              /* claude 左侧数据条用 hairline-strong */
+  --bar-matrix: #d8cfc0;
+  --bar-summary: #d8cfc0;
+  --bar-usage: #5db8a6;              /* claude token 轨道用 --accent-teal */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(20, 20, 19, .045);
+  --overlay-soft: rgba(20, 20, 19, .045);
+  --overlay-line: #e6dfd8;           /* claude 分组线直接用 hairline */
+  --overlay-medium: rgba(20, 20, 19, .085);
+  --shadow-panel: 0 1px 3px rgba(20, 20, 19, .08);  /* claude --shadow-soft */
+
+  /* ── brand-mark ───────────────────────────── */
+  /* claude 品牌 mark：珊瑚瓷片底 + 奶油三柱 + 暖墨圆点（形态见下方片段） */
+  --brand-frame-bg: #cc785c;
+  --brand-frame-border: #a9583e;
+  --brand-frame-shadow: 0 1px 3px rgba(20, 20, 19, .08);
+  --brand-bar-1: #faf9f5;
+  --brand-bar-2: #faf9f5;
+  --brand-bar-3: #faf9f5;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #141413;              /* 暖墨圆点 */
+  --brand-dot-border: #f5f0e8;
+  --brand-dot-glow: none;
+  --nav-indicator: #cc785c;
+
+  /* ── 登录页（cream-to-dark：奶油画布 + 深色产品面展示卡） ── */
+  --login-bg: #faf9f5;
+  --login-shell-border: #e6dfd8;
+  --login-shell-shadow: 0 22px 55px rgba(20, 20, 19, .10);
+  --login-showcase-bg: #181715;      /* 深色产品面 --surface-dark */
+  --login-showcase-ink: #a09d96;
+  --login-grid-line: rgba(250, 249, 245, .05);   /* 深色面上的奶油网格线 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #faf9f5;
+  --login-brand-mute: #a09d96;
+  --login-signal-bg: #cc785c;        /* signal 与 brand-mark 同为珊瑚底 */
+  --login-signal-border: #a9583e;
+  --login-signal-shadow: 0 1px 3px rgba(20, 20, 19, .08);
+  --login-signal-bar: #faf9f5;
+  --login-kicker: #e8a55a;           /* claude --accent-amber */
+  --login-heading: #faf9f5;
+  --login-copy: #a09d96;
+  --login-preview-bg: #252320;       /* claude --surface-dark-elevated */
+  --login-preview-border: rgba(250, 249, 245, .10);
+  --login-preview-shadow: none;      /* claude 预览卡无投影（color-block first） */
+  --login-preview-divider: rgba(250, 249, 245, .08);
+  --login-preview-dot: #5db8a6;
+  --login-preview-dot-soft: rgba(250, 249, 245, .25);
+  --login-preview-label: #a09d96;
+  --login-preview-row-line: rgba(250, 249, 245, .07);
+  --login-preview-row-ink: #a09d96;
+  --login-preview-chip-ink: #5db8a6;
+  --login-preview-chip-bg: rgba(93, 184, 166, .15);
+  --login-preview-bar: rgba(250, 249, 245, .25);
+  --login-foot: #a09d96;
+  --login-card-kicker: #a9583e;
+  --login-card-heading: #141413;
+  --login-card-copy: #6c6a64;
+  --login-notice-border: #e6dfd8;
+  --login-notice-bg: #f5f0e8;
+  --login-notice-ink: #6c6a64;
+  --login-label: #3d3d3a;
+  --login-input-border: #e6dfd8;
+  --login-input-border-hover: #d8cfc0;
+  --login-primary: #cc785c;
+  --login-primary-active: #a9583e;
+
+  /* ── claude 特有令牌（超集无对应槽，供作用域片段与后续消费） ── */
+  --accent-teal: #5db8a6;            /* 辅色 teal：信息态/处理中 */
+  --accent-amber: #e8a55a;           /* 辅色 amber：登录 kicker */
+  --surface-cream-strong: #e8e0d2;   /* 奶油强表面（antd colorFill 同源） */
+  --surface-dark-soft: #1f1e1b;      /* 深色产品面（柔和档） */
+}
+
+/* ============================================================
+   claude 特有规则片段：骨架选择器结构无法纯用令牌表达的差异，
+   以 [data-theme="claude"] 作用域覆写，值与 claude 源字面一致。
+   ============================================================ */
+
+/* 品牌 mark / 登录 signal：珊瑚底三柱（奶油柱 + 透明度分层）+ 暖墨圆点形态，
+   3 个 span 结构保留，仅覆写 claude 的柱宽/透明度/圆点几何 */
+[data-theme="claude"] .brand-mark { padding: 7px 6px 6px; }
+[data-theme="claude"] .brand-mark span { width: 5px; }
+[data-theme="claude"] .brand-mark span:nth-child(1) { opacity: .55; }
+[data-theme="claude"] .brand-mark span:nth-child(2) { opacity: .95; }
+[data-theme="claude"] .brand-mark span:nth-child(3) { opacity: .75; }
+[data-theme="claude"] .brand-mark::after { top: -3px; right: -3px; width: 9px; height: 9px; }
+[data-theme="claude"] .login-page__signal span:nth-child(1) { opacity: .55; }
+[data-theme="claude"] .login-page__signal span:nth-child(2) { opacity: .95; }
+[data-theme="claude"] .login-page__signal span:nth-child(3) { opacity: .75; }
+
+/* json-viewer：奶油画布上的深色 code-window（bar #252320 / 正文底 #181715），
+   深色描边与 claude --radius-md=8px 圆角 */
+[data-theme="claude"] .json-viewer { border-color: var(--canvas-dark); border-radius: 8px; }
+[data-theme="claude"] .login-page__preview { border-radius: 8px; }
+[data-theme="claude"] .people-identity-row { border-radius: 8px; }
+
+/* 展示级衬线标题（display voice：weight 400 + 负字距，衬线只用于展示级） */
+[data-theme="claude"] .brand-block strong { color: var(--ink-strong); font-family: var(--font-display); font-size: 18px; font-weight: 400; }
+[data-theme="claude"] .context-heading-slot .page-heading__eyebrow { color: var(--ink-strong); font-family: var(--font-display); font-size: 19px; font-weight: 400; line-height: 1.2; letter-spacing: -.2px; text-transform: none; }
+[data-theme="claude"] .business-outcomes__card > strong { font: 400 26px/1.05 var(--font-display); letter-spacing: -.3px; }
+[data-theme="claude"] .ratio-card > strong { font: 400 28px/1.05 var(--font-display); letter-spacing: -.3px; }
+[data-theme="claude"] .codex-metric > strong { font: 400 20px/1.2 var(--font-display); letter-spacing: -.2px; }
+[data-theme="claude"] .configuration-step-copy h2,
+[data-theme="claude"] .configuration-summary h2 { color: var(--ink-strong); font-family: var(--font-display); font-size: 22px; font-weight: 400; line-height: 1.25; letter-spacing: -.3px; }
+[data-theme="claude"] .login-page__brand strong { color: var(--login-brand-ink); font-family: var(--font-display); font-size: 16px; font-weight: 400; }
+[data-theme="claude"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-weight: 400; line-height: 1.25; letter-spacing: -.3px; }
+[data-theme="claude"] .login-page__card h1 { font-family: var(--font-display); font-size: 28px; font-weight: 400; line-height: 1.2; letter-spacing: -.3px; }
+
+/* 小号数据数字：claude 用等宽 mono 而非衬线 display（骨架 --font-display 槽让位给大数字） */
+[data-theme="claude"] .metric-matrix strong { color: var(--ink-strong); font: 600 13px/1.3 var(--font-mono); }
+[data-theme="claude"] .configuration-status-rail > div > strong { font: 600 12px/1.4 var(--font-mono); }
+[data-theme="claude"] .configuration-summary-grid strong { font: 600 12px/1.5 var(--font-mono); }
+[data-theme="claude"] .codex-token-ledger strong { color: var(--ink-heading); font: 600 12px/1.4 var(--font-mono); }
+
+/* 眉题 / kicker：深珊瑚 + 人文无衬线（claude 弃用骨架的 mono 眉题） */
+[data-theme="claude"] .page-heading__eyebrow,
+[data-theme="claude"] .panel-kicker,
+[data-theme="claude"] .section-label { color: var(--primary-active); font: 600 11px/1.2 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+[data-theme="claude"] .login-page__showcase-copy > span,
+[data-theme="claude"] .login-page__card-heading > span { font: 600 11px/1.4 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+
+/* 标题字重：claude 全线 500（骨架继承浏览器 bold / 硬编码 650） */
+[data-theme="claude"] .panel-heading h2 { font-weight: 500; }
+[data-theme="claude"] .detail-section h3 { color: var(--ink-strong); font-weight: 500; }
+[data-theme="claude"] .configuration-inline-title h3 { font-weight: 500; }
+[data-theme="claude"] .connector-configuration-step__heading h3 { font-weight: 500; }
+[data-theme="claude"] .business-outcomes__card > span,
+[data-theme="claude"] .ratio-card__title,
+[data-theme="claude"] .admin-table .ant-table-thead > tr > th { font-weight: 500; }
+
+/* 侧栏 caption / 抽屉字段名：claude 用 --muted-soft 更浅一档 */
+[data-theme="claude"] .brand-block span,
+[data-theme="claude"] .nav-caption,
+[data-theme="claude"] .nav-group-title,
+[data-theme="claude"] .detail-grid dt { color: var(--faint); }
+
+/* 导航当前态与 explorer 选项卡：暖墨文字 + 奶油选中底（claude 不用主色文字高亮） */
+[data-theme="claude"] .workspace-nav a[aria-current="page"] { color: var(--ink-strong); }
+[data-theme="claude"] .workspace-nav a[aria-current="page"] .anticon { color: var(--primary-active); }
+[data-theme="claude"] .explorer-tab { border-radius: var(--radius-sm); }
+[data-theme="claude"] .explorer-tab:hover { color: var(--ink-strong); background: var(--overlay-faint); }
+[data-theme="claude"] .explorer-tab.is-active { color: var(--ink-strong); font-weight: 500; border-bottom-color: transparent; background: var(--primary-veil); }
+
+/* duration 卡：claude 用 surface-soft 奶油块（骨架 --canvas-card 槽已让给画布色） */
+[data-theme="claude"] .duration-card { background: var(--canvas-soft); }
+
+/* sparkline 气泡：claude 深色浮起带 --shadow-tip */
+[data-theme="claude"] .sparkline__tip { box-shadow: 0 6px 20px rgba(20, 20, 19, .18); }
+
+/* 全局暖调滚动条（细轨 + 暖纸色滑块） */
+[data-theme="claude"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+[data-theme="claude"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="claude"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="claude"] ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: var(--radius-pill); background: var(--hairline-strong); background-clip: padding-box; }
+[data-theme="claude"] ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); }
+
+/* 珊瑚选区 + 链接按下下划线 */
+[data-theme="claude"] ::selection { background: rgba(204, 120, 92, .22); }
+[data-theme="claude"] a:active { text-decoration: underline; }

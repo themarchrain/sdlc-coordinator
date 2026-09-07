@@ -1,0 +1,189 @@
+/* ============================================================
+   default 主题令牌块 —— 与 styles/index.css 的 :root 完全同值。
+   :root 提供未定义 data-theme 时的安全回退；本块靠文件顺序
+   （themes.css 在 index.css 之后引入）以同特异性覆盖 :root。
+   Phase 2 的其余主题文件誊抄本块结构、只改值。
+   ============================================================ */
+[data-theme="default"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Cascadia Code", Consolas, monospace;
+
+  /* ── Radius ───────────────────────────────── */
+  --radius-xs: 3px;      /* 图标提示 focus 圆角 */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 5px;      /* 内嵌小块 */
+  --radius-md: 6px;      /* 行卡 */
+  --radius-lg: 7px;      /* 指标卡 */
+  --radius-xl: 8px;      /* 面板 */
+  --radius-brand: 9px;   /* brand-mark / 登录 signal */
+  --radius-pill: 10px;   /* 迷你徽标 */
+  --radius-panel: 12px;  /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f5f5f5;
+  --canvas-soft: #f7f9fc;
+  --canvas-card: #ffffff;
+  --canvas-dark: #172033;
+  --surface-sidebar: #fafafa;
+  --surface-bar: rgba(255, 255, 255, .94);
+  --surface-inset: #f5f7fa;
+  --surface-matrix: #f5f7fb;
+  --surface-tint: #f3f7ff;
+  --surface-rail: #f3f7fc;
+  --surface-detail: #f8fafc;
+  --surface-chip: #fafbfc;
+  --surface-legacy: #fafbfd;
+  --surface-draft: #f1f4f8;
+  --surface-empty: #fbfcfe;
+  --surface-json-bar: #eef2f7;
+  --tooltip-bg: #17233a;
+
+  /* ── Ink & text ladder ────────────────────── */
+  --ink: #152033;
+  --ink-strong: #17233a;
+  --ink-display: #26344c;
+  --ink-heading: #263248;
+  --ink-value: #2e3b53;
+  --ink-repo: #28344b;
+  --ink-step: #2f3d55;
+  --ink-label-strong: #354159;
+  --ink-label: #334159;
+  --ink-row: #344057;
+  --ink-list: #3d4960;
+  --ink-data: #253149;
+  --ink-field: #394459;
+  --ink-rail: #30415d;
+  --ink-rail-value: #273750;
+  --ink-secret: #58667c;
+  --ink-chip: #4c5a70;
+  --body: #4a5568;
+  --body-alt: #667085;
+  --body-soft: #66758b;
+  --mute: #7a8699;
+  --mute-deep: #59677e;
+  --mute-inline: #748197;
+  --mute-caption: #6e7d93;
+  --mute-intro: #6e7b90;
+  --mute-terse: #68758a;
+  --mute-quiet: #647187;
+  --mute-soft: #7d8797;
+  --mute-dim: #7b8595;
+  --mute-draft: #697589;
+  --mute-json: #5e6b80;
+  --mute-matrix: #758196;
+  --faint: #8792a4;
+  --faint-alt: #8a95a7;
+  --faint-soft: #7b8799;
+  --faint-ghost: #919bab;
+  --faint-hint: #9aa6b8;
+  --faint-meta: #8994a6;
+  --faint-note: #7f8a9c;
+  --faint-empty: #a9b3c2;
+  --on-dark: #ffffff;
+  --on-dark-soft: #d9e4f3;
+  --on-dark-faint: #aab6c8;
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #2f6bff;
+  --primary-active: #1d4ed8;
+  --on-primary: #ffffff;
+  --link: #2f6bff;
+  --link-hover: #1d4ed8;
+  --focus-ring: rgba(47, 107, 255, .28);
+  --primary-veil: rgba(47, 107, 255, .1);
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #0f9f8f;
+  --success-halo: 0 0 0 4px rgba(15, 159, 143, .11);
+  --warning: #97650d;
+  --warning-soft: #fff3d6;
+  --error: #a94141;
+  --error-deep: #8d3434;
+  --info: #2761d8;
+  --info-soft: #eaf0ff;
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e4e9f1;
+  --hairline-soft: #edf1f6;
+  --hairline-strong: #c5cfdd;
+  --hairline-card: #e1e7ef;
+  --hairline-inset: #e2e8f0;
+  --hairline-mid: #e8edf4;
+  --hairline-rail: #dfe7f1;
+  --hairline-codex: #e7ecf2;
+  --hairline-detail: #e3e9f1;
+  --hairline-json: #dfe6ef;
+  --hairline-dashed: #d7dfeb;
+  --hairline-legacy: #d9e1ec;
+  --hairline-row: #e8ecf2;
+  --hairline-draft: #dce2ea;
+  --bar-value: #b8c6da;
+  --bar-matrix: #b9c8dd;
+  --bar-summary: #8ba9da;
+  --bar-usage: #4f86df;
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(0, 0, 0, .045);
+  --overlay-soft: rgba(0, 0, 0, .05);
+  --overlay-line: rgba(0, 0, 0, .07);
+  --overlay-medium: rgba(0, 0, 0, .085);
+  --shadow-panel: 0 8px 28px rgba(24, 39, 75, .045);
+
+  /* ── brand-mark ───────────────────────────── */
+  --brand-frame-bg: linear-gradient(165deg, rgba(66, 214, 195, .14), rgba(47, 107, 255, .16) 62%);
+  --brand-frame-border: rgba(47, 107, 255, .18);
+  --brand-frame-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 4px 14px rgba(24, 39, 75, .12);
+  --brand-bar-1: linear-gradient(180deg, #6d9bff, #2f6bff);
+  --brand-bar-2: linear-gradient(180deg, #93b8ff, #3d76ff);
+  --brand-bar-3: linear-gradient(180deg, #7ce8da, #2bb3a3);
+  --brand-bar-inset: inset 0 1px 0 rgba(255, 255, 255, .35);
+  --brand-bar-inset-strong: inset 0 1px 0 rgba(255, 255, 255, .4), 0 0 10px rgba(66, 214, 195, .4);
+  --brand-dot: #42d6c3;
+  --brand-dot-border: #1a2539;
+  --brand-dot-glow: 0 0 8px rgba(66, 214, 195, .75);
+  --nav-indicator: #42d6c3;
+
+  /* ── 登录页（青调独立色系） ────────────────── */
+  --login-bg: #f2f5f4;
+  --login-shell-border: #dce5e3;
+  --login-shell-shadow: 0 22px 55px rgba(29, 52, 51, .11);
+  --login-showcase-bg: #e6f1ee;
+  --login-showcase-ink: #24413e;
+  --login-grid-line: rgba(30, 100, 92, .09);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #274441;
+  --login-brand-mute: #67817d;
+  --login-signal-bg: #f7fbfa;
+  --login-signal-border: #acd0c9;
+  --login-signal-shadow: 0 4px 12px rgba(36, 91, 84, .08);
+  --login-signal-bar: #247e75;
+  --login-kicker: #4d8179;
+  --login-heading: #294744;
+  --login-copy: #5f7c77;
+  --login-preview-bg: rgba(255, 255, 255, .72);
+  --login-preview-border: rgba(128, 176, 168, .58);
+  --login-preview-shadow: 0 14px 28px rgba(30, 89, 81, .08);
+  --login-preview-divider: #d9e9e5;
+  --login-preview-dot: #55a79d;
+  --login-preview-dot-soft: #a6c9c2;
+  --login-preview-label: #58766f;
+  --login-preview-row-line: #e2efec;
+  --login-preview-row-ink: #3d5b56;
+  --login-preview-chip-ink: #34766d;
+  --login-preview-chip-bg: #dcefeb;
+  --login-preview-bar: #73afa6;
+  --login-foot: #6b8a85;
+  --login-card-kicker: #43857d;
+  --login-card-heading: #273b3a;
+  --login-card-copy: #72827f;
+  --login-notice-border: #d5e9e4;
+  --login-notice-bg: #f3faf8;
+  --login-notice-ink: #59746f;
+  --login-label: #475b59;
+  --login-input-border: #d7e1df;
+  --login-input-border-hover: #8bb8b0;
+  --login-primary: #21766d;
+  --login-primary-active: #195f58;
+}

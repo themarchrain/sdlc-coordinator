@@ -1,0 +1,315 @@
+/* ============================================================
+   cursor 主题令牌块 —— 自 cursor 设计语言誊抄。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取 cursor 源中同一选择器的有效值（cursor 源令牌全集仅 26 个，
+   剩余按消费者角色归并到四阶文字 / 发丝线三阶 / 奶油-白双表面）。
+   值来源速查：
+     --canvas #f7f7f4 / --canvas-soft #fafaf7 / --surface-card #ffffff → 奶油三面
+     --surface-strong #e6e5e0（= --hairline，徽章底兼发丝线）
+     --ink #26251e / --body #5a5852 / --muted #807d72 / --muted-soft #a09c92 → 文字四阶
+     --hairline #e6e5e0 / -soft #efeee8 / -strong #cfcdc4 → 发丝线三阶
+     --primary #f54e00（Cursor Orange 唯一电压）/ active #d04200
+     success #1f8a65 / error #cf2d56 / warning #c08532（偏离点，
+     文字对比度派生 warning-deep #8a5c1d + warning-soft rgba(192,133,50,.14)）
+   骨架表达不了的部分（brand-mark 墨块三角重绘、登录 ink 反转面、
+   eyebrow 字系、pill 药丸、白色代码面、活动电压收敛 ink 等）见块后
+   [data-theme="cursor"] 专属片段。
+   ============================================================ */
+[data-theme="cursor"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, system-ui, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-display: "JetBrains Mono", "Fira Code", Consolas, monospace; /* 指标大数字走代码面 mono 400 */
+
+  /* ── Radius ───────────────────────────────── */
+  /* cursor 刻度 input 8 / tile 6 / card 12 / pill 9999 / brand 9，向超集九档归并 */
+  --radius-xs: 3px;      /* term-hint focus（cursor 源字面值） */
+  --radius-soft: 9999px; /* 登录预览 chip = pill */
+  --radius-sm: 6px;      /* detail-grid 小卡 / sparkline 提示 = tile */
+  --radius-md: 8px;      /* repo / test / intent 行卡 = input */
+  --radius-lg: 8px;      /* 指标卡 / run-summary / audit-json = input */
+  --radius-xl: 12px;     /* 面板 / state-box / json = card（login 预览见片段补 8px） */
+  --radius-brand: 9px;   /* brand-mark / 登录 signal */
+  --radius-pill: 9999px; /* 迷你徽标 */
+  --radius-panel: 12px;  /* 登录外壳 = card */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f7f7f4;               /* 奶油画布，页面底永不纯白 */
+  --canvas-soft: #fafaf7;          /* IDE pane / 内嵌面板底 */
+  --canvas-card: #ffffff;
+  --canvas-dark: #26251e;          /* ink 面：暗徽标（json 深底已废弃，见片段改白） */
+  --surface-sidebar: #f7f7f4;      /* 侧栏 = 奶油 canvas */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #fafaf7;        /* duration-values / audit summary */
+  --surface-matrix: #fafaf7;
+  --surface-tint: #fafaf7;         /* 表格行 hover */
+  --surface-rail: #fafaf7;         /* 配置状态轨 */
+  --surface-detail: #fafaf7;       /* detail-section 内嵌面 */
+  --surface-chip: #fafaf7;         /* people-identity-row */
+  --surface-legacy: #fafaf7;
+  --surface-draft: #e6e5e0;        /* draft tag 底 = surface-strong */
+  --surface-empty: #fafaf7;
+  --surface-json-bar: #fafaf7;
+  --tooltip-bg: #26251e;
+
+  /* ── Ink & text ladder（坍缩为四阶：ink/body/muted/muted-soft） ── */
+  --ink: #26251e;
+  --ink-strong: #26251e;
+  --ink-display: #26251e;
+  --ink-heading: #26251e;
+  --ink-value: #26251e;
+  --ink-repo: #26251e;
+  --ink-step: #26251e;
+  --ink-label-strong: #26251e;
+  --ink-label: #26251e;
+  --ink-row: #26251e;
+  --ink-list: #5a5852;   /* value-list li = body */
+  --ink-data: #26251e;
+  --ink-field: #26251e;
+  --ink-rail: #26251e;
+  --ink-rail-value: #26251e;
+  --ink-secret: #5a5852; /* secret-label = body */
+  --ink-chip: #5a5852;   /* duration-values 数值 = body */
+  --body: #5a5852;
+  --body-alt: #5a5852;
+  --body-soft: #807d72;  /* ratio-card sample = muted */
+  --mute: #807d72;
+  --mute-deep: #807d72;  /* 指标卡标题；context-bar 单独见片段提 body */
+  --mute-inline: #807d72;
+  --mute-caption: #807d72;
+  --mute-intro: #5a5852; /* 配置向导导语 = body */
+  --mute-terse: #807d72;
+  --mute-quiet: #807d72;
+  --mute-soft: #807d72;
+  --mute-dim: #807d72;
+  --mute-draft: #807d72;
+  --mute-json: #807d72;
+  --mute-matrix: #807d72;
+  --faint: #807d72;
+  --faint-alt: #807d72;
+  --faint-soft: #807d72;
+  --faint-ghost: #807d72;
+  --faint-hint: #a09c92; /* term-hint = muted-soft */
+  --faint-meta: #807d72;
+  --faint-note: #807d72;
+  --faint-empty: #807d72;
+  --on-dark: #f7f7f4;    /* canvas 色文字（sparkline tip / tooltip） */
+  --on-dark-soft: #f7f7f4;
+  --on-dark-faint: #a09c92;
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #f54e00;    /* Cursor Orange：仅主 CTA 与品牌标 */
+  --primary-active: #d04200;
+  --on-primary: #ffffff;
+  --link: #26251e;       /* 链接 = ink + 发丝下划线（见片段），无彩色链接 */
+  --link-hover: #26251e;
+  --focus-ring: #26251e; /* 2px ink 环（宽度见片段） */
+  --primary-veil: rgba(38, 37, 30, .06); /* nav 当前项已片段化为白卡，此值仅兜底 */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #26251e;    /* context-dot 是唯一消费者，cursor 画成 ink */
+  --success-halo: none;  /* 零阴影体系，dot 无光环 */
+  --warning: #8a5c1d;    /* sample-warning 文字 = warning-deep */
+  --warning-soft: rgba(192, 133, 50, .14);
+  --error: #cf2d56;
+  --error-deep: #cf2d56;
+  --info: #26251e;       /* inferred-mark = ink 字 */
+  --info-soft: #e6e5e0;  /* inferred-mark 底 = surface-strong */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e6e5e0;
+  --hairline-soft: #efeee8;
+  --hairline-strong: #cfcdc4;
+  --hairline-card: #e6e5e0;
+  --hairline-inset: #e6e5e0;
+  --hairline-mid: #efeee8;       /* 分节线 = hairline-soft */
+  --hairline-rail: #efeee8;      /* 状态轨行分隔 = hairline-soft */
+  --hairline-codex: #e6e5e0;
+  --hairline-detail: #e6e5e0;
+  --hairline-json: #e6e5e0;
+  --hairline-dashed: #cfcdc4;    /* 空态虚线 = hairline-strong */
+  --hairline-legacy: #cfcdc4;
+  --hairline-row: #e6e5e0;
+  --hairline-draft: #cfcdc4;
+  --bar-value: #cfcdc4;          /* value-list 左规线 = hairline-strong（非彩色条） */
+  --bar-matrix: #cfcdc4;         /* metric-matrix 左规线同上 */
+  --bar-summary: #cfcdc4;        /* summary 左规线同上 */
+  --bar-usage: #26251e;          /* token ledger 用量轨 = ink */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: #efeee8;      /* collapse-toggle 底 = hairline-soft */
+  --overlay-soft: #efeee8;       /* nav hover = hairline-soft */
+  --overlay-line: #efeee8;       /* nav 分组线 = hairline-soft */
+  --overlay-medium: #e6e5e0;     /* collapse-toggle hover = surface-strong */
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 全站零阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（ink 方块 + 橙色三角，形态细节见片段） ── */
+  --brand-frame-bg: #26251e;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #f54e00;       /* span1 即三角，实际由片段 border 绘制 */
+  --brand-bar-2: #f54e00;
+  --brand-bar-3: #f54e00;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #f54e00;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: transparent; /* cursor 无指示条，见片段 */
+
+  /* ── 登录页（showcase = 全站唯一 ink 反转面 + 橙 eyebrow） ── */
+  --login-bg: #f7f7f4;                 /* = canvas */
+  --login-shell-border: #e6e5e0;
+  --login-shell-shadow: none;          /* 零阴影 */
+  --login-showcase-bg: #26251e;        /* ink 反转面 */
+  --login-showcase-ink: #f7f7f4;       /* canvas 色文字 */
+  --login-grid-line: rgba(247, 247, 244, .07);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #f7f7f4;
+  --login-brand-mute: #a09c92;         /* muted-soft */
+  --login-signal-bg: rgba(247, 247, 244, .06);
+  --login-signal-border: rgba(247, 247, 244, .18);
+  --login-signal-shadow: none;
+  --login-signal-bar: #f54e00;        /* signal 三角 = Cursor Orange */
+  --login-kicker: #f54e00;             /* 唯一橙 eyebrow */
+  --login-heading: #f7f7f4;
+  --login-copy: #a09c92;
+  --login-preview-bg: rgba(247, 247, 244, .05);
+  --login-preview-border: rgba(247, 247, 244, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(247, 247, 244, .12);
+  --login-preview-dot: #a09c92;
+  --login-preview-dot-soft: rgba(247, 247, 244, .28);
+  --login-preview-label: #a09c92;
+  --login-preview-row-line: rgba(247, 247, 244, .09);
+  --login-preview-row-ink: #f7f7f4;
+  --login-preview-chip-ink: #f7f7f4;
+  --login-preview-chip-bg: rgba(247, 247, 244, .14);
+  --login-preview-bar: rgba(247, 247, 244, .28);
+  --login-foot: #a09c92;
+  --login-card-kicker: #807d72;       /* 白卡侧 eyebrow = muted */
+  --login-card-heading: #26251e;
+  --login-card-copy: #807d72;
+  --login-notice-border: rgba(38, 37, 30, .2);  /* info Alert 交由 antd colorInfo=ink 派生，此处近似 */
+  --login-notice-bg: rgba(38, 37, 30, .06);
+  --login-notice-ink: #26251e;
+  --login-label: #5a5852;             /* body */
+  --login-input-border: #cfcdc4;      /* hairline-strong */
+  --login-input-border-hover: #a09c92; /* muted-soft */
+  --login-primary: #f54e00;           /* 主 CTA = Cursor Orange */
+  --login-primary-active: #d04200;
+
+  /* ── cursor 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --timeline-thinking: #dfa88f;   /* agent 时间线粉彩：桃（等待类/思考） */
+  --timeline-grep: #9fc9a2;       /* 薄荷（usage 槽位消费） */
+  --timeline-read: #9fbbe0;       /* 蓝（进行中/默认节点） */
+  --timeline-edit: #c0a8dd;       /* 薰衣草（源无场景，登记备查） */
+  --timeline-done: #c08532;       /* 金（成功节点，与 warning 同值） */
+  --warning-deep: #8a5c1d;        /* 警示文字对比度派生 */
+  --eyebrow-size: 11px;           /* caption-uppercase 规格：11px/600/.88px/大写 */
+  --eyebrow-tracking: .88px;
+}
+
+/* ============================================================
+   cursor 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="cursor"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 全局法则：链接 = ink + 发丝下划线；focus 2px ink 环 ── */
+[data-theme="cursor"] a { text-decoration: underline; text-decoration-color: var(--hairline-strong); text-underline-offset: 3px; }
+[data-theme="cursor"] a:hover { text-decoration-color: var(--ink); }
+[data-theme="cursor"] :focus-visible { outline-width: 2px; }
+
+/* ── eyebrow 体系（caption-uppercase：11px/600/.88px/大写 sans） ── */
+[data-theme="cursor"] .page-heading__eyebrow,
+[data-theme="cursor"] .panel-kicker,
+[data-theme="cursor"] .section-label { color: var(--mute); font: 600 var(--eyebrow-size)/1.4 var(--font-sans); text-transform: uppercase; letter-spacing: var(--eyebrow-tracking); }
+[data-theme="cursor"] .nav-caption,
+[data-theme="cursor"] .nav-group-title { font: 600 var(--eyebrow-size)/1.4 var(--font-sans); letter-spacing: var(--eyebrow-tracking); }
+[data-theme="cursor"] .value-list__title { font-weight: 600; text-transform: uppercase; letter-spacing: var(--eyebrow-tracking); }
+[data-theme="cursor"] .context-heading-slot .page-heading__eyebrow { font-size: 16px; font-weight: 600; line-height: 1.4; }
+
+/* ── 侧栏：活动电压 = ink；当前项 = 奶油底上的白卡（发丝线浮起，无指示条） ── */
+[data-theme="cursor"] .context-bar { color: var(--body); }
+[data-theme="cursor"] .workspace-nav a { border: 1px solid transparent; font-weight: 500; }
+[data-theme="cursor"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: var(--canvas-card); border-color: var(--hairline-strong); }
+[data-theme="cursor"] .workspace-nav a[aria-current="page"]::before { display: none; }
+[data-theme="cursor"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+[data-theme="cursor"] .collapse-toggle:hover { color: var(--ink); }
+[data-theme="cursor"] .brand-block strong { font-weight: 600; }
+[data-theme="cursor"] .brand-block span { font-weight: 500; font-size: 10px; }
+
+/* ── brand-mark 重绘：ink 圆角方块 + 单枚 Cursor Orange 三角（呼应 wordmark），
+      基线保留 3 span，2/3 收缩隐藏 ── */
+[data-theme="cursor"] .brand-mark { padding: 0; gap: 0; align-items: center; background: var(--brand-frame-bg); border-color: transparent; box-shadow: none; }
+[data-theme="cursor"] .brand-mark span:nth-child(2),
+[data-theme="cursor"] .brand-mark span:nth-child(3) { display: none; }
+[data-theme="cursor"] .brand-mark span:nth-child(1) { width: 0; height: 0; margin: 0; opacity: 1; border-style: solid; border-width: 5.5px 0 5.5px 9px; border-color: transparent transparent transparent var(--primary); border-radius: 0; background: none; box-shadow: none; }
+[data-theme="cursor"] .brand-mark::after { display: none; }
+
+/* ── 标题层级：title-md 18/600、title-sm 16/600、display 22/400 负字距 ── */
+[data-theme="cursor"] .panel-heading h2 { font-size: 18px; font-weight: 600; line-height: 1.4; }
+[data-theme="cursor"] .detail-section h3 { font-size: 16px; font-weight: 600; line-height: 1.4; }
+[data-theme="cursor"] .configuration-step-copy h2,
+[data-theme="cursor"] .configuration-summary h2 { font-size: 22px; font-weight: 400; letter-spacing: -.11px; }
+
+/* ── 指标数字：JetBrains Mono 400 + 负字距的代码面质感 ── */
+[data-theme="cursor"] .business-outcomes__card > strong { font: 400 25px/1.2 var(--font-mono); letter-spacing: -.5px; }
+[data-theme="cursor"] .ratio-card > strong { font: 400 26px/1.2 var(--font-mono); letter-spacing: -.5px; }
+[data-theme="cursor"] .codex-metric > strong { font: 400 20px/1.2 var(--font-mono); }
+[data-theme="cursor"] .metric-matrix strong { font-weight: 400; }
+[data-theme="cursor"] .codex-token-ledger strong,
+[data-theme="cursor"] .configuration-status-rail > div > strong,
+[data-theme="cursor"] .configuration-summary-grid strong { font-weight: 500; }
+
+/* ── 交互电压收敛 ink：explorer 页签 / term-hint / 耗时读数（橙只留主 CTA） ── */
+[data-theme="cursor"] .explorer-tab:hover { color: var(--ink); }
+[data-theme="cursor"] .explorer-tab.is-active { color: var(--ink); border-bottom-color: var(--ink); }
+[data-theme="cursor"] .explorer-more:hover { color: var(--ink); }
+[data-theme="cursor"] .term-hint:hover { color: var(--ink); }
+[data-theme="cursor"] .term-hint:focus-visible { outline-color: var(--ink); }
+[data-theme="cursor"] .run-summary__duration { color: var(--ink); }
+
+/* ── 表头 eyebrow 化：600 字重 + .06em 大写 ── */
+[data-theme="cursor"] .admin-table .ant-table-thead > tr > th { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+
+/* ── badge-pill / 时间线标签药丸：ant-tag 全局药丸 + status-tag 技术标签质感 ── */
+[data-theme="cursor"] .ant-tag { border-radius: 9999px; }
+[data-theme="cursor"] .status-tag { border-radius: 9999px; font-family: var(--font-mono); font-size: 11px; }
+[data-theme="cursor"] .inferred-mark,
+[data-theme="cursor"] .sample-warning { padding: 3px 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+
+/* ── 代码面：json-viewer 白底 ink 字（code-block 规格） ── */
+[data-theme="cursor"] .json-viewer pre { background: var(--canvas-card); color: var(--ink); }
+[data-theme="cursor"] .json-viewer__bar { font-weight: 600; }
+
+/* ── 无阴影体系的边线细节：孤立消费者的发丝线档位补正 ── */
+[data-theme="cursor"] .run-summary { border-color: var(--hairline); }
+[data-theme="cursor"] .sparkline--empty { border-color: var(--hairline-strong); }
+
+/* ── 圆角例外（超集归并补正） ── */
+[data-theme="cursor"] .login-page__preview { border-radius: 8px; }
+[data-theme="cursor"] .people-identity-row { border-radius: 8px; }
+[data-theme="cursor"] .detail-empty { border-radius: 6px; }
+
+/* ── 登录 showcase：全站唯一 ink 反转面；网格降透明；signal 同 brand-mark 三角 ── */
+[data-theme="cursor"] .login-page__showcase::before { opacity: .5; }
+[data-theme="cursor"] .login-page__brand strong { font-weight: 600; }
+[data-theme="cursor"] .login-page__brand span { font-weight: 500; }
+[data-theme="cursor"] .login-page__signal { align-items: center; gap: 0; box-shadow: none; }
+[data-theme="cursor"] .login-page__signal span:nth-child(2),
+[data-theme="cursor"] .login-page__signal span:nth-child(3) { display: none; }
+[data-theme="cursor"] .login-page__signal span:nth-child(1) { width: 0; height: 0; margin: 0; border-style: solid; border-width: 6px 0 6px 10px; border-color: transparent transparent transparent var(--login-signal-bar); border-radius: 0; }
+[data-theme="cursor"] .login-page__showcase-copy h2 { font-size: 36px; font-weight: 400; line-height: 1.2; letter-spacing: -.72px; }
+[data-theme="cursor"] .login-page__showcase-copy > span,
+[data-theme="cursor"] .login-page__card-heading > span { font: 600 var(--eyebrow-size)/1.4 var(--font-sans); text-transform: uppercase; letter-spacing: var(--eyebrow-tracking); }
+[data-theme="cursor"] .login-page__preview-row strong { border-radius: 9999px; }
+[data-theme="cursor"] .login-page__card h1 { font-size: 26px; font-weight: 400; line-height: 1.25; letter-spacing: -.325px; }
+[data-theme="cursor"] .login-page__card .ant-input,
+[data-theme="cursor"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+
+/* ── 移动端 brand-mark 三角同步缩小（覆盖骨架 760px 断点的柱宽规则） ── */
+@media (max-width: 760px) {
+  [data-theme="cursor"] .brand-mark { padding: 0; gap: 0; }
+  [data-theme="cursor"] .brand-mark span:nth-child(1) { border-width: 4.5px 0 4.5px 7.5px; }
+}

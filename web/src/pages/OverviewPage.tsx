@@ -10,6 +10,7 @@ import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import { Sparkline, type SparklinePoint } from '../components/Sparkline'
 import { StatusTag } from '../components/StatusTag'
+import { useTheme } from '../theme/useTheme'
 import { useRemote } from '../hooks/useRemote'
 
 export function OverviewPage() {
@@ -94,6 +95,8 @@ function BusinessOutcomePanel({ data, window, onWindowChange }: {
   window: '7d' | '30d' | 'all'
   onWindowChange: (value: '7d' | '30d' | 'all') => void
 }) {
+  const { theme } = useTheme()
+  const trendColors = theme.slots.chart.trends
   const hasSample = data.automation_success.denominator > 0
   return (
     <section className="surface-panel business-outcomes">
@@ -106,10 +109,10 @@ function BusinessOutcomePanel({ data, window, onWindowChange }: {
         />
       </div>
       <div className="business-outcomes__grid">
-        <BusinessMetricCard label="已创建 MR" value={formatBusinessCount(data.merge_requests_created, hasSample)} trend={countTrend(data.daily_merge_requests_created)} trendColor="#16a34a" trendLabel="每日创建 MR 趋势" />
-        <BusinessMetricCard label="已完成 CR" value={formatBusinessCount(data.reviews_completed, hasSample)} trend={countTrend(data.daily_reviews_completed)} trendColor="#00CED1" trendLabel="每日完成 CR 趋势" />
-        <BusinessMetricCard label="已发起 CR" value={formatBusinessCount(data.reviewer_takeovers, hasSample)} trend={countTrend(data.daily_reviewer_takeovers)} trendColor="#7c3aed" trendLabel="每日发起 CR 趋势" />
-        <BusinessMetricCard label="成功运行平均耗时" value={data.average_successful_run_seconds === null ? '—' : formatDuration(data.average_successful_run_seconds)} trend={avgTrend(data.daily_average_run_seconds)} trendColor="#d9534f" trendFormat={formatDuration} trendLabel="每日成功运行平均耗时趋势" />
+        <BusinessMetricCard label="已创建 MR" value={formatBusinessCount(data.merge_requests_created, hasSample)} trend={countTrend(data.daily_merge_requests_created)} trendColor={trendColors.mr} trendLabel="每日创建 MR 趋势" />
+        <BusinessMetricCard label="已完成 CR" value={formatBusinessCount(data.reviews_completed, hasSample)} trend={countTrend(data.daily_reviews_completed)} trendColor={trendColors.crDone} trendLabel="每日完成 CR 趋势" />
+        <BusinessMetricCard label="已发起 CR" value={formatBusinessCount(data.reviewer_takeovers, hasSample)} trend={countTrend(data.daily_reviewer_takeovers)} trendColor={trendColors.crStart} trendLabel="每日发起 CR 趋势" />
+        <BusinessMetricCard label="成功运行平均耗时" value={data.average_successful_run_seconds === null ? '—' : formatDuration(data.average_successful_run_seconds)} trend={avgTrend(data.daily_average_run_seconds)} trendColor={trendColors.avgDuration} trendFormat={formatDuration} trendLabel="每日成功运行平均耗时趋势" />
         <BusinessMetricCard label="待人工处理" value={formatBusinessCount(data.human_required_tasks, hasSample)} detail={`今日新增 ${data.human_required_added_today}`} />
       </div>
     </section>
@@ -154,6 +157,8 @@ function AutomationMetricsPanel({
   onWindowChange: (value: '7d' | '30d' | 'all') => void
   onTaskTypeChange: (value: string) => void
 }) {
+  const { theme } = useTheme()
+  const ratioColors = theme.slots.chart.ratios
   return (
     <section className="surface-panel automation-metrics">
       <div className="panel-heading panel-heading--compact metrics-heading">
@@ -181,10 +186,10 @@ function AutomationMetricsPanel({
         <>
           {error ? <Alert className="overview-refresh-alert" type="warning" showIcon message="指标刷新失败，当前显示的是上次获取的数据" /> : null}
           <div className="automation-metric-grid">
-            <RatioCard title="当前任务成功占比" metric={data.current_success} note="当前 succeeded Task / 窗口内全部 Task" trend={ratioTrend(data.daily_series, 'current_success')} trendColor="#16a34a" trendFormat={formatRatioPercent} />
-            <RatioCard title="首次执行成功率" metric={data.first_run_success} note="第一条已完成 Run 即成功的 Task" trend={ratioTrend(data.daily_series, 'first_run_success')} trendColor="#DAA520" trendFormat={formatRatioPercent} inferred />
-            <RatioCard title="触发人工介入率" metric={data.intervention_triggered} note="出现 blocked Run 或当前 human_required" trend={ratioTrend(data.daily_series, 'intervention_triggered')} trendColor="#DC143C" trendFormat={formatRatioPercent} inferred />
-            <RatioCard title="受阻后恢复成功率" metric={data.recovered_after_block} note="出现 blocked Run 后最终成功" trend={ratioTrend(data.daily_series, 'recovered_after_block')} trendColor="#D2691E" trendFormat={formatRatioPercent} inferred />
+            <RatioCard title="当前任务成功占比" metric={data.current_success} note="当前 succeeded Task / 窗口内全部 Task" trend={ratioTrend(data.daily_series, 'current_success')} trendColor={ratioColors.success} trendFormat={formatRatioPercent} />
+            <RatioCard title="首次执行成功率" metric={data.first_run_success} note="第一条已完成 Run 即成功的 Task" trend={ratioTrend(data.daily_series, 'first_run_success')} trendColor={ratioColors.firstRun} trendFormat={formatRatioPercent} inferred />
+            <RatioCard title="触发人工介入率" metric={data.intervention_triggered} note="出现 blocked Run 或当前 human_required" trend={ratioTrend(data.daily_series, 'intervention_triggered')} trendColor={ratioColors.intervention} trendFormat={formatRatioPercent} inferred />
+            <RatioCard title="受阻后恢复成功率" metric={data.recovered_after_block} note="出现 blocked Run 后最终成功" trend={ratioTrend(data.daily_series, 'recovered_after_block')} trendColor={ratioColors.recovery} trendFormat={formatRatioPercent} inferred />
           </div>
           <div className="duration-section">
             <div className="duration-section__heading"><strong>成功 Run 耗时</strong><span>成功的 Run · Task 样本 {data.task_sample_count}</span></div>

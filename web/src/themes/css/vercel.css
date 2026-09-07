@@ -1,0 +1,379 @@
+/* ============================================================
+   vercel 主题令牌块 —— 自 vercel 设计语言誊抄。
+   Geist (Vercel) 设计语言：近黑 ink #171717 落在近白画布 #fafafa 上；
+   唯一彩色动作色是交互蓝 #0070f3（info/success 也由它承担）；
+   chrome 全程黑白，彩色只出现在 mesh hero、hero 细线与渐变令牌。
+   灰阶四档：ink #171717 / body #4d4d4d / mute #8f8f8f / faint #a1a1a1。
+   值来源速查：
+     --canvas #fafafa / --canvas-elevated #ffffff → 画布与卡片面
+     --hairline #ebebeb / --hairline-soft #f2f2f2 → 唯二发丝线
+     --link #0070f3 → 交互蓝（context-dot 成功点同色）
+     radius 刻度 6 app chrome / 12 面板 / pill 9999
+   骨架表达不了的部分（mesh 登录 hero、eyebrow 排版块、hero 细线、
+   brand-mark 三角重绘、Geist Mono 技术质感等）见块后专属片段。
+   ============================================================ */
+[data-theme="vercel"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: "Geist", Inter, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  --font-display: "Geist Mono", "JetBrains Mono", Consolas, ui-monospace, monospace; /* 指标数字全是 Geist Mono */
+
+  /* ── Radius ───────────────────────────────── */
+  /* vercel 刻度 6 / 12 / 16 / 100 / 9999，向超集九档归并 */
+  --radius-xs: 3px;      /* term-hint focus（源字面值） */
+  --radius-soft: 9999px; /* 登录预览 chip = full pill */
+  --radius-sm: 6px;      /* 内嵌小块（sparkline 提示 4px 例外见片段） */
+  --radius-md: 6px;      /* 行卡 */
+  --radius-lg: 6px;      /* 指标卡（源 business/ratio/duration 均 6px） */
+  --radius-xl: 12px;     /* 面板（json-viewer 等 6px 例外见片段） */
+  --radius-brand: 6px;   /* brand-mark / 登录 signal（ink 方块） */
+  --radius-pill: 9999px; /* 迷你徽标 */
+  --radius-panel: 12px;  /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #fafafa;
+  --canvas-soft: #fafafa;
+  --canvas-card: #ffffff;
+  --canvas-dark: #ffffff; /* 源 json-viewer pre 是白底黑字（canvas-elevated） */
+  --surface-sidebar: #fafafa;
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f2f2f2; /* duration-values chip = hairline-soft */
+  --surface-matrix: #fafafa;
+  --surface-tint: #fafafa;
+  --surface-rail: #fafafa;
+  --surface-detail: #fafafa;
+  --surface-chip: #fafafa;
+  --surface-legacy: #fafafa;
+  --surface-draft: #f2f2f2;
+  --surface-empty: #ffffff;
+  --surface-json-bar: #fafafa;
+  --tooltip-bg: #171717;
+
+  /* ── Ink & text ladder（坍缩为 ink/body/mute/faint 四档） ── */
+  --ink: #171717;
+  --ink-strong: #171717;
+  --ink-display: #171717;
+  --ink-heading: #171717;
+  --ink-value: #171717;
+  --ink-repo: #171717;
+  --ink-step: #171717;
+  --ink-label-strong: #171717;
+  --ink-label: #171717;
+  --ink-row: #171717;
+  --ink-list: #4d4d4d;   /* value-list li 源取 body */
+  --ink-data: #171717;
+  --ink-field: #171717;
+  --ink-rail: #4d4d4d;   /* rail 正文源取 body */
+  --ink-rail-value: #171717;
+  --ink-secret: #4d4d4d; /* secret 标签源取 body */
+  --ink-chip: #4d4d4d;   /* duration-values chip 源取 body */
+  --body: #4d4d4d;
+  --body-alt: #4d4d4d;
+  --body-soft: #4d4d4d;
+  --mute: #8f8f8f;
+  --mute-deep: #4d4d4d;  /* 顶栏文字/卡标题源取 body */
+  --mute-inline: #8f8f8f;
+  --mute-caption: #8f8f8f;
+  --mute-intro: #4d4d4d; /* 配置步骤导语源取 body */
+  --mute-terse: #8f8f8f;
+  --mute-quiet: #8f8f8f; /* 表头源取 mute（与 antd headerColor 同源）；test-result 等例外见片段 */
+  --mute-soft: #8f8f8f;
+  --mute-dim: #8f8f8f;
+  --mute-draft: #8f8f8f;
+  --mute-json: #8f8f8f;
+  --mute-matrix: #8f8f8f;
+  --faint: #8f8f8f;
+  --faint-alt: #8f8f8f;
+  --faint-soft: #8f8f8f;
+  --faint-ghost: #8f8f8f;
+  --faint-hint: #8f8f8f;
+  --faint-meta: #8f8f8f;
+  --faint-note: #8f8f8f;
+  --faint-empty: #8f8f8f;
+  --on-dark: #ffffff;          /* sparkline tip 白字 */
+  --on-dark-soft: #171717;     /* json-viewer pre 黑字（白底） */
+  --on-dark-faint: rgba(255, 255, 255, .64);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #171717;        /* 主操作 = ink（黑白体系） */
+  --primary-active: #383838; /* 源黑钮 hover */
+  --on-primary: #ffffff;
+  --link: #0070f3;           /* 交互蓝：唯一彩色动作 */
+  --link-hover: #0761d1;
+  --focus-ring: #0070f3;     /* 源全局焦点 2px solid var(--link)，宽度见片段 */
+  --primary-veil: #f2f2f2;   /* 导航当前项底 = hairline-soft */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #0070f3;    /* context-dot 由交互蓝承担 */
+  --success-halo: 0 0 0 4px rgba(0, 112, 243, .12);
+  --warning: #f5a623;    /* 文字态用 warning-deep，见片段 */
+  --warning-soft: #ffefcf;
+  --error: #ee0000;
+  --error-deep: #c50000;
+  --info: #0070f3;
+  --info-soft: #d3e5ff;  /* 源 --link-soft */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #ebebeb;
+  --hairline-soft: #f2f2f2;
+  --hairline-strong: #8f8f8f; /* 滚动条 thumb 底色（webkit 实值见片段） */
+  --hairline-card: #ebebeb;
+  --hairline-inset: #ebebeb;
+  --hairline-mid: #ebebeb;
+  --hairline-rail: #ebebeb;
+  --hairline-codex: #ebebeb;
+  --hairline-detail: #ebebeb;
+  --hairline-json: #ebebeb;
+  --hairline-dashed: #ebebeb;
+  --hairline-legacy: #ebebeb;
+  --hairline-row: #ebebeb;
+  --hairline-draft: #ebebeb;
+  --bar-value: #ebebeb;
+  --bar-matrix: #ebebeb;
+  --bar-summary: #ebebeb;
+  --bar-usage: #171717;  /* token 用量轨道 = ink */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(23, 23, 23, .045);
+  --overlay-soft: #f2f2f2; /* 导航 hover 底 = hairline-soft */
+  --overlay-line: #ebebeb; /* 分组标题细线 = hairline */
+  --overlay-medium: rgba(23, 23, 23, .085);
+  --shadow-panel: 0 1px 1px rgba(0, 0, 0, .04); /* 源 shadow-1 whisper 微投影 */
+
+  /* ── brand-mark（ink 方块 + CSS 三角，形态见片段重绘） ── */
+  --brand-frame-bg: #171717;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #171717; /* span 由片段隐藏，值仅占位同色 */
+  --brand-bar-2: #171717;
+  --brand-bar-3: #171717;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #171717; /* ::after 由片段隐藏 */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #171717;
+
+  /* ── 登录页（白面 + mesh hero + 网格叠加，形态见片段） ── */
+  --login-bg: #fafafa;
+  --login-shell-border: #ebebeb;
+  --login-shell-shadow: 0 2px 2px rgba(0, 0, 0, .04), 0 8px 16px -4px rgba(0, 0, 0, .08); /* 源 shadow-2 */
+  --login-showcase-bg: #ffffff;
+  --login-showcase-ink: #171717;
+  --login-grid-line: rgba(23, 23, 23, .05); /* ::after 网格叠加线 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #171717;
+  --login-brand-mute: #8f8f8f;
+  --login-signal-bg: #171717;
+  --login-signal-border: transparent;
+  --login-signal-shadow: 0 1px 1px rgba(0, 0, 0, .04); /* 源 shadow-1 */
+  --login-signal-bar: #ffffff; /* span 由片段隐藏，三角用白 */
+  --login-kicker: #8f8f8f;
+  --login-heading: #171717;
+  --login-copy: #4d4d4d;
+  --login-preview-bg: rgba(255, 255, 255, .82);
+  --login-preview-border: #ebebeb;
+  --login-preview-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+  --login-preview-divider: #ebebeb;
+  --login-preview-dot: #8f8f8f;
+  --login-preview-dot-soft: #ebebeb;
+  --login-preview-label: #8f8f8f;
+  --login-preview-row-line: #f2f2f2;
+  --login-preview-row-ink: #4d4d4d;
+  --login-preview-chip-ink: #4d4d4d;
+  --login-preview-chip-bg: #f2f2f2;
+  --login-preview-bar: #ebebeb;
+  --login-foot: #8f8f8f;
+  --login-card-kicker: #8f8f8f;
+  --login-card-heading: #171717;
+  --login-card-copy: #4d4d4d;
+  --login-notice-border: #91caff; /* 源不覆写 antd info alert，此处为派生值近似 */
+  --login-notice-bg: #e6f4ff;
+  --login-notice-ink: #4d4d4d;
+  --login-label: #4d4d4d;
+  --login-input-border: #ebebeb;
+  --login-input-border-hover: #a1a1a1; /* 源 var(--faint)，全站唯一 faint 消费者 */
+  --login-primary: #171717;   /* 黑色 pill CTA（marketing 语境） */
+  --login-primary-active: #383838;
+
+  /* ── Vercel 特有补充令牌（超集之外，下方专属片段消费） ── */
+  /* Hero mesh —— 登录 showcase 唯一装饰性渐变（五层 radial，源自 :root 原样） */
+  --mesh-gradient:
+    radial-gradient(ellipse 85% 65% at 12% 8%, rgba(0, 124, 240, .30), transparent 62%),
+    radial-gradient(ellipse 75% 60% at 88% 12%, rgba(121, 40, 202, .26), transparent 60%),
+    radial-gradient(ellipse 65% 55% at 78% 88%, rgba(255, 0, 128, .20), transparent 58%),
+    radial-gradient(ellipse 70% 60% at 15% 92%, rgba(0, 223, 216, .24), transparent 60%),
+    radial-gradient(ellipse 55% 45% at 52% 48%, rgba(249, 203, 40, .16), transparent 58%);
+  /* 渐变三件套（develop/preview/ship）+ 6 个 stop —— 只进 hero 细线与插画，不进 chrome */
+  --grad-develop: linear-gradient(90deg, var(--grad-develop-start), var(--grad-develop-end));
+  --grad-preview: linear-gradient(90deg, var(--grad-preview-start), var(--grad-preview-end));
+  --grad-ship: linear-gradient(90deg, var(--grad-ship-start), var(--grad-ship-end));
+  --grad-develop-start: #007cf0;
+  --grad-develop-end: #00dfd8;
+  --grad-preview-start: #7928ca;
+  --grad-preview-end: #ff0080;
+  --grad-ship-start: #ff4d4d;
+  --grad-ship-end: #f9cb28;
+  /* 彩色家族（+soft）—— 渐变 stop 与插画点缀 */
+  --violet: #7928ca;
+  --violet-soft: #d8ccf1;
+  --cyan: #50e3c2;
+  --cyan-soft: #aaffec;
+  --pink: #ff0080;
+  --magenta: #eb367f;
+  --warning-deep: #ab570a; /* 源 warning 文字态（sample-warning） */
+}
+
+/* ============================================================
+   vercel 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="vercel"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 全局焦点：交互蓝 2px（源 :focus-visible 2px solid var(--link)） ── */
+[data-theme="vercel"] :focus-visible { outline-width: 2px; }
+
+/* ── eyebrow 共享排版块（源 94-113 行作用域化誊抄）：
+   一次定义 15 个 selector 的 Geist Mono 大写 eyebrow ── */
+[data-theme="vercel"] .page-heading__eyebrow,
+[data-theme="vercel"] .panel-kicker,
+[data-theme="vercel"] .section-label,
+[data-theme="vercel"] .nav-caption,
+[data-theme="vercel"] .nav-group-title,
+[data-theme="vercel"] .value-list__title,
+[data-theme="vercel"] .generic-record__group > strong,
+[data-theme="vercel"] .audit-json > summary,
+[data-theme="vercel"] .json-viewer__bar,
+[data-theme="vercel"] .codex-metric > span,
+[data-theme="vercel"] .codex-token-ledger span,
+[data-theme="vercel"] .login-page__showcase-copy > span,
+[data-theme="vercel"] .login-page__card-heading > span,
+[data-theme="vercel"] .login-page__brand span,
+[data-theme="vercel"] .brand-block span {
+  font: 500 11px/16px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+/* 源中 eyebrow 块之后各选择器自带的字号回调（有效值誊抄） */
+[data-theme="vercel"] .nav-caption,
+[data-theme="vercel"] .nav-group-title,
+[data-theme="vercel"] .value-list__title,
+[data-theme="vercel"] .generic-record__group > strong,
+[data-theme="vercel"] .audit-json > summary,
+[data-theme="vercel"] .json-viewer__bar,
+[data-theme="vercel"] .brand-block span { font-size: 10px; line-height: 1.2; }
+[data-theme="vercel"] .brand-block span { margin-top: 3px; }
+[data-theme="vercel"] .codex-metric > span,
+[data-theme="vercel"] .codex-token-ledger span { font-size: 10px; }
+[data-theme="vercel"] .login-page__showcase-copy > span,
+[data-theme="vercel"] .login-page__card-heading > span { font-size: 11px; line-height: 1.4; }
+[data-theme="vercel"] .login-page__brand span { font-size: 10px; line-height: 1.3; }
+/* eyebrow 颜色走 mute 灰而非主色（源 187 行） */
+[data-theme="vercel"] .page-heading__eyebrow,
+[data-theme="vercel"] .panel-kicker,
+[data-theme="vercel"] .section-label { color: var(--mute); }
+/* 顶栏内的 eyebrow 例外：回 sans 正文形态（源 190 行），对抗上方排版块 */
+[data-theme="vercel"] .context-heading-slot .page-heading__eyebrow {
+  font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2;
+  letter-spacing: -.01em; text-transform: none;
+}
+
+/* ── 黑白导航机制：ink 文字 + hairline-soft 底（底色由 --primary-veil/--overlay-soft 令牌承担） ── */
+[data-theme="vercel"] .workspace-nav a::before { width: 2px; } /* 源指示条 2px（骨架 3px） */
+[data-theme="vercel"] .workspace-nav a[aria-current="page"] { font-weight: 500; }
+[data-theme="vercel"] .explorer-tab.is-active { font-weight: 500; }
+[data-theme="vercel"] .explorer-tab:hover { color: var(--ink); }
+
+/* ── term-hint 的 hover/focus 走交互蓝（源 var(--link)，非 ink 主色） ── */
+[data-theme="vercel"] .term-hint:hover { color: #0070f3; }
+[data-theme="vercel"] .term-hint:focus-visible { outline-color: #0070f3; }
+
+/* ── brand-mark 重绘：ink 方块 + CSS border 三角。
+   基线 DOM 保留 3 个 span，这里 display:none 隐藏后以 ::before 重绘形态 ── */
+[data-theme="vercel"] .brand-mark {
+  width: 32px; height: 32px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; gap: 0; background: var(--ink);
+  border: 0; border-radius: var(--radius-sm); box-shadow: none;
+}
+[data-theme="vercel"] .brand-mark span { display: none; }
+[data-theme="vercel"] .brand-mark::before {
+  content: ""; display: block; width: 0; height: 0;
+  border-left: 7px solid transparent; border-right: 7px solid transparent;
+  border-bottom: 12px solid var(--on-primary);
+}
+[data-theme="vercel"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="vercel"] .brand-mark { width: 28px; height: 28px; }
+  [data-theme="vercel"] .brand-mark::before { border-left-width: 6px; border-right-width: 6px; border-bottom-width: 10px; }
+}
+
+/* ── 登录 signal：同款 ink 方块 + 白三角（span 隐藏重绘） ── */
+[data-theme="vercel"] .login-page__signal {
+  width: 36px; height: 36px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: 0;
+  border: 0; border-radius: var(--radius-sm);
+  background: var(--ink); box-shadow: var(--login-signal-shadow);
+}
+[data-theme="vercel"] .login-page__signal span { display: none; }
+[data-theme="vercel"] .login-page__signal::before {
+  content: ""; display: block; width: 0; height: 0;
+  border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-bottom: 13px solid #ffffff;
+}
+
+/* ── Overview hero 细线：app chrome 唯一渐变（2px 多段，源 220 行） ── */
+[data-theme="vercel"] .business-outcomes { position: relative; overflow: hidden; }
+[data-theme="vercel"] .business-outcomes::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; opacity: .85;
+  background: linear-gradient(90deg, var(--cyan), var(--grad-develop-start) 30%, var(--violet) 55%, var(--magenta) 75%, var(--grad-ship-end));
+}
+
+/* ── mesh 登录 hero：::before 五层 radial（无 mask），::after 网格叠加（带 mask）。
+   骨架把网格放在 ::before，这里整体重排到源的两层结构 ── */
+[data-theme="vercel"] .login-page__showcase::before {
+  content: ''; position: absolute; inset: 0; opacity: .6;
+  background: var(--mesh-gradient);
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+[data-theme="vercel"] .login-page__showcase::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(var(--login-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--login-grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: var(--login-grid-mask);
+  -webkit-mask-image: var(--login-grid-mask);
+}
+
+/* ── Geist Mono 技术标签质感：状态签/表头/快照注记等走 mono ── */
+[data-theme="vercel"] .status-tag { font-family: var(--font-mono); font-size: 11px; }
+[data-theme="vercel"] .admin-table .ant-table-thead > tr > th { font: 500 11px/1.35 var(--font-mono); letter-spacing: .06em; }
+[data-theme="vercel"] .snapshot-note { font: 400 11px/1.4 var(--font-mono); }
+[data-theme="vercel"] .run-summary__duration { font: 500 12px/1.4 var(--font-mono); }
+[data-theme="vercel"] .login-page__preview-header span { font: 400 10px/1.2 var(--font-mono); letter-spacing: .06em; }
+[data-theme="vercel"] .login-page__showcase-foot { font: 400 10px/1.4 var(--font-mono); letter-spacing: .06em; }
+/* 表格横向滚动条 thumb：源 rgba(23,23,23,.22) */
+[data-theme="vercel"] .admin-table .ant-table-content::-webkit-scrollbar-thumb { background: rgba(23, 23, 23, .22); background-clip: padding-box; }
+
+/* ── 灰阶/圆角补正：令牌按主角色定值后，个别源值不同的消费者回填 ── */
+[data-theme="vercel"] .test-result p,
+[data-theme="vercel"] .audit-json > summary { color: #4d4d4d; } /* 源取 body 非 mute */
+[data-theme="vercel"] .audit-json > summary { background: #fafafa; } /* 源取 canvas 非 hairline-soft */
+[data-theme="vercel"] .sample-warning { color: #ab570a; } /* 源 warning-deep 文字态 */
+[data-theme="vercel"] .json-viewer,
+[data-theme="vercel"] .people-identity-row,
+[data-theme="vercel"] .login-page__preview { border-radius: 6px; } /* 面板档 12px 的 6px 例外 */
+[data-theme="vercel"] .sparkline__tip,
+[data-theme="vercel"] .sparkline--empty { border-radius: 4px; } /* 源字面值 */
+
+/* ── Geist 排版签名：标题负字距与字号 ── */
+[data-theme="vercel"] .brand-block strong { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+[data-theme="vercel"] .panel-heading h2 { font-size: 16px; font-weight: 600; letter-spacing: -.2px; }
+[data-theme="vercel"] .configuration-step-copy h2,
+[data-theme="vercel"] .configuration-summary h2 { font-size: 20px; font-weight: 600; letter-spacing: -.4px; }
+[data-theme="vercel"] .login-page__brand strong { font-weight: 600; letter-spacing: -.01em; }
+[data-theme="vercel"] .login-page__showcase-copy h2 { font-size: 32px; font-weight: 600; line-height: 40px; letter-spacing: -1.28px; }
+[data-theme="vercel"] .login-page__showcase-copy p { font-size: 14px; }
+[data-theme="vercel"] .login-page__card h1 { font-size: 28px; font-weight: 600; letter-spacing: -.56px; }
+[data-theme="vercel"] .login-page__card .ant-form-item-label > label { font-weight: 500; }
+/* 登录 CTA 黑 pill：marketing 语境 100px 圆角（app chrome 仍是 6px 方角） */
+[data-theme="vercel"] .login-page__card .ant-btn-primary { border-radius: 100px; font-weight: 500; }

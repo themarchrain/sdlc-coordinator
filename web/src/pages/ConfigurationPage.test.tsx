@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../api/client'
 import type { ConfigurationView } from '../api/types'
 import { APP_VERSION } from '../app/version'
+import { ThemeProvider } from '../theme/ThemeProvider'
+import { THEME_STORAGE_KEY } from '../themes/registry'
 import { ConfigurationPage } from './ConfigurationPage'
 
 afterEach(() => vi.restoreAllMocks())
@@ -266,5 +268,60 @@ describe('ConfigurationPage codehost providers', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '代码托管平台' }))
     expect(await screen.findByText('GitHub')).toBeInTheDocument()
+  })
+})
+
+describe('ConfigurationPage appearance panel', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    delete document.documentElement.dataset.theme
+  })
+
+  it('renders all 10 theme cards with the current one highlighted', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+
+    const { container } = render(
+      <ThemeProvider>
+        <MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>
+      </ThemeProvider>,
+    )
+
+    expect(await screen.findByText('运行配置')).toBeInTheDocument()
+    // 刷新/首载默认收起：只有摘要行，无卡片
+    expect(screen.getByRole('button', { name: /外观主题：默认/ })).toBeInTheDocument()
+    expect(container.querySelectorAll('.theme-card')).toHaveLength(0)
+
+    // 展开后可见说明与 10 张卡片，当前主题高亮
+    fireEvent.click(screen.getByRole('button', { name: /外观主题：默认/ }))
+    expect(screen.getByText('本地浏览器偏好，不写入服务端配置。')).toBeInTheDocument()
+    expect(container.querySelectorAll('.theme-card')).toHaveLength(10)
+    expect(container.querySelector('.theme-card--active')).toBeTruthy()
+    expect(container.querySelector('.theme-card--active')?.textContent).toContain('默认')
+    expect(container.querySelector('.theme-card--active')?.textContent).toContain('当前使用')
+  })
+
+  it('switches the live theme immediately when a card is clicked and stays expanded', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+
+    const { container } = render(
+      <ThemeProvider>
+        <MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>
+      </ThemeProvider>,
+    )
+
+    await screen.findByText('运行配置')
+    expect(document.documentElement.dataset.theme).toBe('default')
+
+    fireEvent.click(screen.getByRole('button', { name: /外观主题：默认/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Supabase/ }))
+
+    expect(document.documentElement.dataset.theme).toBe('supabase')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('supabase')
+    expect(container.querySelector('.theme-card--active')?.textContent).toContain('Supabase')
+    // 选中后保持展开（不自动折叠），摘要行同步当前主题
+    expect(container.querySelectorAll('.theme-card')).toHaveLength(10)
+    expect(screen.getByRole('button', { name: /外观主题：Supabase/ })).toBeInTheDocument()
   })
 })

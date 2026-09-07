@@ -9,6 +9,8 @@ import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import { StatusTag } from '../components/StatusTag'
 import { AuditJson, TaskContextDetail } from '../components/StructuredDetail'
+import type { TimelineSlots } from '../themes/types'
+import { useTheme } from '../theme/useTheme'
 import { useRemote } from '../hooks/useRemote'
 
 const roles = ['DeveloperWorker', 'TesterWorker', 'ReviewerWorker']
@@ -97,6 +99,7 @@ export function TasksPage() {
 }
 
 function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void }) {
+  const { theme } = useTheme()
   const [detail, setDetail] = useState<Record<string, unknown>>()
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [error, setError] = useState<unknown>()
@@ -127,7 +130,7 @@ function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void 
           ]} />
           <TaskContextDetail value={detail.context_json} />
           <section><div className="section-label">生命周期</div><Timeline items={timeline.map((event) => ({
-            color: timelineColor(event.status),
+            color: timelineColor(event.status, theme.slots.timeline),
             children: <div className="timeline-entry"><div><strong>{event.title}</strong>{event.status ? <StatusTag status={event.status} /> : null}</div><p>{event.summary || '无补充摘要'}</p><time>{formatTime(event.occurred_at)}</time></div>,
           }))} /></section>
           <AuditJson label="原始任务数据" value={detail} />
@@ -146,11 +149,11 @@ function formatTime(value: unknown) {
   return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })
 }
 
-function timelineColor(status: string) {
-  if (['failed', 'blocked', 'unavailable'].includes(status)) return 'red'
-  if (['human_required', 'retry_pending', 'waiting_upstream'].includes(status)) return 'orange'
-  if (['succeeded', 'approved'].includes(status)) return 'green'
-  return 'blue'
+function timelineColor(status: string, slots: TimelineSlots) {
+  if (['failed', 'blocked', 'unavailable'].includes(status)) return slots.error
+  if (['human_required', 'retry_pending', 'waiting_upstream'].includes(status)) return slots.warning
+  if (['succeeded', 'approved'].includes(status)) return slots.success
+  return slots.info
 }
 
 function optionLabel(value: string) {

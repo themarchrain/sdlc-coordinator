@@ -1,0 +1,345 @@
+/* ============================================================
+   ollama 主题令牌块 —— 自 ollama 设计语言誊抄。
+   Ollama 设计语言：纸白画布（#ffffff 端到端）、唯一软面 #fafafa、
+   文字四级 #000000/#525252/#737373/#a3a3a3、发丝线 #e5e5e5/#d4d4d4、
+   一切交互元素全圆角 pill、卡片唯一例外 12px、单色黑 CTA、
+   全应用唯一暗面 #171717（登录 showcase）、终端红黄绿为唯一彩色。
+   值来源速查（ollama 源 :root）：
+     --canvas #ffffff → 画布 / 卡面 / 侧栏 / 顶栏
+     --surface-soft #fafafa → 唯一软面（表头 / hover / 汇总）
+     --ink #000000 / --charcoal #525252 / --body #737373 / --mute #a3a3a3 → 文字四级
+     --hairline #e5e5e5 / --hairline-strong #d4d4d4 → 发丝线双阶
+     --primary #000000（单色 CTA，hover #262626 / active #090909）
+     --focus-ring rgba(59,130,246,.5) → 全系统唯一蓝
+     --terminal-red/yellow/green → 语义色兼装饰（追加 token）
+   骨架表达不了的形态（黑 tile brand-mark、登录暗面 showcase + 终端三点卡、
+   segmented thumb 发丝环、textarea 12px 例外、药丸导航等）见块后专属片段。
+   ============================================================ */
+[data-theme="ollama"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-display: "Nunito", "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius ───────────────────────────────── */
+  /* ollama 刻度 sm 6 / md 8 / lg 12 / full 9999（+ brand tile 10），向超集九档归并：
+     一切交互元素 = pill，卡片唯一例外 12px */
+  --radius-xs: 3px;      /* term-hint focus（ollama 源字面值） */
+  --radius-soft: 9999px; /* 登录预览 chip = pill */
+  --radius-sm: 8px;      /* sparkline 提示 / detail-grid 内嵌块 */
+  --radius-md: 12px;     /* repo / test / intent / 错误详情行卡 */
+  --radius-lg: 12px;     /* 指标卡 / run-summary / audit-json */
+  --radius-xl: 12px;     /* surface-panel / json / 登录预览 */
+  --radius-brand: 10px;  /* brand-mark 黑 tile / 登录 signal */
+  --radius-pill: 9999px; /* 迷你徽标 / 中性软药丸 */
+  --radius-panel: 12px;  /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;
+  --canvas-soft: #fafafa;  /* 唯一软面（表头 / hover / 汇总；指标卡见片段还原白卡） */
+  --canvas-card: #ffffff;
+  --canvas-dark: #171717;  /* 全应用唯一暗面（json-viewer pre 见片段改白） */
+  --surface-sidebar: #ffffff;
+  --surface-bar: #ffffff;
+  --surface-inset: #fafafa;
+  --surface-matrix: #fafafa;
+  --surface-tint: #fafafa;
+  --surface-rail: #fafafa;
+  --surface-detail: #fafafa;
+  --surface-chip: #fafafa;
+  --surface-legacy: #fafafa;
+  --surface-draft: #fafafa;
+  --surface-empty: #fafafa;
+  --surface-json-bar: #fafafa;
+  --tooltip-bg: #ffffff;   /* sparkline tip 白底卡（ink 文字见片段） */
+
+  /* ── Ink & text ladder（坍缩为 ink/charcoal/body/mute 四级） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #525252;
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #525252;
+  --ink-rail-value: #000000;
+  --ink-secret: #525252;
+  --ink-chip: #525252;
+  --body: #525252;
+  --body-alt: #737373;
+  --body-soft: #737373;
+  --mute: #a3a3a3;
+  --mute-deep: #525252;
+  --mute-inline: #a3a3a3;
+  --mute-caption: #737373;
+  --mute-intro: #737373;
+  --mute-terse: #a3a3a3;
+  --mute-quiet: #737373;
+  --mute-soft: #a3a3a3;
+  --mute-dim: #737373;
+  --mute-draft: #737373;
+  --mute-json: #a3a3a3;
+  --mute-matrix: #737373;
+  --faint: #a3a3a3;
+  --faint-alt: #a3a3a3;
+  --faint-soft: #a3a3a3;
+  --faint-ghost: #a3a3a3;
+  --faint-hint: #a3a3a3;
+  --faint-meta: #a3a3a3;
+  --faint-note: #737373;
+  --faint-empty: #a3a3a3;
+  --on-dark: #ffffff;
+  --on-dark-soft: rgba(255, 255, 255, .7);
+  --on-dark-faint: rgba(255, 255, 255, .7);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #000000;
+  --primary-active: #090909;           /* 源 --ink-deep（antd colorPrimaryActive 同源） */
+  --on-primary: #ffffff;
+  --link: #000000;                     /* link-inline：ink 黑 + 下划线（见片段） */
+  --link-hover: #525252;
+  --focus-ring: rgba(59, 130, 246, .5); /* 全系统唯一蓝 */
+  --primary-veil: rgba(0, 0, 0, .02);  /* ≈ #fafafa 软底（当前导航项） */
+
+  /* ── Semantic（终端红绿灯三色 + 中性 charcoal） ── */
+  --success: #27c93f;
+  --success-halo: none;   /* context-dot 是纯 ink 点（见片段） */
+  --warning: #ffbd2e;
+  --warning-soft: #fafafa; /* 信号片中性化（见片段） */
+  --error: #ff5f56;
+  --error-deep: #ff5f56;
+  --info: #525252;         /* processing 中性 charcoal，无蓝 */
+  --info-soft: #fafafa;
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e5e5e5;
+  --hairline-soft: #e5e5e5;
+  --hairline-strong: #d4d4d4;
+  --hairline-card: #e5e5e5;
+  --hairline-inset: #e5e5e5;
+  --hairline-mid: #e5e5e5;
+  --hairline-rail: #e5e5e5;
+  --hairline-codex: #e5e5e5;
+  --hairline-detail: #e5e5e5;
+  --hairline-json: #e5e5e5;
+  --hairline-dashed: #d4d4d4;
+  --hairline-legacy: #d4d4d4;
+  --hairline-row: #e5e5e5;
+  --hairline-draft: #e5e5e5;
+  --bar-value: #d4d4d4;   /* value-list 左规线 = hairline-strong */
+  --bar-matrix: #d4d4d4;  /* metric-matrix 左规线 */
+  --bar-summary: #d4d4d4; /* summary 单元左规线 */
+  --bar-usage: #000000;   /* token 进度条 = ink 单色 */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(0, 0, 0, 0);  /* collapse-toggle 透明底（发丝线上边线见片段） */
+  --overlay-soft: rgba(0, 0, 0, .02); /* ≈ #fafafa 软底 */
+  --overlay-line: rgba(0, 0, 0, .1);  /* ≈ #e5e5e5 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .02);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 卡片只用发丝线；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（黑 tile + 白药丸柱，形态见片段） ── */
+  --brand-frame-bg: #000000;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffffff;
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: transparent; /* ollama 无左标线（源已删除） */
+
+  /* ── 登录页（纯白外壳 + #171717 唯一暗面 showcase + 白卡终端三点） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e5e5e5;
+  --login-shell-shadow: none;
+  --login-showcase-bg: #171717;              /* --surface-dark：全应用唯一反转面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, 0); /* ollama 无网格底纹（见片段隐藏） */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .7); /* --on-dark-mute */
+  --login-signal-bg: #ffffff;                  /* signal = 白 tile（brand-mark 暗面反转） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #000000;
+  --login-kicker: rgba(255, 255, 255, .7);
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .7);
+  --login-preview-bg: #ffffff;
+  --login-preview-border: #e5e5e5;
+  --login-preview-shadow: none;
+  --login-preview-divider: #e5e5e5;
+  --login-preview-dot: #ffbd2e;   /* 终端三点：i（黄） */
+  --login-preview-dot-soft: #27c93f; /* 终端三点：b（绿） */
+  --login-preview-label: #737373;
+  --login-preview-row-line: #e5e5e5;
+  --login-preview-row-ink: #525252;
+  --login-preview-chip-ink: #000000;
+  --login-preview-chip-bg: #fafafa;
+  --login-preview-bar: #d4d4d4;
+  --login-foot: rgba(255, 255, 255, .7);
+  --login-card-kicker: #a3a3a3;
+  --login-card-heading: #000000;
+  --login-card-copy: #737373;
+  --login-notice-border: #e5e5e5;  /* 信息 Alert 随 colorInfo=#525252 中性灰 */
+  --login-notice-bg: #fafafa;
+  --login-notice-ink: #525252;
+  --login-label: #525252;
+  --login-input-border: #d4d4d4;
+  --login-input-border-hover: #262626; /* 黑药丸 hover 派生色（antd colorPrimaryHover 同源） */
+  --login-primary: #000000;
+  --login-primary-active: #262626;
+
+  /* ── Ollama 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --terminal-red: #ff5f56;     /* 终端「停止灯」：装饰三点兼 error 语义 */
+  --terminal-yellow: #ffbd2e;  /* 终端「注意灯」：装饰三点兼 warning 语义 */
+  --terminal-green: #27c93f;   /* 终端「通行灯」：装饰三点兼 success 语义 */
+}
+
+/* ============================================================
+   ollama 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="ollama"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：link-inline 下划线 + 2px focus 环（全系统唯一蓝） ── */
+[data-theme="ollama"] a { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+[data-theme="ollama"] :focus-visible { outline-width: 2px; }
+
+/* ── 海拔只有发丝线：多行输入是卡片不是药丸；Segmented thumb 发丝环 ── */
+[data-theme="ollama"] textarea.ant-input { border-radius: 12px !important; }
+[data-theme="ollama"] .ant-segmented-thumb { box-shadow: 0 0 0 1px var(--hairline-strong) !important; }
+
+/* ── chrome 细节：纯 ink context-dot、无 blur 顶栏、发丝线 collapse ── */
+[data-theme="ollama"] .context-dot { background: #000000; box-shadow: none; }
+[data-theme="ollama"] .context-bar { backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-theme="ollama"] .collapse-toggle { background: transparent; border-top: 1px solid #e5e5e5; }
+
+/* ── brand-mark：黑 tile + 三根白色药丸柱（3 span 保留可见，无渐变无 dot） ── */
+[data-theme="ollama"] .brand-mark { padding: 7px 6px 6px; border: none; box-shadow: none; }
+[data-theme="ollama"] .brand-mark span { width: 5px; border-radius: 9999px; }
+[data-theme="ollama"] .brand-mark span:nth-child(1) { opacity: .5; }
+[data-theme="ollama"] .brand-mark span:nth-child(3) { opacity: .75; }
+[data-theme="ollama"] .brand-mark::after { display: none; }
+
+/* ── 导航：药丸项 + 软底当前态（500 字重），icon hover 转墨 ── */
+[data-theme="ollama"] .workspace-nav a { border-radius: 9999px; }
+[data-theme="ollama"] .workspace-nav a[aria-current="page"] { font-weight: 500; }
+[data-theme="ollama"] .workspace-nav a:hover .anticon { color: #000000; }
+
+/* ── 面板节奏：88px 营销空隙压缩为面板级（panel 24 / section 32） ── */
+[data-theme="ollama"] .surface-panel { padding: 24px; }
+[data-theme="ollama"] .dashboard-grid, [data-theme="ollama"] .operations-grid { gap: 24px; }
+[data-theme="ollama"] .automation-metrics, [data-theme="ollama"] .business-outcomes { margin-bottom: 32px; }
+
+/* ── 指标卡白纸化（软面槽被表头占用，卡片还原 #ffffff） ── */
+[data-theme="ollama"] .business-outcomes__card, [data-theme="ollama"] .ratio-card { background: #ffffff; }
+[data-theme="ollama"] .detail-grid > div { background: #fafafa; }
+
+/* ── 圆体 display 数字/标题：500/600 字重（Nunito 回退栈） ── */
+[data-theme="ollama"] .brand-block strong { font: 500 17px/1.3 var(--font-display); }
+[data-theme="ollama"] .panel-heading h2 { font: 500 20px/1.4 var(--font-display); }
+[data-theme="ollama"] .detail-section h3 { font: 500 15px/1.4 var(--font-display); }
+[data-theme="ollama"] .business-outcomes__card > strong { font: 600 26px/1 var(--font-display); }
+[data-theme="ollama"] .ratio-card > strong { font: 600 28px/1 var(--font-display); }
+[data-theme="ollama"] .codex-metric > strong { font: 600 20px/1.2 var(--font-display); }
+[data-theme="ollama"] .configuration-step-copy h2, [data-theme="ollama"] .configuration-summary h2 { font: 500 20px/1.4 var(--font-display); }
+[data-theme="ollama"] .configuration-inline-title h3 { font: 500 16px/1.4 var(--font-display); }
+[data-theme="ollama"] .connector-configuration-step__heading h3 { font: 500 15px/1.4 var(--font-display); }
+[data-theme="ollama"] .context-heading-slot .page-heading__eyebrow { font-weight: 600; }
+
+/* ── mono eyebrow 标签：500 字重大写技术标签（Ollama 签名质感） ── */
+[data-theme="ollama"] .page-heading__eyebrow,
+[data-theme="ollama"] .panel-kicker,
+[data-theme="ollama"] .section-label { color: #a3a3a3; font-weight: 500; letter-spacing: .12em; }
+[data-theme="ollama"] .nav-caption,
+[data-theme="ollama"] .nav-group-title { font-weight: 500; letter-spacing: .14em; }
+[data-theme="ollama"] .brand-block span { font-weight: 500; letter-spacing: .14em; }
+[data-theme="ollama"] .admin-table .ant-table-thead > tr > th { color: #737373; font: 500 11px/1.4 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+[data-theme="ollama"] .metric-matrix span { color: #a3a3a3; font: 500 10px/1.4 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+[data-theme="ollama"] .metric-matrix strong { font: 500 13px/1.3 var(--font-mono); }
+[data-theme="ollama"] .codex-metric > span, [data-theme="ollama"] .codex-token-ledger span { font-weight: 500; letter-spacing: .08em; }
+[data-theme="ollama"] .codex-token-ledger strong { font: 500 12px/1.4 var(--font-mono); }
+[data-theme="ollama"] .configuration-status-rail > div > span { font: 500 10px/1.4 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+[data-theme="ollama"] .configuration-status-rail > div > strong { font: 500 12px/1.4 var(--font-mono); }
+[data-theme="ollama"] .configuration-summary-grid span { font-weight: 500; letter-spacing: .08em; }
+[data-theme="ollama"] .configuration-summary-grid strong { font: 500 12px/1.5 var(--font-mono); }
+[data-theme="ollama"] .value-list__title { font-weight: 500; letter-spacing: .1em; }
+[data-theme="ollama"] .generic-record__group > strong { font-weight: 500; letter-spacing: .1em; }
+[data-theme="ollama"] .json-viewer__bar { font-weight: 500; letter-spacing: .12em; }
+[data-theme="ollama"] .status-tag { font-family: var(--font-mono); font-size: 11px; }
+
+/* ── 500 字重常规体（Ollama 弃用 650/700 重标题感） ── */
+[data-theme="ollama"] .repository-switcher,
+[data-theme="ollama"] .connector-watch__item strong,
+[data-theme="ollama"] .repo-row strong,
+[data-theme="ollama"] .intent-row strong,
+[data-theme="ollama"] .business-outcomes__card > span,
+[data-theme="ollama"] .ratio-card__title,
+[data-theme="ollama"] .connector-name { font-weight: 500; }
+
+/* ── 灰阶个别校正（骨架令牌一槽多用导致的 1 处偏差） ── */
+[data-theme="ollama"] .explorer-tab { color: #525252; }
+[data-theme="ollama"] .audit-json > summary { color: #525252; }
+[data-theme="ollama"] .metrics-heading p { color: #737373; }
+
+/* ── 几何补正：左规线块 0 6 6 0 / 统计片与信号片药丸 ── */
+[data-theme="ollama"] .metric-matrix > div,
+[data-theme="ollama"] .value-list li,
+[data-theme="ollama"] .configuration-summary-grid > div { border-radius: 0 6px 6px 0; }
+[data-theme="ollama"] .duration-values span { border-radius: 9999px; }
+[data-theme="ollama"] .inferred-mark, [data-theme="ollama"] .sample-warning { padding: 3px 8px; color: #525252; background: #fafafa; border: 1px solid #e5e5e5; font-size: 10px; line-height: 1.4; }
+
+/* ── 代码面白纸化（Ollama 无深色代码面板，暗面预算全给登录 showcase） ── */
+[data-theme="ollama"] .json-viewer pre { background: #ffffff; color: #000000; }
+[data-theme="ollama"] .sparkline__tip { background: #ffffff; color: #000000; border: 1px solid #d4d4d4; }
+[data-theme="ollama"] .sparkline__tip span { color: #a3a3a3; font-weight: 400; }
+
+/* ── 登录 showcase：#171717 全应用唯一暗面（白字 + 70% 白次级） ── */
+[data-theme="ollama"] .login-page__showcase::before { display: none; }
+[data-theme="ollama"] .login-page__brand strong { font-weight: 500; }
+[data-theme="ollama"] .login-page__brand span,
+[data-theme="ollama"] .login-page__showcase-copy > span,
+[data-theme="ollama"] .login-page__card-heading > span { font-weight: 500; letter-spacing: .12em; }
+[data-theme="ollama"] .login-page__showcase-copy h2 { font: 500 30px/1.2 var(--font-display); }
+[data-theme="ollama"] .login-page__showcase-copy p { font-size: 14px; line-height: 1.65; }
+[data-theme="ollama"] .login-page__showcase-foot { font-size: 11px; }
+
+/* ── 登录 signal：白 tile + 黑药丸柱（brand-mark 的暗面反转） ── */
+[data-theme="ollama"] .login-page__signal { width: 34px; height: 34px; gap: 3px; padding: 7px 6px 6px; border: none; }
+[data-theme="ollama"] .login-page__signal span { width: 4px; border-radius: 9999px; }
+[data-theme="ollama"] .login-page__signal span:nth-child(1) { opacity: .5; }
+[data-theme="ollama"] .login-page__signal span:nth-child(3) { opacity: .75; }
+
+/* ── 终端三点卡：白纸 + 发丝线 + 红黄绿（第三点借 header ::before 生成） ── */
+[data-theme="ollama"] .login-page__preview { padding: 14px 16px; }
+[data-theme="ollama"] .login-page__preview-header { padding: 2px 0 12px; gap: 6px; }
+[data-theme="ollama"] .login-page__preview-header::before { content: ''; width: 12px; height: 12px; border-radius: 9999px; background: var(--terminal-red); }
+[data-theme="ollama"] .login-page__preview-header i { width: 12px; height: 12px; border-radius: 9999px; background: var(--terminal-yellow); }
+[data-theme="ollama"] .login-page__preview-header b { width: 12px; height: 12px; border-radius: 9999px; background: var(--terminal-green); }
+[data-theme="ollama"] .login-page__preview-header span { font-family: var(--font-mono); }
+[data-theme="ollama"] .login-page__preview-row > span { font-size: 12px; }
+[data-theme="ollama"] .login-page__preview-row em { padding: 3px 10px; font: 400 10px/1.5 var(--font-mono); }
+[data-theme="ollama"] .login-page__preview-row strong { height: 6px; border-radius: 9999px; }
+
+/* ── 登录卡：display-xl 36px + 中性灰信息态 + 40px 药丸输入 ── */
+[data-theme="ollama"] .login-page__card h1 { font: 500 36px/1.11 var(--font-display); }
+[data-theme="ollama"] .login-page__card-heading p { font-size: 14px; line-height: 1.65; }
+[data-theme="ollama"] .login-page__notice .ant-alert-message { font-size: 12px; }
+[data-theme="ollama"] .login-page__card .ant-form-item-label > label { font-weight: 500; font-size: 13px; }
+[data-theme="ollama"] .login-page__card .ant-input, [data-theme="ollama"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+
+/* ── 移动断点：brand-mark tile 缩小（34 → 28，柱宽 5 → 4） ── */
+@media (max-width: 760px) {
+  [data-theme="ollama"] .brand-mark { width: 28px; height: 28px; padding: 6px 5px 5px; gap: 2px; }
+  [data-theme="ollama"] .brand-mark span { width: 4px; }
+}

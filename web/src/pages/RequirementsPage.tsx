@@ -8,8 +8,8 @@ import { ErrorState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 
 const statusLabels: Record<Requirement['status'], { label: string; color: string }> = {
-  queued: { label: '待同步', color: 'gold' },
-  published: { label: '已发布', color: 'blue' },
+  queued: { label: '待同步', color: 'warning' },
+  published: { label: '已发布', color: 'processing' },
   done: { label: '已完成', color: 'green' },
   failed: { label: '同步失败', color: 'red' },
   cancelled: { label: '已取消', color: 'default' },

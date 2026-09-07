@@ -371,7 +371,7 @@ function repositoryScope(value: unknown): ReactNode {
   const writable = asArray(scope.writable).map(String)
   const readable = asArray(scope.readable).map(String)
   if (!writable.length && !readable.length) return undefined
-  return <div className="scope-list">{writable.map((repo) => <span key={`w-${repo}`}><Tag color="blue">可写</Tag><span className="mono">{repo}</span></span>)}{readable.map((repo) => <span key={`r-${repo}`}><Tag>只读</Tag><span className="mono">{repo}</span></span>)}</div>
+  return <div className="scope-list">{writable.map((repo) => <span key={`w-${repo}`}><Tag color="processing">可写</Tag><span className="mono">{repo}</span></span>)}{readable.map((repo) => <span key={`r-${repo}`}><Tag>只读</Tag><span className="mono">{repo}</span></span>)}</div>
 }
 
 function mono(value: unknown): ReactNode {

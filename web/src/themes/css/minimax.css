@@ -1,0 +1,290 @@
+/* ============================================================
+   MiniMax 主题令牌块 —— 自 minimax 设计语言誊抄。
+   --mm-* 变量按角色归一到超集名（--mm-canvas→--canvas、
+   --mm-text-body→--body 邻级、--mm-mono→--font-mono 等）；
+   品牌渐变/活力色/hero 圆角等无超集槽位的 token 以原名
+   追加在块尾，仅供块后 [data-theme="minimax"] 消费片段使用。
+   白画布 + 近黑主色药丸 + 灰阶文字链；整体扁平（面板无投影）。
+   ============================================================ */
+[data-theme="minimax"] {
+  /* ── Typography（DM Sans 近似系统栈，禁外部字体资源） ── */
+  --font-sans: "DM Sans", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, "SFMono-Regular", Menlo, monospace;
+  --font-display: "DM Sans", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（MiniMax 9 级圆角按角色入槽；hero/full 见块尾追加 token） ── */
+  --radius-xs: 3px;      /* 图标提示 focus 圆角（源字面 3px） */
+  --radius-soft: 9999px; /* 登录预览小色块 = 源 rounded.full 药丸 */
+  --radius-sm: 8px;      /* 内嵌小块 = --mm-radius-md */
+  --radius-md: 8px;      /* 行卡 = --mm-radius-md */
+  --radius-lg: 12px;     /* 指标卡 = --mm-radius-lg */
+  --radius-xl: 16px;     /* 面板 = --mm-radius-xl */
+  --radius-brand: 10px;  /* brand-mark / 登录 signal（源字面 10px） */
+  --radius-pill: 9999px; /* 迷你徽标 = --mm-radius-full */
+  --radius-panel: 32px;  /* 登录外壳 = --mm-radius-hero */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;         /* --mm-canvas 白画布 */
+  --canvas-soft: #f7f8fa;    /* --mm-surface */
+  --canvas-card: #ffffff;
+  --canvas-dark: #0a0a0a;    /* json 查看器 / sparkline 气泡底 = --mm-primary 黑 */
+  --surface-sidebar: #ffffff;
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f7f8fa;
+  --surface-matrix: #f7f8fa;
+  --surface-tint: #f7f8fa;
+  --surface-rail: #f7f8fa;
+  --surface-detail: #f7f8fa;
+  --surface-chip: #f7f8fa;
+  --surface-legacy: #f7f8fa;
+  --surface-draft: #f2f3f5;  /* --mm-surface-soft */
+  --surface-empty: #f7f8fa;
+  --surface-json-bar: #f2f3f5;
+  --tooltip-bg: #0a0a0a;
+
+  /* ── Ink & text ladder（charcoal→slate→steel→stone→muted 灰阶链） ── */
+  --ink: #0a0a0a;          /* --mm-ink */
+  --ink-strong: #0a0a0a;
+  --ink-display: #0a0a0a;
+  --ink-heading: #0a0a0a;
+  --ink-value: #0a0a0a;
+  --ink-repo: #0a0a0a;
+  --ink-step: #0a0a0a;
+  --ink-label-strong: #222222; /* --mm-text-body */
+  --ink-label: #0a0a0a;
+  --ink-row: #222222;
+  --ink-list: #45515e;         /* --mm-text-secondary */
+  --ink-data: #222222;
+  --ink-field: #222222;
+  --ink-rail: #45515e;
+  --ink-rail-value: #0a0a0a;
+  --ink-secret: #45515e;
+  --ink-chip: #45515e;
+  --body: #45515e;
+  --body-alt: #45515e;
+  --body-soft: #8e8e93;   /* 源占比卡样本行 = --mm-text-muted */
+  --mute: #8e8e93;        /* --mm-text-muted */
+  --mute-deep: #45515e;
+  --mute-inline: #8e8e93;
+  --mute-caption: #45515e;
+  --mute-intro: #45515e;
+  --mute-terse: #45515e;
+  --mute-quiet: #45515e;
+  --mute-soft: #8e8e93;
+  --mute-dim: #8e8e93;
+  --mute-draft: #45515e;
+  --mute-json: #8e8e93;
+  --mute-matrix: #8e8e93;
+  --faint: #8e8e93;
+  --faint-alt: #8e8e93;
+  --faint-soft: #8e8e93;
+  --faint-ghost: #8e8e93;
+  --faint-hint: #8e8e93;
+  --faint-meta: #8e8e93;
+  --faint-note: #8e8e93;
+  --faint-empty: #a8aab2; /* --mm-text-faint */
+  --on-dark: #ffffff;
+  --on-dark-soft: rgba(255, 255, 255, .88);
+  --on-dark-faint: #a8aab2;
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #0a0a0a;        /* 黑药丸 CTA = --mm-primary */
+  --primary-active: #222222; /* hover 压至 charcoal */
+  --on-primary: #ffffff;
+  --link: #1d4ed8;           /* --mm-blue-deep */
+  --link-hover: #17437d;     /* --mm-blue-700 */
+  --focus-ring: rgba(20, 86, 240, .28);
+  --primary-veil: #f7f8fa;   /* 源导航选中底 = --mm-surface（黑主色无彩色 veil） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #1ba673;
+  --success-halo: 0 0 0 4px rgba(27, 166, 115, .12);
+  --warning: #97650d;
+  --warning-soft: #fdf3d9;
+  --error: #d45656;
+  --error-deep: #bb3a3a;     /* --mm-danger-ink */
+  --info: #1d4ed8;           /* 源推导徽章 = --mm-blue-deep */
+  --info-soft: #bfdbfe;      /* --mm-blue-200 */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e5e7eb;       /* --mm-hairline */
+  --hairline-soft: #eaecf0;  /* --mm-hairline-soft */
+  --hairline-strong: #d4d7dc; /* 源表格滚动条 */
+  --hairline-card: #e5e7eb;
+  --hairline-inset: #eaecf0;
+  --hairline-mid: #eaecf0;
+  --hairline-rail: #eaecf0;
+  --hairline-codex: #eaecf0;
+  --hairline-detail: #eaecf0;
+  --hairline-json: #eaecf0;
+  --hairline-dashed: #e5e7eb;
+  --hairline-legacy: #e5e7eb;
+  --hairline-row: #eaecf0;
+  --hairline-draft: #e5e7eb;
+  --bar-value: #e5e7eb;      /* 源 value-list 左标线 = --mm-hairline */
+  --bar-matrix: #e5e7eb;
+  --bar-summary: #1456f0;    /* 源配置汇总左标线 = --mm-blue */
+  --bar-usage: var(--mm-gradient-signal); /* 源 token 轨道为渐变 */
+
+  /* ── Overlays & shadows（整体扁平，仅少量浮动面） ── */
+  --overlay-faint: rgba(0, 0, 0, .04);
+  --overlay-soft: #f7f8fa;   /* 源 hover 底 = --mm-surface */
+  --overlay-line: #eaecf0;
+  --overlay-medium: #f7f8fa;
+  --shadow-panel: none;      /* 扁平：面板无投影 */
+
+  /* ── brand-mark（黑底三支品牌渐变信号柱） ──── */
+  --brand-frame-bg: #0a0a0a;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 4px 14px rgba(0, 0, 0, .16);
+  --brand-bar-1: var(--mm-gradient-coral);
+  --brand-bar-2: var(--mm-gradient-magenta);
+  --brand-bar-3: var(--mm-gradient-blue);
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ff5530;      /* --mm-coral 珊瑚角标 */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: transparent; /* 源导航无指示条 */
+
+  /* ── 登录页（渐变产品卡：brand-blue→blue-mid→cyan + 白字） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e5e7eb;
+  --login-shell-shadow: 0 12px 16px -4px rgba(36, 36, 36, .08); /* --mm-shadow-4 */
+  --login-showcase-bg: var(--mm-gradient-blue);
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: transparent; /* 源展示面为渐变+氛围光，无网格；::before 覆写见块后片段 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .75);
+  --login-signal-bg: rgba(255, 255, 255, .14);
+  --login-signal-border: rgba(255, 255, 255, .38);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: rgba(255, 255, 255, .8);
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .85);
+  --login-preview-bg: rgba(255, 255, 255, .12);
+  --login-preview-border: rgba(255, 255, 255, .30);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .25);
+  --login-preview-dot: rgba(255, 255, 255, .75);
+  --login-preview-dot-soft: rgba(255, 255, 255, .4);
+  --login-preview-label: rgba(255, 255, 255, .8);
+  --login-preview-row-line: rgba(255, 255, 255, .18);
+  --login-preview-row-ink: rgba(255, 255, 255, .9);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .2);
+  --login-preview-bar: rgba(255, 255, 255, .45);
+  --login-foot: rgba(255, 255, 255, .72);
+  --login-card-kicker: #8e8e93;
+  --login-card-heading: #0a0a0a;
+  --login-card-copy: #45515e;
+  --login-notice-border: #91caff; /* 源 info Alert 走 antd 默认（colorInfo #1456f0） */
+  --login-notice-bg: #e6f4ff;
+  --login-notice-ink: #45515e;
+  --login-label: #45515e;
+  --login-input-border: #e5e7eb;
+  --login-input-border-hover: #5f5f5f; /* 源 = --mm-text-tertiary */
+  --login-primary: #0a0a0a;
+  --login-primary-active: #222222;
+
+  /* ── MiniMax 专属追加 token（品牌身份面专用，原名保留） ── */
+  --mm-coral: #ff5530;
+  --mm-magenta: #ea5ec1;
+  --mm-purple: #a855f7;
+  --mm-cyan: #3daeff;
+  --mm-blue: #1456f0;
+  --mm-blue-mid: #3b82f6;
+  --mm-blue-deep: #1d4ed8;
+  --mm-blue-700: #17437d;
+  --mm-blue-200: #bfdbfe;
+  --mm-success-bg: #e8ffea;
+  --mm-danger-bg: #fdecec;
+  --mm-gradient-coral: linear-gradient(135deg, #ff5530 0%, #ff8a5c 55%, #ea5ec1 100%);
+  --mm-gradient-magenta: linear-gradient(135deg, #ea5ec1 0%, #a855f7 100%);
+  --mm-gradient-purple: linear-gradient(135deg, #a855f7 0%, #ea5ec1 100%);
+  --mm-gradient-blue: linear-gradient(135deg, #1456f0 0%, #3b82f6 55%, #3daeff 100%);
+  --mm-gradient-signal: linear-gradient(90deg, #1456f0 0%, #3daeff 100%);
+  --radius-hero: 32px;
+  --radius-full: 9999px;
+}
+
+/* ============================================================
+   MiniMax 消费片段 —— 全部限定 [data-theme="minimax"] 作用域，
+   防止黑药丸/徽章/时间线覆写泄漏到其他主题（本主题最重要保真点）。
+   ============================================================ */
+
+/* 控件激活描边（源 text-input-focused：brand-blue-deep 描边） */
+[data-theme="minimax"] .ant-input.ant-input:focus,
+[data-theme="minimax"] .ant-input-affix-wrapper.ant-input-affix-wrapper-focused,
+[data-theme="minimax"] .ant-input-number.ant-input-number-focused,
+[data-theme="minimax"] .ant-select.ant-select-focused .ant-select-selector {
+  border-color: var(--mm-blue-deep) !important;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, .10) !important;
+}
+
+/* 黑药丸按钮：品牌签名（rounded.full），hover 压至 charcoal、active 纯黑 */
+[data-theme="minimax"] .ant-btn.ant-btn { border-radius: var(--radius-full); font-weight: 600; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary { background: var(--primary); box-shadow: none; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(:disabled):hover { background: var(--primary-active) !important; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(:disabled):active { background: #000000 !important; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:disabled { background: var(--hairline); color: var(--faint-empty); }
+[data-theme="minimax"] .ant-btn-default.ant-btn-default { color: var(--ink); border-color: var(--hairline); }
+[data-theme="minimax"] .ant-btn-default.ant-btn-default:not(:disabled):hover { color: var(--ink); border-color: var(--body-soft); background: var(--canvas-soft); }
+
+/* 分页激活项 = 黑药丸 */
+[data-theme="minimax"] .ant-pagination-item.ant-pagination-item-active { background: var(--primary); border-color: var(--primary); border-radius: var(--radius-full); }
+[data-theme="minimax"] .ant-pagination-item.ant-pagination-item-active a { color: var(--on-primary); }
+[data-theme="minimax"] .ant-pagination-options .ant-select-selector { border-radius: var(--radius-md) !important; }
+
+/* 分段选择器 = pill-tab 语言：激活项为黑药丸 */
+[data-theme="minimax"] .ant-segmented .ant-segmented-thumb { background: var(--primary); box-shadow: none; }
+[data-theme="minimax"] .ant-segmented .ant-segmented-item-selected { color: var(--on-primary); }
+[data-theme="minimax"] .ant-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover { color: var(--ink); }
+
+/* 通用标签 → MiniMax 徽章语言（rounded.full + 灰阶/状态色） */
+[data-theme="minimax"] .ant-tag { border-radius: var(--radius-full); }
+[data-theme="minimax"] .ant-tag .anticon + span { margin-inline-start: 4px; }
+[data-theme="minimax"] .ant-tag:not([class*="ant-tag-"]) { color: var(--body-soft); background: var(--canvas-soft); border-color: var(--hairline); }
+[data-theme="minimax"] .ant-tag-success { color: var(--success); background: var(--mm-success-bg); border-color: transparent; }
+[data-theme="minimax"] .ant-tag-processing { color: var(--mm-blue-deep); background: var(--mm-blue-200); border-color: transparent; }
+[data-theme="minimax"] .ant-tag-warning { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+[data-theme="minimax"] .ant-tag-error { color: var(--error-deep); background: var(--mm-danger-bg); border-color: transparent; }
+[data-theme="minimax"] .ant-tag-gold { color: var(--warning); background: var(--warning-soft); border-color: #f2e3bd; }
+[data-theme="minimax"] .ant-tag-blue { color: var(--mm-blue-deep); background: var(--mm-blue-200); border-color: #a9c8fb; }
+[data-theme="minimax"] .ant-tag-green { color: var(--success); background: var(--mm-success-bg); border-color: #c6ecd6; }
+[data-theme="minimax"] .ant-tag-red { color: var(--error-deep); background: var(--mm-danger-bg); border-color: #f3c6c6; }
+[data-theme="minimax"] .status-tag.ant-tag { padding-block: 1px; font-size: 12px; font-weight: 600; }
+
+/* Timeline 预设色对齐品牌令牌（antd 默认 blue/green/red/gray 与设计语言不符；
+   与 slots.ts 的 timeline/eventType preset 名（red/orange/green/blue）两层叠加） */
+[data-theme="minimax"] .ant-timeline-item-color-blue .ant-timeline-item-head { background-color: var(--mm-blue); border-color: var(--mm-blue); }
+[data-theme="minimax"] .ant-timeline-item-color-green .ant-timeline-item-head { background-color: var(--success); border-color: var(--success); }
+[data-theme="minimax"] .ant-timeline-item-color-red .ant-timeline-item-head { background-color: var(--error); border-color: var(--error); }
+[data-theme="minimax"] .ant-timeline-item-color-gray .ant-timeline-item-head { background-color: var(--faint-empty); border-color: var(--faint-empty); }
+
+/* brand-mark 装饰：黑底三支品牌渐变柱 + 珊瑚角标（3 个 span 保留） */
+[data-theme="minimax"] .brand-mark { padding: 7px 6px 6px; background: var(--brand-frame-bg); border: 0; border-radius: var(--radius-brand); box-shadow: var(--brand-frame-shadow); }
+[data-theme="minimax"] .brand-mark span { box-shadow: none; }
+[data-theme="minimax"] .brand-mark span:nth-child(1) { opacity: .85; }
+[data-theme="minimax"] .brand-mark::after { top: -3px; right: -3px; background: var(--mm-coral); border: 2px solid var(--canvas); box-shadow: none; }
+
+/* 登录展示面：--mm-gradient-blue 渐变面 + 青/品红氛围光（源 ::before 双 radial） */
+[data-theme="minimax"] .login-page__showcase::before {
+  opacity: .8;
+  background-image: radial-gradient(120% 90% at 88% -12%, rgba(61, 174, 255, .55), transparent 58%), radial-gradient(95% 75% at -5% 105%, rgba(234, 94, 193, .38), transparent 60%);
+  background-size: auto;
+  mask-image: none;
+}
+[data-theme="minimax"] .login-page__signal span:nth-child(1) { opacity: .75; }
+[data-theme="minimax"] .login-page__signal span:nth-child(2) { opacity: .9; }
+
+/* 占比卡左侧 3px 活力色标（源 ratio-card::before + accent 变体；
+   本仓 TSX 无 accent 类，按卡片序 1-4 复刻 success/blue/coral/purple 配色） */
+[data-theme="minimax"] .ratio-card { position: relative; overflow: hidden; }
+[data-theme="minimax"] .ratio-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--mm-blue); }
+[data-theme="minimax"] .automation-metric-grid .ratio-card:nth-child(1)::before { background: var(--success); }
+[data-theme="minimax"] .automation-metric-grid .ratio-card:nth-child(2)::before { background: var(--mm-blue); }
+[data-theme="minimax"] .automation-metric-grid .ratio-card:nth-child(3)::before { background: var(--mm-coral); }
+[data-theme="minimax"] .automation-metric-grid .ratio-card:nth-child(4)::before { background: var(--mm-purple); }

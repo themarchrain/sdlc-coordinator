@@ -1,0 +1,15 @@
+/* ============================================================
+   内置主题 CSS 入口：10 个 [data-theme] 令牌块。
+   引入顺序要求：本文件必须在 styles/index.css 之后被引入
+   （见 main.tsx），使各主题块以同特异性覆盖 :root 回退令牌。
+   ============================================================ */
+@import './default.css';
+@import './apple.css';
+@import './claude.css';
+@import './minimax.css';
+@import './supabase.css';
+@import './vercel.css';
+@import './xai.css';
+@import './cursor.css';
+@import './ollama.css';
+@import './voltagent.css';

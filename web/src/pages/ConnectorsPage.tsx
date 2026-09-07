@@ -50,7 +50,7 @@ export function ConnectorsPage() {
               { title: '类型', render: (_, row) => <span className="mono">{row.kind}</span> },
               { title: '健康', render: (_, row) => <div><StatusTag status={row.last_health_status} /><small className="table-secondary">{row.last_health_message || '尚未探测'}</small></div> },
               { title: '能力', render: (_, row) => <Space size={[4, 4]} wrap>{row.capabilities.length ? row.capabilities.map((item) => <Tag key={item}>{item}</Tag>) : <span className="muted-copy">等待探测</span>}</Space> },
-              { title: '状态', dataIndex: 'enabled', render: (value) => value ? <Tag color="blue">已启用</Tag> : <Tag>已禁用</Tag> },
+              { title: '状态', dataIndex: 'enabled', render: (value) => value ? <Tag color="processing">已启用</Tag> : <Tag>已禁用</Tag> },
               { title: '操作', width: 320, render: (_, row) => <Space>
                 <Button icon={<LoginOutlined />} onClick={() => setConfiguring(row)}>实例配置</Button>
                 <Button loading={busyID === row.connector_id} icon={<RadarChartOutlined />} onClick={() => probe(row)}>探测</Button>

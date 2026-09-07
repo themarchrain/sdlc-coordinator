@@ -6,6 +6,26 @@
     <meta name="theme-color" content="#152033" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Coordinator Control Room</title>
+    <script>
+      // 首屏防闪烁：React 加载前根据 localStorage 主题设置 data-theme。
+      // 与 src/themes/registry.ts、src/theme/ThemeProvider.tsx 同 key 同回退逻辑；
+      // id 清单无法共享（此处不可引入模块），新增主题时需同步维护。
+      ;(function () {
+        var THEME_KEY = 'coordinator-theme'
+        var VALID_THEMES = ['default', 'apple', 'claude', 'minimax', 'supabase', 'vercel', 'xai', 'cursor', 'ollama', 'voltagent']
+        var DARK_BACKGROUNDS = { xai: '#0a0a0a', voltagent: '#101010' }
+        var stored = null
+        try { stored = localStorage.getItem(THEME_KEY) } catch (error) { /* localStorage 不可用时回退 default */ }
+        var theme = VALID_THEMES.indexOf(stored) !== -1 ? stored : 'default'
+        document.documentElement.dataset.theme = theme
+        var darkBackground = DARK_BACKGROUNDS[theme]
+        if (darkBackground) {
+          document.documentElement.style.background = darkBackground
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', darkBackground)
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

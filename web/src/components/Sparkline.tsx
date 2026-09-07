@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 
+import { useTheme } from '../theme/useTheme'
+
 export interface SparklinePoint {
   date: string
   value: number | null
@@ -15,7 +17,9 @@ interface SparklineProps {
 const VIEW_W = 100
 const VIEW_H = 28
 
-export function Sparkline({ data, color = '#2f6bff', format, ariaLabel }: SparklineProps) {
+export function Sparkline({ data, color, format, ariaLabel }: SparklineProps) {
+  const { theme } = useTheme()
+  const lineColor = color ?? theme.slots.sparkline.default
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const points = useMemo(() => data.filter((point) => point.value != null), [data])
 
@@ -56,10 +60,10 @@ export function Sparkline({ data, color = '#2f6bff', format, ariaLabel }: Sparkl
         onMouseMove={onMove}
         onMouseLeave={() => setHoverIndex(null)}
       >
-        <polygon points={area} fill={color} opacity="0.08" />
-        <polyline points={line} fill="none" stroke={color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
-        {coords.map((point, index) => <circle key={point.date} cx={point.x} cy={point.y} r="1.2" fill={color} />)}
-        {hovered ? <line x1={hovered.x} y1="0" x2={hovered.x} y2={VIEW_H} stroke="#c5cfdd" strokeWidth="0.5" vectorEffect="non-scaling-stroke" strokeDasharray="2 2" /> : null}
+        <polygon points={area} fill={lineColor} opacity="0.08" />
+        <polyline points={line} fill="none" stroke={lineColor} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+        {coords.map((point, index) => <circle key={point.date} cx={point.x} cy={point.y} r="1.2" fill={lineColor} />)}
+        {hovered ? <line x1={hovered.x} y1="0" x2={hovered.x} y2={VIEW_H} stroke={theme.slots.sparkline.hoverGrid} strokeWidth="0.5" vectorEffect="non-scaling-stroke" strokeDasharray="2 2" /> : null}
       </svg>
       {hovered ? (
         <div className="sparkline__tip" style={{ left: `${tipLeft}%` }}>

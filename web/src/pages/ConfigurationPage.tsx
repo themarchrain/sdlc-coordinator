@@ -33,6 +33,7 @@ import type {
 } from '../api/types'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
+import { AppearancePanel } from '../components/AppearancePanel'
 import { buildRuntimePeopleFields, loadAllPeople, personCodeHostIdentity, personLabel, resolveConfigurationPeople, type ConfigurationPeopleSelection } from './configurationPeople'
 
 type ConfigurationFormValues = Omit<EditableRuntimeConfiguration, 'agent_runner'> & {
@@ -135,6 +136,8 @@ export function ConfigurationPage() {
 
     {status.mode === 'configuration_error' ? <Alert className="configuration-alert" type="error" showIcon message="已保存配置无法装配" description={status.configuration_error || '请修正配置并重新启用。'} /> : null}
     {restarting ? <Alert className="configuration-alert" type="info" showIcon icon={<ReloadOutlined spin />} message="服务正在重启" description="页面会持续检查服务状态。Docker 部署会自动拉起；本地 go run 需要手工重新启动。" /> : null}
+
+    <AppearancePanel />
 
     <section className="surface-panel configuration-shell">
       <div className="configuration-status-rail">

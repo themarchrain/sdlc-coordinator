@@ -1,0 +1,282 @@
+/* ============================================================
+   apple 主题令牌块 —— 自 apple 设计语言誊抄。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取 apple 源中同一选择器的有效值（apple 用 --color-* 前缀命名）。
+   值来源速查：
+     --color-canvas #ffffff → 卡片面 --canvas-card
+     --color-canvas-parchment #f5f5f7 → 画布/嵌面 --canvas(-soft)
+     --color-hairline #e0e0e0 → 卡片外发丝线
+     --color-divider-soft #f0f0f0 → 内部分隔线
+     --color-surface-chip #d2d2d7 → 虚线/滚动条等强调发丝线
+     --color-ink #1d1d1f / ink-muted-80 #333333 / ink-muted-48 #7a7a7a → 文字三阶
+     --color-primary #0066cc（Action Blue 唯一交互色）
+   骨架表达不了的部分（黑侧栏、白色玻璃 brand-mark、深色 tile 面、
+   毛玻璃 backdrop、系统按压态等）见块后的 [data-theme="apple"] 专属片段。
+   ============================================================ */
+[data-theme="apple"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "Segoe UI Mono", monospace;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius ───────────────────────────────── */
+  /* apple 刻度 xs 5 / sm 8 / md 11 / lg 18 / pill 9999，向超集九档归并 */
+  --radius-xs: 3px;      /* term-hint focus（apple 源字面值） */
+  --radius-soft: 9999px; /* 登录预览 chip = pill */
+  --radius-sm: 8px;      /* 行卡 / sparkline 提示 */
+  --radius-md: 8px;      /* repo / test / intent 行卡 */
+  --radius-lg: 11px;     /* 指标卡 / run-summary / audit-json */
+  --radius-xl: 11px;     /* 面板 / json / 登录预览（surface-panel 见片段补 18px） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal */
+  --radius-pill: 9999px; /* 迷你徽标 */
+  --radius-panel: 18px;  /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f5f5f7;
+  --canvas-soft: #f5f5f7;
+  --canvas-card: #ffffff;
+  --canvas-dark: #272729;
+  --surface-sidebar: #000000;
+  --surface-bar: rgba(245, 245, 247, .8);
+  --surface-inset: #f5f5f7;
+  --surface-matrix: #f5f5f7;
+  --surface-tint: #fafafc;
+  --surface-rail: #f5f5f7;
+  --surface-detail: #f5f5f7;
+  --surface-chip: #fafafc;
+  --surface-legacy: #fafafc;
+  --surface-draft: #f5f5f7;
+  --surface-empty: #fafafc;
+  --surface-json-bar: #f5f5f7;
+  --tooltip-bg: #1d1d1f;
+
+  /* ── Ink & text ladder（坍缩为近黑/80/48 三阶） ── */
+  --ink: #1d1d1f;
+  --ink-strong: #1d1d1f;
+  --ink-display: #1d1d1f;
+  --ink-heading: #1d1d1f;
+  --ink-value: #1d1d1f;
+  --ink-repo: #1d1d1f;
+  --ink-step: #1d1d1f;
+  --ink-label-strong: #1d1d1f;
+  --ink-label: #1d1d1f;
+  --ink-row: #1d1d1f;
+  --ink-list: #333333;
+  --ink-data: #1d1d1f;
+  --ink-field: #1d1d1f;
+  --ink-rail: #333333;
+  --ink-rail-value: #1d1d1f;
+  --ink-secret: #333333;
+  --ink-chip: #333333;
+  --body: #333333;
+  --body-alt: #7a7a7a;
+  --body-soft: #7a7a7a;
+  --mute: #7a7a7a;
+  --mute-deep: #333333;
+  --mute-inline: #7a7a7a;
+  --mute-caption: #7a7a7a;
+  --mute-intro: #333333;
+  --mute-terse: #333333;
+  --mute-quiet: #333333;
+  --mute-soft: #7a7a7a;
+  --mute-dim: #7a7a7a;
+  --mute-draft: #333333;
+  --mute-json: #7a7a7a;
+  --mute-matrix: #7a7a7a;
+  --faint: #7a7a7a;
+  --faint-alt: #7a7a7a;
+  --faint-soft: #7a7a7a;
+  --faint-ghost: #7a7a7a;
+  --faint-hint: #7a7a7a;
+  --faint-meta: #7a7a7a;
+  --faint-note: #7a7a7a;
+  --faint-empty: #7a7a7a;
+  --on-dark: #ffffff;
+  --on-dark-soft: #cccccc;
+  --on-dark-faint: #cccccc;
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #0066cc;
+  --primary-active: #0071e3;
+  --on-primary: #ffffff;
+  --link: #0066cc;
+  --link-hover: #0066cc;
+  --focus-ring: #0071e3;
+  --primary-veil: rgba(0, 102, 204, .1);
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #0066cc;    /* context-dot 是唯一消费者，apple 画成 Action Blue */
+  --success-halo: none;  /* apple 的 dot 无 halo */
+  --warning: #b25000;
+  --warning-soft: rgba(255, 149, 0, .12);
+  --error: #ff3b30;
+  --error-deep: #ff3b30;
+  --info: #0066cc;
+  --info-soft: rgba(0, 102, 204, .1);
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e0e0e0;
+  --hairline-soft: #f0f0f0;
+  --hairline-strong: #d2d2d7;
+  --hairline-card: #e0e0e0;
+  --hairline-inset: #f0f0f0;
+  --hairline-mid: #f0f0f0;
+  --hairline-rail: #f0f0f0;
+  --hairline-codex: #f0f0f0;
+  --hairline-detail: transparent;
+  --hairline-json: #e0e0e0;
+  --hairline-dashed: #d2d2d7;
+  --hairline-legacy: #d2d2d7;
+  --hairline-row: #f0f0f0;
+  --hairline-draft: #e0e0e0;
+  --bar-value: #f0f0f0;      /* apple value-list 无左条，见片段改全边框 */
+  --bar-matrix: transparent;  /* apple metric-matrix 无左条 */
+  --bar-summary: transparent; /* apple summary 卡无左条 */
+  --bar-usage: #0066cc;
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(0, 0, 0, .08);
+  --overlay-soft: rgba(0, 0, 0, .04);
+  --overlay-line: rgba(0, 0, 0, .08);
+  --overlay-medium: rgba(0, 0, 0, .06);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* chrome 无阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（白色玻璃条，形态细节见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: rgba(255, 255, 255, .28);
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffffff;
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ffffff;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: transparent; /* apple 无指示条，见片段 */
+
+  /* ── 登录页（珍珠灰画布 + 白卡 + 深色 tile 展示面） ── */
+  --login-bg: #f5f5f7;
+  --login-shell-border: #e0e0e0;
+  --login-shell-shadow: none;
+  --login-showcase-bg: #272729;
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05); /* apple 无网格，见片段隐藏 */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #cccccc;
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: #cccccc;
+  --login-heading: #ffffff;
+  --login-copy: #cccccc;
+  --login-preview-bg: #ffffff;
+  --login-preview-border: #e0e0e0;
+  --login-preview-shadow: none;
+  --login-preview-divider: #f0f0f0;
+  --login-preview-dot: #0066cc;
+  --login-preview-dot-soft: #e0e0e0;
+  --login-preview-label: #7a7a7a;
+  --login-preview-row-line: #f0f0f0;
+  --login-preview-row-ink: #333333;
+  --login-preview-chip-ink: #0066cc;
+  --login-preview-chip-bg: rgba(0, 102, 204, .08);
+  --login-preview-bar: #f0f0f0;
+  --login-foot: #cccccc;
+  --login-card-kicker: #7a7a7a;
+  --login-card-heading: #1d1d1f;
+  --login-card-copy: #7a7a7a;
+  --login-notice-border: rgba(0, 102, 204, .2);
+  --login-notice-bg: rgba(0, 102, 204, .06);
+  --login-notice-ink: #1d1d1f;
+  --login-label: #333333;
+  --login-input-border: #d2d2d7;
+  --login-input-border-hover: #0071e3;
+  --login-primary: #0066cc;
+  --login-primary-active: #0071e3;
+
+  /* ── Apple 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --color-primary-focus: #0071e3;             /* apple 源 --color-primary-focus */
+  --color-primary-on-dark: #2997ff;           /* 黑侧栏当前项图标 */
+  --color-surface-tile-1: #272729;            /* 深色 tile 展示面（--canvas-dark 同源） */
+  --color-surface-tile-2: #2a2a2c;            /* tile 三阶备用 */
+  --color-surface-tile-3: #252527;            /* tile 三阶备用 */
+  --backdrop-chrome: saturate(180%) blur(20px); /* 毛玻璃条基线 */
+  --shadow-product: 3px 5px 30px rgba(0, 0, 0, .22); /* 系统唯一投影，仅供产品图像 */
+}
+
+/* ============================================================
+   apple 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="apple"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级微交互 / 选区 / 焦点 ── */
+[data-theme="apple"] .ant-btn:not(:disabled):active { transform: scale(.95); }
+[data-theme="apple"] a:hover { text-decoration: underline; }
+[data-theme="apple"] a:active { opacity: .88; }
+[data-theme="apple"] ::selection { background: rgba(0, 102, 204, .16); }
+[data-theme="apple"] :focus-visible { outline-width: 2px; }
+[data-theme="apple"] body { -webkit-font-smoothing: antialiased; }
+
+/* ── 系统滚动条：细、pill、chip 灰 ── */
+[data-theme="apple"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="apple"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: var(--hairline-strong); background-clip: padding-box; }
+[data-theme="apple"] ::-webkit-scrollbar-thumb:hover { background: #b8b8bd; background-clip: padding-box; }
+[data-theme="apple"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="apple"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 黑色 global-nav 侧栏：文字/悬停/当前项换深色面板色系 ── */
+[data-theme="apple"] .control-sidebar { border-right: 0; color: #cccccc; }
+[data-theme="apple"] .brand-block strong { color: #ffffff; }
+[data-theme="apple"] .brand-block span,
+[data-theme="apple"] .nav-caption,
+[data-theme="apple"] .nav-group-title,
+[data-theme="apple"] .workspace-nav a,
+[data-theme="apple"] .workspace-nav .anticon,
+[data-theme="apple"] .collapse-toggle { color: #cccccc; }
+[data-theme="apple"] .nav-caption, [data-theme="apple"] .nav-group-title { font: 400 11px/1.2 var(--font-sans); letter-spacing: .12em; }
+[data-theme="apple"] .workspace-nav a:hover { color: #ffffff; background: rgba(255, 255, 255, .08); text-decoration: none; }
+[data-theme="apple"] .workspace-nav a[aria-current="page"] { color: #ffffff; background: rgba(255, 255, 255, .13); }
+[data-theme="apple"] .workspace-nav a[aria-current="page"] .anticon { color: var(--color-primary-on-dark); }
+[data-theme="apple"] .workspace-nav a[aria-current="page"]::before { display: none; }
+[data-theme="apple"] .nav-group-title::before { background: rgba(255, 255, 255, .14); }
+[data-theme="apple"] .collapse-toggle { background: transparent; border-top: 1px solid rgba(255, 255, 255, .14); }
+[data-theme="apple"] .collapse-toggle:hover { color: #ffffff; background: rgba(255, 255, 255, .08); }
+
+/* ── brand-mark：极简单色白玻璃条（3 span 保留可见，无渐变无 dot） ── */
+[data-theme="apple"] .brand-mark { width: 30px; height: 30px; padding: 7px 6px; background: transparent; border: 1px solid rgba(255, 255, 255, .28); border-radius: 8px; box-shadow: none; }
+[data-theme="apple"] .brand-mark span { width: 4px; border-radius: 2px; background: #ffffff; box-shadow: none; }
+[data-theme="apple"] .brand-mark span:nth-child(1) { opacity: .55; }
+[data-theme="apple"] .brand-mark span:nth-child(3) { opacity: .78; }
+[data-theme="apple"] .brand-mark::after { display: none; }
+
+/* ── context bar：珍珠灰毛玻璃 sub-nav ── */
+[data-theme="apple"] .context-bar { min-height: 52px; padding: 8px 30px; backdrop-filter: var(--backdrop-chrome); -webkit-backdrop-filter: var(--backdrop-chrome); }
+[data-theme="apple"] .repository-switcher .ant-select-selector { border-radius: 9999px !important; }
+
+/* ── 页头 eyebrow / 面板 kicker：apple 用 48% 灰而非主色 ── */
+[data-theme="apple"] .page-heading__eyebrow,
+[data-theme="apple"] .panel-kicker,
+[data-theme="apple"] .section-label { color: #7a7a7a; }
+
+/* ── 面板签名圆角 18px（超集 radius-xl 归并为 11 的补正） ── */
+[data-theme="apple"] .surface-panel { border-radius: 18px; }
+
+/* ── 表头：透明底 + 发丝线（antd Table 覆写的 CSS 侧配合） ── */
+[data-theme="apple"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); }
+
+/* ── value-list：apple 是全边框小卡而非左色条 ── */
+[data-theme="apple"] .value-list li { border: 1px solid var(--hairline-soft); border-left-width: 1px; border-radius: 5px; }
+
+/* ── 登录 showcase：深色 tile-1 面，无网格底纹；signal 同 brand-mark 玻璃条 ── */
+[data-theme="apple"] .login-page__showcase::before { display: none; }
+[data-theme="apple"] .login-page__signal { width: 30px; height: 30px; gap: 3px; padding: 7px 6px; background: transparent; border: 1px solid rgba(255, 255, 255, .28); border-radius: 8px; box-shadow: none; }
+[data-theme="apple"] .login-page__signal span { width: 4px; border-radius: 2px; background: #ffffff; }
+[data-theme="apple"] .login-page__signal span:nth-child(1) { height: 45%; opacity: .55; }
+[data-theme="apple"] .login-page__signal span:nth-child(2) { height: 100%; }
+[data-theme="apple"] .login-page__signal span:nth-child(3) { height: 70%; opacity: .78; }
+[data-theme="apple"] .login-page__showcase-copy h2 { font-size: 32px; }
+[data-theme="apple"] .login-page__card .ant-input, [data-theme="apple"] .login-page__card .ant-input-affix-wrapper { min-height: 42px; }
+[data-theme="apple"] .login-page__card .ant-btn-primary { height: 44px; font-size: 15px; }

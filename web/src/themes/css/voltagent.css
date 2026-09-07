@@ -1,0 +1,325 @@
+/* ============================================================
+   voltagent 主题令牌块 —— 自 voltagent 设计语言 :root 誊抄。
+   Voltagent 设计语言（暗色，无亮色对应物）：
+   - 唯一暗面画布 #101010（单连续暗面，卡片与画布同色，只靠发丝线分界）；
+     嵌面 / 输入底 / 表头 = canvas-soft #1a1a1a
+   - 发丝线 #3d3a39 是全部海拔体系（1px solid，卡片无投影）
+   - 文字四阶：ink-strong #ffffff / ink #f2f2f2 / body #bdbdbd / mute #8b949e
+   - 唯一品牌色电光绿 #00d992（仅 CTA / 状态 pill / live 指示 / 闪电字形），
+     on-primary 近黑 #101010（绿底黑字）；primary-soft #2fd6a1（ghost/focus）、
+     primary-deep #10b981（正文链接 / 成功）——绿绝不当正文填色
+   - 语义暗色适配：success #10b981 / warning #fbbf24 / error #f87171
+   - 圆角分工：按钮/输入 6、卡片 8、pill 9999（只给内联状态 Tag）
+   - ⚠ 源 --hairline-soft #b8b3b0 是亮线（文档收全、暗面未消费），与超集
+     --hairline-soft（更浅的内部分隔线）语义相反，严禁按名字并入：
+     超集槽按角色填——内部分隔线一律 hairline #3d3a39，亮线值落位
+     --hairline-strong（表格滚动条按源消费 hairline，见片段钉回）
+   骨架表达不了的形态（brand-mark 闪电、虚线节奏线、hover 微光、.ant-tag
+   药丸、eyebrow 排版、暗色 selection/focus 等）见块后专属片段。
+   ============================================================ */
+[data-theme="voltagent"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'Inter', system-ui, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --font-display: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', monospace; /* 源数字一律 var(--font-mono) */
+
+  /* ── Radius（源分工：按钮/输入 6px、卡片 8px、pill 9999px、term-hint 3px、内嵌小块 4px） ── */
+  --radius-xs: 3px;      /* term-hint focus（源字面值） */
+  --radius-soft: 9999px; /* 登录预览 chip = pill */
+  --radius-sm: 6px;      /* sparkline 提示/空态（detail 格见片段改 4px） */
+  --radius-md: 6px;      /* repo / test / intent / error-detail 行卡 */
+  --radius-lg: 8px;      /* 指标卡 / run-summary / detail-section / audit-json */
+  --radius-xl: 8px;      /* 面板 / json / 登录预览 */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal */
+  --radius-pill: 9999px; /* 状态 Tag / inferred-mark / sample-warning */
+  --radius-panel: 8px;   /* 登录外壳 */
+
+  /* ── Canvas & surfaces（卡片与画布同色，嵌面走 canvas-soft） ── */
+  --canvas: #101010;
+  --canvas-soft: #1a1a1a;
+  --canvas-card: #101010;        /* 源 surface-panel / 行卡底 = var(--canvas) */
+  --canvas-dark: #1a1a1a;        /* json-viewer pre = 源 canvas-soft */
+  --surface-sidebar: #101010;    /* 源侧栏与画布同底 */
+  --surface-bar: rgba(16, 16, 16, .92);
+  --surface-inset: #1a1a1a;      /* duration-values = canvas-soft（audit-json summary 见片段改 canvas） */
+  --surface-matrix: #1a1a1a;     /* metric-matrix 瓦片 = canvas-soft */
+  --surface-tint: #1a1a1a;       /* 表格行 hover = canvas-soft */
+  --surface-rail: #1a1a1a;       /* configuration 状态栏 = canvas-soft */
+  --surface-detail: #1a1a1a;     /* detail-section = canvas-soft */
+  --surface-chip: #101010;       /* people-identity-row = canvas */
+  --surface-legacy: #101010;     /* legacy-values = canvas */
+  --surface-draft: #1a1a1a;      /* draft-tag = canvas-soft */
+  --surface-empty: #1a1a1a;      /* sparkline 空态 = canvas-soft */
+  --surface-json-bar: #101010;   /* json-viewer bar = canvas */
+  --tooltip-bg: #1a1a1a;         /* sparkline tip = canvas-soft（描边见片段） */
+
+  /* ── Ink & text ladder（坍缩为 ink-strong / ink / body / mute 四阶） ── */
+  --ink: #f2f2f2;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;        /* 表体/错误详情见片段改 ink 阶 */
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #bdbdbd;           /* value-list li = 源 --body */
+  --ink-data: #f2f2f2;           /* detail dd = 源 --ink */
+  --ink-field: #bdbdbd;
+  --ink-rail: #bdbdbd;           /* 状态栏容器 = 源 --body */
+  --ink-rail-value: #ffffff;
+  --ink-secret: #bdbdbd;
+  --ink-chip: #bdbdbd;           /* duration-values = 源 --body */
+  --body: #bdbdbd;
+  --body-alt: #bdbdbd;
+  --body-soft: #8b949e;          /* ratio-card__sample = 源 --mute */
+  --mute: #8b949e;
+  --mute-deep: #8b949e;          /* 业务卡/占比卡标题 = 源 --mute（顶栏见片段改 body） */
+  --mute-inline: #8b949e;
+  --mute-caption: #8b949e;
+  --mute-intro: #bdbdbd;         /* 步骤导语 = 源 --body */
+  --mute-terse: #8b949e;
+  --mute-quiet: #8b949e;         /* 表头/checkbox = 源 --mute（test-result p 见片段改 body） */
+  --mute-soft: #8b949e;
+  --mute-dim: #8b949e;
+  --mute-draft: #8b949e;
+  --mute-json: #8b949e;
+  --mute-matrix: #8b949e;
+  --faint: #8b949e;
+  --faint-alt: #8b949e;
+  --faint-soft: #8b949e;
+  --faint-ghost: #8b949e;
+  --faint-hint: #8b949e;
+  --faint-meta: #8b949e;
+  --faint-note: #8b949e;
+  --faint-empty: #8b949e;
+  --on-dark: #f2f2f2;            /* sparkline tip 文字 = 源 --ink */
+  --on-dark-soft: #f5f6f7;       /* json-viewer pre = 源 --canvas-text-soft */
+  --on-dark-faint: #8b949e;      /* sparkline tip 附注 = 源 --mute */
+
+  /* ── Primary / link / focus（电光绿只给 CTA / pill / live） ── */
+  --primary: #00d992;
+  --primary-active: #10b981;     /* CSS 侧无消费者，取深绿与 antd 按压态方向一致 */
+  --on-primary: #101010;         /* 绿底黑字 */
+  --link: #10b981;               /* 正文链接 = 源 --primary-deep（对比度 7.5:1） */
+  --link-hover: #2fd6a1;         /* 源 --primary-soft */
+  --focus-ring: #2fd6a1;         /* focus 指示 = 源 --primary-soft（2px 细环见片段） */
+  --primary-veil: #1a1a1a;       /* 当前导航项底 = 源 canvas-soft（文字见片段改 ink-strong） */
+
+  /* ── Semantic（暗色适配；context-dot 是 --success 唯一消费者 = live 绿） ── */
+  --success: #00d992;
+  --success-halo: 0 0 0 4px rgba(0, 217, 146, .14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, .1);
+  --error: #f87171;
+  --error-deep: #f87171;
+  --info: #2fd6a1;               /* inferred-mark ghost 文字 = 源 --primary-soft */
+  --info-soft: rgba(0, 217, 146, .08);
+
+  /* ── Hairlines & bars（发丝线承担全部层级；绿只给 live 进度条） ── */
+  --hairline: #3d3a39;
+  --hairline-soft: #3d3a39;      /* 超集角色 = 内部分隔线；源内分隔线一律 hairline（严禁并入源亮线 #b8b3b0） */
+  --hairline-strong: #b8b3b0;    /* 源 --hairline-soft 亮线按角色落位（暗面未消费；表格滚动条按源钉回 hairline，见片段） */
+  --hairline-card: #3d3a39;
+  --hairline-inset: #3d3a39;
+  --hairline-mid: #3d3a39;       /* duration/tick 分区线见片段改品牌虚线 */
+  --hairline-rail: #3d3a39;
+  --hairline-codex: #3d3a39;
+  --hairline-detail: #3d3a39;
+  --hairline-json: #3d3a39;
+  --hairline-dashed: #3d3a39;    /* detail-empty 虚线 = 源 hairline */
+  --hairline-legacy: #3d3a39;    /* legacy-values 虚线 = 源 hairline */
+  --hairline-row: #3d3a39;
+  --hairline-draft: #3d3a39;
+  --bar-value: #3d3a39;          /* value-list 左条 = 源 hairline */
+  --bar-matrix: #3d3a39;         /* metric-matrix 左条 = 源 hairline */
+  --bar-summary: #3d3a39;        /* summary 卡左条 = 源 hairline */
+  --bar-usage: #00d992;          /* codex Token 进度 = live 绿 */
+
+  /* ── Overlays & shadows（发丝线承担层级；投影仅登录外壳 Level 3 一处） ── */
+  --overlay-faint: rgba(255, 255, 255, .04);
+  --overlay-soft: rgba(255, 255, 255, .04);    /* 导航 hover 白 4% 填充 */
+  --overlay-line: #3d3a39;                     /* nav 分组线 = 源 hairline */
+  --overlay-medium: rgba(255, 255, 255, .08);  /* collapse-toggle hover */
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0);  /* 卡片无投影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（形态见片段：canvas-soft 卡口 + 电光绿 clip-path 闪电，span 1/3 隐藏） ── */
+  --brand-frame-bg: #1a1a1a;
+  --brand-frame-border: #3d3a39;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #00d992;        /* 惰性值：span 已隐藏 */
+  --brand-bar-2: #00d992;        /* nth-2 在片段中重绘为闪电 */
+  --brand-bar-3: #00d992;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #00d992;          /* 惰性值：::after 已隐藏 */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #00d992;      /* 当前导航 3px 电光绿左标 */
+
+  /* ── 登录页（暗面 + 绿 code-chip eyebrow + Level 3 重投影外壳） ── */
+  --login-bg: #101010;
+  --login-shell-border: #3d3a39;
+  --login-shell-shadow: var(--shadow-modal); /* 品牌唯一 Level 3 海拔 */
+  --login-showcase-bg: #1a1a1a;        /* showcase 侧 = canvas-soft */
+  --login-showcase-ink: #bdbdbd;
+  --login-grid-line: rgba(255, 255, 255, .05); /* 白 5% 网格（opacity .5 见片段） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #8b949e;
+  --login-signal-bg: #101010;          /* signal = brand-mark 同款闪电（见片段） */
+  --login-signal-border: #3d3a39;
+  --login-signal-shadow: none;
+  --login-signal-bar: #00d992;         /* 惰性值：仅 nth-2 闪电可见 */
+  --login-kicker: #2fd6a1;             /* 绿 code-chip 时刻 = 源 --primary-soft */
+  --login-heading: #ffffff;
+  --login-copy: #bdbdbd;
+  --login-preview-bg: #101010;         /* code-mockup：canvas 底 + 发丝线 */
+  --login-preview-border: #3d3a39;
+  --login-preview-shadow: none;
+  --login-preview-divider: #3d3a39;
+  --login-preview-dot: #3d3a39;        /* 源圆点 = hairline */
+  --login-preview-dot-soft: rgba(255, 255, 255, .18);
+  --login-preview-label: #8b949e;
+  --login-preview-row-line: #3d3a39;
+  --login-preview-row-ink: #bdbdbd;
+  --login-preview-chip-ink: #2fd6a1;   /* em 状态片 = 绿 ghost 药丸（描边见片段） */
+  --login-preview-chip-bg: rgba(0, 217, 146, .08);
+  --login-preview-bar: #3d3a39;
+  --login-foot: #8b949e;
+  --login-card-kicker: #2fd6a1;        /* 与 showcase kicker 同款绿 code-chip */
+  --login-card-heading: #ffffff;
+  --login-card-copy: #bdbdbd;
+  --login-notice-border: #3d3a39;      /* 源未覆写 antd Alert，取主题面近似 */
+  --login-notice-bg: #1a1a1a;
+  --login-notice-ink: #bdbdbd;
+  --login-label: #bdbdbd;
+  --login-input-border: #3d3a39;       /* 源走 antd colorBorder */
+  --login-input-border-hover: #2fd6a1; /* 源走 antd 派生，按品牌 focus = primary-soft 对齐 */
+  --login-primary: #00d992;            /* CTA 交还 antd primary（绿底黑字） */
+  --login-primary-active: #10b981;
+
+  /* ── Voltagent 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --primary-soft: #2fd6a1;      /* 品牌绿 ghost / focus 阶 */
+  --primary-deep: #10b981;      /* 品牌绿深阶（链接 / 成功） */
+  --divider-dashed: rgba(79, 93, 117, 0.4);         /* 品牌唯一虚线节奏线 */
+  --glow-hover: 0 0 15px rgba(92, 88, 85, 0.2);     /* Level 2 微光：brand-mark / signal hover */
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(148, 163, 184, 0.1) inset; /* Level 3 重投影 */
+}
+
+/* ============================================================
+   voltagent 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="voltagent"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区 / 焦点（绿 25% 选中洗；2px primary-soft 细环，非骨架 3px 蓝晕） ── */
+[data-theme="voltagent"] ::selection { background: rgba(0, 217, 146, .25); color: #ffffff; }
+[data-theme="voltagent"] :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* ── .ant-tag 药丸：9999px 只给内联状态 Tag（圆角分工） ── */
+[data-theme="voltagent"] .ant-tag { border-radius: 9999px; }
+
+/* ── eyebrow 签名标签：Inter 600 uppercase .18em（非骨架 mono 主色小标） ── */
+[data-theme="voltagent"] .page-heading__eyebrow,
+[data-theme="voltagent"] .panel-kicker,
+[data-theme="voltagent"] .section-label { color: #8b949e; font-family: var(--font-sans); font-size: 11px; font-weight: 600; line-height: 1.45; letter-spacing: .18em; text-transform: uppercase; }
+[data-theme="voltagent"] .context-heading-slot .page-heading__eyebrow { color: #ffffff; font-weight: 600; text-transform: none; }
+[data-theme="voltagent"] .nav-caption,
+[data-theme="voltagent"] .nav-group-title { font: 600 10px/1.2 var(--font-sans); letter-spacing: .18em; }
+
+/* ── 外壳补正：brand / 顶栏文字阶、导航 6px 方角、当前项 ink-strong 文字（绿只作图标与左标） ── */
+[data-theme="voltagent"] .brand-block strong { color: #ffffff; font-weight: 600; }
+[data-theme="voltagent"] .brand-block span { font: 500 10px/1.2 var(--font-mono); letter-spacing: .18em; }
+[data-theme="voltagent"] .context-bar { color: #bdbdbd; }
+[data-theme="voltagent"] .repository-switcher { color: #ffffff; }
+[data-theme="voltagent"] .collapse-toggle:hover { color: #f2f2f2; }
+[data-theme="voltagent"] .workspace-nav a { border-radius: 6px; }
+[data-theme="voltagent"] .workspace-nav a[aria-current="page"] { color: #ffffff; }
+
+/* ── brand-mark：Voltagent 闪电字形——canvas-soft 底 + 发丝线卡口 + 电光绿 clip-path
+      （span 1/3 隐藏、无光点）；hover 走 Level 2 微光 ── */
+[data-theme="voltagent"] .brand-mark { display: flex; align-items: center; justify-content: center; padding: 0; gap: 0; background: var(--brand-frame-bg); box-shadow: none; }
+[data-theme="voltagent"] .brand-mark:hover { box-shadow: var(--glow-hover); }
+[data-theme="voltagent"] .brand-mark span { display: none; }
+[data-theme="voltagent"] .brand-mark span:nth-child(2) { display: block; width: 15px; height: 19px; margin: 0; border-radius: 0; background: var(--primary); box-shadow: none; clip-path: polygon(60% 0, 20% 55%, 45% 55%, 40% 100%, 80% 40%, 55% 40%); }
+[data-theme="voltagent"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="voltagent"] .brand-mark span:nth-child(2) { width: 12px; height: 15px; }
+}
+
+/* ── 表格：表头 eyebrow 排版（600/uppercase/.18em）；表体与错误详情 = ink 阶；
+      滚动条按源消费 hairline（--hairline-strong 承载的是源亮线 #b8b3b0） ── */
+[data-theme="voltagent"] .admin-table .ant-table { color: #f2f2f2; }
+[data-theme="voltagent"] .admin-table .ant-table-thead > tr > th { font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+[data-theme="voltagent"] .admin-table .ant-table-content { scrollbar-color: #3d3a39 transparent; }
+[data-theme="voltagent"] .admin-table .ant-table-content::-webkit-scrollbar-thumb { background: #3d3a39; background-clip: padding-box; }
+[data-theme="voltagent"] .error-detail { color: #f2f2f2; }
+
+/* ── 面板 / 数值排版：16px 标题、mono 数字一律 600（骨架 650/700）、展示层 400 ── */
+[data-theme="voltagent"] .panel-heading h2 { color: #ffffff; font-size: 16px; letter-spacing: -.2px; }
+[data-theme="voltagent"] .business-outcomes__card > strong,
+[data-theme="voltagent"] .ratio-card > strong,
+[data-theme="voltagent"] .metric-matrix strong,
+[data-theme="voltagent"] .codex-metric > strong,
+[data-theme="voltagent"] .codex-token-ledger strong,
+[data-theme="voltagent"] .configuration-status-rail > div > strong,
+[data-theme="voltagent"] .configuration-summary-grid strong { font-weight: 600; }
+[data-theme="voltagent"] .business-outcomes__card > span { font-size: 11px; font-weight: 600; letter-spacing: .1em; }
+[data-theme="voltagent"] .ratio-card__title,
+[data-theme="voltagent"] .value-list__title,
+[data-theme="voltagent"] .connector-name,
+[data-theme="voltagent"] .inferred-mark,
+[data-theme="voltagent"] .sample-warning { font-weight: 600; }
+[data-theme="voltagent"] .detail-section h3,
+[data-theme="voltagent"] .connector-configuration-step__heading h3 { font-weight: 600; }
+[data-theme="voltagent"] .configuration-step-copy h2,
+[data-theme="voltagent"] .configuration-summary h2 { font-weight: 400; letter-spacing: -.5px; }
+[data-theme="voltagent"] .run-summary__duration { color: #ffffff; font-family: var(--font-mono); }
+[data-theme="voltagent"] .codex-metric > span,
+[data-theme="voltagent"] .codex-token-ledger span { font-weight: 600; text-transform: uppercase; letter-spacing: .12em; }
+[data-theme="voltagent"] .test-result p { color: #bdbdbd; }
+
+/* ── 数据查询页签：hover ink / 激活 ink-strong 文字（绿只作 2px 下划线指示） ── */
+[data-theme="voltagent"] .explorer-tab:hover,
+[data-theme="voltagent"] .explorer-more:hover { color: #f2f2f2; }
+[data-theme="voltagent"] .explorer-tab.is-active { color: #ffffff; }
+
+/* ── term-hint：hover / focus 指示 = primary-soft ── */
+[data-theme="voltagent"] .term-hint:hover { color: #2fd6a1; }
+[data-theme="voltagent"] .term-hint:focus-visible { outline-color: #2fd6a1; }
+
+/* ── 品牌虚线节奏线（唯一装饰线）：耗时分区 / tick 结果 / 配置操作区 ── */
+[data-theme="voltagent"] .duration-section,
+[data-theme="voltagent"] .tick-result,
+[data-theme="voltagent"] .configuration-actions { border-top: 1px dashed var(--divider-dashed); }
+
+/* ── 内嵌小块圆角补正：detail 格 / 耗时数值 4px、候选卡 6px（源 --radius-xs / --radius-sm） ── */
+[data-theme="voltagent"] .detail-grid > div { border-radius: 4px; }
+[data-theme="voltagent"] .duration-values span { border-radius: 4px; }
+[data-theme="voltagent"] .people-candidates .ant-radio-wrapper { border-radius: 6px; }
+
+/* ── audit-json summary：canvas 底 + mono uppercase eyebrow ── */
+[data-theme="voltagent"] .audit-json > summary { background: #101010; font: 600 10px/1.4 var(--font-mono); text-transform: uppercase; letter-spacing: .12em; }
+
+/* ── json-viewer bar：.12em 字距 + 底部发丝线（code 铬装） ── */
+[data-theme="voltagent"] .json-viewer__bar { border-bottom: 1px solid #3d3a39; letter-spacing: .12em; }
+
+/* ── sparkline：提示气泡补发丝线描边（源 canvas-soft 底 + hairline 边） ── */
+[data-theme="voltagent"] .sparkline__tip { border: 1px solid #3d3a39; }
+
+/* ── 登录页：白 5% 网格 opacity .5；signal = 闪电同款；kicker 绿 code-chip；展示层 weight 400 ── */
+[data-theme="voltagent"] .login-page__showcase::before { opacity: .5; }
+[data-theme="voltagent"] .login-page__signal { align-items: center; }
+[data-theme="voltagent"] .login-page__signal:hover { box-shadow: var(--glow-hover); }
+[data-theme="voltagent"] .login-page__signal span { display: none; }
+[data-theme="voltagent"] .login-page__signal span:nth-child(2) { display: block; width: 17px; height: 21px; border-radius: 0; background: var(--primary); clip-path: polygon(60% 0, 20% 55%, 45% 55%, 40% 100%, 80% 40%, 55% 40%); }
+[data-theme="voltagent"] .login-page__showcase-copy > span,
+[data-theme="voltagent"] .login-page__card-heading > span { font-size: 11px; font-weight: 600; letter-spacing: .18em; }
+[data-theme="voltagent"] .login-page__brand span { letter-spacing: .18em; }
+[data-theme="voltagent"] .login-page__showcase-copy h2 { font-weight: 400; letter-spacing: -.6px; }
+[data-theme="voltagent"] .login-page__card h1 { font-size: 28px; font-weight: 400; letter-spacing: -.6px; }
+[data-theme="voltagent"] .login-page__preview-header span { font: 400 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .12em; }
+[data-theme="voltagent"] .login-page__preview-row em { padding: 3px 8px; border: 1px solid rgba(0, 217, 146, .25); }

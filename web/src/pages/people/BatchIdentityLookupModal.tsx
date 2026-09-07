@@ -137,7 +137,7 @@ export function BatchIdentityLookupModal({ open, onClose, onSaved }: { open: boo
       title: '状态', width: 110,
       render: (_: unknown, item: BatchIdentityLookupItem) => item.error_code
         ? <Tag>查询失败</Tag>
-        : item.exact_match_index !== null ? <Tag color="blue">精准匹配</Tag> : item.candidates.length > 0 ? <Tag color="gold">待确认</Tag> : <Tag>未找到</Tag>,
+        : item.exact_match_index !== null ? <Tag color="processing">精准匹配</Tag> : item.candidates.length > 0 ? <Tag color="warning">待确认</Tag> : <Tag>未找到</Tag>,
     },
   ], [candidateByKey, selectedKeys])
 

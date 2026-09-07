@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
 import type { AutomationMetrics, Connector, Overview, Page } from '../api/types'
+import { THEMES } from '../themes/registry'
 import { OverviewPage } from './OverviewPage'
 
 afterEach(() => vi.restoreAllMocks())
@@ -100,8 +101,8 @@ describe('OverviewPage', () => {
     const failureRow = container.querySelector('.admin-table--compact .ant-table-tbody > tr')!
     expect(window.getComputedStyle(failureRow).cursor).not.toBe('pointer')
     expect(container.querySelector('.business-outcomes__grid .sparkline polyline')).toBeInTheDocument()
-    expect(container.querySelector('.business-outcomes__grid .sparkline polyline')).toHaveAttribute('stroke', '#7c3aed')
-    expect(container.querySelector('.automation-metric-grid .sparkline polyline')).toHaveAttribute('stroke', '#16a34a')
+    expect(container.querySelector('.business-outcomes__grid .sparkline polyline')).toHaveAttribute('stroke', THEMES.default.slots.chart.trends.crStart)
+    expect(container.querySelector('.automation-metric-grid .sparkline polyline')).toHaveAttribute('stroke', THEMES.default.slots.chart.ratios.success)
     expect(container.querySelectorAll('.automation-metric-grid .sparkline polyline')).toHaveLength(4)
     expect(screen.getAllByText('暂无趋势').length).toBeGreaterThan(0)
     expect(screen.getByText('今日新增 1')).toBeInTheDocument()

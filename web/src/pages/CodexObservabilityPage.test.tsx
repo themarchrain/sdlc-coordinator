@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
 import type { CodexExecutionDetail, CodexObservabilitySummary } from '../api/types'
+import { THEMES } from '../themes/registry'
 import { CodexObservabilityPage, eventTypeColor } from './CodexObservabilityPage'
 
 const summary: CodexObservabilitySummary = {
@@ -53,9 +54,10 @@ describe('CodexObservabilityPage', () => {
   })
 
   it('highlights terminal error events from both runners in red', () => {
-    expect(eventTypeColor('codex_error')).toBe('red')
-    expect(eventTypeColor('claude_error')).toBe('red')
-    expect(eventTypeColor('codex_usage')).toBe('green')
-    expect(eventTypeColor('claude_result')).toBe('blue')
+    const slots = THEMES.default.slots.eventType
+    expect(eventTypeColor('codex_error', slots)).toBe(slots.error)
+    expect(eventTypeColor('claude_error', slots)).toBe(slots.error)
+    expect(eventTypeColor('codex_usage', slots)).toBe(slots.usage)
+    expect(eventTypeColor('claude_result', slots)).toBe(slots.info)
   })
 })

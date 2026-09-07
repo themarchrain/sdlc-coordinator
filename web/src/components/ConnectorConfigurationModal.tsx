@@ -122,7 +122,7 @@ export function ConnectorConfigurationModal({ connector, onClose, onSaved }: Pro
       )}
       {secretFields.length > 0 ? (
         <div style={{ marginBottom: 8 }}>
-          {secretFields.map((key) => <Tag key={key} color="blue">密钥字段: {key}</Tag>)}
+          {secretFields.map((key) => <Tag key={key} color="processing">密钥字段: {key}</Tag>)}
         </div>
       ) : null}
       <Input.TextArea

@@ -1,0 +1,336 @@
+/* ============================================================
+   supabase 主题令牌块 —— 自 supabase 设计语言誊抄。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取 supabase 源中同一选择器的有效值（supabase 用无前缀语义命名）。
+   值来源速查：
+     --canvas #ffffff / --canvas-soft #fafafa → 白画布 + 灰嵌面
+     --canvas-night #1c1c1c / --canvas-night-soft #202020 → 夜面（json 块 / 登录深卡）
+     文字五阶 #171717 / #212121 / #707070 / #9a9a9a / #b2b2b2 → ink 链坍缩映射
+     --hairline #dfdfdf（面板外线）+ cool 四阶 #c7c7c7/#d4d4d4/#dfdfdf/#ededed/#efefef
+     --primary #3ecf8e（祖母绿唯一彩色）+ 绿底之上近黑 #171717（on-primary 签名）
+   骨架表达不了的部分（22px 极简 brand-mark、单色当前项导航、
+   状态签药丸、链接下划线、display 层字重 ≤ 500、antd 弹层标题字重、
+   232px 侧栏等）见块后的 [data-theme="supabase"] 专属片段。
+   ============================================================ */
+[data-theme="supabase"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'Circular', 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --font-display: ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; /* 源数字展示位一律 mono */
+
+  /* ── Radius ───────────────────────────────── */
+  /* supabase 刻度 xs 4 / sm 6 / md 8 / lg 12 / xl 16 / full 9999，向超集九档按角色归并 */
+  --radius-xs: 3px;      /* term-hint focus（supabase 源字面值） */
+  --radius-soft: 4px;    /* 登录预览 chip = 源 --radius-xs */
+  --radius-sm: 6px;      /* 内嵌小块 / sparkline 提示 = 源 --radius-sm */
+  --radius-md: 6px;      /* repo / test / intent 行卡 = 源 --radius-sm */
+  --radius-lg: 8px;      /* 指标卡 / run-summary / detail-section = 源 --radius-md */
+  --radius-xl: 12px;     /* 面板 / state-box = 源 --radius-lg（json 等深块见片段补 8px） */
+  --radius-brand: 8px;   /* 登录 signal = 源 --radius-md（brand-mark 形态见片段） */
+  --radius-pill: 9999px; /* 迷你徽标 = 源 --radius-full */
+  --radius-panel: 12px;  /* 登录外壳 = 源 --radius-lg */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;
+  --canvas-soft: #fafafa;
+  --canvas-card: #ffffff;
+  --canvas-dark: #1c1c1c;             /* 源 --canvas-night（json 代码块底） */
+  --surface-sidebar: #ffffff;         /* 源侧栏即白画布 */
+  --surface-bar: rgba(255, 255, 255, .94);
+  --surface-inset: #fafafa;
+  --surface-matrix: #fafafa;
+  --surface-tint: #fafafa;
+  --surface-rail: #fafafa;
+  --surface-detail: #fafafa;
+  --surface-chip: #fafafa;
+  --surface-legacy: #fafafa;
+  --surface-draft: #fafafa;
+  --surface-empty: #fafafa;
+  --surface-json-bar: #202020;        /* 源 --canvas-night-soft */
+  --tooltip-bg: #1c1c1c;              /* sparkline 提示 = 源 --canvas-night */
+
+  /* ── Ink & text ladder（坍缩为五阶：171717/212121/707070/9a9a9a/b2b2b2） ── */
+  --ink: #171717;
+  --ink-strong: #171717;
+  --ink-display: #171717;
+  --ink-heading: #171717;
+  --ink-value: #171717;
+  --ink-repo: #171717;
+  --ink-step: #171717;
+  --ink-label-strong: #171717;
+  --ink-label: #171717;
+  --ink-row: #171717;
+  --ink-list: #212121;                /* value-list li = 源 --ink-secondary */
+  --ink-data: #171717;
+  --ink-field: #212121;               /* people-lookup = 源 --ink-secondary */
+  --ink-rail: #707070;
+  --ink-rail-value: #171717;
+  --ink-secret: #707070;
+  --ink-chip: #707070;
+  --body: #707070;                    /* 源 --ink-mute 是正文级 */
+  --body-alt: #707070;
+  --body-soft: #9a9a9a;               /* ratio-card__sample = 源 --ink-mute-2 */
+  --mute: #9a9a9a;                    /* 源小注级 = --ink-mute-2（侧栏更淡阶见片段） */
+  --mute-deep: #707070;
+  --mute-inline: #9a9a9a;
+  --mute-caption: #9a9a9a;
+  --mute-intro: #707070;
+  --mute-terse: #707070;
+  --mute-quiet: #707070;
+  --mute-soft: #9a9a9a;
+  --mute-dim: #707070;
+  --mute-draft: #707070;
+  --mute-json: #9a9a9a;
+  --mute-matrix: #9a9a9a;
+  --faint: #9a9a9a;
+  --faint-alt: #b2b2b2;
+  --faint-soft: #9a9a9a;
+  --faint-ghost: #9a9a9a;
+  --faint-hint: #b2b2b2;              /* term-hint = 源 --ink-faint */
+  --faint-meta: #9a9a9a;
+  --faint-note: #9a9a9a;
+  --faint-empty: #b2b2b2;             /* sparkline 空态 = 源 --ink-faint */
+  --on-dark: #ffffff;
+  --on-dark-soft: #ffffff;            /* 源 json 深块文字即 --on-dark */
+  --on-dark-faint: #9a9a9a;           /* sparkline 提示日期 = 源 --ink-mute-2 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #3ecf8e;
+  --primary-active: #24b47e;          /* 源 --primary-deep */
+  --on-primary: #171717;              /* 签名：绿底近黑字 */
+  --link: #171717;                    /* 源链接 = 墨色 + 下划线（下划线见片段） */
+  --link-hover: #171717;
+  --focus-ring: #24b47e;              /* 源 :focus-visible 2px --primary-deep（宽度见片段） */
+  --primary-veil: rgba(62, 207, 142, .16); /* 源 --primary-tint */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #3ecf8e;                 /* context-dot 是唯一消费者，源画成祖母绿 */
+  --success-halo: 0 0 0 3px rgba(62, 207, 142, .16);
+  --warning: #97650d;                 /* 源 --signal-warning-ink */
+  --warning-soft: #fdf3d1;            /* 源 --signal-warning-bg */
+  --error: #b03a31;                   /* 源 --signal-danger-ink */
+  --error-deep: #b03a31;
+  --info: #707070;                    /* inferred-mark 走中性灰（源 --ink-mute） */
+  --info-soft: #efefef;               /* 源 --hairline-cool-2 */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #ededed;                /* 结构线（侧栏右缘/顶栏下缘）= 源 --hairline-cool */
+  --hairline-soft: #ededed;
+  --hairline-strong: #c7c7c7;
+  --hairline-card: #dfdfdf;           /* 面板外线 = 源 --hairline；行卡内线更淡，见片段 */
+  --hairline-inset: #ededed;
+  --hairline-mid: #ededed;
+  --hairline-rail: #ededed;
+  --hairline-codex: #ededed;
+  --hairline-detail: #ededed;
+  --hairline-json: #ededed;           /* json-viewer 深色外线见片段 */
+  --hairline-dashed: #c7c7c7;         /* 源空态虚线 = --hairline-strong */
+  --hairline-legacy: #c7c7c7;
+  --hairline-row: #ededed;
+  --hairline-draft: #ededed;
+  --bar-value: #c7c7c7;               /* 源左色条统一冷灰 */
+  --bar-matrix: #c7c7c7;
+  --bar-summary: #c7c7c7;
+  --bar-usage: #3ecf8e;               /* token 进度 = 源 --primary */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: transparent;       /* 源 collapse-toggle 即透明底 */
+  --overlay-soft: #fafafa;            /* 源悬停底 = --canvas-soft */
+  --overlay-line: #ededed;            /* 源分组线 = --hairline-cool */
+  --overlay-medium: #fafafa;
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 源 Level 0 扁平面板无投影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（令牌置空，22px 三细柱形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #171717;
+  --brand-bar-2: #3ecf8e;
+  --brand-bar-3: #171717;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #3ecf8e;           /* 当前项指示条 = 源 --primary */
+
+  /* ── 登录页（白画布 + night 深展示卡 + 祖母绿 CTA） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #dfdfdf;
+  --login-shell-shadow: 0 8px 24px rgba(0, 0, 0, .08); /* 源 --shadow-2 */
+  --login-showcase-bg: #1c1c1c;       /* 源 --canvas-night 深卡 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .06);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #9a9a9a;
+  --login-signal-bg: #202020;         /* 源 --canvas-night-soft */
+  --login-signal-border: rgba(255, 255, 255, .14);
+  --login-signal-shadow: none;
+  --login-signal-bar: #3ecf8e;
+  --login-kicker: #9a9a9a;            /* 卡侧 kicker；showcase 侧绿色 kicker 见片段 */
+  --login-heading: #ffffff;
+  --login-copy: #9a9a9a;
+  --login-preview-bg: #202020;
+  --login-preview-border: rgba(255, 255, 255, .12);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .1);
+  --login-preview-dot: #3ecf8e;
+  --login-preview-dot-soft: rgba(255, 255, 255, .24);
+  --login-preview-label: #9a9a9a;
+  --login-preview-row-line: rgba(255, 255, 255, .07);
+  --login-preview-row-ink: #d4d4d4;   /* 源 --hairline-cool-3 在深底上作文字色 */
+  --login-preview-chip-ink: #3ecf8e;
+  --login-preview-chip-bg: rgba(62, 207, 142, .16);
+  --login-preview-bar: rgba(255, 255, 255, .16);
+  --login-foot: rgba(255, 255, 255, .4);
+  --login-card-kicker: #9a9a9a;
+  --login-card-heading: #171717;
+  --login-card-copy: #707070;
+  --login-notice-border: transparent; /* 源 notice 交回 antd info 底（colorInfoBg #fafafa） */
+  --login-notice-bg: #fafafa;
+  --login-notice-ink: #707070;
+  --login-label: #707070;
+  --login-input-border: #dfdfdf;
+  --login-input-border-hover: #c7c7c7;
+  --login-primary: #3ecf8e;           /* 唯一祖母绿 CTA，配 antd colorTextLightSolid #171717 */
+  --login-primary-active: #24b47e;
+
+  /* ── supabase 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --canvas-night: #1c1c1c;            /* 源 --canvas-night */
+  --canvas-night-soft: #202020;       /* 源 --canvas-night-soft */
+  --ink-secondary: #212121;           /* 源五阶墨链第 2 阶 */
+  --ink-mute: #707070;                /* 源五阶墨链第 3 阶 */
+  --ink-mute-2: #9a9a9a;              /* 源五阶墨链第 4 阶 */
+  --ink-faint: #b2b2b2;               /* 源五阶墨链第 5 阶 */
+  --primary-deep: #24b47e;            /* 源主色按压/hover 深 */
+  --primary-soft: #4ade80;            /* 源调色板备用亮绿 */
+  --primary-tint: rgba(62, 207, 142, .16);  /* 绿色淡染底（success 药丸/preview chip） */
+  --primary-tint-ink: #15803d;        /* 淡染底上的深绿文字 */
+  --hairline-cool: #ededed;           /* 4 阶冷调线之一：内部分隔 */
+  --hairline-cool-2: #efefef;         /* 冷调线之二：导航当前项底 */
+  --hairline-cool-3: #d4d4d4;         /* 冷调线之三：深底上作文字色 */
+  --signal-warning-ink: #97650d;      /* 信号色仅状态语义使用 */
+  --signal-warning-bg: #fdf3d1;
+  --signal-danger-ink: #b03a31;
+  --signal-danger-bg: #fbeae9;
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, .06);   /* 源阴影 Level 1 */
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, .08);  /* Level 2（登录外壳） */
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, .12); /* Level 3 备用 */
+  --sidebar-w: 232px;                 /* 源布局变量（.control-room 上重声明，生效靠片段） */
+  --radius-full: 9999px;              /* 源药丸圆角 */
+}
+
+/* ============================================================
+   supabase 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="supabase"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：链接墨色下划线 / 2px 焦点轮廓（源 :root 级规则） ── */
+[data-theme="supabase"] a { text-decoration: underline; text-decoration-color: var(--hairline-strong); text-underline-offset: 3px; }
+[data-theme="supabase"] a:hover { text-decoration-color: var(--ink); }
+[data-theme="supabase"] .workspace-nav a { text-decoration: none; }
+[data-theme="supabase"] :focus-visible { outline-width: 2px; }
+[data-theme="supabase"] .term-hint:hover { color: var(--ink); }
+[data-theme="supabase"] .term-hint:focus-visible { outline-color: var(--primary-deep); }
+
+/* ── antd 弹层标题：人文中字重 + 收紧字距（源 2 条 :root 级规则） ── */
+[data-theme="supabase"] .ant-modal-title, [data-theme="supabase"] .ant-drawer-title { font-weight: 500; letter-spacing: -.01em; }
+[data-theme="supabase"] .ant-modal-confirm-title { font-weight: 500; }
+
+/* ── display 层字重不超过 500（supabase 排版签名；骨架默认 600-700） ── */
+[data-theme="supabase"] .brand-block strong,
+[data-theme="supabase"] .login-page__brand strong,
+[data-theme="supabase"] .panel-heading h2,
+[data-theme="supabase"] .configuration-step-copy h2,
+[data-theme="supabase"] .configuration-summary h2,
+[data-theme="supabase"] .detail-section h3,
+[data-theme="supabase"] .configuration-inline-title h3,
+[data-theme="supabase"] .connector-configuration-step__heading h3,
+[data-theme="supabase"] .repo-row strong,
+[data-theme="supabase"] .intent-row strong,
+[data-theme="supabase"] .duration-card strong,
+[data-theme="supabase"] .duration-section__heading strong,
+[data-theme="supabase"] .run-summary__duration,
+[data-theme="supabase"] .business-outcomes__card > strong,
+[data-theme="supabase"] .ratio-card > strong,
+[data-theme="supabase"] .codex-metric > strong,
+[data-theme="supabase"] .codex-token-ledger strong,
+[data-theme="supabase"] .configuration-status-rail > div > strong,
+[data-theme="supabase"] .configuration-summary-grid strong { font-weight: 500; }
+[data-theme="supabase"] .brand-block strong, [data-theme="supabase"] .panel-heading h2 { font-size: 16px; letter-spacing: -.01em; }
+[data-theme="supabase"] .business-outcomes__card > strong { font-size: 24px; }
+[data-theme="supabase"] .ratio-card > strong { font-size: 28px; }
+[data-theme="supabase"] .configuration-step-copy h2, [data-theme="supabase"] .configuration-summary h2 { letter-spacing: -.02em; }
+[data-theme="supabase"] .context-heading-slot .page-heading__eyebrow { font-weight: 500; letter-spacing: -.01em; }
+[data-theme="supabase"] .admin-table .ant-table-thead > tr > th { font-weight: 500; letter-spacing: .02em; }
+[data-theme="supabase"] .run-summary__duration { color: var(--ink); }
+
+/* ── 页头 eyebrow / 面板 kicker：灰阶小标 + 大写（源非主色） ── */
+[data-theme="supabase"] .page-heading__eyebrow,
+[data-theme="supabase"] .panel-kicker,
+[data-theme="supabase"] .section-label { color: var(--ink-mute-2); font-weight: 500; letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── 侧栏：白底 + 更淡的导航小标 + 单色当前项（绿仅指示条）；232px 布局宽 ── */
+[data-theme="supabase"] .control-room { --sidebar-w: 232px; } /* 覆盖骨架 .control-room 上的局部声明 */
+[data-theme="supabase"] .nav-caption, [data-theme="supabase"] .nav-group-title,
+[data-theme="supabase"] .workspace-nav .anticon, [data-theme="supabase"] .collapse-toggle { color: var(--ink-faint); }
+[data-theme="supabase"] .workspace-nav { gap: 4px; }
+[data-theme="supabase"] .workspace-nav a { padding: 9px 12px; border-radius: 6px; }
+[data-theme="supabase"] .workspace-nav a::before { width: 2px; }
+[data-theme="supabase"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: var(--hairline-cool-2); font-weight: 500; }
+[data-theme="supabase"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+[data-theme="supabase"] .workspace-nav a[aria-current="page"]::before { height: 22px; }
+[data-theme="supabase"] .collapse-toggle:hover { color: var(--ink); }
+
+/* ── brand-mark：22px 极简三细柱，中间一根是唯一的绿色事件（源同名规则） ── */
+[data-theme="supabase"] .brand-mark { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0; background: transparent; border: none; border-radius: 0; box-shadow: none; }
+[data-theme="supabase"] .brand-mark span { width: 3px; margin: 0; border-radius: 2px; background: var(--ink); box-shadow: none; }
+[data-theme="supabase"] .brand-mark span:nth-child(1) { height: 10px; opacity: .28; }
+[data-theme="supabase"] .brand-mark span:nth-child(2) { height: 20px; background: var(--primary); }
+[data-theme="supabase"] .brand-mark span:nth-child(3) { height: 14px; opacity: .28; }
+[data-theme="supabase"] .brand-mark::after { display: none; }
+
+/* ── 状态签：安静的圆角药丸（success=绿淡染 / processing=墨色实底；antd 语义 preset 承担分类） ── */
+[data-theme="supabase"] .status-tag.ant-tag { padding: 0 8px; border-radius: var(--radius-full); font-size: 12px; line-height: 20px; border: 1px solid transparent; }
+[data-theme="supabase"] .status-tag.ant-tag-success { background: var(--primary-tint); color: var(--primary-tint-ink); }
+[data-theme="supabase"] .status-tag.ant-tag-processing { background: var(--ink); color: var(--canvas); }
+[data-theme="supabase"] .status-tag.ant-tag-warning { background: var(--signal-warning-bg); color: var(--signal-warning-ink); }
+[data-theme="supabase"] .status-tag.ant-tag-error { background: var(--signal-danger-bg); color: var(--signal-danger-ink); }
+[data-theme="supabase"] .status-tag.ant-tag-default { background: var(--canvas-soft); color: var(--ink-mute); border-color: var(--hairline-cool); }
+
+/* ── 表格密度：中号行高收紧一档（源规则） ── */
+[data-theme="supabase"] .admin-table .ant-table-tbody > tr > td > strong { font-weight: 500; }
+[data-theme="supabase"] .admin-table .ant-table-middle .ant-table-tbody > tr > td { padding-top: 10px; padding-bottom: 10px; }
+
+/* ── 行卡内线用更淡的冷调线（面板外线 #dfdfdf / 行卡 #ededed 双轨） ── */
+[data-theme="supabase"] .repo-row,
+[data-theme="supabase"] .test-result,
+[data-theme="supabase"] .intent-row,
+[data-theme="supabase"] .generic-record__group,
+[data-theme="supabase"] .error-detail { border-color: var(--hairline-cool); }
+
+/* ── JSON 审计块：night 深面 + 8px 圆角 + 深底上的 bar 按钮 ── */
+[data-theme="supabase"] .json-viewer { border-color: var(--canvas-night); border-radius: 8px; }
+[data-theme="supabase"] .json-viewer__bar .ant-btn { color: var(--ink-mute-2); }
+[data-theme="supabase"] .json-viewer__bar .ant-btn:hover { color: var(--on-dark); }
+[data-theme="supabase"] .duration-values span { border-radius: 4px; } /* 源 --radius-xs（骨架该规则无圆角） */
+
+/* ── explorer 标签页走单色：激活态墨色下划线，不引入第二彩相 ── */
+[data-theme="supabase"] .explorer-tab.is-active { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* ── 登录 showcase：night #1c1c1c 深卡（底色/网格走令牌），绿 kicker 与排印细节 ── */
+[data-theme="supabase"] .login-page__showcase-copy > span { color: var(--primary); }
+[data-theme="supabase"] .login-page__showcase-copy h2 { font-size: 28px; font-weight: 500; letter-spacing: -.042em; }
+[data-theme="supabase"] .login-page__card h1 { font-size: 26px; font-weight: 500; letter-spacing: -.03em; }
+[data-theme="supabase"] .login-page__signal { padding: 8px 6px 6px; }
+[data-theme="supabase"] .login-page__signal span:nth-child(1),
+[data-theme="supabase"] .login-page__signal span:nth-child(3) { opacity: .45; }
+
+/* ── brand-mark 移动端缩刻（源 760px 断点） ── */
+@media (max-width: 760px) {
+  [data-theme="supabase"] .brand-mark { width: 18px; height: 18px; }
+  [data-theme="supabase"] .brand-mark span:nth-child(1) { height: 8px; }
+  [data-theme="supabase"] .brand-mark span:nth-child(2) { height: 16px; }
+  [data-theme="supabase"] .brand-mark span:nth-child(3) { height: 11px; }
+}

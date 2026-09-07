@@ -1,0 +1,332 @@
+/* ============================================================
+   xai 主题令牌块 —— 自 xai 设计语言 :root 誊抄。
+   xAI 设计语言（暗色，无亮色对应物）：
+   - 画布阶：canvas #0a0a0a / soft #1a1c20 / card #191919 / mid #363a3f
+   - 文字阶坍缩为三阶：ink #ffffff / body #dadbdf / mute #7d8187
+   - 发丝线 #212327 承担全部层级暗示（无投影）；强调发丝线 = canvas-mid #363a3f
+   - 主交互是白药丸：--primary #ffffff + --on-primary #0a0a0a；
+     白主色顺带令"当前导航项/激活态"的 primary 系槽位直接落在白上
+   - 语义色映射进点缀组：success=breeze 前的白点、warning=sunset-soft、
+     error=sunset、info=twilight（与 antd.ts 同源）
+   - 圆角无变量（源一律 8px / 内嵌 6px / 药丸 9999px 字面值）
+   骨架表达不了的形态（brand-mark CSS X 字、登录紫晕外壳、midnight 面、
+   暗色滚动条/selection/focus、近黑面板上的角色偏离补正）见块后片段。
+   ============================================================ */
+[data-theme="xai"] {
+  color-scheme: dark;
+  color: var(--body); /* 源 :root color: var(--body)（骨架 :root 用 --ink，白会偏亮） */
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-display: "JetBrains Mono", "Cascadia Code", Consolas, monospace; /* 源数字一律 var(--font-mono) */
+
+  /* ── Radius（源无变量：面板/卡 8px、内嵌 6px、药丸 9999px、term-hint 3px） ── */
+  --radius-xs: 3px;      /* term-hint focus（源字面值） */
+  --radius-soft: 9999px; /* 登录预览 chip = pill */
+  --radius-sm: 6px;      /* detail 格 / sparkline 提示 */
+  --radius-md: 6px;      /* repo / test / intent / error-detail 行卡 */
+  --radius-lg: 8px;      /* 指标卡 / run-summary / audit-json */
+  --radius-xl: 8px;      /* 面板 / json / 登录预览 */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal */
+  --radius-pill: 9999px; /* 迷你徽标 / inferred-mark / sample-warning */
+  --radius-panel: 8px;   /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #0a0a0a;
+  --canvas-soft: #1a1c20;
+  --canvas-card: #191919;
+  --canvas-dark: #0d1726;             /* json-viewer pre = 源 --midnight */
+  --surface-sidebar: #0a0a0a;         /* 源侧栏与画布同底 */
+  --surface-bar: rgba(10, 10, 10, .86);
+  --surface-inset: #0d1726;           /* duration-values = 源 --midnight（audit-json summary 见片段） */
+  --surface-matrix: #1a1c20;
+  --surface-tint: #1a1c20;            /* 表格行 hover = 源 canvas-soft */
+  --surface-rail: #1a1c20;
+  --surface-detail: #1a1c20;
+  --surface-chip: #1a1c20;
+  --surface-legacy: transparent;      /* 源 legacy-values 透明底 + canvas-mid 虚线 */
+  --surface-draft: rgba(255, 255, 255, .04);
+  --surface-empty: transparent;
+  --surface-json-bar: #1a1c20;
+  --tooltip-bg: #1a1c20;              /* sparkline tip = 源 canvas-soft（描边见片段） */
+
+  /* ── Ink & text ladder（坍缩为 ink/body/mute 三阶 + 少数 body 值槽） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;             /* error-detail / admin-table 正文见片段改 body */
+  --ink-value: #dadbdf;               /* 源 configuration-summary strong = --body */
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;               /* codex-token-ledger strong 见片段改 body */
+  --ink-row: #dadbdf;                 /* 源 intent-row strong = --body */
+  --ink-list: #dadbdf;
+  --ink-data: #dadbdf;
+  --ink-field: #dadbdf;
+  --ink-rail: #dadbdf;
+  --ink-rail-value: #dadbdf;
+  --ink-secret: #dadbdf;
+  --ink-chip: #dadbdf;
+  --body: #dadbdf;
+  --body-alt: #dadbdf;                /* explorer-tab 见片段改 mute */
+  --body-soft: #7d8187;               /* 源 ratio-card__sample = --mute */
+  --mute: #7d8187;
+  --mute-deep: #dadbdf;               /* 业务卡标题/占比卡标题 = --body（顶栏见片段改 mute） */
+  --mute-inline: #7d8187;
+  --mute-caption: #7d8187;
+  --mute-intro: #7d8187;
+  --mute-terse: #7d8187;
+  --mute-quiet: #7d8187;
+  --mute-soft: #7d8187;
+  --mute-dim: #7d8187;
+  --mute-draft: #7d8187;
+  --mute-json: #7d8187;
+  --mute-matrix: #7d8187;
+  --faint: #7d8187;
+  --faint-alt: #7d8187;
+  --faint-soft: #7d8187;
+  --faint-ghost: #7d8187;
+  --faint-hint: #7d8187;
+  --faint-meta: #7d8187;
+  --faint-note: #7d8187;
+  --faint-empty: #7d8187;
+  --on-dark: #ffffff;
+  --on-dark-soft: #dadbdf;            /* json-viewer pre = 源 --body */
+  --on-dark-faint: #7d8187;
+
+  /* ── Primary / link / focus（白药丸主色） ── */
+  --primary: #ffffff;
+  --primary-active: #dadbdf;          /* 源 colorPrimaryActive（CSS 侧无消费者，与 antd 同源） */
+  --on-primary: #0a0a0a;
+  --link: #ffffff;                    /* 源 a { color: var(--ink) } */
+  --link-hover: #fafaf7;              /* 源 --ink-hover */
+  --focus-ring: rgba(255, 255, 255, .45);
+  --primary-veil: #1a1c20;            /* 当前导航项底 = 源 canvas-soft（白主色下 veil 落在 soft 面） */
+
+  /* ── Semantic（映射进点缀组；context-dot 是白点） ── */
+  --success: #ffffff;                 /* 源 context-dot background: var(--ink) */
+  --success-halo: 0 0 0 4px rgba(255, 255, 255, .08);
+  --warning: #ffc285;                 /* sunset-soft（sample-warning 文字） */
+  --warning-soft: rgba(255, 122, 23, .16);
+  --error: #ff7a17;                   /* sunset（error-copy） */
+  --error-deep: #ffc285;              /* 源 summary code = sunset-soft */
+  --info: #c4b5fd;                    /* twilight（inferred-mark 文字） */
+  --info-soft: rgba(124, 58, 237, .22);
+
+  /* ── Hairlines & bars（分隔 #212327；强调发丝线/虚线/滚动条 = canvas-mid #363a3f） ── */
+  --hairline: #212327;
+  --hairline-soft: #212327;
+  --hairline-strong: #363a3f;         /* 表格滚动条 */
+  --hairline-card: #212327;
+  --hairline-inset: #212327;          /* sparkline--empty 虚线见片段改 canvas-mid */
+  --hairline-mid: #212327;
+  --hairline-rail: #212327;
+  --hairline-codex: #212327;
+  --hairline-detail: #212327;
+  --hairline-json: #212327;           /* audit-json 边见片段改 canvas-mid */
+  --hairline-dashed: #363a3f;         /* detail-empty 虚线 = 源 canvas-mid */
+  --hairline-legacy: #363a3f;         /* legacy-values 虚线 = 源 canvas-mid */
+  --hairline-row: #212327;
+  --hairline-draft: #363a3f;          /* people-draft-tag 描边 = 源 canvas-mid */
+  --bar-value: #363a3f;               /* value-list 左条 = 源 canvas-mid */
+  --bar-matrix: #ff7a17;              /* metric-matrix 左条 = sunset */
+  --bar-summary: #7c3aed;             /* summary 卡左条 = dusk */
+  --bar-usage: linear-gradient(90deg, #ff7a17, #ffc285); /* codex 进度条 = --grad-sunset */
+
+  /* ── Overlays & shadows（发丝线承担层级，投影一律关闭） ── */
+  --overlay-faint: transparent;       /* 源 collapse-toggle 透明底 */
+  --overlay-soft: #1a1c20;            /* 导航 hover = 源 canvas-soft */
+  --overlay-line: rgba(255, 255, 255, .06); /* nav 分组线 */
+  --overlay-medium: #1a1c20;          /* collapse-toggle hover = 源 canvas-soft */
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 无投影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（形态见片段：卡片框内 CSS X 字，span 隐藏） ── */
+  --brand-frame-bg: #191919;          /* 源 canvas-card */
+  --brand-frame-border: #363a3f;      /* 源 canvas-mid */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffffff;             /* 惰性值：span 已隐藏 */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ffffff;               /* 惰性值：::after 重定义为 X 笔画 */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #ffffff;           /* 当前导航白色指示条（宽 2px 见片段） */
+
+  /* ── 登录页（近黑画布 + midnight 展示板 + 白药丸 CTA） ── */
+  --login-bg: radial-gradient(900px 480px at 78% -12%, rgba(124, 58, 237, .12), transparent 62%), #0a0a0a; /* 页面级紫晕 */
+  --login-shell-border: #212327;
+  --login-shell-shadow: none;
+  --login-showcase-bg: #0d1726;       /* midnight 展示板 */
+  --login-showcase-ink: #dadbdf;
+  --login-grid-line: rgba(160, 195, 236, .07); /* breeze 7% 网格 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #7d8187;
+  --login-signal-bg: #191919;         /* signal = brand-mark 同款 X 字（见片段） */
+  --login-signal-border: #363a3f;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;        /* 惰性值：span 已隐藏 */
+  --login-kicker: #7d8187;
+  --login-heading: #ffffff;
+  --login-copy: #7d8187;
+  --login-preview-bg: rgba(255, 255, 255, .03);
+  --login-preview-border: #212327;
+  --login-preview-shadow: none;
+  --login-preview-divider: #212327;
+  --login-preview-dot: #363a3f;
+  --login-preview-dot-soft: rgba(255, 255, 255, .16);
+  --login-preview-label: #7d8187;
+  --login-preview-row-line: #212327;
+  --login-preview-row-ink: #dadbdf;
+  --login-preview-chip-ink: #ffc285;  /* sunset-soft chip（描边见片段） */
+  --login-preview-chip-bg: rgba(255, 122, 23, .12);
+  --login-preview-bar: #363a3f;       /* 源 canvas-mid（pill 圆角见片段） */
+  --login-foot: #7d8187;
+  --login-card-kicker: #7d8187;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #7d8187;
+  --login-notice-border: #363a3f;     /* 源 canvas-mid */
+  --login-notice-bg: #1a1c20;
+  --login-notice-ink: #dadbdf;
+  --login-label: #dadbdf;
+  --login-input-border: #363a3f;      /* 源 canvas-mid（输入底见片段补 canvas-soft） */
+  --login-input-border-hover: rgba(255, 255, 255, .45);
+  --login-primary: #ffffff;           /* 白药丸（antd colorPrimary 同源） */
+  --login-primary-active: #fafaf7;
+
+  /* ── xAI 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --canvas-mid: #363a3f;              /* 强调发丝线 / 滚动条 / 虚线阶 */
+  --sunset: #ff7a17;                  /* 点缀组：sunset */
+  --sunset-soft: #ffc285;             /* 点缀组：sunset-soft */
+  --dusk: #7c3aed;                    /* 点缀组：dusk */
+  --twilight: #c4b5fd;                /* 点缀组：twilight */
+  --breeze: #a0c3ec;                  /* 点缀组：breeze */
+  --midnight: #0d1726;                /* 点缀组：midnight（json 面 / 展示板 / 内嵌 chip） */
+  --grad-sunset: linear-gradient(90deg, #ff7a17, #ffc285); /* codex 进度条渐变 */
+}
+
+/* ============================================================
+   xai 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="xai"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区 / 焦点（sunset 选区、白色 45% 焦点外环、2px 细描边） ── */
+[data-theme="xai"] ::selection { background: rgba(255, 122, 23, .42); color: var(--ink); }
+[data-theme="xai"] :focus-visible { outline: 2px solid rgba(255, 255, 255, .45); outline-offset: 2px; }
+[data-theme="xai"] .term-hint:focus-visible { outline-color: rgba(255, 255, 255, .45); }
+
+/* ── 系统滚动条：细、canvas-mid、pill ── */
+[data-theme="xai"] * { scrollbar-width: thin; scrollbar-color: var(--canvas-mid) transparent; }
+[data-theme="xai"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="xai"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="xai"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: var(--canvas-mid); background-clip: padding-box; }
+[data-theme="xai"] ::-webkit-scrollbar-thumb:hover { background: #4a4f56; background-clip: padding-box; }
+
+/* ── 外壳补正：collapse-toggle 底部分隔线、顶栏/仓库切换器的三阶文字 ── */
+[data-theme="xai"] .collapse-toggle { border-top: 1px solid var(--hairline); }
+[data-theme="xai"] .context-bar { color: var(--mute); }
+[data-theme="xai"] .repository-switcher { color: var(--body); font-weight: 400; }
+
+/* ── brand-mark：卡片框内白色几何 X（::before/::after 旋转笔画，span 隐藏，无光晕） ── */
+[data-theme="xai"] .brand-mark { align-items: center; justify-content: center; padding: 0; gap: 0; }
+[data-theme="xai"] .brand-mark span { display: none; }
+[data-theme="xai"] .brand-mark::before, [data-theme="xai"] .brand-mark::after { content: ""; position: absolute; width: 15px; height: 2px; border-radius: 1px; background: var(--ink); }
+[data-theme="xai"] .brand-mark::before { transform: rotate(45deg); }
+[data-theme="xai"] .brand-mark::after { transform: rotate(-45deg); top: auto; right: auto; width: 15px; height: 2px; border: 0; border-radius: 1px; box-shadow: none; }
+@media (max-width: 760px) {
+  [data-theme="xai"] .brand-mark::before, [data-theme="xai"] .brand-mark::after { width: 12px; }
+}
+
+/* ── 当前导航指示条：白色 2px（骨架 3px） ── */
+[data-theme="xai"] .workspace-nav a::before { width: 2px; }
+
+/* ── 页头 eyebrow / 面板 kicker：mute 色等宽小写间距标签（非主色） ── */
+[data-theme="xai"] .page-heading__eyebrow,
+[data-theme="xai"] .panel-kicker,
+[data-theme="xai"] .section-label { color: var(--mute); font-weight: 400; letter-spacing: .14em; text-transform: uppercase; }
+[data-theme="xai"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-weight: 400; letter-spacing: -.01em; }
+
+/* ── 近黑面板上的嵌套面补正（源：detail 格 = canvas、行卡族 = canvas-soft） ── */
+[data-theme="xai"] .detail-grid > div { background: var(--canvas); }
+[data-theme="xai"] .repo-row,
+[data-theme="xai"] .test-result,
+[data-theme="xai"] .intent-row,
+[data-theme="xai"] .generic-record__group,
+[data-theme="xai"] .duration-card { background: var(--canvas-soft); }
+
+/* ── 表格：mono 大写表头；表体/错误详情正文 = body 阶 ── */
+[data-theme="xai"] .admin-table .ant-table { color: var(--body); }
+[data-theme="xai"] .admin-table .ant-table-thead > tr > th { font-family: var(--font-mono); font-weight: 400; letter-spacing: .1em; text-transform: uppercase; }
+[data-theme="xai"] .error-detail { color: var(--body); }
+
+/* ── 数据查询页签：mute 态（骨架 body-alt 在此应回落 mute） ── */
+[data-theme="xai"] .explorer-tab { color: var(--mute); }
+
+/* ── audit-json：canvas-mid 边 + canvas-soft 摘要面 ── */
+[data-theme="xai"] .audit-json { border-color: var(--canvas-mid); }
+[data-theme="xai"] .audit-json[open] > summary { border-bottom-color: var(--canvas-mid); }
+[data-theme="xai"] .audit-json > summary { background: var(--canvas-soft); color: var(--body); }
+
+/* ── ledger 标签 = body 阶 ── */
+[data-theme="xai"] .codex-token-ledger strong { color: var(--body); }
+
+/* ── run-summary 耗时数字 = sunset（点缀组合法场景） ── */
+[data-theme="xai"] .run-summary__duration { color: var(--sunset); }
+
+/* ── sparkline：提示气泡 canvas-mid 描边；空态虚线框 ── */
+[data-theme="xai"] .sparkline__tip { border: 1px solid var(--canvas-mid); }
+[data-theme="xai"] .sparkline--empty { border-color: var(--canvas-mid); }
+
+/* ── 登录页：midnight 展示板右分隔线；signal = brand-mark 同款 X 字 ── */
+[data-theme="xai"] .login-page__showcase { border-right: 1px solid var(--hairline); }
+[data-theme="xai"] .login-page__signal { position: relative; align-items: center; justify-content: center; }
+[data-theme="xai"] .login-page__signal span { display: none; }
+[data-theme="xai"] .login-page__signal::before, [data-theme="xai"] .login-page__signal::after { content: ""; position: absolute; width: 16px; height: 2px; border-radius: 1px; background: var(--ink); }
+[data-theme="xai"] .login-page__signal::before { transform: rotate(45deg); }
+[data-theme="xai"] .login-page__signal::after { transform: rotate(-45deg); }
+
+/* ── 登录表单：输入落在 canvas-soft 面；预览 chip/条形的 sunset 细节 ── */
+[data-theme="xai"] .login-page__card .ant-input, [data-theme="xai"] .login-page__card .ant-input-affix-wrapper { background: var(--canvas-soft); }
+[data-theme="xai"] .login-page__preview-row em { padding: 3px 8px; border: 1px solid rgba(255, 122, 23, .3); font-family: var(--font-mono); }
+[data-theme="xai"] .login-page__preview-row strong { border-radius: 9999px; }
+
+/* ── 字重归一：xAI 全站标题/数值/标签一律 400（骨架默认 600-700） ── */
+[data-theme="xai"] .brand-block strong,
+[data-theme="xai"] .panel-heading h2,
+[data-theme="xai"] .business-outcomes__card > strong,
+[data-theme="xai"] .ratio-card > strong,
+[data-theme="xai"] .metric-matrix strong,
+[data-theme="xai"] .codex-metric > strong,
+[data-theme="xai"] .codex-token-ledger strong,
+[data-theme="xai"] .configuration-status-rail > div > strong,
+[data-theme="xai"] .configuration-summary-grid strong,
+[data-theme="xai"] .configuration-step-copy h2,
+[data-theme="xai"] .configuration-summary h2,
+[data-theme="xai"] .configuration-inline-title h3,
+[data-theme="xai"] .connector-configuration-step__heading h3,
+[data-theme="xai"] .repo-row strong,
+[data-theme="xai"] .connector-watch__item strong,
+[data-theme="xai"] .duration-section__heading strong,
+[data-theme="xai"] .duration-card strong,
+[data-theme="xai"] .detail-section h3,
+[data-theme="xai"] .login-page__brand strong,
+[data-theme="xai"] .login-page__showcase-copy h2,
+[data-theme="xai"] .login-page__card h1,
+[data-theme="xai"] .sparkline__tip strong,
+[data-theme="xai"] .explorer-tab.is-active,
+[data-theme="xai"] .run-summary__duration,
+[data-theme="xai"] .value-list__title,
+[data-theme="xai"] .connector-name,
+[data-theme="xai"] .business-outcomes__card > span,
+[data-theme="xai"] .ratio-card__title,
+[data-theme="xai"] .inferred-mark,
+[data-theme="xai"] .sample-warning,
+[data-theme="xai"] .configuration-init-status .ant-alert-message,
+[data-theme="xai"] .login-page__card .ant-form-item-label > label { font-weight: 400; }
+
+/* ── metric-matrix 数值 = ink（骨架未设色，继承会落 body） ── */
+[data-theme="xai"] .metric-matrix strong { color: var(--ink); }

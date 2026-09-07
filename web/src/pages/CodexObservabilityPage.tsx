@@ -8,6 +8,8 @@ import { patchSearchParams } from '../app/searchParams'
 import { PageHeading } from '../components/PageHeading'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { StatusTag } from '../components/StatusTag'
+import type { EventTypeSlots } from '../themes/types'
+import { useTheme } from '../theme/useTheme'
 import { useRemote } from '../hooks/useRemote'
 
 const statuses = ['accepted', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']
@@ -112,6 +114,7 @@ function CodexExecutionDrawer({ executionID, onClose }: { executionID?: string; 
 }
 
 function CodexDetail({ data }: { data: CodexExecutionDetail }) {
+  const { theme } = useTheme()
   return <div className="drawer-stack">
     <div className="detail-actions"><Link to={`/tasks?task_id=${encodeURIComponent(data.task_id)}`}>查看 Task</Link><Link to={`/explorer?entity=runs&run_id=${encodeURIComponent(data.run_id)}`}>查看 Run</Link></div>
     <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} items={[
@@ -124,14 +127,14 @@ function CodexDetail({ data }: { data: CodexExecutionDetail }) {
       { key: 'error', label: '错误', children: data.error_code || '—' },
     ]} />
     <section><div className="section-label">执行事件</div><Timeline items={data.events.map((event) => ({
-      color: eventTypeColor(event.type),
+      color: eventTypeColor(event.type, theme.slots.eventType),
       children: <div className="timeline-entry"><div><strong>{event.type}</strong><span className="mono">#{event.seq}</span></div><p>{eventSummary(event.payload)}</p><time>{formatTime(event.occurred_at)}</time></div>,
     }))} /></section>
   </div>
 }
 
-export function eventTypeColor(type: string) {
-  return type === 'codex_error' || type === 'claude_error' ? 'red' : type === 'codex_usage' ? 'green' : 'blue'
+export function eventTypeColor(type: string, slots: EventTypeSlots) {
+  return type === 'codex_error' || type === 'claude_error' ? slots.error : type === 'codex_usage' ? slots.usage : slots.info
 }
 
 function eventSummary(payload: Record<string, unknown>) {
