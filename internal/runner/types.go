@@ -45,6 +45,18 @@ type CreateExecutionRequest struct {
 	SchemaFile     string         `json:"schema_file"`
 	TimeoutSeconds int64          `json:"timeout_seconds,omitempty"`
 	Provider       ProviderConfig `json:"provider"`
+	// ResultSubmission enables the MCP result channel for this run: the
+	// coordinator /mcp endpoint URL and the per-run bearer token. It is
+	// deliberately excluded from RequestHash (per-run, retry must stay
+	// idempotent) and must never be logged.
+	ResultSubmission *ResultSubmissionChannel `json:"result_submission,omitempty"`
+}
+
+// ResultSubmissionChannel carries the per-run MCP endpoint credentials from
+// the coordinator through the runner into the agent CLI process.
+type ResultSubmissionChannel struct {
+	EndpointURL string `json:"endpoint_url"`
+	BearerToken string `json:"bearer_token"`
 }
 
 type Execution struct {
@@ -78,13 +90,14 @@ type Result struct {
 }
 
 type ProviderRequest struct {
-	ExecutionID   string
-	TaskID        string
-	Role          string
-	WorkspacePath string
-	PromptFile    string
-	SchemaFile    string
-	Provider      ProviderConfig
+	ExecutionID      string
+	TaskID           string
+	Role             string
+	WorkspacePath    string
+	PromptFile       string
+	SchemaFile       string
+	Provider         ProviderConfig
+	ResultSubmission *ResultSubmissionChannel
 }
 
 type EmitFunc func(eventType string, payload map[string]any)

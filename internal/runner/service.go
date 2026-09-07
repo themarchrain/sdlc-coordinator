@@ -130,7 +130,7 @@ func (s *Service) run(ctx context.Context, provider Provider, runtime *execution
 	raw, err := provider.Execute(executionCtx, ProviderRequest{
 		ExecutionID: request.ExecutionID, TaskID: request.TaskID, Role: request.Role,
 		WorkspacePath: request.WorkspacePath, PromptFile: request.PromptFile, SchemaFile: request.SchemaFile,
-		Provider: request.Provider,
+		Provider: request.Provider, ResultSubmission: request.ResultSubmission,
 	}, emit)
 	if err != nil {
 		if errors.Is(executionCtx.Err(), context.DeadlineExceeded) {
@@ -138,7 +138,7 @@ func (s *Service) run(ctx context.Context, provider Provider, runtime *execution
 		} else if errors.Is(executionCtx.Err(), context.Canceled) {
 			s.finishFailure(runtime, StatusCancelled, "cancelled", "execution cancelled")
 		} else {
-			s.finishFailure(runtime, StatusFailed, "provider_failed", redactFailureMessage(err.Error(), request.Provider))
+			s.finishFailure(runtime, StatusFailed, "provider_failed", redactFailureMessage(err.Error(), request.Provider, request.ResultSubmission))
 		}
 		return
 	}
@@ -196,10 +196,15 @@ func (s *Service) persistAndEmitLocked(runtime *executionRuntime, eventType stri
 	}
 }
 
-func redactFailureMessage(message string, provider ProviderConfig) string {
-	secrets := make([]string, 0, len(provider.Headers)+1)
+func redactFailureMessage(message string, provider ProviderConfig, channel *ResultSubmissionChannel) string {
+	secrets := make([]string, 0, len(provider.Headers)+2)
 	if value := strings.TrimSpace(provider.APIKey); value != "" {
 		secrets = append(secrets, value)
+	}
+	if channel != nil {
+		if value := strings.TrimSpace(channel.BearerToken); value != "" {
+			secrets = append(secrets, value)
+		}
 	}
 	for _, value := range provider.Headers {
 		if value = strings.TrimSpace(value); value != "" {
@@ -390,6 +395,13 @@ func normalizeRequest(request CreateExecutionRequest) (CreateExecutionRequest, s
 	}
 	if request.TimeoutSeconds < 0 {
 		return CreateExecutionRequest{}, "", errors.New("timeout_seconds must not be negative")
+	}
+	if request.ResultSubmission != nil {
+		request.ResultSubmission.EndpointURL = strings.TrimSpace(request.ResultSubmission.EndpointURL)
+		request.ResultSubmission.BearerToken = strings.TrimSpace(request.ResultSubmission.BearerToken)
+		if request.ResultSubmission.EndpointURL == "" {
+			return CreateExecutionRequest{}, "", errors.New("result_submission.endpoint_url is required")
+		}
 	}
 	headerNames := make([]string, 0, len(request.Provider.Headers))
 	for name := range request.Provider.Headers {
