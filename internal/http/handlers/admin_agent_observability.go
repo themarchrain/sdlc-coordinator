@@ -19,20 +19,20 @@ func NewAdminAgentObservabilityHandler(query *agentobservability.Query) *AdminAg
 }
 
 func (handler *AdminAgentObservabilityHandler) RegisterRoutes(group *gin.RouterGroup) {
-	codex := group.Group("/agents/codex")
-	codex.GET("/summary", handler.CodexSummary)
-	codex.GET("/executions", handler.ListCodexExecutions)
-	codex.GET("/executions/:execution_id", handler.GetCodexExecution)
+	executions := group.Group("/agents/executions")
+	executions.GET("/summary", handler.AgentExecutionSummary)
+	executions.GET("/executions", handler.ListAgentExecutions)
+	executions.GET("/executions/:execution_id", handler.GetAgentExecution)
 }
 
-func (handler *AdminAgentObservabilityHandler) CodexSummary(c *gin.Context) {
-	filter, ok := parseCodexFilter(c, false)
+func (handler *AdminAgentObservabilityHandler) AgentExecutionSummary(c *gin.Context) {
+	filter, ok := parseExecutionFilter(c, false)
 	if !ok {
 		return
 	}
-	summary, err := handler.query.CodexSummary(c.Request.Context(), filter)
+	summary, err := handler.query.ExecutionSummary(c.Request.Context(), filter)
 	if err != nil {
-		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Codex 运行摘要失败")
+		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Agent 执行摘要失败")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -45,36 +45,37 @@ func (handler *AdminAgentObservabilityHandler) CodexSummary(c *gin.Context) {
 	})
 }
 
-func (handler *AdminAgentObservabilityHandler) ListCodexExecutions(c *gin.Context) {
-	filter, ok := parseCodexFilter(c, true)
+func (handler *AdminAgentObservabilityHandler) ListAgentExecutions(c *gin.Context) {
+	filter, ok := parseExecutionFilter(c, true)
 	if !ok {
 		return
 	}
-	page, err := handler.query.ListCodexExecutions(c.Request.Context(), filter)
+	page, err := handler.query.ListExecutions(c.Request.Context(), filter)
 	if err != nil {
-		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Codex 执行记录失败")
+		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Agent 执行记录失败")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": page.Items, "page": page.Page, "page_size": page.PageSize, "total": page.Total})
 }
 
-func (handler *AdminAgentObservabilityHandler) GetCodexExecution(c *gin.Context) {
-	detail, err := handler.query.GetCodexExecution(c.Request.Context(), c.Param("execution_id"))
+func (handler *AdminAgentObservabilityHandler) GetAgentExecution(c *gin.Context) {
+	detail, err := handler.query.GetExecution(c.Request.Context(), c.Param("execution_id"))
 	if errors.Is(err, repository.ErrNotFound) {
-		writeAdminError(c, http.StatusNotFound, "not_found", "Codex 执行记录不存在")
+		writeAdminError(c, http.StatusNotFound, "not_found", "Agent 执行记录不存在")
 		return
 	}
 	if err != nil {
-		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Codex 执行详情失败")
+		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Agent 执行详情失败")
 		return
 	}
 	c.JSON(http.StatusOK, detail)
 }
 
-func parseCodexFilter(c *gin.Context, withPage bool) (agentobservability.CodexFilter, bool) {
-	filter := agentobservability.CodexFilter{
+func parseExecutionFilter(c *gin.Context, withPage bool) (agentobservability.ExecutionFilter, bool) {
+	filter := agentobservability.ExecutionFilter{
 		Status: strings.TrimSpace(c.Query("status")), Role: strings.TrimSpace(c.Query("role")),
 		TaskID: strings.TrimSpace(c.Query("task_id")), RunID: strings.TrimSpace(c.Query("run_id")),
+		Provider: strings.TrimSpace(c.Query("provider")),
 	}
 	if !withPage {
 		return filter, true
@@ -86,7 +87,7 @@ func parseCodexFilter(c *gin.Context, withPage bool) (agentobservability.CodexFi
 	}
 	if err != nil || filter.PageSize > 100 {
 		writeAdminError(c, http.StatusBadRequest, "invalid_query", "page 和 page_size 必须是有效正整数，且 page_size 不超过 100")
-		return agentobservability.CodexFilter{}, false
+		return agentobservability.ExecutionFilter{}, false
 	}
 	return filter, true
 }

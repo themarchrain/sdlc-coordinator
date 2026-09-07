@@ -3,7 +3,7 @@ import { Button, Descriptions, Drawer, Form, Input, Select, Space, Table, Timeli
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
-import type { CodexExecution, CodexExecutionDetail, Query } from '../api/types'
+import type { AgentExecution, AgentExecutionDetail, Query } from '../api/types'
 import { patchSearchParams } from '../app/searchParams'
 import { PageHeading } from '../components/PageHeading'
 import { ErrorState, LoadingState } from '../components/PageState'
@@ -14,9 +14,10 @@ import { useRemote } from '../hooks/useRemote'
 
 const statuses = ['accepted', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']
 const roles = ['ReviewerWorker', 'DeveloperWorker']
-const filterKeys = ['status', 'role', 'task_id', 'run_id'] as const
+const providers = ['codex-cli', 'claude-cli']
+const filterKeys = ['provider', 'status', 'role', 'task_id', 'run_id'] as const
 
-export function CodexObservabilityPage() {
+export function AgentObservabilityPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -26,8 +27,8 @@ export function CodexObservabilityPage() {
     return value ? [[key, value]] : []
   })) as Query, [searchParams])
   const selectedID = searchParams.get('execution_id') || searchParams.get('run_id') || undefined
-  const summary = useRemote(() => adminApi.codexSummary(filters), [JSON.stringify(filters)])
-  const executions = useRemote(() => adminApi.listCodexExecutions({ ...filters, page, page_size: pageSize }), [JSON.stringify(filters), page, pageSize])
+  const summary = useRemote(() => adminApi.agentExecutionSummary(filters), [JSON.stringify(filters)])
+  const executions = useRemote(() => adminApi.listAgentExecutions({ ...filters, page, page_size: pageSize }), [JSON.stringify(filters), page, pageSize])
 
   useEffect(() => {
     form.setFieldsValue(Object.fromEntries(filterKeys.map((key) => [key, filters[key]])))
@@ -45,11 +46,12 @@ export function CodexObservabilityPage() {
   }
 
   return <div>
-    <PageHeading eyebrow="Codex 执行观测" title="Codex 运行" action={<Button onClick={() => { summary.reload(); executions.reload() }}>刷新快照</Button>} />
-    {summary.loading ? <LoadingState /> : summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : summary.data ? <CodexSummary data={summary.data} /> : null}
+    <PageHeading eyebrow="Agent 执行观测" title="Agent 运行" action={<Button onClick={() => { summary.reload(); executions.reload() }}>刷新快照</Button>} />
+    {summary.loading ? <LoadingState /> : summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : summary.data ? <ExecutionSummaryPanel data={summary.data} /> : null}
 
     <section className="surface-panel filter-panel codex-filter-panel">
       <Form form={form} layout="inline" onFinish={submit}>
+        <Form.Item name="provider"><Select allowClear placeholder="Provider（全部）" options={providers.map((value) => ({ value }))} style={{ width: 180 }} /></Form.Item>
         <Form.Item name="status"><Select allowClear placeholder="执行状态" options={statuses.map((value) => ({ value, label: statusLabel(value) }))} style={{ width: 170 }} /></Form.Item>
         <Form.Item name="role"><Select allowClear placeholder="Worker 角色" options={roles.map((value) => ({ value }))} style={{ width: 180 }} /></Form.Item>
         <Form.Item name="task_id"><Input allowClear placeholder="Task ID" /></Form.Item>
@@ -59,16 +61,17 @@ export function CodexObservabilityPage() {
     </section>
 
     <section className="surface-panel table-panel">
-      {executions.loading ? <LoadingState /> : executions.error ? <ErrorState error={executions.error} onRetry={executions.reload} /> : <Table<CodexExecution>
+      {executions.loading ? <LoadingState /> : executions.error ? <ErrorState error={executions.error} onRetry={executions.reload} /> : <Table<AgentExecution>
         className="admin-table admin-table--row-click"
         rowKey="execution_id"
         dataSource={executions.data?.items ?? []}
         onRow={(row) => ({ onClick: () => setSearchParams(patchSearchParams(searchParams, { execution_id: row.execution_id })) })}
         pagination={{ current: page, pageSize, total: executions.data?.total ?? 0, showSizeChanger: true, pageSizeOptions: [10, 20, 50], showTotal: (total) => `共 ${total} 条`, onChange: setPage, onShowSizeChange: (_current, size) => { setPage(1); setPageSize(size) } }}
-        scroll={{ x: 1180 }}
+        scroll={{ x: 1290 }}
         columns={[
           { title: 'Execution', dataIndex: 'execution_id', width: 260, render: (value) => <span className="mono table-cell-wrap">{value}</span> },
           { title: '状态', dataIndex: 'status', width: 120, render: (value) => <StatusTag status={value} /> },
+          { title: 'Provider', dataIndex: 'provider', width: 110, render: (value) => <span className="mono">{value || '—'}</span> },
           { title: '职责', width: 190, render: (_, row) => <div><strong>{row.role}</strong><small className="table-secondary">{taskTypeLabel(row.task_type)}</small></div> },
           { title: '模型', width: 180, render: (_, row) => <div><span className="mono">{row.model || '—'}</span><small className="table-secondary">{row.effort || '—'}</small></div> },
           { title: '仓库', dataIndex: 'repository', width: 220, render: (value) => <span className="mono table-cell-wrap">{value || '—'}</span> },
@@ -77,11 +80,11 @@ export function CodexObservabilityPage() {
         ]}
       />}
     </section>
-    <CodexExecutionDrawer executionID={selectedID} onClose={() => setSearchParams(patchSearchParams(searchParams, { execution_id: undefined, run_id: undefined }))} />
+    <AgentExecutionDrawer executionID={selectedID} onClose={() => setSearchParams(patchSearchParams(searchParams, { execution_id: undefined, run_id: undefined }))} />
   </div>
 }
 
-function CodexSummary({ data }: { data: import('../api/types').CodexObservabilitySummary }) {
+function ExecutionSummaryPanel({ data }: { data: import('../api/types').AgentExecutionSummary }) {
   const success = data.total_executions ? (data.status_counts.succeeded ?? 0) / data.total_executions : null
   const cache = data.cache_hit_ratio
   return <section className="surface-panel codex-summary">
@@ -106,19 +109,20 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
   return <div className="codex-metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>
 }
 
-function CodexExecutionDrawer({ executionID, onClose }: { executionID?: string; onClose: () => void }) {
-  const detail = useRemote(() => adminApi.getCodexExecution(executionID!), [executionID], Boolean(executionID))
+function AgentExecutionDrawer({ executionID, onClose }: { executionID?: string; onClose: () => void }) {
+  const detail = useRemote(() => adminApi.getAgentExecution(executionID!), [executionID], Boolean(executionID))
   return <Drawer width="min(820px, 100vw)" open={Boolean(executionID)} onClose={onClose} destroyOnClose title={<span className="mono">{executionID}</span>}>
-    {detail.loading ? <LoadingState /> : detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} /> : detail.data ? <CodexDetail data={detail.data} /> : null}
+    {detail.loading ? <LoadingState /> : detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} /> : detail.data ? <ExecutionDetailBody data={detail.data} /> : null}
   </Drawer>
 }
 
-function CodexDetail({ data }: { data: CodexExecutionDetail }) {
+function ExecutionDetailBody({ data }: { data: AgentExecutionDetail }) {
   const { theme } = useTheme()
   return <div className="drawer-stack">
     <div className="detail-actions"><Link to={`/tasks?task_id=${encodeURIComponent(data.task_id)}`}>查看 Task</Link><Link to={`/explorer?entity=runs&run_id=${encodeURIComponent(data.run_id)}`}>查看 Run</Link></div>
     <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} items={[
       { key: 'status', label: '状态', children: <StatusTag status={data.status} /> },
+      { key: 'provider', label: 'Provider', children: <span className="mono">{data.provider || '—'}</span> },
       { key: 'role', label: '职责', children: data.role },
       { key: 'model', label: '模型', children: <span className="mono">{data.model || '—'}</span> },
       { key: 'effort', label: '推理强度', children: data.effort || '—' },
@@ -134,12 +138,20 @@ function CodexDetail({ data }: { data: CodexExecutionDetail }) {
 }
 
 export function eventTypeColor(type: string, slots: EventTypeSlots) {
-  return type === 'codex_error' || type === 'claude_error' ? slots.error : type === 'codex_usage' ? slots.usage : slots.info
+  return type === 'codex_error' || type === 'claude_error'
+    ? slots.error
+    : type === 'codex_usage' || type === 'claude_usage'
+      ? slots.usage
+      : slots.info
 }
 
 function eventSummary(payload: Record<string, unknown>) {
-  const values = Object.entries(payload).map(([key, value]) => `${key}: ${String(value)}`)
+  const values = Object.entries(payload).map(([key, value]) => `${key}: ${formatPayloadValue(value)}`)
   return values.length ? values.join(' · ') : '无附加字段'
+}
+
+function formatPayloadValue(value: unknown) {
+  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
 }
 
 function formatNumber(value: number) { return new Intl.NumberFormat('zh-CN').format(value ?? 0) }

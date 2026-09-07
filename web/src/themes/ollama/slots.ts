@@ -6,7 +6,7 @@ import type { ThemeSlots } from '../types'
  * 八条趋势线与四张占比卡统一 Sparkline 默认数据墨 #000000。
  * 生命周期/事件时间线 = 终端红绿灯三色 + 中性 charcoal（无蓝）：
  *   TasksPage.timelineColor     → #ff5f56 / #ffbd2e / #27c93f / #525252
- *   CodexObservabilityPage.eventTypeColor → #ff5f56 / #27c93f / #525252
+ *   AgentObservabilityPage.eventTypeColor → #ff5f56 / #27c93f / #525252
  *   Sparkline 默认 #000000，hover 参考线 #d4d4d4（hairline-strong）
  * 键结构与 default/slots.ts 保持一致，只改值。
  */

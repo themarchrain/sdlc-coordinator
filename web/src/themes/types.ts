@@ -63,11 +63,11 @@ export interface TimelineSlots {
   info: string
 }
 
-/** CodexObservabilityPage 执行事件时间线的节点色（antd Timeline color）。 */
+/** AgentObservabilityPage 执行事件时间线的节点色（antd Timeline color）。 */
 export interface EventTypeSlots {
   /** codex_error / claude_error */
   error: string
-  /** codex_usage */
+  /** codex_usage / claude_usage */
   usage: string
   /** 其余默认节点 */
   info: string

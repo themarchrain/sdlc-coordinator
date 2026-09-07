@@ -39,12 +39,11 @@ describe('AppShell', () => {
     expect(screen.queryByText('管理台需登录，运行接口保持独立')).not.toBeInTheDocument()
   })
 
-	  it('exposes Codex as a provider-separated observability workspace', () => {
-	    render(<MemoryRouter initialEntries={['/agents/codex']}><AppShell><div>Codex 观测内容</div></AppShell></MemoryRouter>)
+	  it('exposes a provider-agnostic agent observability workspace', () => {
+	    render(<MemoryRouter initialEntries={['/agents']}><AppShell><div>Agent 观测内容</div></AppShell></MemoryRouter>)
 
 	    expect(screen.getByText('Agent 观测')).toBeInTheDocument()
-	    expect(screen.getByRole('link', { name: /Codex 运行/ })).toHaveAttribute('aria-current', 'page')
-	    expect(screen.queryByRole('combobox', { name: /Provider/i })).not.toBeInTheDocument()
+	    expect(screen.getByRole('link', { name: /Agent 运行/ })).toHaveAttribute('aria-current', 'page')
 	  })
 
   it('groups person directory and system configuration under one admin block', () => {
@@ -67,7 +66,7 @@ describe('AppShell', () => {
     const titles = [...container.querySelectorAll('.workspace-nav a')].map((link) => link.getAttribute('title'))
     expect(titles).toEqual([
       '运行总览', '需求管理', '仓库管理', '任务查询', '数据查询',
-      'Codex 运行',
+      'Agent 运行',
       '人员资产', '系统配置', '安全操作', '连接器实例',
     ])
     expect(screen.getByRole('link', { name: /仓库管理/ })).toHaveAttribute('aria-current', 'page')

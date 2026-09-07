@@ -3,7 +3,7 @@ import type { ThemeSlots } from '../types'
 /**
  * MiniMax 主题的语义色槽位 —— 值自 minimax 源 TSX 硬编码誊抄
  * （OverviewPage trendColor / TasksPage timelineColor /
- *   CodexObservabilityPage eventTypeColor / Sparkline 默认色与 hover 网格）。
+ *   AgentObservabilityPage eventTypeColor / Sparkline 默认色与 hover 网格）。
  * 时间线/事件节点用 antd preset 名（red/orange/green/blue），
  * 由 themes/css/minimax.css 的 [data-theme="minimax"]
  * .ant-timeline-item-color-* 覆写对齐品牌令牌，两层各司其职。

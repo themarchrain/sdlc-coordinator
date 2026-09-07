@@ -299,6 +299,10 @@ func claudeEnvironment(config runner.ProviderConfig, configDir string) ([]string
 	environment = append(environment,
 		"CLAUDE_CONFIG_DIR="+configDir,
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+		// claude >= 2.1.212 auto-backgrounds MCP tool calls at 2 minutes, which
+		// collides with the developer git finalize 3-minute sync cap; keep calls foreground.
+		"CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0",
+		"CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1",
 	)
 	if value := strings.TrimSpace(config.APIKey); value != "" {
 		environment = append(environment, "ANTHROPIC_API_KEY="+value)

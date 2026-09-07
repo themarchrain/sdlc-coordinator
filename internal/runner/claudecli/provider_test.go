@@ -245,6 +245,51 @@ func TestProviderRedactsProviderError(t *testing.T) {
 	}
 }
 
+func TestClaudeEnvironmentInjectsRuntimeBehaviorGuards(t *testing.T) {
+	configDir := t.TempDir()
+	config := runner.ProviderConfig{APIKey: "api-secret", BaseURL: "https://gateway.example"}
+	environment, err := claudeEnvironment(config, configDir)
+	if err != nil {
+		t.Fatalf("claude environment: %v", err)
+	}
+	for _, want := range []string{
+		"CLAUDE_CONFIG_DIR=" + configDir,
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+		"ANTHROPIC_API_KEY=api-secret",
+		"ANTHROPIC_BASE_URL=https://gateway.example",
+		"CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0",
+		"CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1",
+	} {
+		if !environmentContains(environment, want) {
+			t.Fatalf("claude environment missing %q: %#v", want, environment)
+		}
+	}
+}
+
+func TestClaudeEnvironmentGuardInjectionIsTheOnlyEntry(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS", "120000")
+	t.Setenv("CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT", "0")
+	environment, err := claudeEnvironment(runner.ProviderConfig{}, t.TempDir())
+	if err != nil {
+		t.Fatalf("claude environment: %v", err)
+	}
+	injected := map[string]string{
+		"CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS":                   "CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0",
+		"CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1",
+	}
+	for name, want := range injected {
+		entries := environmentEntries(environment, name)
+		// The guarantee is allowedBaseEnvironment's closed allowlist: ambient
+		// CLAUDE_CODE_* entries cannot survive into the child env, so the slice
+		// holds exactly the injected entry. No dedup layer may be relied upon:
+		// os/exec keeps only the last duplicate while libc getenv reads the
+		// first, so a leaked duplicate base entry would be a real bug.
+		if len(entries) != 1 || entries[0] != want {
+			t.Fatalf("injected %s must be the only entry for its name, got %d entries: %#v", name, len(entries), entries)
+		}
+	}
+}
+
 type fakeCommandRunner struct {
 	spec  commandSpec
 	lines [][]byte
@@ -286,4 +331,23 @@ func environmentMap(values []string) map[string]string {
 		}
 	}
 	return result
+}
+
+func environmentContains(values []string, entry string) bool {
+	for _, value := range values {
+		if value == entry {
+			return true
+		}
+	}
+	return false
+}
+
+func environmentEntries(values []string, name string) []string {
+	entries := make([]string, 0, 1)
+	for _, value := range values {
+		if entryName, _, cut := strings.Cut(value, "="); cut && entryName == name {
+			entries = append(entries, value)
+		}
+	}
+	return entries
 }

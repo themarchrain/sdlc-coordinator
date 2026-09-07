@@ -13,7 +13,7 @@ import { AppShell } from './AppShell'
 import { AuthenticationBoundary } from './AuthenticationBoundary'
 import { ConfigurationBoundary } from './ConfigurationBoundary'
 import { LoginPage } from '../pages/LoginPage'
-import { CodexObservabilityPage } from '../pages/CodexObservabilityPage'
+import { AgentObservabilityPage } from '../pages/AgentObservabilityPage'
 
 export function App() {
   return (
@@ -37,7 +37,7 @@ function AdminRoutes() {
           <Route path="explorer" element={<DataExplorerPage />} />
           <Route path="connectors" element={<ConnectorsPage />} />
           <Route path="operations" element={<OperationsPage />} />
-	          <Route path="agents/codex" element={<CodexObservabilityPage />} />
+          <Route path="agents" element={<AgentObservabilityPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

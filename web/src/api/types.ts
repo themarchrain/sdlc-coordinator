@@ -179,7 +179,7 @@ export interface TickResult extends Record<string, unknown> {
   executed_effects: Array<Record<string, unknown>>
 }
 
-export interface CodexObservabilitySummary {
+export interface AgentExecutionSummary {
   total_executions: number
   status_counts: Record<string, number>
   average_duration_seconds: number
@@ -195,13 +195,14 @@ export interface CodexObservabilitySummary {
   generated_at: string
 }
 
-export interface CodexExecution {
+export interface AgentExecution {
   execution_id: string
   run_id: string
   task_id: string
   task_type: string
   role: string
   repository: string
+  provider: string
   status: string
   model: string
   effort: string
@@ -215,15 +216,15 @@ export interface CodexExecution {
   duration_seconds?: number
 }
 
-export interface CodexExecutionEvent {
+export interface AgentExecutionEvent {
   seq: number
   type: string
   occurred_at: string
   payload: Record<string, unknown>
 }
 
-export interface CodexExecutionDetail extends CodexExecution {
-  events: CodexExecutionEvent[]
+export interface AgentExecutionDetail extends AgentExecution {
+  events: AgentExecutionEvent[]
 }
 
 export type EntityKey =

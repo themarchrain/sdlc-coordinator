@@ -31,8 +31,8 @@ COPY deploy/agent-runner-entrypoint.sh /usr/local/bin/agent-runner-entrypoint
 COPY deploy/agent-runner-runtime /opt/vendor
 
 # 未投放的组件目录不进 PATH 语义（查找自动落空），JAVA_HOME 同理——可选组件
-# 存在时即开箱可用，不存在时零影响。gcompat 供 glibc 形态的 claude 二进制在
-# musl 上尝试运行（不保证全部可用）。
+# 存在时即开箱可用，不存在时零影响。claude 只投 musl 变体（原生兼容）；gcompat
+# 供 node / jdk / maven 的 glibc 形态在 musl 上尝试运行（不保证全部可用）。
 # GOPROXY 供 agent 在容器内执行 go mod download / go test 时拉依赖。
 ENV TZ=Asia/Shanghai \
     SHELL=/bin/bash \

@@ -36,7 +36,7 @@ const adminWorkspaces = [
 ]
 
 const agentWorkspaces = [
-  { to: '/agents/codex', label: 'Codex 运行', icon: <RobotOutlined /> },
+  { to: '/agents', label: 'Agent 运行', icon: <RobotOutlined /> },
 ]
 
 function withRepository(path: string, repositoryID: string | null) {

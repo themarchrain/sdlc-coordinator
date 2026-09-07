@@ -7,11 +7,36 @@
 | 工具 | 来源 | 说明 |
 |---|---|---|
 | codex | **本目录投放** `codex-package/` | **必投**；musl 静态二进制，alpine 原生兼容 |
-| claude / node / jdk / maven | **本目录投放**（全部可选） | **有则构建、无则跳过**；目录为空或缺席仅告警，不影响构建 |
+| claude / node / jdk / maven | **本目录投放**（全部可选） | **有则构建、无则跳过**；目录为空或缺席仅告警，不影响构建。claude 只投 **musl 变体**（见下节），其余工具照旧 |
 | go 1.25 | 镜像内复制自 builder 阶段 | 不投放；`GOPROXY` 默认 `proxy.golang.org` |
-| python 3.12 / git / bash / su-exec / gcompat | alpine:3.21 apk | gcompat 供 glibc 形态 claude 二进制在 musl 上尝试运行 |
+| python 3.12 / git / bash / su-exec / gcompat | alpine:3.21 apk | gcompat 供 node / jdk / maven 的 glibc 形态在 musl 上尝试运行（不再服务 claude） |
 
-可选投放子目录形态与 codex 相同：**已解压的树**（含 `bin/`）或 **一个** tar（`.tar` / `.tar.gz` / `.tar.xz`）。node/jdk/maven 为 glibc 目标时同样受 gcompat 兜底约束（不保证全部可用）。Go 项目联调通常全部留空。
+可选投放子目录形态与 codex 相同：**已解压的树**（含 `bin/`）或 **一个** tar（`.tar` / `.tar.gz` / `.tar.xz`）。node/jdk/maven 为 glibc 目标时同样受 gcompat 兜底约束（不保证全部可用）。Go 项目联调 node/jdk/maven 通常全部留空。
+
+## 可选子目录：`claude/`（musl 变体为唯一投放形态）
+
+claude 二进制**必须投放 musl 变体**（npm 平台包 `@anthropic-ai/claude-code-linux-x64-musl`，当前钉 **2.1.236** 实测版），**禁止**经 npm 默认安装/下载路径拿 glibc 主包形态。
+
+**获取步骤（部署机）**：
+
+```bash
+cd "$(mktemp -d)"
+npm pack @anthropic-ai/claude-code-linux-x64-musl@2.1.236   # 注意 -musl 后缀；默认路径给的是 glibc 变体
+tar -xzf anthropic-ai-claude-code-linux-x64-musl-2.1.236.tgz
+mkdir -p <repo>/deploy/agent-runner-runtime/claude
+cp -a package/bin <repo>/deploy/agent-runner-runtime/claude/bin   # 树形投放（含 bin/claude）
+<repo>/deploy/agent-runner-runtime/claude/bin/claude --version    # 构建期同款校验，出真实版本号
+```
+
+**投放后验证（必做）**：interpreter 检查必须是 musl loader——
+
+```bash
+file deploy/agent-runner-runtime/claude/bin/claude
+# 正确: interpreter /lib/ld-musl-x86_64.so.1
+# 错误: interpreter /lib64/ld-linux-x86-64.so.2  ← glibc 变体，重新按上面步骤获取
+```
+
+**易错点**：glibc 变体在 alpine 底座上经 gcompat 运行会在 `__pthread_key_create` 符号处崩（exit 127）——构建期只告警不阻断，运行期必炸。不要用「glibc + gcompat 兜底」的旧结论投放 claude。
 
 ## 必备子目录：`codex-package/`
 

@@ -5,7 +5,7 @@ import type { ThemeSlots } from '../types'
  *   chart.trends    ← OverviewPage.tsx 4 处 trendColor
  *   chart.ratios    ← OverviewPage.tsx 4 处 trendColor
  *   timeline        ← TasksPage.tsx timelineColor 分支
- *   eventType       ← CodexObservabilityPage.tsx eventTypeColor 分支
+ *   eventType       ← AgentObservabilityPage.tsx eventTypeColor 分支
  *   sparkline       ← Sparkline.tsx 默认描线色与 hover 虚线色
  * 色彩语言：success 绿 / teal 辅色 / amber 辅色 / 珊瑚 / 暖墨红。
  */
