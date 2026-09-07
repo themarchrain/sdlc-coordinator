@@ -325,12 +325,8 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 	}
 }
 
-// handoffResponse is the post-exhaustion answer: no new counting, no
+// handoffWithProblems is the exhaustion answer: no new counting, no
 // re-validation, just the standing instruction to use the text channel.
-func (h *MCPHandler) handoffResponse(id json.RawMessage, run *model.Run, rejected int64) gin.H {
-	return h.handoffWithProblems(id, run, rejected, nil)
-}
-
 func (h *MCPHandler) handoffWithProblems(id json.RawMessage, run *model.Run, attempt int64, problems []orchestrator.ValidationProblem) gin.H {
 	remaining := int64(0)
 	return toolResultResponse(id, true, mcpToolPayload{
