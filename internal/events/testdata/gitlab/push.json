@@ -1,0 +1,37 @@
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "1111111111111111111111111111111111111111",
+  "after": "2222222222222222222222222222222222222222",
+  "ref": "refs/heads/feature/status-normalization",
+  "checkout_sha": "2222222222222222222222222222222222222222",
+  "user_name": "Demo User",
+  "user_username": "demo.user",
+  "user_email": "demo.user@example.com",
+  "project": {
+    "id": 15594,
+    "name": "lite-list",
+    "path_with_namespace": "demo-group/lite-list",
+    "default_branch": "master",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_http_url": "https://gitlab.example/demo-group/lite-list.git"
+  },
+  "repository": {
+    "name": "lite-list",
+    "url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_http_url": "https://gitlab.example/demo-group/lite-list.git"
+  },
+  "commits": [
+    {
+      "id": "2222222222222222222222222222222222222222",
+      "message": "Push commit for MR source branch",
+      "timestamp": "2026-07-20T12:00:00Z",
+      "url": "https://gitlab.example/demo-group/lite-list/-/commit/2222222222222222222222222222222222222222",
+      "author": {
+        "name": "Demo User",
+        "email": "demo.user@example.com"
+      }
+    }
+  ]
+}

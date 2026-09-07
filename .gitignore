@@ -1,0 +1,34 @@
+.idea/
+.env
+bin/
+*.exe
+*.test
+*.out
+*.db
+*.sqlite
+*.sqlite3
+coverage.out
+.worktrees/
+worktrees/
+.gocache/
+.gotmp/
+.codegraph/
+__pycache__/
+*.pyc
+/data/
+/logs/
+*.bak
+/web/node_modules/
+/web/dist/*
+!/web/dist/.gitkeep
+/deploy/agent-runner-runtime/**
+!/deploy/agent-runner-runtime/README.md
+!/deploy/agent-runner-runtime/materialize.sh
+!/deploy/agent-runner-runtime/**/.gitkeep
+
+# Working notes, in-progress specs
+.local/
+.local/**
+
+# root-level tool caches (vitest/npx accidental runs)
+/node_modules/

@@ -1,0 +1,50 @@
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 100,
+    "name": "Demo User",
+    "username": "demo.user",
+    "email": "demo.user@example.com"
+  },
+  "project": {
+    "id": 15594,
+    "name": "lite-list",
+    "description": "Desensitized demo project.",
+    "web_url": "https://gitlab.example/demo-group/lite-list",
+    "path_with_namespace": "demo-group/lite-list",
+    "default_branch": "master",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_http_url": "https://gitlab.example/demo-group/lite-list.git"
+  },
+  "object_attributes": {
+    "id": 9002,
+    "iid": 2,
+    "target_branch": "master",
+    "source_branch": "feature/status-normalization",
+    "source_project_id": 15594,
+    "target_project_id": 15594,
+    "state": "opened",
+    "title": "Add item status normalization",
+    "description": "Review status normalization changes.",
+    "url": "https://gitlab.example/demo-group/lite-list/-/merge_requests/2",
+    "action": "open",
+    "updated_at": "2026-07-20T09:00:00Z",
+    "last_commit": {
+      "id": "de51000000000000000000000000000000000000",
+      "message": "Add status normalization",
+      "timestamp": "2026-07-20T09:00:00Z",
+      "url": "https://gitlab.example/demo-group/lite-list/-/commit/de51000000000000000000000000000000000000",
+      "author": {
+        "name": "Demo User",
+        "email": "demo.user@example.com"
+      }
+    }
+  },
+  "repository": {
+    "name": "lite-list",
+    "url": "git@gitlab.example:demo-group/lite-list.git",
+    "description": "Desensitized demo repository.",
+    "homepage": "https://gitlab.example/demo-group/lite-list"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "object_kind": "issue",
+  "event_type": "issue",
+  "project": {
+    "id": 15594,
+    "path_with_namespace": "demo-group/lite-list",
+    "default_branch": "master",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git"
+  },
+  "object_attributes": {
+    "iid": 2,
+    "title": "Fix empty status bug",
+    "description": "Implement the issue from a GitLab work item.",
+    "state": "opened",
+    "url": "https://gitlab.example/demo-group/lite-list/-/issues/2",
+    "action": "open",
+    "updated_at": "2026-07-26T12:00:00Z",
+    "assignee_ids": [7101]
+  },
+  "labels": [
+    {"title": "developer-agent"}
+  ],
+  "repository": {
+    "url": "git@gitlab.example:demo-group/lite-list.git"
+  }
+}

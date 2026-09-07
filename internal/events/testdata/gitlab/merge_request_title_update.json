@@ -1,0 +1,31 @@
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "project": {
+    "id": 15594,
+    "name": "lite-list",
+    "path_with_namespace": "demo-group/lite-list",
+    "default_branch": "master",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_http_url": "https://gitlab.example/demo-group/lite-list.git"
+  },
+  "object_attributes": {
+    "id": 9001,
+    "iid": 1,
+    "target_branch": "master",
+    "source_branch": "feature/title-only",
+    "state": "closed",
+    "title": "Rename review title",
+    "description": "Metadata-only title change.",
+    "url": "https://gitlab.example/demo-group/lite-list/-/merge_requests/1",
+    "action": "update",
+    "updated_at": "2026-07-20T09:20:00Z",
+    "last_commit": {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "repository": {
+    "name": "lite-list",
+    "url": "git@gitlab.example:demo-group/lite-list.git"
+  }
+}

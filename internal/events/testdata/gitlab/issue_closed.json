@@ -1,0 +1,26 @@
+{
+  "object_kind": "issue",
+  "event_type": "issue",
+  "project": {
+    "id": 15594,
+    "name": "lite-list",
+    "path_with_namespace": "demo-group/lite-list",
+    "default_branch": "master",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_http_url": "https://gitlab.example/demo-group/lite-list.git"
+  },
+  "object_attributes": {
+    "id": 10001,
+    "iid": 1,
+    "title": "Closed issue",
+    "description": "Closed issue should not trigger development.",
+    "state": "closed",
+    "url": "https://gitlab.example/demo-group/lite-list/-/issues/1",
+    "action": "close",
+    "updated_at": "2026-07-20T10:30:00Z"
+  },
+  "repository": {
+    "name": "lite-list",
+    "url": "git@gitlab.example:demo-group/lite-list.git"
+  }
+}

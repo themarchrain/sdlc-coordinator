@@ -1,0 +1,17 @@
+.git
+.gitignore
+.idea
+.local
+.mematrix
+.superpowers
+docs
+.env
+*.exe
+*.db
+*.log
+.gocache
+data
+logs
+runner-data
+workspaces
+web/node_modules

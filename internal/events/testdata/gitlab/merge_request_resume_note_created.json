@@ -1,0 +1,63 @@
+{
+  "object_kind": "note",
+  "event_type": "note",
+  "user": {
+    "id": 42,
+    "name": "Demo Developer",
+    "username": "developer",
+    "email": "developer@example.com"
+  },
+  "project": {
+    "id": 1001,
+    "name": "demo-project",
+    "path_with_namespace": "demo-group/demo-project",
+    "default_branch": "main",
+    "git_ssh_url": "git@gitlab.example:demo-group/demo-project.git",
+    "git_http_url": "https://gitlab.example/demo-group/demo-project.git"
+  },
+  "repository": {
+    "name": "demo-project",
+    "url": "git@gitlab.example:demo-group/demo-project.git"
+  },
+  "object_attributes": {
+    "id": 20001,
+    "note": "请修正空值处理并补充对应测试。",
+    "description": "请修正空值处理并补充对应测试。",
+    "noteable_id": 9001,
+    "noteable_type": "MergeRequest",
+    "project_id": 1001,
+    "author_id": 42,
+    "discussion_id": "discussion-root-001",
+    "system": false,
+    "type": null,
+    "action": "create",
+    "url": "https://gitlab.example/demo-group/demo-project/-/merge_requests/21#note_20001"
+  },
+  "merge_request": {
+    "id": 9001,
+    "iid": 21,
+    "author_id": 42,
+    "assignee_id": 42,
+    "assignee_ids": [42],
+    "reviewer_ids": [43],
+    "state": "opened",
+    "state_id": 1,
+    "title": "Fix null handling",
+    "description": "Implement null-safe normalization.",
+    "source_branch": "developer/issue-19-20260806",
+    "target_branch": "main",
+    "source_project_id": 1001,
+    "target_project_id": 1001,
+    "url": "https://gitlab.example/demo-group/demo-project/-/merge_requests/21",
+    "last_commit": {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "fix: normalize null input",
+      "message": "fix: normalize null input",
+      "url": "https://gitlab.example/demo-group/demo-project/-/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "author": {
+        "name": "Agent",
+        "email": "agent@example.com"
+      }
+    }
+  }
+}

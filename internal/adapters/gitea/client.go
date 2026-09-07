@@ -1,0 +1,316 @@
+package gitea
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+
+	"sdlc-coordinator/internal/adapters/codehost"
+)
+
+type Client struct {
+	baseURL    string
+	token      string
+	httpClient *http.Client
+}
+
+type Option func(*Client)
+
+func WithHTTPClient(httpClient *http.Client) Option {
+	return func(c *Client) {
+		c.httpClient = httpClient
+	}
+}
+
+func NewClient(baseURL, token string, opts ...Option) *Client {
+	client := &Client{
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		token:      token,
+		httpClient: http.DefaultClient,
+	}
+	for _, opt := range opts {
+		opt(client)
+	}
+	if client.httpClient == nil {
+		client.httpClient = http.DefaultClient
+	}
+	return client
+}
+
+type issueResponse struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+}
+
+type noteResponse struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+}
+
+type labelResponse struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c *Client) CreateIssue(ctx context.Context, repo string, req codehost.CreateIssueRequest) (*codehost.Issue, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]any{
+		"title": req.Title,
+		"body":  req.Description,
+	}
+	if len(req.Labels) > 0 {
+		labelIDs, err := c.resolveLabelIDs(ctx, repo, owner, name, req.Labels)
+		if err != nil {
+			return nil, err
+		}
+		payload["labels"] = labelIDs
+	}
+
+	var issue issueResponse
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/issues", url.PathEscape(owner), url.PathEscape(name)), payload, &issue); err != nil {
+		return nil, err
+	}
+	return &codehost.Issue{IID: issue.Number, WebURL: issue.HTMLURL}, nil
+}
+
+func (c *Client) CreateMergeRequest(ctx context.Context, repo string, req codehost.CreateMergeRequestRequest) (*codehost.MergeRequest, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]any{
+		"title": req.Title,
+		"body":  req.Description,
+		"head":  req.SourceBranch,
+		"base":  req.TargetBranch,
+	}
+
+	var pr issueResponse
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(name)), payload, &pr); err != nil {
+		return nil, err
+	}
+	if len(req.Labels) > 0 {
+		if _, err := c.SetMergeRequestLabels(ctx, repo, pr.Number, codehost.SetLabelsRequest{Labels: req.Labels}); err != nil {
+			return nil, err
+		}
+	}
+	return &codehost.MergeRequest{IID: pr.Number, WebURL: pr.HTMLURL}, nil
+}
+
+func (c *Client) CreateIssueNote(ctx context.Context, repo string, issueIID int, req codehost.CreateNoteRequest) (*codehost.Note, error) {
+	return c.createIssueComment(ctx, repo, issueIID, req)
+}
+
+func (c *Client) CreateMergeRequestNote(ctx context.Context, repo string, mrIID int, req codehost.CreateNoteRequest) (*codehost.Note, error) {
+	return c.createIssueComment(ctx, repo, mrIID, req)
+}
+
+func (c *Client) SetIssueLabels(ctx context.Context, repo string, issueIID int, req codehost.SetLabelsRequest) (*codehost.Issue, error) {
+	issue, err := c.setIssueLabels(ctx, repo, issueIID, req.Labels)
+	if err != nil {
+		return nil, err
+	}
+	return &codehost.Issue{IID: issue.Number, WebURL: issue.HTMLURL}, nil
+}
+
+func (c *Client) SetMergeRequestLabels(ctx context.Context, repo string, mrIID int, req codehost.SetLabelsRequest) (*codehost.MergeRequest, error) {
+	issue, err := c.setIssueLabels(ctx, repo, mrIID, req.Labels)
+	if err != nil {
+		return nil, err
+	}
+	return &codehost.MergeRequest{IID: issue.Number, WebURL: issue.HTMLURL}, nil
+}
+
+func (c *Client) AddMergeRequestLabels(ctx context.Context, repo string, mrIID int, req codehost.SetLabelsRequest) (*codehost.MergeRequest, error) {
+	if err := c.addIssueLabels(ctx, repo, mrIID, req.Labels); err != nil {
+		return nil, err
+	}
+	return &codehost.MergeRequest{IID: mrIID}, nil
+}
+
+func splitRepo(repo string) (string, string, error) {
+	parts := strings.Split(strings.Trim(repo, "/"), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", fmt.Errorf("gitea repo must be owner/repo, got %q", repo)
+	}
+	return parts[0], parts[1], nil
+}
+
+func (c *Client) createIssueComment(ctx context.Context, repo string, index int, req codehost.CreateNoteRequest) (*codehost.Note, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	var note noteResponse
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/issues/%d/comments", url.PathEscape(owner), url.PathEscape(name), index), map[string]any{
+		"body": req.Body,
+	}, &note); err != nil {
+		return nil, err
+	}
+	return &codehost.Note{ID: note.ID, Body: note.Body}, nil
+}
+
+func (c *Client) setIssueLabels(ctx context.Context, repo string, index int, labels []string) (*issueResponse, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	labelIDs, err := c.resolveLabelIDs(ctx, repo, owner, name, labels)
+	if err != nil {
+		return nil, err
+	}
+
+	var updatedLabels []labelResponse
+	if err := c.doJSON(ctx, http.MethodPut, fmt.Sprintf("/api/v1/repos/%s/%s/issues/%d/labels", url.PathEscape(owner), url.PathEscape(name), index), map[string]any{
+		"labels": labelIDs,
+	}, &updatedLabels); err != nil {
+		return nil, err
+	}
+	return &issueResponse{Number: index}, nil
+}
+
+func (c *Client) addIssueLabels(ctx context.Context, repo string, index int, labels []string) error {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return err
+	}
+	labelIDs, err := c.resolveLabelIDs(ctx, repo, owner, name, labels)
+	if err != nil {
+		return err
+	}
+
+	var updatedLabels []labelResponse
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/issues/%d/labels", url.PathEscape(owner), url.PathEscape(name), index), map[string]any{
+		"labels": labelIDs,
+	}, &updatedLabels); err != nil {
+		return err
+	}
+	return nil
+}
+
+// giteaPageSize 是列表接口的取页大小;服务器会把更大的 limit 截到自身上限。
+const giteaPageSize = 50
+
+func (c *Client) resolveLabelIDs(ctx context.Context, repo, owner, name string, labels []string) ([]int, error) {
+	if len(labels) == 0 {
+		return nil, nil
+	}
+
+	byName := make(map[string]int, len(labels))
+	basePath := fmt.Sprintf("/api/v1/repos/%s/%s/labels", url.PathEscape(owner), url.PathEscape(name))
+	for page := 1; ; page++ {
+		query := url.Values{"page": {strconv.Itoa(page)}, "limit": {strconv.Itoa(giteaPageSize)}}
+		var remoteLabels []labelResponse
+		if err := c.doJSON(ctx, http.MethodGet, basePath+"?"+query.Encode(), nil, &remoteLabels); err != nil {
+			return nil, err
+		}
+		for _, label := range remoteLabels {
+			byName[label.Name] = label.ID
+		}
+		if len(remoteLabels) < giteaPageSize {
+			break
+		}
+	}
+
+	ids := make([]int, 0, len(labels))
+	for _, label := range labels {
+		id, ok := byName[label]
+		if !ok {
+			return nil, fmt.Errorf("gitea label %q not found in %s", label, repo)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (c *Client) doJSON(ctx context.Context, method, path string, in any, out any) error {
+	var body io.Reader
+	if in != nil {
+		buf := &bytes.Buffer{}
+		if err := json.NewEncoder(buf).Encode(in); err != nil {
+			return fmt.Errorf("encode request body: %w", err)
+		}
+		body = buf
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return codehost.NewAmbiguousError(fmt.Errorf("perform request: %w", err))
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		err := &StatusError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("gitea %s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))}
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return codehost.NewAmbiguousError(err)
+		}
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout {
+			return codehost.NewTransientRejection(err)
+		}
+		return err
+	}
+
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		err := fmt.Errorf("decode response: %w", err)
+		if isMutatingMethod(method) {
+			return codehost.NewAmbiguousError(err)
+		}
+		return err
+	}
+	return nil
+}
+
+func isMutatingMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+// StatusError 携带 HTTP 状态码,供写回凭据降级(401/403)等调用方识别。
+type StatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (err *StatusError) Error() string { return err.Message }
+
+// StatusCode 提取错误链中的 HTTP 状态码;无状态信息返回 0。
+func StatusCode(err error) int {
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode
+	}
+	return 0
+}

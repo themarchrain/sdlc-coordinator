@@ -1,0 +1,34 @@
+{
+  "object_kind": "issue",
+  "event_type": "issue",
+  "user": {
+    "id": 101,
+    "name": "Issue Reporter",
+    "username": "issue.reporter",
+    "email": "issue.reporter@example.com"
+  },
+  "project": {
+    "id": 15594,
+    "name": "lite-list",
+    "description": "Desensitized demo project.",
+    "web_url": "https://gitlab.example/demo-group/lite-list",
+    "path_with_namespace": "demo-group/lite-list",
+    "default_branch": "master",
+    "git_ssh_url": "git@gitlab.example:demo-group/lite-list.git",
+    "git_http_url": "https://gitlab.example/demo-group/lite-list.git"
+  },
+  "object_attributes": {
+    "id": 10002,
+    "iid": 2,
+    "title": "Fix empty status bug",
+    "description": "Implement the issue from a GitLab work item.",
+    "state": "opened",
+    "url": "https://gitlab.example/demo-group/lite-list/-/issues/2",
+    "action": "open",
+    "updated_at": "2026-07-20T10:00:00Z"
+  },
+  "repository": {
+    "name": "lite-list",
+    "url": "git@gitlab.example:demo-group/lite-list.git"
+  }
+}

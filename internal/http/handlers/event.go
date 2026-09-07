@@ -1,0 +1,330 @@
+package handlers
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+
+	"sdlc-coordinator/internal/events"
+
+	"github.com/gin-gonic/gin"
+)
+
+// 平台身份与 endpoint 静态绑定:每个 webhook endpoint 只可能收到所属平台的事件,
+// secret 查找按该 provider 作用域隔离(跨平台同 path 仓各匹配各的)。
+const (
+	providerGitLab = "gitlab"
+	providerGitea  = "gitea"
+	providerGitHub = "github"
+)
+
+// WebhookSecretLookup 按 provider + 仓路径解析该仓的 webhook secret(webhook
+// secret 按仓持有,无全局回退)。返回任何 error(含未注册)或空串都由验签方统一
+// fail-closed 拒绝,响应不区分原因(枚举防护)。
+type WebhookSecretLookup interface {
+	WebhookSecretByPath(ctx context.Context, provider, path string) (string, error)
+}
+
+type EventHandler struct {
+	processor        *events.Processor
+	webhookSecrets   WebhookSecretLookup
+	giteaNormalizer  events.GiteaNormalizer
+	githubNormalizer events.GitHubNormalizer
+}
+
+type EventHandlerOption func(*EventHandler)
+
+// WithWebhookSecretLookup 注入按仓 secret 解析端口。注入 nil 等价于拒绝全部
+// webhook 投递(fail-closed)。
+func WithWebhookSecretLookup(lookup WebhookSecretLookup) EventHandlerOption {
+	return func(h *EventHandler) {
+		h.webhookSecrets = lookup
+	}
+}
+
+// WithReworkAllowedUserIDs 注入平台级 rework 白名单(平台 user id),
+// gitea/github normalizer 与 GitLab 侧共用同一份配置。
+func WithReworkAllowedUserIDs(ids []int) EventHandlerOption {
+	return func(h *EventHandler) {
+		h.giteaNormalizer = events.NewGiteaNormalizer(events.WithGiteaReworkAllowedUserIDs(ids))
+		h.githubNormalizer = events.NewGitHubNormalizer(events.WithGitHubReworkAllowedUserIDs(ids))
+	}
+}
+
+type GitLabEventResponse struct {
+	EventID      string        `json:"event_id"`
+	EventStatus  string        `json:"event_status"`
+	Ignored      bool          `json:"ignored"`
+	IgnoreReason string        `json:"ignore_reason,omitempty"`
+	Duplicate    bool          `json:"duplicate"`
+	Task         *TaskResponse `json:"task,omitempty"`
+}
+
+func NewEventHandler(processor *events.Processor, opts ...EventHandlerOption) *EventHandler {
+	handler := &EventHandler{processor: processor}
+	for _, opt := range opts {
+		opt(handler)
+	}
+	return handler
+}
+
+func (h *EventHandler) GitLab(c *gin.Context) {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "read gitlab event payload failed",
+			"details": err.Error(),
+		})
+		return
+	}
+	// 鉴权先于业务依赖检查:先从不可信 payload 最小解析仓路径,取该仓 secret 验签;
+	// 未授权流量不暴露服务内部状态。
+	path, ok := gitLabRepoPath(raw)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed gitlab webhook payload"})
+		return
+	}
+	if !h.authorizeGitLabWebhook(c.Request.Context(), path, c.GetHeader("X-Gitlab-Token")) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
+		return
+	}
+	if h == nil || h.processor == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
+		return
+	}
+
+	result, err := h.processor.ProcessGitLabWebhook(c.Request.Context(), raw, events.WithGitLabWebhookMetadata(events.GitLabWebhookMetadata{
+		EventName:   c.GetHeader("X-Gitlab-Event"),
+		EventUUID:   c.GetHeader("X-Gitlab-Event-UUID"),
+		WebhookUUID: c.GetHeader("X-Gitlab-Webhook-UUID"),
+		InstanceURL: c.GetHeader("X-Gitlab-Instance"),
+	}))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "process gitlab event failed",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	resp := GitLabEventResponse{
+		Ignored:      result.Ignored,
+		IgnoreReason: result.IgnoreReason,
+		Duplicate:    result.Duplicate,
+	}
+	if result.Event != nil {
+		resp.EventID = result.Event.EventID
+		resp.EventStatus = string(result.Event.Status)
+	}
+	if result.Task != nil {
+		task := taskResponse(result.Task)
+		resp.Task = &task
+	}
+
+	c.JSON(http.StatusAccepted, resp)
+}
+
+// Gitea 处理 Gitea webhook:X-Gitea-Signature 携带 hex(hmac_sha256(secret, body)),
+// secret 按仓解析,使用常量时间比较;事件经 GiteaNormalizer 规范化后进入统一编排。
+func (h *EventHandler) Gitea(c *gin.Context) {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "read gitea event payload failed",
+			"details": err.Error(),
+		})
+		return
+	}
+	// 鉴权先于业务依赖检查:最小解析仓路径 → 取该仓 secret → 验签。
+	path, ok := codeHostRepoPath(raw)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed gitea webhook payload"})
+		return
+	}
+	if !h.authorizeCodeHostWebhook(c.Request.Context(), providerGitea, path, c.GetHeader("X-Gitea-Signature"), raw, "") {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
+		return
+	}
+	if h == nil || h.processor == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
+		return
+	}
+
+	result, err := h.processor.ProcessWebhook(c.Request.Context(), h.giteaNormalizer, raw, events.WebhookMetadata{
+		EventType:   c.GetHeader("X-Gitea-Event"),
+		DeliveryID:  c.GetHeader("X-Gitea-Delivery"),
+		InstanceURL: c.GetHeader("X-Gitea-Instance"),
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "process gitea event failed",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	resp := GitLabEventResponse{
+		Ignored:      result.Ignored,
+		IgnoreReason: result.IgnoreReason,
+		Duplicate:    result.Duplicate,
+	}
+	if result.Event != nil {
+		resp.EventID = result.Event.EventID
+		resp.EventStatus = string(result.Event.Status)
+	}
+	if result.Task != nil {
+		task := taskResponse(result.Task)
+		resp.Task = &task
+	}
+
+	c.JSON(http.StatusAccepted, resp)
+}
+
+// GitHub 处理 GitHub webhook:X-Hub-Signature-256 携带 "sha256=" 前缀的
+// hex(hmac_sha256(secret, body)),secret 按仓解析,常量时间比较;事件经
+// GitHubNormalizer 规范化后进入统一编排。
+func (h *EventHandler) GitHub(c *gin.Context) {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "read github event payload failed",
+			"details": err.Error(),
+		})
+		return
+	}
+	// 鉴权先于业务依赖检查:最小解析仓路径 → 取该仓 secret → 验签。
+	path, ok := codeHostRepoPath(raw)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed github webhook payload"})
+		return
+	}
+	if !h.authorizeCodeHostWebhook(c.Request.Context(), providerGitHub, path, c.GetHeader("X-Hub-Signature-256"), raw, "sha256=") {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
+		return
+	}
+	if h == nil || h.processor == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
+		return
+	}
+
+	result, err := h.processor.ProcessWebhook(c.Request.Context(), h.githubNormalizer, raw, events.WebhookMetadata{
+		EventType:   c.GetHeader("X-GitHub-Event"),
+		DeliveryID:  c.GetHeader("X-GitHub-Delivery"),
+		InstanceURL: c.GetHeader("X-GitHub-Enterprise-Host"),
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "process github event failed",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	resp := GitLabEventResponse{
+		Ignored:      result.Ignored,
+		IgnoreReason: result.IgnoreReason,
+		Duplicate:    result.Duplicate,
+	}
+	if result.Event != nil {
+		resp.EventID = result.Event.EventID
+		resp.EventStatus = string(result.Event.Status)
+	}
+	if result.Task != nil {
+		task := taskResponse(result.Task)
+		resp.Task = &task
+	}
+
+	c.JSON(http.StatusAccepted, resp)
+}
+
+// repoWebhookSecret 解析仓 secret;任何 error(未注册/仓储抖动)一律按空 secret
+// 处理,由调用方 fail-closed。
+func (h *EventHandler) repoWebhookSecret(ctx context.Context, provider, path string) string {
+	if h == nil || h.webhookSecrets == nil {
+		return ""
+	}
+	secret, err := h.webhookSecrets.WebhookSecretByPath(ctx, provider, path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(secret)
+}
+
+func (h *EventHandler) authorizeGitLabWebhook(ctx context.Context, path, received string) bool {
+	expected := h.repoWebhookSecret(ctx, providerGitLab, path)
+	// 该仓未注册或未配置 secret 一律拒绝(fail-closed):未验证流量不得进入事件库。
+	if expected == "" {
+		return false
+	}
+	actual := strings.TrimSpace(received)
+	if actual == "" || len(actual) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
+}
+
+// authorizeCodeHostWebhook 验证 HMAC 签名(Gitea 与 GitHub 共用,差异只在
+// provider 作用域与 signaturePrefix:Gitea 裸 hex,GitHub 带 "sha256=" 前缀)。
+func (h *EventHandler) authorizeCodeHostWebhook(ctx context.Context, provider, path, receivedSignature string, body []byte, signaturePrefix string) bool {
+	expected := h.repoWebhookSecret(ctx, provider, path)
+	// 该仓未注册或未配置 secret 一律拒绝(fail-closed):未验证流量不得进入事件库。
+	if expected == "" {
+		return false
+	}
+	received := strings.TrimSpace(receivedSignature)
+	if signaturePrefix != "" {
+		// GitHub 固定发送前缀;前缀缺失或类型不符直接拒绝。
+		if !strings.HasPrefix(strings.ToLower(received), signaturePrefix) {
+			return false
+		}
+		received = received[len(signaturePrefix):]
+	}
+	if received == "" {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(expected))
+	mac.Write(body)
+	expectedMAC := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(received), []byte(expectedMAC))
+}
+
+// gitLabRepoPath 最小解析 project.path_with_namespace;只读取这一个字段用于
+// 定位仓,不信任 payload 其余内容。
+func gitLabRepoPath(raw []byte) (string, bool) {
+	var payload struct {
+		Project struct {
+			PathWithNamespace string `json:"path_with_namespace"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", false
+	}
+	path := strings.TrimSpace(payload.Project.PathWithNamespace)
+	if path == "" {
+		return "", false
+	}
+	return path, true
+}
+
+// codeHostRepoPath 最小解析 repository.full_name(Gitea/GitHub 载荷的仓路径键)。
+func codeHostRepoPath(raw []byte) (string, bool) {
+	var payload struct {
+		Repository struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", false
+	}
+	path := strings.TrimSpace(payload.Repository.FullName)
+	if path == "" {
+		return "", false
+	}
+	return path, true
+}
