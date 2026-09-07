@@ -143,7 +143,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 			BaseURL: cfg.AgentRunner.ProviderBaseURL, APIKey: cfg.AgentRunner.APIKey,
 			Headers: providerHeaders, Model: cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort,
 		},
-		ResolveCredential: runnerCredentialResolver(repoStore),
+		ResolveRepository: runnerRepositoryResolver(repoStore),
 	}
 	var orch *orchestrator.Orchestrator
 	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
@@ -332,10 +332,10 @@ func parseMentionMap(raw string) (map[string]string, error) {
 	return parsed, nil
 }
 
-// runnerCredentialResolver 用任务所属注册仓的 Token 构造 git 克隆/推送凭据。
-// 任务未绑定注册仓时拒绝。
-func runnerCredentialResolver(store *registeredrepo.Store) func(context.Context, *model.Task) (*workspace.GitCredential, error) {
-	return func(ctx context.Context, task *model.Task) (*workspace.GitCredential, error) {
+// runnerRepositoryResolver 按任务绑定解析注册仓整行,是 runner 链路 workspace
+// URL(CloneURL 派生)与每仓 Token 凭据的唯一权威来源;任务未绑定注册仓时拒绝。
+func runnerRepositoryResolver(store *registeredrepo.Store) func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
+	return func(ctx context.Context, task *model.Task) (*registeredrepo.RegisteredRepository, error) {
 		if task == nil || task.RepositoryID == nil || strings.TrimSpace(*task.RepositoryID) == "" {
 			return nil, orchestrator.ErrRepositoryNotBound
 		}
@@ -343,7 +343,7 @@ func runnerCredentialResolver(store *registeredrepo.Store) func(context.Context,
 		if err != nil {
 			return nil, fmt.Errorf("lookup repository %s: %w", strings.TrimSpace(*task.RepositoryID), err)
 		}
-		return &workspace.GitCredential{Username: "oauth2", Token: repo.Token}, nil
+		return repo, nil
 	}
 }
 

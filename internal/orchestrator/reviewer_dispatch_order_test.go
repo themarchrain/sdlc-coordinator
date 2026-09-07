@@ -12,7 +12,7 @@ import (
 func TestDispatchReviewerTaskDefersToActivePredecessorOnSameMR(t *testing.T) {
 	ctx := context.Background()
 	tasks, runs := newTickRepositories(t)
-	orch := New(tasks, runs, WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	earlier := reviewerRunnerTickTask("task-mr-21-earlier", model.TaskStatusRunning)
 	earlier.DedupeKey = "gitlab:mr-review:group/project:21:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

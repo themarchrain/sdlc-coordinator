@@ -27,7 +27,7 @@ func TestTickSkipsNonAgentRunnerRuns(t *testing.T) {
 	ctx := context.Background()
 	taskRepo, runRepo := newTickRepositories(t)
 	developer := &fakeDeveloperRunnerCoordinator{}
-	orch := New(taskRepo, runRepo, WithDeveloperRunner(developer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(taskRepo, runRepo, WithDeveloperRunner(developer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	for _, fixture := range []struct {
 		taskID         string
@@ -418,7 +418,7 @@ func TestTickParksUnboundTaskAndDispatchesBoundTask(t *testing.T) {
 	ctx := context.Background()
 	taskRepo, runRepo := newTickRepositories(t)
 	orch := New(taskRepo, runRepo,
-		WithDeveloperRunner(&fakeDeveloperRunnerCoordinator{}, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}),
+		WithDeveloperRunner(&fakeDeveloperRunnerCoordinator{}, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}),
 
 		WithRepositoryLookup(fakeRepositoryLookup{}),
 	)
@@ -466,7 +466,7 @@ func TestTickSkipsDispatchForDisabledRepository(t *testing.T) {
 	ctx := context.Background()
 	taskRepo, runRepo := newTickRepositories(t)
 	orch := New(taskRepo, runRepo,
-		WithDeveloperRunner(&fakeDeveloperRunnerCoordinator{}, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}),
+		WithDeveloperRunner(&fakeDeveloperRunnerCoordinator{}, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}),
 
 		WithRepositoryLookup(fakeRepositoryLookup{}),
 	)

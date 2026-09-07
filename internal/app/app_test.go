@@ -33,10 +33,10 @@ import (
 
 // seedAppRepository 注册一个 enabled 仓库行;恒注册仓模式下 webhook 准入、
 // 回写解析与派发凭据都要求仓库行存在(全局 Token 老通道已退役)。
-func seedAppRepository(t *testing.T, db *gorm.DB, repositoryID, projectID, path string) {
+func seedAppRepository(t *testing.T, db *gorm.DB, repositoryID, projectID, path, baseURL string) {
 	t.Helper()
 	if err := registeredrepo.NewStore(db).Create(context.Background(), &registeredrepo.RegisteredRepository{
-		RepositoryID: repositoryID, DisplayName: path, Provider: "gitlab", BaseURL: "https://gitlab.example.com", CodeHostProjectID: projectID,
+		RepositoryID: repositoryID, DisplayName: path, Provider: "gitlab", BaseURL: baseURL, CodeHostProjectID: projectID,
 		PathWithNamespace: path, Token: "repo-token", TokenScopeAttested: true,
 		WebhookSecret: "webhook-secret", Status: registeredrepo.StatusEnabled,
 	}); err != nil {
@@ -132,7 +132,7 @@ func TestNewWiresEnabledScheduler(t *testing.T) {
 }
 
 func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
-	origin, headSHA := createAppReviewerOrigin(t)
+	reviewerBaseURL, headSHA := createAppReviewerOrigin(t)
 	runnerService, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": appReviewerProvider{}})
 	if err != nil {
 		t.Fatalf("new runner service: %v", err)
@@ -148,12 +148,14 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	seedAppRepository(t, application.DB, "repo-app-reviewer", "1001", "group/project")
+	seedAppRepository(t, application.DB, "repo-app-reviewer", "1001", "group/project", reviewerBaseURL)
 	repositoryID := "repo-app-reviewer"
+	// 事件载荷 URL 固定为不可达的外部地址:若实现回退为事件 URL,真实 git 准备会
+	// 网络失败,本测试即红——锁定「clone 以注册仓行为权威」。
 	task, err := application.Orch.CreateTask(context.Background(), &model.Task{
 		TaskID: "task-app-runner-reviewer", DedupeKey: "app-runner-reviewer", Type: "review_mr", Role: "ReviewerWorker",
 		SourceRepo: "group/project", TargetRepo: "group/project", RepositoryID: &repositoryID, Objective: "review MR", AcceptanceCriteria: "return verdict",
-		ContextJSON: `{"project":{"path":"group/project"},"merge_request":{"iid":21,"url":"https://gitlab.example/group/project/-/merge_requests/21","review_mode":"full","source_branch":"feature/review","target_branch":"master","head_sha":"` + headSHA + `"},"repos":[{"name":"project","url":"` + filepath.ToSlash(origin) + `","branch":"feature/review","access":"readable"}]}`,
+		ContextJSON: `{"project":{"path":"group/project"},"merge_request":{"iid":21,"url":"https://gitlab.example/group/project/-/merge_requests/21","review_mode":"full","source_branch":"feature/review","target_branch":"master","head_sha":"` + headSHA + `"},"repos":[{"name":"project","url":"https://gitlab.example.com/group/project.git","branch":"feature/review","access":"readable"}]}`,
 	})
 	if err != nil {
 		t.Fatalf("create reviewer task: %v", err)
@@ -267,6 +269,9 @@ func (appReviewerProvider) Execute(context.Context, runner.ProviderRequest, runn
 	return json.RawMessage(`{"task_id":"task-app-runner-reviewer","run_id":"unused","verdict":"approved"}`), nil
 }
 
+// createAppReviewerOrigin 返回本地 bare origin 的 base_url 与 head:布局为
+// <root>/group/project.git,使注册仓行派生的 CloneURL(root + path + .git)
+// 与真实 origin 一致,派发即按仓行 URL 完成真实 git 准备。
 func createAppReviewerOrigin(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -289,11 +294,14 @@ func createAppReviewerOrigin(t *testing.T) (string, string) {
 	appReviewerGit(t, seed, "add", "feature.go")
 	appReviewerGit(t, seed, "commit", "-m", "feature")
 	head := strings.TrimSpace(appReviewerGit(t, seed, "rev-parse", "HEAD"))
-	origin := filepath.Join(root, "origin.git")
+	origin := filepath.Join(root, "group", "project.git")
+	if err := os.MkdirAll(filepath.Dir(origin), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	appReviewerGit(t, root, "init", "--bare", origin)
 	appReviewerGit(t, seed, "remote", "add", "origin", origin)
 	appReviewerGit(t, seed, "push", "origin", "master", "feature/review")
-	return origin, head
+	return filepath.ToSlash(root), head
 }
 
 func appReviewerGit(t *testing.T, dir string, args ...string) string {
@@ -497,7 +505,7 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	seedAppRepository(t, db, "repo-app-clarification", "15594", "demo-group/lite-list")
+	seedAppRepository(t, db, "repo-app-clarification", "15594", "demo-group/lite-list", "https://gitlab.example.com")
 	// 写回目标按仓行 base_url 解析:指向测试后端,与人员身份同址。
 	if seeded, err := registeredrepo.NewStore(db).Get(ctx, "repo-app-clarification"); err != nil {
 		t.Fatalf("load seeded repository: %v", err)
@@ -630,7 +638,7 @@ func TestNewWiresCodeHostReworkAllowedUserIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	seedAppRepository(t, application.DB, "repo-app-rework", "1001", "demo-group/demo-project")
+	seedAppRepository(t, application.DB, "repo-app-rework", "1001", "demo-group/demo-project", "https://gitlab.example.com")
 	raw := readAppFixture(t, "../events/testdata/gitlab/merge_request_resume_note_created.json")
 	raw = []byte(strings.Replace(string(raw), `"id": 42`, `"id": 99`, 1))
 
@@ -658,7 +666,7 @@ func TestGitLabMRReworkWebhookCreatesOneManagedPendingTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	seedAppRepository(t, db, "repo-app-rework", "1001", "demo-group/demo-project")
+	seedAppRepository(t, db, "repo-app-rework", "1001", "demo-group/demo-project", "https://gitlab.example.com")
 	ctx := context.Background()
 	origin := &model.Task{
 		TaskID: "task-origin-developer", DedupeKey: "gitlab:issue:1001:19:open", Type: "develop_from_issue", Role: "DeveloperWorker",
@@ -769,7 +777,7 @@ func TestNewWebhookAdmissionWithoutConfigurationService(t *testing.T) {
 	if err := registeredrepo.NewStore(db).Migrate(); err != nil {
 		t.Fatalf("migrate registered repositories: %v", err)
 	}
-	seedAppRepository(t, db, "repo-app-webhook", "15594", "demo-group/lite-list")
+	seedAppRepository(t, db, "repo-app-webhook", "15594", "demo-group/lite-list", "https://gitlab.example.com")
 	application, err := New(config.Config{HTTPAddr: ":0"}, zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)

@@ -49,7 +49,7 @@ func TestDispatchReviewerPersistsAndAddsTakeoverLabelBeforeRunnerStart(t *testin
 	task := createPendingReviewerTask(t, ctx, tasks, "task-reviewer-takeover")
 	calls := []string{}
 	codeHost := &reviewerTakeoverBackend{fakeGitLabWritebackBackend: &fakeGitLabWritebackBackend{}, calls: &calls}
-	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(&orderedReviewerRunner{calls: &calls}, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(&orderedReviewerRunner{calls: &calls}, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	result, err := orch.DispatchReviewerTask(ctx, task.TaskID)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestDispatchReviewerContinuesWhenTakeoverLabelFails(t *testing.T) {
 	task := createPendingReviewerTask(t, ctx, tasks, "task-reviewer-label-failure")
 	runner := &fakeReviewerRunnerCoordinator{}
 	codeHost := &reviewerTakeoverBackend{fakeGitLabWritebackBackend: &fakeGitLabWritebackBackend{}, addErr: errors.New("gitlab label unavailable")}
-	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(runner, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(runner, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	if _, err := orch.DispatchReviewerTask(ctx, task.TaskID); err != nil {
 		t.Fatalf("noncritical takeover label must not block dispatch: %v", err)
@@ -92,7 +92,7 @@ func TestDispatchReviewerDoesNotRepeatSucceededTakeoverLabelOnRetry(t *testing.T
 	task := createPendingReviewerTask(t, ctx, tasks, "task-reviewer-label-retry")
 	runner := &fakeReviewerRunnerCoordinator{startErrors: []error{errors.New("runner unavailable"), nil}}
 	codeHost := &reviewerTakeoverBackend{fakeGitLabWritebackBackend: &fakeGitLabWritebackBackend{}}
-	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(runner, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}), WithPolicy(Policy{MaxAttempts: 3}))
+	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(runner, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}), WithPolicy(Policy{MaxAttempts: 3}))
 
 	if _, err := orch.DispatchReviewerTask(ctx, task.TaskID); err == nil {
 		t.Fatal("expected first Runner dispatch to fail")
@@ -110,7 +110,7 @@ func TestAmbiguousTakeoverLabelReconciliationNeverEscalatesReviewerTask(t *testi
 	tasks, runs, writebacks := newReviewerTakeoverRepositories(t)
 	task := createPendingReviewerTask(t, ctx, tasks, "task-reviewer-label-ambiguous")
 	codeHost := &reviewerTakeoverBackend{fakeGitLabWritebackBackend: &fakeGitLabWritebackBackend{}, addErr: codehost.NewAmbiguousError(errors.New("label response lost"))}
-	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}), WithPolicy(Policy{MaxAttempts: 1}))
+	orch := New(tasks, runs, WithWritebackRepository(writebacks), WithCodeHostBackendResolver(backendResolverFor(fixtureRepositoryID, codeHost)), WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}), WithPolicy(Policy{MaxAttempts: 1}))
 
 	result, err := orch.DispatchReviewerTask(ctx, task.TaskID)
 	if err != nil {

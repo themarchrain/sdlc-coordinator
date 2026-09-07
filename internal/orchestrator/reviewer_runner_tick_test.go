@@ -22,12 +22,12 @@ func TestTickDispatchesReviewerAndDeveloperToRunnerAndMovesTesterToHumanRequired
 		WithReviewerRunner(reviewer, ReviewerRunnerSettings{
 			WorkspaceRoot:     "/app/workspaces",
 			Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 4, Model: "model-a", APIKey: "secret"},
-			ResolveCredential: stubRunnerCredential(),
+			ResolveRepository: stubRunnerRepository(),
 		}),
 		WithDeveloperRunner(developer, ReviewerRunnerSettings{
 			WorkspaceRoot:     "/app/workspaces",
 			Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 4, Model: "model-a", APIKey: "secret"},
-			ResolveCredential: stubRunnerCredential(),
+			ResolveRepository: stubRunnerRepository(),
 		}),
 	)
 	reviewerTask := reviewerRunnerTickTask("task-tick-runner-reviewer", model.TaskStatusPending)
@@ -124,7 +124,7 @@ func TestTickReconcilesRunnerRunAndRenewsTaskLease(t *testing.T) {
 	reviewer := &fakeReviewerRunnerCoordinator{reconcileResult: &ReviewerRunnerReconcileResult{
 		Execution: &model.AgentExecution{RunID: "run-tick-runner-active", ExecutionID: "run-tick-runner-active", Status: model.AgentExecutionStatusRunning},
 	}}
-	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 	runID := "run-tick-runner-active"
 	task := reviewerRunnerTickTask("task-tick-runner-active", model.TaskStatusRunning)
 	task.CurrentRunID = &runID
@@ -166,7 +166,7 @@ func TestTickRebuildsMissingReviewerExecutionProjectionBeforeReconcile(t *testin
 		WithReviewerRunner(reviewer, ReviewerRunnerSettings{
 			WorkspaceRoot:     "/app/workspaces",
 			Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 5, Model: "model-a"},
-			ResolveCredential: stubRunnerCredential(),
+			ResolveRepository: stubRunnerRepository(),
 		}),
 	)
 	runID := "run-tick-runner-repair"
@@ -206,7 +206,7 @@ func TestTickMovesFailedRunnerExecutionThroughExistingRetryPolicy(t *testing.T) 
 			Status: model.AgentExecutionStatusFailed, ErrorCode: "provider_failed",
 		},
 	}}
-	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 	runID := "run-tick-runner-failed"
 	task := reviewerRunnerTickTask("task-tick-runner-failed", model.TaskStatusRunning)
 	task.CurrentRunID = &runID
@@ -238,7 +238,7 @@ func TestTickRetriesReviewerWorkspacePreparationFailureWithNewRun(t *testing.T) 
 	ctx := context.Background()
 	tasks, runs := newTickRepositories(t)
 	reviewer := &fakeReviewerRunnerCoordinator{startErrors: []error{errors.New("git fetch failed"), nil}}
-	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 	task := reviewerRunnerTickTask("task-reviewer-workspace-retry", model.TaskStatusPending)
 	if err := tasks.Create(ctx, task); err != nil {
 		t.Fatalf("create reviewer task: %v", err)
@@ -285,7 +285,7 @@ func TestTickBlocksSuccessfulRunnerWithInvalidBusinessResult(t *testing.T) {
 		},
 		reconcileErrors: []error{newInvalidRunnerResultError(errors.New("validate developer runner result: tests[4] must pass before change delivery"))},
 	}
-	orch := New(tasks, runs, WithDeveloperRunner(developer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithDeveloperRunner(developer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 	runID := "run-tick-invalid-result"
 	task := &model.Task{
 		TaskID: "task-tick-invalid-result", DedupeKey: "task-tick-invalid-result", Type: "develop_from_issue", Role: "DeveloperWorker",

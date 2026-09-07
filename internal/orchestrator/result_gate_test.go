@@ -96,7 +96,7 @@ func TestDeveloperDispatchAcceptsAbsorbedSucceededExecution(t *testing.T) {
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
 		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"fix_failed","summary":"late","blocker_reason":"late text"}`),
 	}
-	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveCredential: stubRunnerCredential()}))
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
 
 	observed, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID)
 	if err != nil {

@@ -10,7 +10,6 @@ import (
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
-	"sdlc-coordinator/internal/workspace"
 )
 
 // fixtureRepositoryID 是写回/派发测试默认的注册仓绑定 ID。
@@ -21,10 +20,15 @@ func backendResolverFor(repositoryID string, backend codehost.Backend) CodeHostB
 	return &staticCodeHostResolver{backends: map[string]codehost.Backend{repositoryID: backend}}
 }
 
-// stubRunnerCredential 返回固定 git 凭据的解析闭包,供派发链测试注入 settings。
-func stubRunnerCredential() func(context.Context, *model.Task) (*workspace.GitCredential, error) {
-	return func(context.Context, *model.Task) (*workspace.GitCredential, error) {
-		return &workspace.GitCredential{Username: "oauth2", Token: "git-token"}, nil
+// stubRunnerRepository 返回固定注册仓行的解析闭包,供派发链测试注入 settings。
+// 行内身份字段派生的 CloneURL 与既有 fixture 的事件 URL(https://gitlab.example/group/project.git)
+// 一致,使「URL 以仓行为权威」的新语义对存量断言透明。
+func stubRunnerRepository() func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
+	return func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
+		return &registeredrepo.RegisteredRepository{
+			RepositoryID: fixtureRepositoryID, Provider: "gitlab",
+			BaseURL: "https://gitlab.example", PathWithNamespace: "group/project", Token: "git-token",
+		}, nil
 	}
 }
 

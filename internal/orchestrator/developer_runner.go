@@ -202,12 +202,17 @@ func normalizeDeveloperWorkspaceRequest(request DeveloperRunnerStartRequest) (wo
 	return result, nil
 }
 
-// buildDeveloperWorkspaceRequest 组装 developer 工作区请求并按任务解析注册仓凭据;
-// 解析失败(未绑定/查询失败)直接返回错误,由派发失败或收尾错误路径浮出。
+// buildDeveloperWorkspaceRequest 组装 developer 工作区请求并按任务解析注册仓行;
+// clone/push URL 由仓行 CloneURL 派生(事件载荷 URL 仅作展示),凭据取同一行的每仓 Token。
+// 解析失败(未绑定/查询失败/仓行缺身份字段)直接返回错误,由派发失败或收尾错误路径浮出。
 func buildDeveloperWorkspaceRequest(ctx context.Context, task *model.Task, run *model.Run, settings ReviewerRunnerSettings) (workspace.DeveloperRequest, error) {
-	credential, err := settings.CredentialFor(ctx, task)
+	repoRow, err := settings.RegisteredRepositoryFor(ctx, task)
 	if err != nil {
 		return workspace.DeveloperRequest{}, err
+	}
+	cloneURL := repoRow.CloneURL()
+	if cloneURL == "" {
+		return workspace.DeveloperRequest{}, fmt.Errorf("registered repository %s cannot derive clone url: base_url or path is empty", boundRepositoryID(task))
 	}
 	pkg, err := workers.BuildRunnerTaskPackage(task, run)
 	if err != nil {
@@ -220,11 +225,18 @@ func buildDeveloperWorkspaceRequest(ctx context.Context, task *model.Task, run *
 	request := DeveloperRunnerStartRequest{
 		Task: task, Run: run,
 		Workspace: workspace.DeveloperRequest{
-			WorkspaceRoot: settings.WorkspaceRoot, RepositoryURL: repo.URL, TargetBranch: repo.Branch,
-			DeliveryBranch: model.DeliveryBranch(task), Credential: credential,
+			WorkspaceRoot: settings.WorkspaceRoot, RepositoryURL: cloneURL, TargetBranch: repo.Branch,
+			DeliveryBranch: model.DeliveryBranch(task), Credential: gitCredentialFrom(repoRow),
 		},
 	}
 	return normalizeDeveloperWorkspaceRequest(request)
+}
+
+func boundRepositoryID(task *model.Task) string {
+	if task == nil || task.RepositoryID == nil {
+		return ""
+	}
+	return strings.TrimSpace(*task.RepositoryID)
 }
 
 func developerRepository(repos []agent.RepoSpec, targetRepo string) (agent.RepoSpec, error) {

@@ -26,19 +26,18 @@ services:
       dockerfile: Dockerfile.agent-runner
       args:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
-        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-}
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
       AGENT_RUNNER_HTTP_ADDR: ":8081"
       AGENT_RUNNER_DATA_ROOT: /app/runner-data
       AGENT_RUNNER_CODEX_BINARY: /opt/codex/bin/codex
-      JAVA_HOME: /opt/jdk
     volumes:
       - ./workspaces:/app/workspaces
       - ./runner-data:/app/runner-data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/healthz"]
+      # alpine 基底无 curl；busybox wget 即可。
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
       interval: 10s
       timeout: 3s
       retries: 5

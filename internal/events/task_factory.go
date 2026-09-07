@@ -206,6 +206,8 @@ func validateTaskEvent(event NormalizedEvent) error {
 	if strings.TrimSpace(event.ProjectPath) == "" {
 		return errors.New("event project path is required")
 	}
+	// 事件 repository_url 仅作展示,权威源是注册仓行(派发时按仓行 CloneURL 重建
+	// workspace clone/push URL);此处非空校验保留作无害防御,保证任务包展示字段不为空。
 	if strings.TrimSpace(event.RepositoryURL) == "" {
 		return errors.New("event repository url is required")
 	}

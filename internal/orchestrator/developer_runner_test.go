@@ -98,7 +98,7 @@ func TestReconcileDeveloperRunnerConvergesDeliveryFailureToHumanRequired(t *test
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
 		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"}}`),
 	}
-	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveCredential: stubRunnerCredential()}))
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
 
 	observed, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID)
 	if err != nil {
@@ -218,7 +218,7 @@ func newDeveloperRunnerFixture(t *testing.T, taskType string) developerRunnerFix
 	submitter := &recordingResultSubmitter{}
 	return developerRunnerFixture{
 		root: t.TempDir(), tasks: tasks, runs: runs, task: task, run: run, preparer: preparer, finalizer: finalizer, runner: runnerClient, submitter: submitter,
-		coordinator: NewDeveloperRunnerCoordinator(tasks, runs, executions, preparer, finalizer, runnerClient, submitter, ReviewerRunnerSettings{WorkspaceRoot: "", ResolveCredential: stubRunnerCredential()}),
+		coordinator: NewDeveloperRunnerCoordinator(tasks, runs, executions, preparer, finalizer, runnerClient, submitter, ReviewerRunnerSettings{WorkspaceRoot: "", ResolveRepository: stubRunnerRepository()}),
 	}
 }
 

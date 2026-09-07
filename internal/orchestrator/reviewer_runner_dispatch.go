@@ -201,29 +201,33 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 	return o.tasks.Update(ctx, advanced)
 }
 
-// buildReviewerWorkspaceRequest 组装 reviewer 工作区请求并按任务解析注册仓凭据
-// (reviewer 只读克隆,同样走每仓 Token)。
+// buildReviewerWorkspaceRequest 组装 reviewer 工作区请求并按任务解析注册仓行
+// (reviewer 只读克隆,URL 同样由仓行派生、凭据取同一行的每仓 Token)。
 func buildReviewerWorkspaceRequest(ctx context.Context, task *model.Task, run *model.Run, settings ReviewerRunnerSettings) (workspace.ReviewerRequest, error) {
-	credential, err := settings.CredentialFor(ctx, task)
+	repoRow, err := settings.RegisteredRepositoryFor(ctx, task)
 	if err != nil {
 		return workspace.ReviewerRequest{}, err
+	}
+	cloneURL := repoRow.CloneURL()
+	if cloneURL == "" {
+		return workspace.ReviewerRequest{}, fmt.Errorf("registered repository %s cannot derive clone url: base_url or path is empty", boundRepositoryID(task))
 	}
 	pkg, err := workers.BuildRunnerTaskPackage(task, run)
 	if err != nil {
 		return workspace.ReviewerRequest{}, err
 	}
-	repo, err := reviewerRepository(pkg.Repos, task.TargetRepo)
-	if err != nil {
+	// 仓行供给 URL 与凭据;repo spec 仅作「目标仓必须是唯一可读仓」的结构校验。
+	if _, err := reviewerRepository(pkg.Repos, task.TargetRepo); err != nil {
 		return workspace.ReviewerRequest{}, err
 	}
 	mergeRequest, _ := pkg.Context["merge_request"].(map[string]any)
 	request := workspace.ReviewerRequest{
 		WorkspaceRoot: strings.TrimSpace(settings.WorkspaceRoot), TaskID: task.TaskID, RunID: run.RunID,
-		Project: task.TargetRepo, RepositoryURL: repo.URL,
+		Project: task.TargetRepo, RepositoryURL: cloneURL,
 		SourceBranch: stringContextField(mergeRequest, "source_branch"),
 		TargetBranch: stringContextField(mergeRequest, "target_branch"),
 		HeadSHA:      stringContextField(mergeRequest, "head_sha"), BaseSHA: stringContextField(mergeRequest, "base_sha"),
-		RequestedReviewMode: stringContextField(mergeRequest, "review_mode"), Credential: credential,
+		RequestedReviewMode: stringContextField(mergeRequest, "review_mode"), Credential: gitCredentialFrom(repoRow),
 	}
 	if request.RequestedReviewMode == "" {
 		request.RequestedReviewMode = workspace.ReviewModeFull

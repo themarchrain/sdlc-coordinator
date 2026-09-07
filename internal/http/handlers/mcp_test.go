@@ -11,6 +11,7 @@ import (
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
+	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/results"
 	"sdlc-coordinator/internal/resulttoken"
 	"sdlc-coordinator/internal/store"
@@ -54,7 +55,7 @@ func newMCPFixture(t *testing.T) mcpFixture {
 		return orch.SubmitResult(ctx, request)
 	})
 	finalizer := &stubMCPFinalizer{}
-	channel := orchestrator.NewResultChannelCoordinator(finalizer, submitter, orchestrator.ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveCredential: stubCredentialForMCP()}, "mcp")
+	channel := orchestrator.NewResultChannelCoordinator(finalizer, submitter, orchestrator.ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepositoryForMCP()}, "mcp")
 	secret, err := resulttoken.NewSecret()
 	if err != nil {
 		t.Fatalf("new secret: %v", err)
@@ -74,9 +75,14 @@ func (f *stubMCPFinalizer) Finalize(_ context.Context, _ workspace.DeveloperFina
 	return &workspace.DeveloperDelivery{CommitSHA: "commit-mcp", ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}, nil
 }
 
-func stubCredentialForMCP() func(context.Context, *model.Task) (*workspace.GitCredential, error) {
-	return func(context.Context, *model.Task) (*workspace.GitCredential, error) {
-		return &workspace.GitCredential{Username: "x", Token: "y"}, nil
+// stubRunnerRepositoryForMCP 返回固定注册仓行的解析闭包,派生的 CloneURL 与
+// fixture 任务包中的事件 URL 一致,凭据语义由 registeredrepo 行承载。
+func stubRunnerRepositoryForMCP() func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
+	return func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
+		return &registeredrepo.RegisteredRepository{
+			RepositoryID: "repo-mcp-fixture", Provider: "gitlab",
+			BaseURL: "https://gitlab.example", PathWithNamespace: "group/project", Token: "git-token",
+		}, nil
 	}
 }
 

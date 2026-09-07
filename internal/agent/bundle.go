@@ -85,6 +85,11 @@ func writeFileAtomic(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temporary %s: %w", filepath.Base(path), err)
 	}
+	// os.CreateTemp 固定 0600;bundle 文件写入发生在 run 目录发布与权限放宽之后,
+	// 必须自己落 0666,否则跨容器 bind mount 下 runner 的非 root 用户不可读。
+	if err := os.Chmod(tmpPath, 0o666); err != nil {
+		return fmt.Errorf("share temporary %s: %w", filepath.Base(path), err)
+	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("publish %s: %w", filepath.Base(path), err)
 	}

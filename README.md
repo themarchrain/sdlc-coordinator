@@ -26,7 +26,7 @@ Build the coordinator image with `build.sh`. Compose expects an external Docker 
 docker network create sdlc-net
 ```
 
-Then start from `docker-compose.yml`. Agent Runner runtime packages live under `deploy/agent-runner-runtime/` (not committed).
+Then start from `docker-compose.yml`. Agent Runner image uses `alpine:3.21` (git/bash/python 3.12 via apk, go 1.25 reused from the builder). Runtime packages live under `deploy/agent-runner-runtime/` (not committed; Codex is required, claude/node/jdk/maven are optional). The coordinator image includes git for workspace preparation.
 
 Admin UI: `http://<host>:<port>/admin`
 

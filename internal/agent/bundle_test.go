@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -65,4 +66,34 @@ func readFile(t *testing.T, path string) []byte {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return raw
+}
+
+// TestWriteTaskBundlePublishesSharedReadableFiles 锁定任务文件的共享可读语义:
+// bundle 由 coordinator(root)在已发布的 run 目录里写入,publish 后的权限整树放宽
+// (0777/0666)不再覆盖这些文件,写入器必须自己落 0666,否则 runner 容器的非 root
+// 用户读 prompt 依旧 permission denied。
+func TestWriteTaskBundlePublishesSharedReadableFiles(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits are not portable on windows; behavior covered by posix runs")
+	}
+	root := t.TempDir()
+	bundle := agent.TaskBundle{
+		TaskPackage:  agent.TaskPackage{TaskID: "task-perm", RunID: "run-perm", Type: "develop_from_issue", Role: "DeveloperWorker"},
+		ResultSchema: map[string]any{"type": "object"},
+		Prompt:       "do work",
+	}
+	if err := agent.WriteTaskBundle(root, bundle); err != nil {
+		t.Fatalf("write task bundle: %v", err)
+	}
+	for _, name := range []string{agent.TaskContextFileName, agent.ResultSchemaFileName, agent.PromptFileName} {
+		info, err := os.Stat(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("stat %s: %v", name, err)
+		}
+		if got := info.Mode().Perm(); got != 0o666 {
+			t.Fatalf("%s: expected mode 666, got %o", name, got)
+		}
+	}
 }

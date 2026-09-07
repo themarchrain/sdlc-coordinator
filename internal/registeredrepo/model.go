@@ -61,3 +61,15 @@ func (repo *RegisteredRepository) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
+
+// CloneURL 由仓行身份字段派生 http(s) clone 地址。注册仓行是 workspace
+// clone/push 的唯一权威源,事件载荷中的 repository_url 仅作展示;
+// base_url 或 path 缺失时返回空串,由消费方显式报错。
+func (repo *RegisteredRepository) CloneURL() string {
+	base := strings.TrimRight(strings.TrimSpace(repo.BaseURL), "/")
+	repoPath := strings.TrimSpace(repo.PathWithNamespace)
+	if base == "" || repoPath == "" {
+		return ""
+	}
+	return base + "/" + repoPath + ".git"
+}

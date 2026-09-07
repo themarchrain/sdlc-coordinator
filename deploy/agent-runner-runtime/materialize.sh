@@ -1,7 +1,10 @@
 #!/bin/sh
 set -eu
 
-# Materialize vendored Agent Runner tools from /opt/vendor into /opt/*.
+# Materialize vendored agent tools from /opt/vendor into /opt/*.
+# Semantics: presence is presence, absence is absence — codex is required,
+# claude / node / jdk / maven are optional (skip when their dir is empty).
+# go / python / git are provided by apk inside the image, not this directory.
 # Each component dir is either an unpacked tree (with bin/) or a single tar.
 
 vendor_root="${1:-/opt/vendor}"
@@ -41,8 +44,8 @@ materialize() {
 		echo "optional component ${name} not provided, skipping"
 		return 0
 	fi
-	mkdir -p "${dest}"
 	if [ -d "${src}/bin" ]; then
+		mkdir -p "${dest}"
 		cp -a "${src}/." "${dest}/"
 		return 0
 	fi
@@ -50,6 +53,7 @@ materialize() {
 		-name '*.tar.xz' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.tar' -o -name '*.tar' \
 		\) | head -n 1)"
 	if [ -n "${archive}" ]; then
+		mkdir -p "${dest}"
 		flatten_extract "${archive}" "${dest}"
 		return 0
 	fi
@@ -61,28 +65,16 @@ materialize() {
 }
 
 materialize codex-package /opt/codex 1
-materialize node /opt/node 1
-materialize jdk /opt/jdk 1
-materialize python /opt/python 1
-materialize maven /opt/maven 1
 materialize claude /opt/claude 0
+materialize node /opt/node 0
+materialize jdk /opt/jdk 0
+materialize maven /opt/maven 0
 
-if [ ! -x /opt/python/bin/python3 ] && [ -x /opt/python/bin/python3.12 ]; then
-	ln -s python3.12 /opt/python/bin/python3
-fi
-if [ -x /opt/python/bin/python3 ] && [ ! -e /opt/python/bin/python ]; then
-	ln -s python3 /opt/python/bin/python
-fi
-if [ ! -x /opt/python/bin/pip3 ] && [ ! -x /opt/python/bin/pip ] && [ -x /opt/python/bin/python3 ]; then
-	/opt/python/bin/python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
-fi
-
-chmod -R a+rX /opt/codex /opt/node /opt/jdk /opt/python /opt/maven
-if [ -d /opt/claude/bin ]; then
-	chmod -R a+rX /opt/claude
-fi
-for bindir in /opt/codex/bin /opt/node/bin /opt/jdk/bin /opt/python/bin /opt/maven/bin /opt/claude/bin; do
-	if [ -d "${bindir}" ]; then
-		find "${bindir}" -maxdepth 1 -type f -exec chmod a+x {} \;
+for name in codex claude node jdk maven; do
+	dir="/opt/${name}"
+	[ -d "${dir}" ] || continue
+	chmod -R a+rX "${dir}"
+	if [ -d "${dir}/bin" ]; then
+		find "${dir}/bin" -maxdepth 1 -type f -exec chmod a+x {} \;
 	fi
 done

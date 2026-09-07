@@ -137,18 +137,35 @@ type RunnerArtifactStore interface {
 type ReviewerRunnerSettings struct {
 	WorkspaceRoot string
 	Provider      runner.ProviderConfig
-	// ResolveCredential 按任务解析 git 克隆/推送凭据:取任务所属注册仓的 Token。
+	// ResolveRepository 按任务解析注册仓行:workspace clone/push URL 与 git 凭据的
+	// 唯一权威源(URL 由仓行 CloneURL 派生、凭据取同一行的每仓 Token,单次查询双消费);
 	// 任务未绑定注册仓时返回 ErrRepositoryNotBound。
-	ResolveCredential func(ctx context.Context, task *model.Task) (*workspace.GitCredential, error)
+	ResolveRepository func(ctx context.Context, task *model.Task) (*registeredrepo.RegisteredRepository, error)
 	TaskTimeout       time.Duration
 }
 
-// CredentialFor 是 ResolveCredential 的空值安全入口,装配遗漏时给出明确错误而非 panic。
-func (s ReviewerRunnerSettings) CredentialFor(ctx context.Context, task *model.Task) (*workspace.GitCredential, error) {
-	if s.ResolveCredential == nil {
-		return nil, errors.New("runner credential resolver is required")
+// RegisteredRepositoryFor 是 ResolveRepository 的空值安全入口,装配遗漏或
+// resolver 返回空行时给出明确错误而非 panic。
+func (s ReviewerRunnerSettings) RegisteredRepositoryFor(ctx context.Context, task *model.Task) (*registeredrepo.RegisteredRepository, error) {
+	if s.ResolveRepository == nil {
+		return nil, errors.New("runner repository resolver is required")
 	}
-	return s.ResolveCredential(ctx, task)
+	repo, err := s.ResolveRepository(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, errors.New("runner repository resolver returned no repository")
+	}
+	return repo, nil
+}
+
+// gitCredentialFrom 用注册仓行的每仓 Token 构造 git 凭据,与 CloneURL 同行同查。
+func gitCredentialFrom(repo *registeredrepo.RegisteredRepository) *workspace.GitCredential {
+	if repo == nil {
+		return nil
+	}
+	return &workspace.GitCredential{Username: "oauth2", Token: repo.Token}
 }
 
 type Option func(*Orchestrator)

@@ -30,7 +30,7 @@ func newResultChannelFixture(role string) resultChannelFixture {
 	run := &model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: role, Status: model.RunStatusRunning}
 	finalizer := &fakeDeveloperFinalizer{delivery: &workspace.DeveloperDelivery{CommitSHA: "commit-1", ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}}
 	submitter := &recordingResultSubmitter{}
-	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveCredential: stubRunnerCredential()}, "mcp")
+	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}, "mcp")
 	return resultChannelFixture{task: task, run: run, finalizer: finalizer, submitter: submitter, core: core}
 }
 

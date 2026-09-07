@@ -31,7 +31,7 @@ func TestTickIsSingleFlight(t *testing.T) {
 	ctx := context.Background()
 	tasks, runs := newTickRepositories(t)
 	reviewer := &blockingReviewerCoordinator{entered: make(chan struct{}), release: make(chan struct{})}
-	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, runs, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 	runID := "run-single-flight"
 	task := reviewerRunnerTickTask("task-single-flight", model.TaskStatusRunning)
 	task.CurrentRunID = &runID
@@ -83,7 +83,7 @@ func TestTickKeepsProcessingWhenRunRereadFails(t *testing.T) {
 		Execution: &model.AgentExecution{Status: model.AgentExecutionStatusRunning},
 	}}
 	flakyRuns := &flakyRunRepository{RunRepository: runs, failFor: map[string]int{"run-second": 1}}
-	orch := New(tasks, flakyRuns, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveCredential: stubRunnerCredential()}))
+	orch := New(tasks, flakyRuns, WithReviewerRunner(reviewer, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 	for _, runID := range []string{"run-first", "run-second"} {
 		task := reviewerRunnerTickTask("task-"+runID, model.TaskStatusRunning)
 		task.CurrentRunID = &runID
