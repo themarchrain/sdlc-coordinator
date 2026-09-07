@@ -201,11 +201,18 @@ func WithAgentExecutionLookup(executions AgentExecutionLookup) Option {
 // 必须排在 WithReviewerRunner/WithDeveloperRunner 之后调用。
 func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
 	return func(o *Orchestrator) {
-		if coordinator, ok := o.reviewerRunner.(*ReviewerRunnerCoordinator); ok {
-			coordinator.core.setResultIngress(issuer, endpointURL)
+		reviewerCoordinator, reviewerOK := o.reviewerRunner.(*ReviewerRunnerCoordinator)
+		developerCoordinator, developerOK := o.developerRunner.(*DeveloperRunnerCoordinator)
+		// 装配失效必须 fail-fast：静默 no-op 意味着 dispatch 永远不带 token，
+		// agent 全部落文本降级通道且无从排查。
+		if issuer != nil && endpointURL != "" && (!reviewerOK || !developerOK) {
+			panic("orchestrator: WithResultIngress requires WithReviewerRunner/WithDeveloperRunner to be applied first")
 		}
-		if coordinator, ok := o.developerRunner.(*DeveloperRunnerCoordinator); ok {
-			coordinator.core.setResultIngress(issuer, endpointURL)
+		if reviewerOK {
+			reviewerCoordinator.core.setResultIngress(issuer, endpointURL)
+		}
+		if developerOK {
+			developerCoordinator.core.setResultIngress(issuer, endpointURL)
 		}
 	}
 }

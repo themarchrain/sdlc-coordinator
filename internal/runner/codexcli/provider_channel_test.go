@@ -107,6 +107,39 @@ func TestEventParserSurfacesMCPCallDetails(t *testing.T) {
 	}
 }
 
+// 端到端接线测试：channel 必须从 ProviderRequest 一路进入 eventParser，
+// 保证生产构造点不再遗漏 token 脱敏（审查 P1 修复的回归锁定）。
+func TestExecuteWiresRunTokenRedactionThroughEventParser(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	writeCodexChannelFiles(t, workspaceRoot)
+	leak := `{"type":"item.completed","item":{"id":"item_9","type":"mcp_tool_call","server":"coordinator","tool":"submit_developer_result","arguments":{},"result":null,"error":{"message":"POST failed (Bearer run-token-secret-value)"},"status":"failed"}}`
+	command := &fakeCommandRunner{lines: [][]byte{[]byte(leak), []byte(`{"type":"turn.completed","usage":{}}`)}}
+	provider := newProvider("codex-test", command)
+	channel := &runner.ResultSubmissionChannel{EndpointURL: "http://coordinator.example:8080/mcp", BearerToken: "run-token-secret-value"}
+
+	var events []capturedProviderEvent
+	if _, err := provider.Execute(context.Background(), channelRequest(workspaceRoot, channel), func(eventType string, payload map[string]any) {
+		events = append(events, capturedProviderEvent{eventType: eventType, payload: payload})
+	}); err != nil {
+		t.Fatalf("execute provider: %v", err)
+	}
+	for _, event := range events {
+		raw, _ := json.Marshal(event.payload)
+		if strings.Contains(string(raw), "run-token-secret-value") {
+			t.Fatalf("run token leaked into event stream: %s", raw)
+		}
+	}
+	found := false
+	for _, event := range events {
+		if message, _ := event.payload["error_message"].(string); strings.Contains(message, "[REDACTED]") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("redacted error_message missing from events: %#v", events)
+	}
+}
+
 func TestEventParserSurfacesFailedMCPCallAndRedactsSecrets(t *testing.T) {
 	var events []capturedProviderEvent
 	parser := &eventParser{emit: func(eventType string, payload map[string]any) {

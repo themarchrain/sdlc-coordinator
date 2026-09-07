@@ -271,25 +271,7 @@ func (p *streamParser) failureMessage(event map[string]any) string {
 }
 
 func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
-	secrets := make([]string, 0, len(provider.Headers)+2)
-	if value := strings.TrimSpace(provider.APIKey); value != "" {
-		secrets = append(secrets, value)
-	}
-	if channel != nil {
-		if value := strings.TrimSpace(channel.BearerToken); value != "" {
-			secrets = append(secrets, value)
-		}
-	}
-	for _, value := range provider.Headers {
-		if value = strings.TrimSpace(value); value != "" {
-			secrets = append(secrets, value)
-		}
-	}
-	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
-	for _, secret := range secrets {
-		message = strings.ReplaceAll(message, secret, "[REDACTED]")
-	}
-	return message
+	return runner.RedactSecrets(message, runner.ProviderSecrets(provider, channel))
 }
 
 func readTaskFile(root, name string) ([]byte, error) {

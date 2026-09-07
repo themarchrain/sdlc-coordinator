@@ -37,7 +37,11 @@ import (
 )
 
 // resultSubmissionMaxRejections 矫正次数上限：实测 3 次收敛，留余量取 5
-const resultSubmissionMaxRejections = 5
+const resultSubmissionMaxRejections = handlers.DefaultMaxCorrectionAttempts
+
+// resultTokenTTLGrace 是 token TTL 在任务超时之外的追加余量，覆盖 runner
+// 收尾轮询窗口。
+const resultTokenTTLGrace = time.Hour
 
 type App struct {
 	Config           config.Config
@@ -142,17 +146,16 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		ResolveCredential: runnerCredentialResolver(repoStore),
 	}
 	var orch *orchestrator.Orchestrator
+	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
+		return orch.SubmitResult(ctx, request)
+	})
 	reviewerRunnerCoordinator := orchestrator.NewReviewerRunnerCoordinator(
 		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), runnerClient,
-		orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
-			return orch.SubmitResult(ctx, request)
-		}),
+		orchSubmitter,
 	)
 	developerRunnerCoordinator := orchestrator.NewDeveloperRunnerCoordinator(
 		taskRepo, runRepo, agentExecutionRepo, workspace.NewDeveloperPreparer(), workspace.NewDeveloperFinalizer(), runnerClient,
-		orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
-			return orch.SubmitResult(ctx, request)
-		}),
+		orchSubmitter,
 		runnerSettings,
 	)
 	opts = append(opts,
@@ -171,14 +174,12 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	ingressIssuer := orchestrator.RunTokenIssuerFunc(func(taskID, runID, role string) (string, error) {
 		return resulttoken.Issue(resultTokenSecret, resulttoken.Claims{
 			TaskID: taskID, RunID: runID, Role: role,
-			TTL: cfg.AgentRunner.TaskTimeout + time.Hour,
+			TTL: cfg.AgentRunner.TaskTimeout + resultTokenTTLGrace,
 		}, time.Now())
 	})
 	mcpChannel := orchestrator.NewResultChannelCoordinator(
 		workspace.NewDeveloperFinalizer(),
-		orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
-			return orch.SubmitResult(ctx, request)
-		}),
+		orchSubmitter,
 		runnerSettings, "mcp",
 	)
 	mcpHandler := handlers.NewMCPHandler(

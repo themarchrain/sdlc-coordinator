@@ -137,7 +137,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	// （unexpected argument '-'），0.150+ 两种顺序都接受。
 	args = append(args, "-")
 
-	parser := eventParser{emit: emit, provider: request.Provider}
+	parser := eventParser{emit: emit, provider: request.Provider, channel: request.ResultSubmission}
 	if err := p.command.Run(ctx, commandSpec{
 		Binary: p.binary, Args: args, Dir: request.WorkspacePath, Env: environment, Stdin: string(prompt),
 	}, parser.consume); err != nil {
@@ -168,25 +168,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 }
 
 func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
-	secrets := make([]string, 0, len(provider.Headers)+2)
-	if value := strings.TrimSpace(provider.APIKey); value != "" {
-		secrets = append(secrets, value)
-	}
-	if channel != nil {
-		if value := strings.TrimSpace(channel.BearerToken); value != "" {
-			secrets = append(secrets, value)
-		}
-	}
-	for _, value := range provider.Headers {
-		if value = strings.TrimSpace(value); value != "" {
-			secrets = append(secrets, value)
-		}
-	}
-	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
-	for _, secret := range secrets {
-		message = strings.ReplaceAll(message, secret, "[REDACTED]")
-	}
-	return message
+	return runner.RedactSecrets(message, runner.ProviderSecrets(provider, channel))
 }
 
 type headerEnvironment struct {

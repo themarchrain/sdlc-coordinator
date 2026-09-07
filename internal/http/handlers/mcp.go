@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -41,7 +42,7 @@ func NewMCPHandler(
 	maxAttempts int,
 ) *MCPHandler {
 	if maxAttempts <= 0 {
-		maxAttempts = 5
+		maxAttempts = DefaultMaxCorrectionAttempts
 	}
 	return &MCPHandler{
 		channel: channel, secret: secret, tasks: tasks, runs: runs,
@@ -78,12 +79,28 @@ type mcpToolPayload struct {
 }
 
 const (
-	mcpStatusAccepted     = "accepted"
-	mcpStatusRejected     = "rejected"
-	mcpStatusRejectedFina = "rejected_final"
-	mcpStatusAlreadyFinal = "already_final"
-	mcpStatusProcessing   = "processing"
+	mcpStatusAccepted      = "accepted"
+	mcpStatusRejected      = "rejected"
+	mcpStatusRejectedFinal = "rejected_final"
+	mcpStatusAlreadyFinal  = "already_final"
+	mcpStatusProcessing    = "processing"
 )
+
+// JSON-RPC 2.0 保留错误码。
+const (
+	jsonrpcParseError    = -32700
+	jsonrpcInvalidReq    = -32600
+	jsonrpcMethodMissing = -32601
+	jsonrpcInvalidParams = -32602
+	jsonrpcInternalErr   = -32603
+)
+
+// mcpMaxRequestBytes 限制单请求体积：合法提交不超过几 KB；上限防的是持
+// token 的攻陷工作区用超大载荷打满单实例协调器。
+const mcpMaxRequestBytes = 1 << 20 // 1 MiB
+
+// DefaultMaxCorrectionAttempts 与 app 装配共享的矫正次数上限。
+const DefaultMaxCorrectionAttempts = 5
 
 func (h *MCPHandler) Handle(c *gin.Context) {
 	if h == nil || h.channel == nil || len(h.secret) == 0 {
@@ -99,14 +116,15 @@ func (h *MCPHandler) Handle(c *gin.Context) {
 		c.JSON(status, gin.H{"error": "unauthorized"})
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, mcpMaxRequestBytes)
 
 	var request mcpRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusOK, mcpErrorResponse(nil, -32700, "Parse error", err.Error()))
+		c.JSON(http.StatusOK, mcpErrorResponse(nil, jsonrpcParseError, "Parse error", err.Error()))
 		return
 	}
 	if request.JSONRPC != "2.0" {
-		c.JSON(http.StatusOK, mcpErrorResponse(request.ID, -32600, "Invalid Request", "jsonrpc must be 2.0"))
+		c.JSON(http.StatusOK, mcpErrorResponse(request.ID, jsonrpcInvalidReq, "Invalid Request", "jsonrpc must be 2.0"))
 		return
 	}
 
@@ -127,11 +145,13 @@ func (h *MCPHandler) Handle(c *gin.Context) {
 	case "tools/list":
 		c.JSON(http.StatusOK, mcpResultResponse(request.ID, gin.H{"tools": h.toolsForRole(claims.Role)}))
 	case "tools/call":
-		if response := h.callTool(c, claims, request); response != nil {
+		if response, errResp := h.callTool(c, claims, request); errResp != nil {
+			c.JSON(http.StatusOK, errResp)
+		} else if response != nil {
 			c.JSON(http.StatusOK, response)
 		}
 	default:
-		c.JSON(http.StatusOK, mcpErrorResponse(request.ID, -32601, "Method not found", request.Method))
+		c.JSON(http.StatusOK, mcpErrorResponse(request.ID, jsonrpcMethodMissing, "Method not found", request.Method))
 	}
 }
 
@@ -199,54 +219,61 @@ func workerRoleLabel(role string) string {
 	}
 }
 
-func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request mcpRequest) gin.H {
+// callTool 返回 (toolResult 响应, 错误响应)，两者恰有一个非 nil。
+func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request mcpRequest) (gin.H, gin.H) {
 	toolName, _, ok := contractForWorkerRole(claims.Role)
 	if !ok || toolName != request.Params.Name {
 		// 角色越界（如 developer token 调 reviewer 工具）：直接 403，不计数。
-		c.AbortWithStatusJSON(http.StatusForbidden, mcpErrorResponse(request.ID, -32602, "Invalid params", "tool is not available for this run's role"))
-		return nil
+		c.AbortWithStatusJSON(http.StatusForbidden, mcpErrorResponse(request.ID, jsonrpcInvalidParams, "Invalid params", "tool is not available for this run's role"))
+		return nil, nil
 	}
 	if len(request.Params.Arguments) == 0 {
 		return toolResultResponse(request.ID, true, mcpToolPayload{
 			Status: mcpStatusRejected, MaxAttempts: h.maxAttempts,
 			Problems: []orchestrator.ValidationProblem{{Problem: "arguments is required"}},
 			NextStep: "提交参数不能为空；按工具入参 schema 重新调用。",
-		})
+		}), nil
 	}
 
 	run, err := h.runs.GetByRunID(c.Request.Context(), claims.RunID)
 	if err != nil {
+		if !errors.Is(err, repository.ErrNotFound) {
+			return nil, h.internalError(c, request.ID, err)
+		}
 		// 签名有效但 run 不存在/已清理：按越界处理（fail-closed，不计数）。
-		c.AbortWithStatusJSON(http.StatusForbidden, mcpErrorResponse(request.ID, -32602, "Invalid params", "forbidden"))
-		return nil
+		c.AbortWithStatusJSON(http.StatusForbidden, mcpErrorResponse(request.ID, jsonrpcInvalidParams, "Invalid params", "forbidden"))
+		return nil, nil
 	}
 	if run.TaskID != claims.TaskID || run.WorkerRole != claims.Role {
-		c.AbortWithStatusJSON(http.StatusForbidden, mcpErrorResponse(request.ID, -32602, "Invalid params", "forbidden"))
-		return nil
+		c.AbortWithStatusJSON(http.StatusForbidden, mcpErrorResponse(request.ID, jsonrpcInvalidParams, "Invalid params", "forbidden"))
+		return nil, nil
 	}
 	if run.Status != model.RunStatusRunning {
 		// 首提即终态：后续任何提交（同哈希重放或新载荷）只收到已终态提示。
 		return toolResultResponse(request.ID, true, mcpToolPayload{
 			Status: mcpStatusAlreadyFinal, TaskID: run.TaskID, RunID: run.RunID, RunStatus: run.Status,
 			NextStep: "本 run 已按先前提交终态化；不要再调用本工具，直接停止。",
-		})
+		}), nil
 	}
 	rejected, err := h.rejections.CountByRun(c.Request.Context(), run.RunID)
 	if err != nil {
-		return mcpErrorResponse(request.ID, -32603, "Internal error", err.Error())
+		return nil, h.internalError(c, request.ID, err)
 	}
 	if rejected >= int64(h.maxAttempts) {
-		return h.handoffResponse(request.ID, run, rejected)
+		return h.handoffWithProblems(request.ID, run, rejected, nil), nil
 	}
 
 	task, err := h.tasks.GetByTaskID(c.Request.Context(), run.TaskID)
 	if err != nil {
-		return mcpErrorResponse(request.ID, -32602, "Invalid params", "task for this token does not exist")
+		if !errors.Is(err, repository.ErrNotFound) {
+			return nil, h.internalError(c, request.ID, err)
+		}
+		return mcpErrorResponse(request.ID, jsonrpcInvalidParams, "Invalid params", "task for this token does not exist"), nil
 	}
 
 	outcome, err := h.channel.SubmitAgentResult(c.Request.Context(), task, run, request.Params.Name, request.Params.Arguments)
 	if err != nil {
-		return mcpErrorResponse(request.ID, -32603, "Internal error", err.Error())
+		return nil, h.internalError(c, request.ID, err)
 	}
 	switch outcome.Decision {
 	case orchestrator.ChannelAccepted:
@@ -256,17 +283,17 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 			Normalized: outcome.Normalized, MaxAttempts: h.maxAttempts,
 			NextStep: "结果已接受，run 已终态化。立即停止，不要再调用本工具，也不要再输出结果 JSON。",
 		}
-		return toolResultResponse(request.ID, false, payload)
+		return toolResultResponse(request.ID, false, payload), nil
 	case orchestrator.ChannelRejected:
 		attempt := rejected + 1
 		if err := h.rejections.Record(c.Request.Context(), &model.ResultSubmissionRejection{
 			RunID: run.RunID, TaskID: task.TaskID, ToolName: request.Params.Name, Role: run.WorkerRole,
 			ProblemsJSON: encodeProblems(outcome.Problems),
 		}); err != nil {
-			return mcpErrorResponse(request.ID, -32603, "Internal error", err.Error())
+			return nil, h.internalError(c, request.ID, err)
 		}
 		if attempt >= int64(h.maxAttempts) {
-			return h.handoffWithProblems(request.ID, run, attempt, outcome.Problems)
+			return h.handoffWithProblems(request.ID, run, attempt, outcome.Problems), nil
 		}
 		return toolResultResponse(request.ID, true, mcpToolPayload{
 			Status: mcpStatusRejected, Attempt: attempt, MaxAttempts: h.maxAttempts,
@@ -274,26 +301,26 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 			TaskID:            task.TaskID, RunID: run.RunID,
 			Problems: outcome.Problems, Normalized: outcome.Normalized,
 			NextStep: "按 problems 修正参数后重新调用本工具；错误不修正无法通过校验。",
-		})
+		}), nil
 	default: // ChannelFailed：传输/内部类错误——不计校验次数，指引文本通道。
 		switch {
 		case errors.Is(outcome.Err, orchestrator.ErrResultConflict):
 			return toolResultResponse(request.ID, true, mcpToolPayload{
 				Status: mcpStatusAlreadyFinal, TaskID: task.TaskID, RunID: run.RunID,
 				NextStep: "本 run 已按另一份提交终态化；不要再调用本工具，直接停止。",
-			})
+			}), nil
 		case errors.Is(outcome.Err, orchestrator.ErrResultProcessing):
 			return toolResultResponse(request.ID, true, mcpToolPayload{
 				Status: mcpStatusProcessing, TaskID: task.TaskID, RunID: run.RunID,
 				NextStep: "先前提交正在收尾，稍候片刻后重试一次；此错误不消耗矫正次数。",
-			})
+			}), nil
 		default:
 			// 通道内部故障：指示文本通道（不计次数）。
 			return toolResultResponse(request.ID, true, mcpToolPayload{
 				Status: mcpStatusRejected, MaxAttempts: h.maxAttempts, TaskID: task.TaskID, RunID: run.RunID,
 				Problems: []orchestrator.ValidationProblem{{Problem: "submission channel is temporarily unavailable"}},
 				NextStep: "提交通道暂时不可用（此错误不消耗矫正次数）。按任务提示词中的结果契约把最终消息写成 JSON 文本，然后停止。",
-			})
+			}), nil
 		}
 	}
 }
@@ -307,7 +334,7 @@ func (h *MCPHandler) handoffResponse(id json.RawMessage, run *model.Run, rejecte
 func (h *MCPHandler) handoffWithProblems(id json.RawMessage, run *model.Run, attempt int64, problems []orchestrator.ValidationProblem) gin.H {
 	remaining := int64(0)
 	return toolResultResponse(id, true, mcpToolPayload{
-		Status: mcpStatusRejectedFina, Attempt: attempt, MaxAttempts: h.maxAttempts,
+		Status: mcpStatusRejectedFinal, Attempt: attempt, MaxAttempts: h.maxAttempts,
 		AttemptsRemaining: remaining, TaskID: run.TaskID, RunID: run.RunID,
 		Problems: problems,
 		NextStep: "矫正次数已用尽。不要再调用本工具：按任务提示词中的结果契约，把最终消息写成 JSON 文本，然后停止。",
@@ -323,6 +350,13 @@ func encodeProblems(problems []orchestrator.ValidationProblem) string {
 		return "[]"
 	}
 	return string(encoded)
+}
+
+// internalError 折叠基础设施故障：响应只带通用文案，原文进服务端日志，
+// 不向 agent 端回显驱动/GORM 错误细节。返回 (nil, errResp)。
+func (h *MCPHandler) internalError(c *gin.Context, id json.RawMessage, err error) gin.H {
+	log.Printf("mcp: internal error for request %s: %v", string(id), err)
+	return mcpErrorResponse(id, jsonrpcInternalErr, "Internal error", "submission channel is temporarily unavailable")
 }
 
 func mcpResultResponse(id json.RawMessage, result any) gin.H {

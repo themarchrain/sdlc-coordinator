@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -37,6 +38,9 @@ func NormalizeInput(schema map[string]any, raw json.RawMessage) (NormalizationRe
 	var value any
 	if err := decoder.Decode(&value); err != nil {
 		return NormalizationResult{}, fmt.Errorf("payload is not valid JSON: %w", err)
+	}
+	if decoder.More() {
+		return NormalizationResult{}, errors.New("payload must be exactly one JSON value")
 	}
 	object, ok := value.(map[string]any)
 	if !ok {
@@ -84,6 +88,14 @@ func normalizeObject(schema map[string]any, object map[string]any, path string) 
 	aliases := buildAliasIndex(properties)
 	normalized := make(map[string]any, len(object))
 	var repairs []Repair
+	// 双写守卫：载荷同时带规范键与别名键时，重命名会随机覆盖另一值——
+	// 此时保持别名键原样，交给严格解码拒绝。
+	renamedTargets := make(map[string]struct{}, len(object))
+	for key := range object {
+		if _, known := properties[key]; known {
+			renamedTargets[key] = struct{}{}
+		}
+	}
 	for key, item := range object {
 		keyPath := key
 		if path != "" {
@@ -93,6 +105,11 @@ func normalizeObject(schema map[string]any, object map[string]any, path string) 
 		known := schemaNode != nil
 		if !known {
 			if matches := aliases[aliasKey(key)]; len(matches) == 1 {
+				if _, collision := renamedTargets[matches[0]]; collision {
+					normalized[key] = item
+					continue
+				}
+				renamedTargets[matches[0]] = struct{}{}
 				target := matches[0]
 				repairs = append(repairs, Repair{Op: "rename_key", Path: keyPath, Before: key, After: target})
 				key, known = target, true
@@ -132,15 +149,15 @@ func coerceScalar(schema map[string]any, value any, path string) (any, Repair) {
 		switch schemaType {
 		case "boolean":
 			if text == "true" || text == "false" {
-				return text == "true", Repair{Op: "coerce_scalar", Path: path, Before: strconvQuote(text), After: text}
+				return text == "true", Repair{Op: "coerce_scalar", Path: path, Before: jsonQuoteString(text), After: text}
 			}
 		case "integer":
 			if validIntegerLiteral(text) {
-				return json.Number(text), Repair{Op: "coerce_scalar", Path: path, Before: strconvQuote(text), After: text}
+				return json.Number(text), Repair{Op: "coerce_scalar", Path: path, Before: jsonQuoteString(text), After: text}
 			}
 		case "number":
 			if validNumberLiteral(text) {
-				return json.Number(text), Repair{Op: "coerce_scalar", Path: path, Before: strconvQuote(text), After: text}
+				return json.Number(text), Repair{Op: "coerce_scalar", Path: path, Before: jsonQuoteString(text), After: text}
 			}
 		}
 	}
@@ -180,28 +197,22 @@ func aliasKey(name string) string {
 	return replaced
 }
 
+// JSON 数字文法（RFC 8259）：ParseFloat 会额外接受 NaN/Inf/+5/0x1p4 等形式，
+// 那些不是合法 JSON 数字，重序列化会被 encoding/json 拒绝——必须按文法判定。
+var (
+	integerPattern = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
+	numberPattern  = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+)
+
 func validIntegerLiteral(text string) bool {
-	if text == "" {
-		return false
-	}
-	if strings.ContainsAny(text, ".eE") {
-		return false
-	}
-	var number json.Number = json.Number(text)
-	_, err := number.Float64()
-	return err == nil
+	return integerPattern.MatchString(text)
 }
 
 func validNumberLiteral(text string) bool {
-	if text == "" {
-		return false
-	}
-	var number json.Number = json.Number(text)
-	_, err := number.Float64()
-	return err == nil
+	return numberPattern.MatchString(text)
 }
 
-func strconvQuote(text string) string {
+func jsonQuoteString(text string) string {
 	encoded, _ := json.Marshal(text)
 	return string(encoded)
 }

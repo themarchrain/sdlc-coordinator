@@ -123,6 +123,11 @@ func (o *Orchestrator) ReconcileReviewerRunner(ctx context.Context, runID string
 	if result == nil || result.Execution == nil {
 		return nil, errors.New("reviewer runner returned no execution observation")
 	}
+	if result.Absorbed {
+		// run 已终态：不续租、不升级、不要求提交——避免任务推进后
+		// RenewActiveLease 的 ErrTaskLeaseNotRenewable 噪声。
+		return result, nil
+	}
 	switch result.Execution.Status {
 	case model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning:
 		run, err := o.runs.GetByRunID(ctx, runID)

@@ -122,9 +122,17 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 	if err := agentContract.Validate(task, run, agentInput); err != nil {
 		return rejectedOutcome(ChannelStageValidate, problemsFromError(err)), nil
 	}
-	inputValue := agentInput.(*results.DeveloperAgentResultInput)
+	inputValue, ok := agentInput.(*results.DeveloperAgentResultInput)
+	if !ok {
+		return rejectedOutcome(ChannelStageDecode, problemsFromError(errors.New("developer agent result input type is invalid"))), nil
+	}
 	var developerInput *results.DeveloperResultInput
 	if inputValue.Outcome == "change_ready" || inputValue.Outcome == "rework_ready" {
+		if c.finalizer == nil {
+			// 构造时未装配 finalizer（reviewer 轻量通道复用同一类型）：
+			// fail-closed 而不是 nil panic。
+			return rejectedOutcome(ChannelStageFinalize, problemsFromError(errors.New("developer git finalizer is not configured"))), nil
+		}
 		workspaceRequest, err := buildDeveloperWorkspaceRequest(ctx, task, run, c.settings)
 		if err != nil {
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("rebuild trusted developer workspace metadata: %w", err))), nil

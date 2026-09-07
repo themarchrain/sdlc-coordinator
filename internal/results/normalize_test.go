@@ -176,3 +176,49 @@ func TestNormalizeInputRepairsAreSerializable(t *testing.T) {
 		t.Fatalf("repairs not serializable with path field: %s", encoded)
 	}
 }
+
+func TestNormalizeInputRejectsNonJSONNumberForms(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"attempt_count": map[string]any{"type": "integer"},
+		},
+	}
+	// ParseFloat 会接受这些形式，但它们不是合法 JSON 数字——必须原样
+	// 穿透交由严格解码给出清晰的类型错误（回归锁定）。
+	for _, form := range []string{`"NaN"`, `"Inf"`, `"+5"`, `"0x1p4"`} {
+		raw := `{"attempt_count":` + form + `}`
+		result, err := NormalizeInput(schema, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("form %s must pass through without error, got %v", form, err)
+		}
+		if !result.Clean() {
+			t.Fatalf("form %s must not be coerced: %#v", form, result.Repairs)
+		}
+	}
+}
+
+func TestNormalizeInputKeepsAliasWhenCanonicalKeyAlsoPresent(t *testing.T) {
+	raw := `{"task_id":"task-canonical","taskId":"task-alias","run_id":"run-1","outcome":"fix_failed","summary":"x","blocker_reason":"y"}`
+	result, err := NormalizeInput(NewDeveloperAgentContract().InputSchema(), json.RawMessage(raw))
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if !result.Clean() {
+		t.Fatalf("double-keyed payload must not be rewritten: %#v", result.Repairs)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if _, ok := payload["taskId"]; !ok {
+		t.Fatalf("alias key must survive for strict decode to reject: %s", result.Payload)
+	}
+}
+
+func TestNormalizeInputRejectsTrailingJSON(t *testing.T) {
+	schema := NewDeveloperAgentContract().InputSchema()
+	if _, err := NormalizeInput(schema, json.RawMessage(`{"task_id":"t"} {"run_id":"r"}`)); err == nil {
+		t.Fatal("trailing JSON value must error like strict decode")
+	}
+}
