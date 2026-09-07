@@ -196,6 +196,20 @@ func WithAgentExecutionLookup(executions AgentExecutionLookup) Option {
 	}
 }
 
+// WithResultIngress enables the MCP result submission channel on both runner
+// coordinators. issuer 为 nil（或 endpoint 为空）时通道保持关闭（纯文本模式）。
+// 必须排在 WithReviewerRunner/WithDeveloperRunner 之后调用。
+func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
+	return func(o *Orchestrator) {
+		if coordinator, ok := o.reviewerRunner.(*ReviewerRunnerCoordinator); ok {
+			coordinator.core.setResultIngress(issuer, endpointURL)
+		}
+		if coordinator, ok := o.developerRunner.(*DeveloperRunnerCoordinator); ok {
+			coordinator.core.setResultIngress(issuer, endpointURL)
+		}
+	}
+}
+
 func WithRunnerArtifactStore(store RunnerArtifactStore) Option {
 	return func(o *Orchestrator) {
 		o.runnerArtifacts = store

@@ -19,12 +19,21 @@ type AgentRunnerObservation struct {
 	Result    *runner.Result
 }
 
+// RunTokenIssuer signs the per-run bearer tokens for the MCP result channel.
+type RunTokenIssuer interface {
+	IssueRunToken(taskID, runID, role string) (string, error)
+}
+
 type AgentRunnerCoordinator struct {
 	tasks      TaskRepository
 	runs       RunRepository
 	executions AgentExecutionProjectionRepository
 	runner     ReviewerRunnerClient
 	now        func() time.Time
+	// ingress enables the MCP result channel on dispatch; nil keeps the
+	// channel closed (text-only mode).
+	ingressIssuer   RunTokenIssuer
+	ingressEndpoint string
 }
 
 func NewAgentRunnerCoordinator(tasks TaskRepository, runs RunRepository, executions AgentExecutionProjectionRepository, runnerClient ReviewerRunnerClient) *AgentRunnerCoordinator {
@@ -52,6 +61,14 @@ func (c *AgentRunnerCoordinator) Existing(ctx context.Context, runID string, req
 	return existing, true, nil
 }
 
+// setResultIngress wires the MCP result channel onto dispatch. Only real
+// creates sign tokens: idempotent replays (Existing hit) keep the token the
+// original dispatch carried.
+func (c *AgentRunnerCoordinator) setResultIngress(issuer RunTokenIssuer, endpointURL string) {
+	c.ingressIssuer = issuer
+	c.ingressEndpoint = strings.TrimSpace(endpointURL)
+}
+
 func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, run *model.Run, request runner.CreateExecutionRequest) (*model.AgentExecution, error) {
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
@@ -69,6 +86,13 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	}
 	if found {
 		return existing, nil
+	}
+	if c.ingressIssuer != nil && c.ingressEndpoint != "" {
+		token, err := c.ingressIssuer.IssueRunToken(task.TaskID, run.RunID, task.Role)
+		if err != nil {
+			return nil, fmt.Errorf("issue run result token: %w", err)
+		}
+		request.ResultSubmission = &runner.ResultSubmissionChannel{EndpointURL: c.ingressEndpoint, BearerToken: token}
 	}
 	remote, createErr := c.runner.Create(ctx, request)
 	if createErr != nil {
