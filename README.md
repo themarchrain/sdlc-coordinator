@@ -38,3 +38,7 @@ Default first-boot login is `admin` / `admin123`. Change it before any shared de
 go test ./...
 cd web && npm ci && npm test -- --run && npm run typecheck && npm run build
 ```
+
+## License
+
+Apache License 2.0. See [LICENSE](./LICENSE).
