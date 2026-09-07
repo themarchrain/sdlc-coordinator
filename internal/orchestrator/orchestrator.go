@@ -40,6 +40,7 @@ type RunRepository interface {
 	Update(context.Context, *model.Run) error
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
+	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
 	ListSucceededForArtifactCleanup(context.Context, time.Time, int) ([]model.Run, error)
 }
 

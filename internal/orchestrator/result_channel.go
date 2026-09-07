@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/results"
@@ -52,6 +53,10 @@ type ChannelOutcome struct {
 	Normalized bool
 	Err        error
 }
+
+// developerFinalizeTimeout 约束 MCP tools/call 内同步执行的 git
+// commit/push：无此上限，代码托管黑洞会耗尽整个任务时间预算。
+const developerFinalizeTimeout = 3 * time.Minute
 
 type ResultChannelCoordinator struct {
 	finalizer DeveloperGitFinalizer
@@ -137,13 +142,20 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 		if err != nil {
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("rebuild trusted developer workspace metadata: %w", err))), nil
 		}
-		delivery, err := c.finalizer.Finalize(ctx, workspace.DeveloperFinalizeRequest{
+		finalizeCtx, cancel := context.WithTimeout(ctx, developerFinalizeTimeout)
+		defer cancel()
+		delivery, err := c.finalizer.Finalize(finalizeCtx, workspace.DeveloperFinalizeRequest{
 			WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
 			Summary: inputValue.Summary, TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 			TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 			ExpectedInitialHeadSHA: workspaceRequest.ExpectedHeadSHA, Credential: workspaceRequest.Credential,
 		})
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				// git 黑洞是基础设施故障而非参数可矫正问题：归传输桶，
+				// 不消耗矫正次数。
+				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize, Err: fmt.Errorf("finalize developer git delivery: %w", err)}, nil
+			}
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("finalize developer git delivery: %w", err))), nil
 		}
 		developerInput, err = agentContract.WithDelivery(agentInput, results.DeliveryEvidence{

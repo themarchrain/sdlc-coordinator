@@ -43,6 +43,29 @@ func (r *RunRepository) GetByRunID(ctx context.Context, runID string) (*model.Ru
 	return &run, nil
 }
 
+// ListTerminalWithActiveExecution 列出 run 行已终态、但 AgentExecution 投影
+// 仍未闭合的 run：MCP 主通道首提即终态化 run 行，执行投影要等 CLI 进程退出
+// 后的最终观察才能收尾；tick 用它补一次观察，防止投影滞留 running 令
+// artifact 清理永久跳过。
+func (r *RunRepository) ListTerminalWithActiveExecution(ctx context.Context, limit int) ([]model.Run, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var runs []model.Run
+	if err := r.db.WithContext(ctx).
+		Where("status IN ?", []model.RunStatus{model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked}).
+		Where("external_system = ?", "agent-runner").
+		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status IN ?)",
+			[]model.AgentExecutionStatus{model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
+		Order("updated_at ASC").
+		Order("id ASC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list terminal runs with active execution: %w", err)
+	}
+	return runs, nil
+}
+
 func (r *RunRepository) ListRunning(ctx context.Context, limit int) ([]model.Run, error) {
 	if limit <= 0 {
 		limit = 100

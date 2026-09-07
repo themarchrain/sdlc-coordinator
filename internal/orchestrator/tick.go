@@ -12,12 +12,12 @@ import (
 type TickRequest struct {
 	CallbackBaseURL     string `json:"callback_base_url,omitempty"`
 	WorkspaceRoot       string `json:"workspace_root,omitempty"`
-	DispatchLimit       int `json:"dispatch_limit,omitempty"`
-	PollLimit           int `json:"poll_limit,omitempty"`
-	ReconciliationLimit int `json:"reconciliation_limit,omitempty"`
-	FinalizationLimit   int `json:"finalization_limit,omitempty"`
-	RecoveryLimit       int `json:"recovery_limit,omitempty"`
-	EffectLimit         int `json:"effect_limit,omitempty"`
+	DispatchLimit       int    `json:"dispatch_limit,omitempty"`
+	PollLimit           int    `json:"poll_limit,omitempty"`
+	ReconciliationLimit int    `json:"reconciliation_limit,omitempty"`
+	FinalizationLimit   int    `json:"finalization_limit,omitempty"`
+	RecoveryLimit       int    `json:"recovery_limit,omitempty"`
+	EffectLimit         int    `json:"effect_limit,omitempty"`
 }
 
 type TickResult struct {
@@ -63,14 +63,7 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 	defer o.tickMu.Unlock()
 	result := &TickResult{}
 
-	runningRuns, err := o.runs.ListRunning(ctx, req.PollLimit)
-	if err != nil {
-		return nil, fmt.Errorf("list running runs: %w", err)
-	}
-	for _, run := range runningRuns {
-		if run.ExternalSystem != agentRunnerExternalSystem {
-			continue
-		}
+	pollRun := func(run model.Run) {
 		var runnerResult *ReviewerRunnerReconcileResult
 		var reconcileErr error
 		if run.WorkerRole == "DeveloperWorker" {
@@ -80,14 +73,14 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 		}
 		if reconcileErr != nil {
 			result.PolledRuns = append(result.PolledRuns, PollRunTickResult{RunID: run.RunID, Status: run.Status, Error: reconcileErr.Error()})
-			continue
+			return
 		}
 		storedRun, getErr := o.runs.GetByRunID(ctx, run.RunID)
 		if getErr != nil {
 			// 单个 run 的重读失败不应放大为整个 Tick 的失败：写入该 run 自己的
 			// poll 错误后继续处理剩余 run 与后续阶段。
 			result.PolledRuns = append(result.PolledRuns, PollRunTickResult{RunID: run.RunID, Status: run.Status, Error: getErr.Error()})
-			continue
+			return
 		}
 		terminal := storedRun.Status == model.RunStatusSucceeded || storedRun.Status == model.RunStatusFailed || storedRun.Status == model.RunStatusBlocked
 		pollResult := PollRunTickResult{
@@ -98,6 +91,30 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 			pollResult.Error = storedRun.ErrorMessage
 		}
 		result.PolledRuns = append(result.PolledRuns, pollResult)
+	}
+
+	runningRuns, err := o.runs.ListRunning(ctx, req.PollLimit)
+	if err != nil {
+		return nil, fmt.Errorf("list running runs: %w", err)
+	}
+	for _, run := range runningRuns {
+		if run.ExternalSystem != agentRunnerExternalSystem {
+			continue
+		}
+		pollRun(run)
+	}
+
+	// MCP 主通道首提即终态化 run 行，此类 run 不会再进 ListRunning，但执行
+	// 投影要等 CLI 进程退出后的最终观察才能闭合；补一次观察（reconcile 的
+	// 状态门会把迟到的文本结果静默吸收），否则投影滞留 running 会让 artifact
+	// 清理永久跳过并逐渐饿死整个清理批次。
+	// 收尾观察是尽力而为的观测性步骤：查询失败不阻断 Tick 主链路（下一轮
+	// Tick 自然重试），因此这里有意不像 ListRunning 那样上抛错误。
+	terminalRuns, sweepErr := o.runs.ListTerminalWithActiveExecution(ctx, req.PollLimit)
+	if sweepErr == nil {
+		for _, run := range terminalRuns {
+			pollRun(run)
+		}
 	}
 
 	if o.writebacks != nil {

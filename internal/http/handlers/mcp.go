@@ -307,7 +307,7 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 		case errors.Is(outcome.Err, orchestrator.ErrResultConflict):
 			return toolResultResponse(request.ID, true, mcpToolPayload{
 				Status: mcpStatusAlreadyFinal, TaskID: task.TaskID, RunID: run.RunID,
-				NextStep: "本 run 已按另一份提交终态化；不要再调用本工具，直接停止。",
+				NextStep: "先前提交已受理，本 run 不再接受新提交；不要再调用本工具，直接停止。",
 			}), nil
 		case errors.Is(outcome.Err, orchestrator.ErrResultProcessing):
 			return toolResultResponse(request.ID, true, mcpToolPayload{

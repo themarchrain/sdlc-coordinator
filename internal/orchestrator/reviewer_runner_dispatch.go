@@ -138,15 +138,11 @@ func (o *Orchestrator) ReconcileReviewerRunner(ctx context.Context, runID string
 			return nil, err
 		}
 	case model.AgentExecutionStatusFailed, model.AgentExecutionStatusCancelled, model.AgentExecutionStatusInterrupted:
-		if result.Absorbed {
-			// run 已终态（MCP 首提）：CLI 失败不升级，保住已定终态。
-			return result, nil
-		}
 		if err := o.recordReviewerRunnerFailure(ctx, runID, result.Execution.ErrorCode); err != nil {
 			return nil, err
 		}
 	case model.AgentExecutionStatusSucceeded:
-		if result.Submission == nil && !result.Absorbed {
+		if result.Submission == nil {
 			return nil, errors.New("succeeded reviewer runner execution has no accepted submission")
 		}
 	default:

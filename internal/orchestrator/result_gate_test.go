@@ -130,3 +130,48 @@ func TestReviewerReconcileStillSubmitsWhileRunRunning(t *testing.T) {
 		t.Fatalf("running run must process text results normally: %#v", observed)
 	}
 }
+
+// MCP 首提终态化 run 后，tick 必须对「run 已终态但执行投影
+// 仍活跃」的 run 补一次观察收尾投影，否则投影永久滞留 running、artifact
+// 清理被跳过并最终饿死清理批次。
+func TestTickClosesExecutionProjectionForMCPFinalizedRuns(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start reviewer execution: %v", err)
+	}
+	// MCP 首提：run 行终态化（succeeded），执行投影仍 running。
+	// ExternalSystem 由真实派发写入（developer_runner_dispatch.go:34），夹具补齐。
+	runRecord, _ := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	runRecord.Status = model.RunStatusSucceeded
+	runRecord.ExternalSystem = "agent-runner"
+	if err := fixture.runs.Update(context.Background(), runRecord); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+	// CLI 随后正常退出。
+	fixture.runner.execution.Status = runner.StatusSucceeded
+	fixture.runner.execution.ResultHash = "result-hash"
+	fixture.runner.result = &runner.Result{
+		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
+		StructuredOutput: json.RawMessage(`{"task_id":"task-reviewer-runner","run_id":"run-reviewer-runner","verdict":"approved","summary":"late","findings":[],"test_summary":"x","comment_body":"y"}`),
+	}
+
+	orch := New(fixture.tasks, fixture.runs, WithReviewerRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root}))
+	if _, err := orch.Tick(context.Background(), TickRequest{PollLimit: 10}); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	execution, err := fixture.coordinator.core.executions.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	if execution.Status != model.AgentExecutionStatusSucceeded {
+		t.Fatalf("execution projection must close after the sweep, got %#v", execution)
+	}
+	storedRun, _ := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if storedRun.Status != model.RunStatusSucceeded {
+		t.Fatalf("sweep must not disturb the terminal run, got %s", storedRun.Status)
+	}
+	task, _ := fixture.tasks.GetByTaskID(context.Background(), fixture.task.TaskID)
+	if task.Status == model.TaskStatusHumanRequired || task.Status == model.TaskStatusBlocked {
+		t.Fatalf("sweep must not escalate, got %s", task.Status)
+	}
+}
