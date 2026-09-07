@@ -63,12 +63,12 @@ func compactJSON(raw []byte) (json.RawMessage, bool) {
 	return append(json.RawMessage(nil), compact.Bytes()...), true
 }
 
-func persistInvalidFinalDiagnostics(workspaceRoot string, finalOutput, adaptedSchema []byte, provider runner.ProviderConfig) (string, error) {
+func persistInvalidFinalDiagnostics(workspaceRoot string, finalOutput, adaptedSchema []byte, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) (string, error) {
 	diagnosticsRoot := filepath.Join(workspaceRoot, diagnosticsDirectoryName)
 	if err := os.MkdirAll(diagnosticsRoot, 0o700); err != nil {
 		return diagnosticsRoot, fmt.Errorf("create Codex diagnostics directory: %w", err)
 	}
-	redactedOutput := []byte(redactProviderError(string(finalOutput), provider))
+	redactedOutput := []byte(redactProviderError(string(finalOutput), provider, channel))
 	if err := os.WriteFile(filepath.Join(diagnosticsRoot, "codex-final-output.txt"), redactedOutput, 0o600); err != nil {
 		return diagnosticsRoot, fmt.Errorf("write invalid Codex final output: %w", err)
 	}

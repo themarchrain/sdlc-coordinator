@@ -18,6 +18,8 @@ import (
 const (
 	providerName       = "coordinator_provider"
 	providerAPIKeyEnv  = "CODEX_PROVIDER_API_KEY"
+	runTokenEnv        = "COORDINATOR_RUN_TOKEN"
+	mcpServerName      = "coordinator"
 	defaultOpenAIBase  = "https://api.openai.com/v1"
 	defaultCodexBinary = "codex"
 )
@@ -122,6 +124,15 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if effort := strings.TrimSpace(request.Provider.Effort); effort != "" {
 		args = append(args, "-c", `model_reasoning_effort=`+strconv.Quote(effort))
 	}
+	if request.ResultSubmission != nil {
+		// 生产形态带 --ignore-user-config，config.toml 的 MCP 被屏蔽，-c 覆盖是
+		// 唯一注入路径；token 走 bearer_token_env_var 从进程环境读。
+		args = append(args,
+			"-c", `mcp_servers.`+mcpServerName+`.url=`+strconv.Quote(request.ResultSubmission.EndpointURL),
+			"-c", `mcp_servers.`+mcpServerName+`.bearer_token_env_var=`+strconv.Quote(runTokenEnv),
+		)
+		environment = append(environment, runTokenEnv+"="+request.ResultSubmission.BearerToken)
+	}
 	// stdin 占位符必须在全部选项之后：codex 0.148.0 拒绝出现在选项之前的 "-"
 	// （unexpected argument '-'），0.150+ 两种顺序都接受。
 	args = append(args, "-")
@@ -137,7 +148,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 			}
 			return nil, fmt.Errorf("run codex cli: %s", detail)
 		}
-		return nil, fmt.Errorf("run codex cli: %s", redactProviderError(err.Error(), request.Provider))
+		return nil, fmt.Errorf("run codex cli: %s", redactProviderError(err.Error(), request.Provider, request.ResultSubmission))
 	}
 	result, err := os.ReadFile(finalPath)
 	if err != nil {
@@ -149,17 +160,22 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if normalized, ok := normalizeFinalResult(result); ok {
 		return normalized, nil
 	}
-	diagnosticsRoot, diagnosticsErr := persistInvalidFinalDiagnostics(request.WorkspacePath, result, adaptedSchema, request.Provider)
+	diagnosticsRoot, diagnosticsErr := persistInvalidFinalDiagnostics(request.WorkspacePath, result, adaptedSchema, request.Provider, request.ResultSubmission)
 	if diagnosticsErr != nil {
 		return nil, fmt.Errorf("codex final result is invalid JSON; preserve diagnostics: %w", diagnosticsErr)
 	}
 	return nil, fmt.Errorf("codex final result is invalid JSON; diagnostics saved to %s", diagnosticsRoot)
 }
 
-func redactProviderError(message string, provider runner.ProviderConfig) string {
-	secrets := make([]string, 0, len(provider.Headers)+1)
+func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
+	secrets := make([]string, 0, len(provider.Headers)+2)
 	if value := strings.TrimSpace(provider.APIKey); value != "" {
 		secrets = append(secrets, value)
+	}
+	if channel != nil {
+		if value := strings.TrimSpace(channel.BearerToken); value != "" {
+			secrets = append(secrets, value)
+		}
 	}
 	for _, value := range provider.Headers {
 		if value = strings.TrimSpace(value); value != "" {
@@ -235,8 +251,29 @@ func allowedBaseEnvironment(current []string) []string {
 type eventParser struct {
 	emit           runner.EmitFunc
 	provider       runner.ProviderConfig
+	channel        *runner.ResultSubmissionChannel
 	failureCode    string
 	failureMessage string
+}
+
+// knownNonFatal reports provider-side notices that every session emits but
+// that must not be classified as failures (probe quirk: "Model metadata ...
+// not found" fires once per session for any non-OpenAI model name).
+func knownNonFatal(message string) bool {
+	return strings.Contains(message, "Model metadata") && strings.Contains(message, "not found")
+}
+
+// mcpResultText joins text content blocks of an MCP tool result.
+func mcpResultText(result map[string]any) string {
+	content, _ := result["content"].([]any)
+	texts := make([]string, 0, len(content))
+	for _, block := range content {
+		blockMap, _ := block.(map[string]any)
+		if text, _ := blockMap["text"].(string); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 func (p *eventParser) consume(line []byte) error {
@@ -264,13 +301,33 @@ func (p *eventParser) consume(line []byte) error {
 		} else {
 			payload["status"] = strings.TrimPrefix(eventType, "item.")
 		}
-		if stringValue(item, "type") == "error" {
+		switch stringValue(item, "type") {
+		case "error":
 			if message := stringValue(item, "message"); message != "" {
-				payload["message"] = redactProviderError(message, p.provider)
+				payload["message"] = redactProviderError(message, p.provider, p.channel)
+				if knownNonFatal(message) {
+					payload["non_fatal"] = true
+				}
 			}
 			if errorObject, ok := item["error"].(map[string]any); ok {
 				if message := stringValue(errorObject, "message"); message != "" {
-					payload["message"] = redactProviderError(message, p.provider)
+					payload["message"] = redactProviderError(message, p.provider, p.channel)
+					if knownNonFatal(message) {
+						payload["non_fatal"] = true
+					}
+				}
+			}
+		case "mcp_tool_call":
+			payload["server"] = stringValue(item, "server")
+			payload["tool"] = stringValue(item, "tool")
+			if result, ok := item["result"].(map[string]any); ok {
+				if text := mcpResultText(result); text != "" {
+					payload["result_text"] = redactProviderError(text, p.provider, p.channel)
+				}
+			}
+			if errorObject, ok := item["error"].(map[string]any); ok {
+				if message := stringValue(errorObject, "message"); message != "" {
+					payload["error_message"] = redactProviderError(message, p.provider, p.channel)
 				}
 			}
 		}
@@ -308,7 +365,7 @@ func (p *eventParser) failurePayload(event map[string]any) map[string]any {
 		payload["error_code"] = code
 	}
 	if message != "" {
-		payload["message"] = redactProviderError(message, p.provider)
+		payload["message"] = redactProviderError(message, p.provider, p.channel)
 	}
 	return payload
 }
