@@ -17,12 +17,14 @@ import (
 	effectexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/events"
 	api "sdlc-coordinator/internal/http"
+	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
+	"sdlc-coordinator/internal/resulttoken"
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/scheduler"
 	"sdlc-coordinator/internal/store"
@@ -33,6 +35,9 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// resultSubmissionMaxRejections 矫正次数上限：实测 3 次收敛，留余量取 5
+const resultSubmissionMaxRejections = 5
 
 type App struct {
 	Config           config.Config
@@ -55,7 +60,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if err != nil {
 		return nil, fmt.Errorf("parse codehost rework allowed user ids: %w", err)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ConnectorInstance{}); err != nil {
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	if err := registeredrepo.NewStore(db).Migrate(); err != nil {
@@ -156,6 +161,31 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
 		orchestrator.WithRunnerArtifactStore(runnerClient),
 	)
+	// MCP 结果回传通道：签名密钥仅存内存（重启即失效，在途 agent 落入文本
+	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
+	// 缺省未配置时通道保持关闭（纯文本模式）。
+	resultTokenSecret, err := resulttoken.NewSecret()
+	if err != nil {
+		return nil, fmt.Errorf("generate result channel secret: %w", err)
+	}
+	ingressIssuer := orchestrator.RunTokenIssuerFunc(func(taskID, runID, role string) (string, error) {
+		return resulttoken.Issue(resultTokenSecret, resulttoken.Claims{
+			TaskID: taskID, RunID: runID, Role: role,
+			TTL: cfg.AgentRunner.TaskTimeout + time.Hour,
+		}, time.Now())
+	})
+	mcpChannel := orchestrator.NewResultChannelCoordinator(
+		workspace.NewDeveloperFinalizer(),
+		orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
+			return orch.SubmitResult(ctx, request)
+		}),
+		runnerSettings, "mcp",
+	)
+	mcpHandler := handlers.NewMCPHandler(
+		mcpChannel, resultTokenSecret, taskRepo, runRepo,
+		repository.NewResultRejectionRepository(db), resultSubmissionMaxRejections,
+	)
+	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
 	eventProcessor := events.NewProcessor(inboundEventRepo, orch, events.WithCodeHostReworkAllowedUserIDs(reworkAllowedUserIDs))
 	eventProcessor.SetRepositoryLookup(repoStore)
@@ -183,6 +213,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		api.WithRepositoryService(repositoryService),
 		api.WithRequirementsService(requirementsService),
 		api.WithAuthService(authService),
+		api.WithMCPHandler(mcpHandler),
 	}
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))

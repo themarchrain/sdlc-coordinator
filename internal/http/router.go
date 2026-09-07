@@ -32,6 +32,7 @@ type RouterOptions struct {
 	RuntimeMode          configuration.Mode
 	PeopleService        *people.Service
 	PeopleLookup         people.IdentityLookup
+	MCPHandler           *handlers.MCPHandler
 	AuthService          *auth.Service
 	RepositoryService    *registeredrepo.Service
 	RequirementsService  *requirements.Service
@@ -79,6 +80,14 @@ func WithConnectorService(service *connectors.Service) RouterOption {
 func WithAdminWebHandler(handler http.Handler) RouterOption {
 	return func(options *RouterOptions) {
 		options.AdminWebHandler = handler
+	}
+}
+
+// WithMCPHandler 注册 /mcp 结果回传端点；nil（未配置 issuer）时不注册——
+// 纯文本模式。鉴权在 handler 内做 per-run bearer token 校验，不走 session 门禁。
+func WithMCPHandler(handler *handlers.MCPHandler) RouterOption {
+	return func(options *RouterOptions) {
+		options.MCPHandler = handler
 	}
 }
 
@@ -143,6 +152,11 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	healthHandler := handlers.NewHealthHandler(healthProvider)
 	router.GET("/healthz", healthHandler.Health)
 	router.GET("/readyz", healthHandler.Ready)
+	if options.MCPHandler != nil {
+		router.POST("/mcp", options.MCPHandler.Handle)
+		router.DELETE("/mcp", options.MCPHandler.CloseSession)
+		router.GET("/mcp", options.MCPHandler.Handle)
+	}
 	adminWebHandler := options.AdminWebHandler
 	if adminWebHandler == nil {
 		adminWebHandler = adminweb.Handler()

@@ -24,6 +24,13 @@ type RunTokenIssuer interface {
 	IssueRunToken(taskID, runID, role string) (string, error)
 }
 
+// RunTokenIssuerFunc adapts a function into a RunTokenIssuer.
+type RunTokenIssuerFunc func(taskID, runID, role string) (string, error)
+
+func (f RunTokenIssuerFunc) IssueRunToken(taskID, runID, role string) (string, error) {
+	return f(taskID, runID, role)
+}
+
 type AgentRunnerCoordinator struct {
 	tasks      TaskRepository
 	runs       RunRepository
