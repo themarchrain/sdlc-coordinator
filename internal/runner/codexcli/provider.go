@@ -97,7 +97,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		baseURL = defaultOpenAIBase
 	}
 	args := []string{
-		"exec", "-", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+		"exec", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules",
 		"--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check",
 		"--color", "never",
 		"--disable", "plugins", "--disable", "recommended_plugins",
@@ -122,6 +122,9 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if effort := strings.TrimSpace(request.Provider.Effort); effort != "" {
 		args = append(args, "-c", `model_reasoning_effort=`+strconv.Quote(effort))
 	}
+	// stdin 占位符必须在全部选项之后：codex 0.148.0 拒绝出现在选项之前的 "-"
+	// （unexpected argument '-'），0.150+ 两种顺序都接受。
+	args = append(args, "-")
 
 	parser := eventParser{emit: emit, provider: request.Provider}
 	if err := p.command.Run(ctx, commandSpec{

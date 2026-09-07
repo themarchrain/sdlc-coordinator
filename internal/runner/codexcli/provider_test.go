@@ -48,7 +48,7 @@ func TestProviderBuildsIsolatedResponsesCommandAndReturnsStructuredOutput(t *tes
 		t.Fatalf("unexpected command spec: %#v", command.spec)
 	}
 	for _, required := range []string{
-		"exec", "-", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+		"exec", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules",
 		"--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check",
 		"--output-last-message", "-C", workspaceRoot, "-m", "model-alpha",
 		`model_provider="coordinator_provider"`, `model_providers.coordinator_provider.wire_api="responses"`,
@@ -57,6 +57,13 @@ func TestProviderBuildsIsolatedResponsesCommandAndReturnsStructuredOutput(t *tes
 		if !containsArgument(command.spec.Args, required) {
 			t.Fatalf("missing argument %q in %#v", required, command.spec.Args)
 		}
+	}
+	// codex 0.148.0 只接受 stdin 占位符 "-" 出现在全部选项之后（回归锁定）。
+	if last := command.spec.Args[len(command.spec.Args)-1]; last != "-" {
+		t.Fatalf("stdin placeholder must be the final argument, got %#v", command.spec.Args)
+	}
+	if containsArgument(command.spec.Args[:2], "-") {
+		t.Fatalf("stdin placeholder must not precede options: %#v", command.spec.Args)
 	}
 	if containsArgument(command.spec.Args, "--output-schema") {
 		t.Fatalf("Codex must not send --output-schema: %#v", command.spec.Args)
