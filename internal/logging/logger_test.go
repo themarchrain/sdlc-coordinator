@@ -17,9 +17,9 @@ func TestNewWritesConfiguredLevelToDailyFile(t *testing.T) {
 
 	logger.Debug("hidden debug message")
 	logger.Info("persisted info message")
-	if err := logger.Sync(); err != nil {
-		t.Fatalf("sync logger: %v", err)
-	}
+	// stderr 在 Linux 上是字符设备,fsync 返回 EINVAL;与生产一致,Sync 错误不作为
+	// 失败条件(main.go 退出清理同样忽略该错误),文件写入本身即写即关、无需刷盘保证。
+	_ = logger.Sync()
 
 	files, err := filepath.Glob(filepath.Join(dir, "coordinator-*.log"))
 	if err != nil {
