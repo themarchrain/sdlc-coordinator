@@ -170,6 +170,11 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 				result.DispatchFailures = append(result.DispatchFailures, DispatchTickResult{
 					TaskID: task.TaskID, Status: model.TaskStatusHumanRequired, Error: unsupportedTesterWorkerReason,
 				})
+				// repo 停车会清空 current_run_id,循环变量里的 task 是迁移前快照;
+				// 重取后由 helper 的状态门禁决定是否物化通知。
+				if parked, getErr := o.tasks.GetByTaskID(ctx, task.TaskID); getErr == nil {
+					o.materializeHumanRequiredIMEffect(ctx, parked, unsupportedTesterWorkerReason)
+				}
 				continue
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
@@ -154,9 +155,18 @@ func (o *Orchestrator) escalateUnknownWriteback(ctx context.Context, writeback *
 		}
 		o.policy.Apply(task, previous, task.Status, o.now())
 		task.LastError = message
+		// 与写回停车路径同规:LastError 与 IM cause 一律 token 掩码,凭据不落
+		// 库也不进通知(当前 message 来源无凭据,属纵深防御)。
+		if repo := o.lookupRegisteredRepo(ctx, task); repo != nil {
+			token := strings.TrimSpace(repo.Token)
+			if token != "" {
+				task.LastError = strings.ReplaceAll(task.LastError, token, "***")
+			}
+		}
 		if err := o.tasks.Update(ctx, task); err != nil {
 			return err
 		}
+		o.materializeHumanRequiredIMEffect(ctx, task, task.LastError)
 	}
 	run, err := o.runs.GetByRunID(ctx, writeback.RunID)
 	if err != nil {

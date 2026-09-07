@@ -118,7 +118,18 @@ func (o *Orchestrator) recordInvalidRunnerResult(ctx context.Context, runID stri
 	if message == "" {
 		message = "agent runner returned an invalid business result"
 	}
-	return o.tasks.BlockRunAndRequireHuman(ctx, runID, message, o.now())
+	if err := o.tasks.BlockRunAndRequireHuman(ctx, runID, message, o.now()); err != nil {
+		return err
+	}
+	// BlockRunAndRequireHuman 幂等:run 已终态时静默返回,task 未必因本次调用迁移;
+	// 重取 task 交给 helper 的 human_required 状态门禁裁决。通知 best-effort,
+	// 取数失败不改变本函数的返回语义。
+	if run, err := o.runs.GetByRunID(ctx, runID); err == nil {
+		if task, err := o.tasks.GetByTaskID(ctx, run.TaskID); err == nil {
+			o.materializeHumanRequiredIMEffect(ctx, task, message)
+		}
+	}
+	return nil
 }
 
 func (o *Orchestrator) rebuildDeveloperRunnerProjection(ctx context.Context, runID string) (*model.AgentExecution, error) {

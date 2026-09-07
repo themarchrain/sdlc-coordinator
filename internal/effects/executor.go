@@ -59,8 +59,14 @@ func (e *Executor) executeSendIMMessage(ctx context.Context, effect *model.Effec
 		return "", errors.New("body is required")
 	}
 
+	// orchestrator 侧以字面量 "default" 标记默认目的地;backend 契约是空串回落
+	// 默认配置。不翻译则 "default" 被当真实 chat_id 发出(Telegram 400 chat not found)。
+	target := strings.TrimSpace(effect.Target)
+	if target == "default" {
+		target = ""
+	}
 	message, err := e.im.SendMessage(ctx, im.SendMessageRequest{
-		Target:   strings.TrimSpace(effect.Target),
+		Target:   target,
 		Body:     req.Body,
 		Mentions: req.Mentions,
 	})

@@ -49,25 +49,54 @@ func (backend *TelegramBackend) SendMessage(ctx context.Context, req SendMessage
 		return nil, fmt.Errorf("telegram chat id is required (effect target or im_telegram_default_chat_id)")
 	}
 
-	text := escapeTelegramHTML(strings.TrimSpace(req.Body))
-	for _, name := range req.Mentions {
-		displayName := strings.TrimSpace(name)
-		if displayName == "" {
-			continue
-		}
-		if userID, ok := backend.mentions[displayName]; ok && strings.TrimSpace(userID) != "" {
-			text += "\n" + fmt.Sprintf(`<a href="tg://user?id=%s">@%s</a>`, strings.TrimSpace(userID), escapeTelegramHTML(displayName))
-			continue
-		}
-		text += "\n@" + escapeTelegramHTML(displayName)
-	}
-
-	payload := map[string]any{
+	body := strings.TrimSpace(req.Body)
+	text := markdownToTelegramHTML(body) + backend.mentionLines(req.Mentions, true)
+	message, err := backend.postSendMessage(ctx, map[string]any{
 		"chat_id":                  chatID,
 		"text":                     text,
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": true,
+	})
+	if err != nil && isTelegramEntityParseError(err) {
+		// 渲染降级:转换产物被 Telegram 判为非法实体时(该请求确定未送达),
+		// 用无 parse_mode 的纯文本重发原文,保证通知不因渲染失败丢失。
+		return backend.postSendMessage(ctx, map[string]any{
+			"chat_id":                  chatID,
+			"text":                     body + backend.mentionLines(req.Mentions, false),
+			"disable_web_page_preview": true,
+		})
 	}
+	return message, err
+}
+
+// mentionLines 把通知的提及名单渲染为逐行追加的 @ 行;html 模式下已知映射
+// 用户用 tg:// 链接,纯文本降级时退化为裸 @ 显示名。
+func (backend *TelegramBackend) mentionLines(mentionNames []string, html bool) string {
+	var out strings.Builder
+	for _, name := range mentionNames {
+		displayName := strings.TrimSpace(name)
+		if displayName == "" {
+			continue
+		}
+		out.WriteString("\n")
+		if html {
+			if userID, ok := backend.mentions[displayName]; ok && strings.TrimSpace(userID) != "" {
+				fmt.Fprintf(&out, `<a href="tg://user?id=%s">@%s</a>`, strings.TrimSpace(userID), escapeTelegramHTML(displayName))
+				continue
+			}
+			out.WriteString("@" + escapeTelegramHTML(displayName))
+			continue
+		}
+		out.WriteString("@" + displayName)
+	}
+	return out.String()
+}
+
+func isTelegramEntityParseError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "can't parse entities")
+}
+
+func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map[string]any) (*Message, error) {
 	rawBody, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("encode telegram payload: %w", err)

@@ -102,8 +102,15 @@ func TestTickMovesUnsupportedTasksToHumanRequiredAndStillExecutesEffects(t *test
 	if len(result.DispatchedTasks) != 0 {
 		t.Fatalf("unsupported tasks reached an execution backend: dispatched=%#v", result.DispatchedTasks)
 	}
-	if len(result.ExecutedEffects) != 1 || result.ExecutedEffects[0].Status != model.EffectStatusSucceeded {
-		t.Fatalf("effect execution was skipped: %#v", result.ExecutedEffects)
+	// 预置 effect 1 条 + 两个 unsupported 任务各物化一条 human_required 通知,
+	// 同轮全部执行成功——停车不停通知链。
+	if len(result.ExecutedEffects) != 3 {
+		t.Fatalf("expected three executed effects: %#v", result.ExecutedEffects)
+	}
+	for _, executed := range result.ExecutedEffects {
+		if executed.Status != model.EffectStatusSucceeded {
+			t.Fatalf("effect execution was skipped: %#v", result.ExecutedEffects)
+		}
 	}
 }
 

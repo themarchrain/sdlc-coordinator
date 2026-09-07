@@ -567,5 +567,7 @@ func (o *Orchestrator) parkTaskIfWritebackRequiresHuman(ctx context.Context, tas
 	if err := o.tasks.Update(ctx, task); err != nil {
 		return fmt.Errorf("park writeback task %s: %w", taskID, err)
 	}
+	// cause 走 task.LastError(已做 token 掩码),凭据不得进 IM 正文。
+	o.materializeHumanRequiredIMEffect(ctx, task, task.LastError)
 	return nil
 }

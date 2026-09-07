@@ -133,3 +133,23 @@ func (f *fakeIMBackend) SendMessage(ctx context.Context, req im.SendMessageReque
 	}
 	return &im.Message{ID: "msg-default", Provider: "fake"}, nil
 }
+
+// TestExecutorNormalizesDefaultSendIMTarget 锁定契约翻译:orchestrator 侧以字面量
+// "default" 标记「发往默认目的地」,而 backend 契约是空串回落 DefaultChatID/默认
+// webhook——executor 负责翻译。不翻译时 "default" 会被 Telegram 当真实 chat_id
+// 发出,400 chat not found。
+func TestExecutorNormalizesDefaultSendIMTarget(t *testing.T) {
+	backend := &fakeIMBackend{}
+	executor := NewExecutor(backend)
+
+	if _, err := executor.ExecuteEffect(context.Background(), &model.Effect{
+		Kind:        "send_im_message",
+		Target:      "default",
+		RequestJSON: `{"body":"hello"}`,
+	}); err != nil {
+		t.Fatalf("execute send_im_message: %v", err)
+	}
+	if backend.lastRequest.Target != "" {
+		t.Fatalf("expected normalized empty target, got %q", backend.lastRequest.Target)
+	}
+}
