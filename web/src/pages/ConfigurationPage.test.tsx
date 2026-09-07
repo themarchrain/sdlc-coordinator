@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
 import type { ConfigurationView } from '../api/types'
+import { APP_VERSION } from '../app/version'
 import { ConfigurationPage } from './ConfigurationPage'
 
 afterEach(() => vi.restoreAllMocks())
@@ -51,7 +52,7 @@ describe('ConfigurationPage', () => {
     expect(screen.queryByText('生效摘要')).not.toBeInTheDocument()
     expect(screen.getByText('2 / 4 已配置')).toBeInTheDocument()
     expect(screen.getByText('系统版本')).toBeInTheDocument()
-    expect(screen.getByText('v0.5.0')).toBeInTheDocument()
+    expect(screen.getByText(APP_VERSION)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     expect(screen.getAllByText('已配置').length).toBeGreaterThan(0)
     expect(screen.queryByDisplayValue('session-secret')).not.toBeInTheDocument()
