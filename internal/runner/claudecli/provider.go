@@ -68,13 +68,22 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		"-p", "--bare", "--no-session-persistence", "--output-format", "stream-json", "--verbose",
 		"--dangerously-skip-permissions", "--json-schema", string(schema),
 	}
+	if request.ResultSubmission != nil {
+		// claude 的 http MCP 头只接受字面值，token 写进 --mcp-config 文件；
+		// 文件放进程临时目录（工作区之外），随 runtimeRoot 一起删除。
+		mcpConfigPath, err := writeMCPConfig(runtimeRoot, request.ResultSubmission)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--mcp-config", mcpConfigPath, "--strict-mcp-config")
+	}
 	if model := strings.TrimSpace(request.Provider.Model); model != "" {
 		args = append(args, "--model", model)
 	}
 	if effort := strings.TrimSpace(request.Provider.Effort); effort != "" {
 		args = append(args, "--effort", effort)
 	}
-	parser := streamParser{emit: emit, provider: request.Provider, workspacePath: request.WorkspacePath}
+	parser := streamParser{emit: emit, provider: request.Provider, workspacePath: request.WorkspacePath, channel: request.ResultSubmission}
 	err = p.command.Run(ctx, commandSpec{
 		Binary: p.binary, Args: args, Dir: request.WorkspacePath, Env: environment, Stdin: string(prompt),
 	}, parser.consume)
@@ -93,9 +102,36 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 type streamParser struct {
 	emit             runner.EmitFunc
 	provider         runner.ProviderConfig
+	channel          *runner.ResultSubmissionChannel
 	workspacePath    string
 	structuredOutput json.RawMessage
 	terminalError    error
+}
+
+// writeMCPConfig materializes the coordinator MCP server definition for the
+// claude CLI. The file sits in the provider's temp runtime root, never in the
+// agent workspace, and is removed with the runtime root after the run.
+func writeMCPConfig(runtimeRoot string, channel *runner.ResultSubmissionChannel) (string, error) {
+	config := map[string]any{
+		"mcpServers": map[string]any{
+			"coordinator": map[string]any{
+				"type": "http",
+				"url":  channel.EndpointURL,
+				"headers": map[string]string{
+					"Authorization": "Bearer " + channel.BearerToken,
+				},
+			},
+		},
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("encode claude mcp config: %w", err)
+	}
+	path := filepath.Join(runtimeRoot, "mcp-config.json")
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		return "", fmt.Errorf("write claude mcp config: %w", err)
+	}
+	return path, nil
 }
 
 func (p *streamParser) consume(line []byte) error {
@@ -120,6 +156,14 @@ func (p *streamParser) consume(line []byte) error {
 			payload["usage"] = selectUsage(usage)
 		}
 		p.emitEvent("claude_usage", payload)
+		for _, block := range contentBlocks(message) {
+			if name := stringValue(block, "name"); strings.HasPrefix(name, "submit_") {
+				p.emitEvent("claude_progress", map[string]any{
+					"item_type": "mcp_tool_call", "tool": name,
+					"status": "in_progress", "tool_use_id": stringValue(block, "id"),
+				})
+			}
+		}
 	case "result":
 		payload := selectFields(event,
 			"session_id", "subtype", "stop_reason", "terminal_reason", "duration_ms", "duration_api_ms",
@@ -178,7 +222,7 @@ func (p *streamParser) persistDiagnostics(line []byte) (string, error) {
 	if err := os.MkdirAll(diagnosticsRoot, 0o700); err != nil {
 		return diagnosticsRoot, fmt.Errorf("create Claude diagnostics directory: %w", err)
 	}
-	redacted := []byte(redactProviderError(string(line), p.provider))
+	redacted := []byte(redactProviderError(string(line), p.provider, p.channel))
 	if err := os.WriteFile(filepath.Join(diagnosticsRoot, "claude-result.json"), redacted, 0o600); err != nil {
 		return diagnosticsRoot, fmt.Errorf("write invalid Claude result: %w", err)
 	}
@@ -223,13 +267,18 @@ func (p *streamParser) failureMessage(event map[string]any) string {
 	if message == "" {
 		return ""
 	}
-	return redactProviderError(message, p.provider)
+	return redactProviderError(message, p.provider, p.channel)
 }
 
-func redactProviderError(message string, provider runner.ProviderConfig) string {
-	secrets := make([]string, 0, len(provider.Headers)+1)
+func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
+	secrets := make([]string, 0, len(provider.Headers)+2)
 	if value := strings.TrimSpace(provider.APIKey); value != "" {
 		secrets = append(secrets, value)
+	}
+	if channel != nil {
+		if value := strings.TrimSpace(channel.BearerToken); value != "" {
+			secrets = append(secrets, value)
+		}
 	}
 	for _, value := range provider.Headers {
 		if value = strings.TrimSpace(value); value != "" {
@@ -310,6 +359,17 @@ func allowedBaseEnvironment(current []string) []string {
 		}
 		if _, exists := allowed[strings.ToUpper(name)]; exists {
 			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func contentBlocks(message map[string]any) []map[string]any {
+	blocks, _ := message["content"].([]any)
+	result := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		if blockMap, ok := block.(map[string]any); ok {
+			result = append(result, blockMap)
 		}
 	}
 	return result

@@ -237,10 +237,10 @@ func TestProviderRedactsProviderError(t *testing.T) {
 		APIKey:  "short",
 		Headers: map[string]string{"X-Long": "a-very-long-secret-value"},
 	}
-	if message := redactProviderError("short and a-very-long-secret-value", config); message != "[REDACTED] and [REDACTED]" {
+	if message := redactProviderError("short and a-very-long-secret-value", config, nil); message != "[REDACTED] and [REDACTED]" {
 		t.Fatalf("unexpected redaction: %q", message)
 	}
-	if message := redactProviderError("clean failure", config); message != "clean failure" {
+	if message := redactProviderError("clean failure", config, nil); message != "clean failure" {
 		t.Fatalf("unexpected passthrough: %q", message)
 	}
 }
