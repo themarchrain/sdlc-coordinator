@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	"sdlc-coordinator/internal/admin"
 	"sdlc-coordinator/internal/model"
 
@@ -97,14 +99,25 @@ func resultSubmissionSummary(submission model.ResultSubmission) gin.H {
 	return gin.H{"submission_id": submission.SubmissionID, "task_id": submission.TaskID, "run_id": submission.RunID,
 		"source": submission.Source, "tool_name": submission.ToolName, "role": submission.Role,
 		"payload_hash": submission.PayloadHash, "status": submission.Status, "attempt_count": submission.AttemptCount,
-		"lease_until": submission.LeaseUntil, "error_message": submission.ErrorMessage,
-		"completed_at": submission.CompletedAt, "created_at": submission.CreatedAt, "updated_at": submission.UpdatedAt}
+		"normalization_status": normalizationStatus(submission), "lease_until": submission.LeaseUntil,
+		"error_message": submission.ErrorMessage,
+		"completed_at":  submission.CompletedAt, "created_at": submission.CreatedAt, "updated_at": submission.UpdatedAt}
+}
+
+// normalizationStatus reports whether the thin normalizer rewrote the
+// payload: "clean" (byte identical) or "normalized" (repairs recorded).
+func normalizationStatus(submission model.ResultSubmission) string {
+	if strings.TrimSpace(submission.NormalizationJSON) == "" {
+		return "clean"
+	}
+	return "normalized"
 }
 
 func resultSubmissionDetail(submission model.ResultSubmission) gin.H {
 	result := resultSubmissionSummary(submission)
 	result["raw_payload_json"] = submission.RawPayloadJSON
 	result["canonical_json"] = submission.CanonicalJSON
+	result["normalization_json"] = submission.NormalizationJSON
 	return result
 }
 

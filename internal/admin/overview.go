@@ -47,14 +47,51 @@ func (service *QueryService) Overview(ctx context.Context, filter ...OverviewFil
 		return Overview{}, err
 	}
 
+	submissionsByNormalization, err := service.countSubmissionNormalizations(ctx, repositoryID)
+	if err != nil {
+		return Overview{}, fmt.Errorf("count submission normalizations: %w", err)
+	}
+
 	return Overview{
-		TasksByStatus:      tasksByStatus,
-		RunsByStatus:       runsByStatus,
-		WritebacksByStatus: writebacksByStatus,
-		EffectsByStatus:    effectsByStatus,
-		RecentFailures:     recentFailures,
-		GeneratedAt:        time.Now().UTC(),
+		TasksByStatus:              tasksByStatus,
+		RunsByStatus:               runsByStatus,
+		WritebacksByStatus:         writebacksByStatus,
+		EffectsByStatus:            effectsByStatus,
+		SubmissionsByNormalization: submissionsByNormalization,
+		RecentFailures:             recentFailures,
+		GeneratedAt:                time.Now().UTC(),
 	}, nil
+}
+
+// countSubmissionNormalizations buckets accepted submissions by whether the
+// thin normalizer touched them, plus rejected validation attempts (which
+// never created a submission row).
+func (service *QueryService) countSubmissionNormalizations(ctx context.Context, repositoryID string) (map[string]int64, error) {
+	submissionQuery := applyJoinedTaskRepositoryFilter(service.db.WithContext(ctx).Model(&model.ResultSubmission{}), repositoryID)
+	var rows []struct {
+		Bucket string
+		Count  int64
+	}
+	if err := submissionQuery.
+		Select("CASE WHEN normalization_json IS NULL OR normalization_json = '' THEN 'clean' ELSE 'normalized' END AS bucket, COUNT(*) AS count").
+		Group("bucket").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := map[string]int64{"clean": 0, "normalized": 0, "rejected": 0}
+	for _, row := range rows {
+		result[row.Bucket] = row.Count
+	}
+	rejectionQuery := service.db.WithContext(ctx).Model(&model.ResultSubmissionRejection{})
+	if value := strings.TrimSpace(repositoryID); value != "" {
+		rejectionQuery = rejectionQuery.Where("task_id IN (SELECT task_id FROM tasks WHERE repository_id = ?)", value)
+	}
+	var rejected int64
+	if err := rejectionQuery.Count(&rejected).Error; err != nil {
+		return nil, err
+	}
+	result["rejected"] = rejected
+	return result, nil
 }
 
 func (service *QueryService) countStatuses(ctx context.Context, entity any, repositoryID string) (map[string]int64, error) {

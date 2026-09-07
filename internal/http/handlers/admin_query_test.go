@@ -269,6 +269,7 @@ func newAdminQueryHandlerTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 		&model.Effect{},
 		&model.InboundEvent{},
 		&model.ResultSubmission{},
+		&model.ResultSubmissionRejection{},
 	); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}

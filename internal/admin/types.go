@@ -87,8 +87,13 @@ type Overview struct {
 	RunsByStatus       map[string]int64
 	WritebacksByStatus map[string]int64
 	EffectsByStatus    map[string]int64
-	RecentFailures     []FailureSummary
-	GeneratedAt        time.Time
+	// SubmissionsByNormalization is the thin-normalizer accounting for the
+	// MCP result channel: clean (byte identical), normalized (repairs
+	// applied) and rejected (validation attempts that never became a
+	// submission).
+	SubmissionsByNormalization map[string]int64
+	RecentFailures             []FailureSummary
+	GeneratedAt                time.Time
 }
 
 type FailureSummary struct {
