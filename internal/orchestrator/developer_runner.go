@@ -112,12 +112,19 @@ func (c *DeveloperRunnerCoordinator) Reconcile(ctx context.Context, runID string
 		return nil, err
 	}
 	result := &DeveloperRunnerReconcileResult{Execution: observation.Execution, Events: observation.Events}
-	if observation.Result == nil {
-		return result, nil
-	}
 	runRecord, err := c.runs.GetByRunID(ctx, runID)
 	if err != nil {
 		return nil, err
+	}
+	if runRecord.Status != model.RunStatusRunning {
+		// 双通道优先级：run 已终态（MCP 首提终态化或先行文本终态）时，文本
+		// 结果只记日志不采纳，执行失败也不升级。
+		result.Absorbed = true
+		result.AbsorbReason = "run_status_" + string(runRecord.Status)
+		return result, nil
+	}
+	if observation.Result == nil {
+		return result, nil
 	}
 	task, err := c.tasks.GetByTaskID(ctx, runRecord.TaskID)
 	if err != nil {

@@ -165,8 +165,10 @@ func testReviewerRunnerPersistedFlow(t *testing.T, providerName string, provider
 	}
 
 	replayed, err := coordinator.Reconcile(ctx, runID)
-	if err != nil || replayed.Submission == nil || replayed.Submission.Submission.SubmissionID != storedSubmission.SubmissionID {
-		t.Fatalf("reconcile immutable result replay: result=%#v err=%v", replayed, err)
+	// run 已被首提终态化：再次 reconcile 只静默吸收文本结果（不重放提交），
+	// 副作用（MR 评论）不得重复。
+	if err != nil || !replayed.Absorbed || replayed.Submission != nil {
+		t.Fatalf("reconcile after terminal run must absorb: result=%#v err=%v", replayed, err)
 	}
 	if backend.mergeRequestNoteCalls != 1 {
 		t.Fatalf("immutable replay duplicated MR comment: %d", backend.mergeRequestNoteCalls)

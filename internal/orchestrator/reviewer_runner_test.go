@@ -141,6 +141,8 @@ type reviewerRunnerFixture struct {
 	root        string
 	task        *model.Task
 	run         *model.Run
+	tasks       *repository.TaskRepository
+	runs        *repository.RunRepository
 	preparer    *fakeReviewerWorkspacePreparer
 	runner      *fakeReviewerRunnerClient
 	submitter   *recordingResultSubmitter
@@ -177,7 +179,7 @@ func newReviewerRunnerFixture(t *testing.T) reviewerRunnerFixture {
 	runnerClient := &fakeReviewerRunnerClient{}
 	submitter := &recordingResultSubmitter{}
 	return reviewerRunnerFixture{
-		root: t.TempDir(), task: task, run: run, preparer: preparer, runner: runnerClient, submitter: submitter,
+		root: t.TempDir(), task: task, run: run, tasks: tasks, runs: runs, preparer: preparer, runner: runnerClient, submitter: submitter,
 		coordinator: NewReviewerRunnerCoordinator(tasks, runs, executions, preparer, runnerClient, submitter),
 	}
 }

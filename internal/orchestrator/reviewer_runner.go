@@ -66,6 +66,12 @@ type ReviewerRunnerReconcileResult struct {
 	Execution  *model.AgentExecution
 	Events     []runner.Event
 	Submission *SubmitResultResponse
+	// Absorbed marks observations on a run that already reached a terminal
+	// status (typically finalized via the MCP channel): the execution
+	// projection still updates, but the text result is never submitted and
+	// failures never escalate.
+	Absorbed     bool
+	AbsorbReason string
 }
 
 func NewReviewerRunnerCoordinator(
@@ -137,12 +143,20 @@ func (c *ReviewerRunnerCoordinator) Reconcile(ctx context.Context, runID string)
 		return nil, err
 	}
 	result := &ReviewerRunnerReconcileResult{Execution: observation.Execution, Events: observation.Events}
-	if observation.Result == nil {
-		return result, nil
-	}
 	runRecord, err := c.runs.GetByRunID(ctx, runID)
 	if err != nil {
 		return nil, err
+	}
+	if runRecord.Status != model.RunStatusRunning {
+		// 双通道优先级：run 已终态（MCP 首提终态化或先行文本终态）时，文本
+		// 结果只记日志不采纳，执行失败也不升级——BlockRunAndRequireHuman 等
+		// 收敛路径不得破坏已终态的 run。
+		result.Absorbed = true
+		result.AbsorbReason = "run_status_" + string(runRecord.Status)
+		return result, nil
+	}
+	if observation.Result == nil {
+		return result, nil
 	}
 	task, err := c.tasks.GetByTaskID(ctx, runRecord.TaskID)
 	if err != nil {

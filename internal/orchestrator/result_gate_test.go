@@ -1,0 +1,132 @@
+package orchestrator
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/runner"
+)
+
+// 场景：MCP 通道已把 run 终态化为 succeeded，此后 runner 侧执行也成功结束，
+// 协调器 reconcile 拉到文本结果——必须静默吸收（只更新执行投影），不得再走
+// 文本提交，也不得把不一致文本升级为 human_required。
+func TestReviewerReconcileAbsorbsTextResultAfterMCPFinalizedRun(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start reviewer execution: %v", err)
+	}
+	runRecord, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	runRecord.Status = model.RunStatusSucceeded
+	if err := fixture.runs.Update(context.Background(), runRecord); err != nil {
+		t.Fatalf("finalize run as mcp would: %v", err)
+	}
+	fixture.runner.execution.Status = runner.StatusSucceeded
+	fixture.runner.execution.ResultHash = "result-hash"
+	fixture.runner.result = &runner.Result{
+		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
+		StructuredOutput: json.RawMessage(`{"task_id":"task-reviewer-runner","run_id":"run-reviewer-runner","verdict":"approved","summary":"late text result","findings":[],"test_summary":"x","comment_body":"y"}`),
+	}
+
+	observed, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reconcile absorbed run: %v", err)
+	}
+	if !observed.Absorbed {
+		t.Fatalf("result must be absorbed, got %#v", observed)
+	}
+	if observed.AbsorbReason == "" {
+		t.Fatal("absorb reason must be recorded for tick logs")
+	}
+	if observed.Submission != nil || fixture.submitter.calls != 0 {
+		t.Fatalf("absorbed text result must not be submitted: calls=%d", fixture.submitter.calls)
+	}
+}
+
+// MCP 终态后 CLI 崩溃/失败：不得把已 succeeded 的 run 打回 failed。
+func TestReviewerReconcileAbsorbsExecutionFailureAfterMCPFinalizedRun(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start reviewer execution: %v", err)
+	}
+	runRecord, _ := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	runRecord.Status = model.RunStatusSucceeded
+	if err := fixture.runs.Update(context.Background(), runRecord); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+	fixture.runner.execution.Status = runner.StatusFailed
+	fixture.runner.execution.ErrorCode = "provider_failed"
+
+	observed, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reconcile failed execution on finalized run: %v", err)
+	}
+	if !observed.Absorbed {
+		t.Fatalf("failure observation on finalized run must be absorbed: %#v", observed)
+	}
+	runRecord, _ = fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if runRecord.Status != model.RunStatusSucceeded {
+		t.Fatalf("finalized run must keep its status, got %s", runRecord.Status)
+	}
+	task, _ := fixture.tasks.GetByTaskID(context.Background(), fixture.task.TaskID)
+	if task.Status == model.TaskStatusHumanRequired || task.Status == model.TaskStatusBlocked {
+		t.Fatalf("CLI failure must not escalate a finalized run's task, got %s", task.Status)
+	}
+}
+
+// 收尾顺序的另一面：orchestrator 层 dispatch 对 absorbed 的 succeeded 执行
+// 不得要求 Submission 非空（静默吸收没有提交）。
+func TestDeveloperDispatchAcceptsAbsorbedSucceededExecution(t *testing.T) {
+	fixture := newDeveloperRunnerFixture(t, "develop_from_issue")
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start developer execution: %v", err)
+	}
+	runRecord, _ := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	runRecord.Status = model.RunStatusSucceeded
+	if err := fixture.runs.Update(context.Background(), runRecord); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+	fixture.runner.execution.Status = runner.StatusSucceeded
+	fixture.runner.execution.ResultHash = "result-hash"
+	fixture.runner.result = &runner.Result{
+		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"fix_failed","summary":"late","blocker_reason":"late text"}`),
+	}
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveCredential: stubRunnerCredential()}))
+
+	observed, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reconcile absorbed developer run: %v", err)
+	}
+	if !observed.Absorbed {
+		t.Fatalf("developer text result must be absorbed: %#v", observed)
+	}
+	if fixture.submitter.calls != 0 {
+		t.Fatalf("absorbed result must not submit: %d", fixture.submitter.calls)
+	}
+}
+
+// running 状态不回归：正常文本通道照旧提交。
+func TestReviewerReconcileStillSubmitsWhileRunRunning(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start reviewer execution: %v", err)
+	}
+	fixture.runner.execution.Status = runner.StatusSucceeded
+	fixture.runner.execution.ResultHash = "result-hash"
+	fixture.runner.result = &runner.Result{
+		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
+		StructuredOutput: json.RawMessage(`{"task_id":"task-reviewer-runner","run_id":"run-reviewer-runner","verdict":"approved","summary":"fine","findings":[],"test_summary":"not run","comment_body":"AI Review 结论：建议合并。"}`),
+	}
+	observed, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reconcile running reviewer execution: %v", err)
+	}
+	if observed.Absorbed || observed.Submission == nil {
+		t.Fatalf("running run must process text results normally: %#v", observed)
+	}
+}
