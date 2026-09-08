@@ -96,5 +96,11 @@ func decodeBase64(text string) []byte {
 	if err != nil {
 		return nil
 	}
+	// Reject non-canonical encodings: the padding bits of the final base64
+	// character must be zero, so a modified token can never decode to the
+	// same signature bytes.
+	if base64.RawURLEncoding.EncodeToString(decoded) != text {
+		return nil
+	}
 	return decoded
 }
