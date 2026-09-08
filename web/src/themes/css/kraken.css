@@ -1,0 +1,244 @@
+/* ============================================================
+   kraken 主题令牌块 —— 规格驱动（kraken 设计语言，简化格式），
+   无令牌表、色值埋正文；正文角色提取依据句：
+     「Near-black (#101114) text with cool blue-gray neutral scale」
+     「Cool Gray (#686b82): Primary neutral」「Silver Blue (#9497a9):
+      Secondary text, muted elements」「White (#ffffff): Primary surface」
+     「Border Gray (#dedee5): Divider borders」「#484b5e: badge text」
+   → 文字阶 = #101114 / #484b5e / #686b82 / #9497a9 四级；
+     边线 = #dedee5 主边 + Cool Gray 24% 强边（规格「borders at 24%」）。
+   中性/语义阶规格未覆盖的推导值（均行内注明）：
+     warning #9c6a10 / error #b6443a = 标准语义克制化（规格仅有绿语义）
+     银蓝 8% 洗 rgba(148,151,169,.08)（规格 Secondary Gray 钮底，借作内嵌面）
+     软分隔 #e8e8ed（Border Gray 提亮半档）
+   亮色主题（无 color-scheme: dark）。骨架表达不了的形态
+   （Kraken-Brand 700 负字距标题、紫选区、thin 滚动条）见块后片段。
+   ============================================================ */
+[data-theme="kraken"] {
+  /* ── Typography ───────────────────────────── */
+  /* UI 档 Kraken-Product → IBM Plex Sans 近似栈（禁外部加载）；
+     display 档 Kraken-Brand 同栈近似，700 负字距由块后片段钉住；
+     mono = IBM Plex Mono（Plex 家族配对推导） */
+  --font-sans: 'Kraken-Product', 'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Kraken-Brand', 'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格刻度 3/6/8/10/12/16；禁药丸） ── */
+  --radius-xs: 3px;      /* 图标提示 focus（刻度下沿） */
+  --radius-soft: 6px;    /* 登录预览小色块（Success badge 6px） */
+  --radius-sm: 6px;      /* 内嵌小块 */
+  --radius-md: 8px;      /* 行卡 */
+  --radius-lg: 10px;     /* 指标卡（White Button 10px 档） */
+  --radius-xl: 12px;     /* 面板 = 按钮签名 12px（rounded but not pill） */
+  --radius-brand: 10px;  /* brand-mark = White Button 白瓷砖 10px */
+  --radius-pill: 8px;    /* 迷你徽标（Neutral badge 8px；刻意非药丸） */
+  --radius-panel: 16px;  /* 登录外壳（刻度上沿 16px） */
+
+  /* ── Canvas & surfaces（白底 + 冷灰洗内嵌面） ── */
+  --canvas: #ffffff;                 /* White：Primary surface */
+  --canvas-soft: #ffffff;            /* 指标/结果卡、表头 = 白 + Border Gray 边 */
+  --canvas-card: #ffffff;            /* 白卡，靠边线 + whisper 影分层 */
+  --canvas-dark: #101114;            /* Near Black：json pre 凹陷面 */
+  --surface-sidebar: #ffffff;
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: rgba(148, 151, 169, 0.08); /* Silver Blue 8%（规格 Secondary Gray 钮底） */
+  --surface-matrix: rgba(148, 151, 169, 0.08);
+  --surface-tint: rgba(148, 151, 169, 0.08);  /* 行 hover = 银蓝洗 */
+  --surface-rail: rgba(148, 151, 169, 0.08);
+  --surface-detail: rgba(148, 151, 169, 0.08);
+  --surface-chip: rgba(148, 151, 169, 0.08);
+  --surface-legacy: rgba(104, 107, 130, 0.12); /* Cool Gray 12%（规格 Neutral 徽章底） */
+  --surface-draft: rgba(104, 107, 130, 0.12);
+  --surface-empty: rgba(148, 151, 169, 0.08);
+  --surface-json-bar: rgba(133, 91, 251, 0.16); /* Purple Subtle：json 头条薄纱 */
+  --tooltip-bg: #101114;             /* Near Black 反转面 */
+
+  /* ── Ink & text ladder（近黑 + 冷灰蓝阶四级） ── */
+  --ink: #101114;
+  --ink-strong: #101114;
+  --ink-display: #101114;
+  --ink-heading: #101114;
+  --ink-value: #101114;
+  --ink-repo: #101114;
+  --ink-step: #101114;
+  --ink-label-strong: #101114;
+  --ink-label: #101114;
+  --ink-row: #101114;
+  --ink-list: #484b5e;   /* value-list li = 徽章字灰（正文级） */
+  --ink-data: #101114;
+  --ink-field: #101114;
+  --ink-rail: #101114;
+  --ink-rail-value: #101114;
+  --ink-secret: #484b5e; /* secret-label = 正文级 */
+  --ink-chip: #484b5e;   /* duration 数值 = 正文级 */
+  --body: #484b5e;       /* 徽章字灰 = 正文级（规格正文角色提取） */
+  --body-alt: #686b82;   /* Cool Gray */
+  --body-soft: #686b82;
+  --mute: #686b82;       /* Cool Gray：Primary neutral / 次级标签 */
+  --mute-deep: #484b5e;  /* 卡片标题抬回正文级 */
+  --mute-inline: #686b82;
+  --mute-caption: #686b82;
+  --mute-intro: #686b82;
+  --mute-terse: #686b82;
+  --mute-quiet: #686b82;
+  --mute-soft: #686b82;
+  --mute-dim: #686b82;
+  --mute-draft: #686b82;
+  --mute-json: #5741d8;  /* json 头条字 = Purple Dark（紫薄纱条上的品牌字） */
+  --mute-matrix: #686b82;
+  --faint: #9497a9;      /* Silver Blue：Secondary text / 占位级 */
+  --faint-alt: #9497a9;
+  --faint-soft: #9497a9;
+  --faint-ghost: #9497a9;
+  --faint-hint: #9497a9;
+  --faint-meta: #9497a9;
+  --faint-note: #9497a9;
+  --faint-empty: #9497a9;
+  --on-dark: #ffffff;    /* 暗面（json/tooltip/showcase）白字 */
+  --on-dark-soft: #c9cbd6; /* 推导：冷灰提亮（json 深块正文） */
+  --on-dark-faint: #9497a9; /* Silver Blue 在暗面同样成立 */
+
+  /* ── Primary / link / focus（Kraken Purple 一族） ── */
+  --primary: #7132f5;    /* Kraken Purple：CTA/链接/品牌强调 */
+  --primary-active: #5b1ecf; /* Purple Deep 按压 */
+  --on-primary: #ffffff;
+  --link: #7132f5;
+  --link-hover: #5741d8; /* Purple Dark */
+  --focus-ring: rgba(113, 50, 245, .32); /* 紫 32% 焦点环 */
+  --primary-veil: rgba(133, 91, 251, 0.16); /* Purple Subtle：当前项薄纱（规格字面值） */
+
+  /* ── Semantic（success = 规格 Green；warning/error = 推导克制语义） ── */
+  --success: #149e61;    /* Green：success/positive */
+  --success-halo: 0 0 0 4px rgba(20, 158, 97, .18);
+  --warning: #9c6a10;    /* 推导：标准琥珀克制化（规格未给 warning） */
+  --warning-soft: rgba(156, 106, 16, .12);
+  --error: #b6443a;      /* 推导：标准红克制化（规格未给 error） */
+  --error-deep: #93332b;
+  --info: #7132f5;       /* 紫 = 信息同源（CTA/链接一族） */
+  --info-soft: rgba(133, 91, 251, 0.16); /* Purple Subtle（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（Border Gray 主边 / Cool Gray 24% 强边） ── */
+  --hairline: #dedee5;         /* Border Gray：分隔主边 */
+  --hairline-soft: #e8e8ed;    /* 推导：Border Gray 提亮半档（软分隔） */
+  --hairline-strong: rgba(104, 107, 130, 0.24); /* Cool Gray 24%（规格 borders at 24% opacity） */
+  --hairline-card: #dedee5;
+  --hairline-inset: #e8e8ed;
+  --hairline-mid: #e8e8ed;
+  --hairline-rail: #dedee5;
+  --hairline-codex: #e8e8ed;
+  --hairline-detail: #dedee5;
+  --hairline-json: #dedee5;
+  --hairline-dashed: rgba(104, 107, 130, 0.24); /* 空态虚线 = 强边保可见 */
+  --hairline-legacy: #dedee5;
+  --hairline-row: #e8e8ed;
+  --hairline-draft: rgba(104, 107, 130, 0.24);
+  --bar-value: #9497a9;  /* value-list 左规线 = Silver Blue（中性数据墨） */
+  --bar-matrix: #9497a9;
+  --bar-summary: #686b82; /* 摘要左规线 = Cool Gray 沉一档 */
+  --bar-usage: #7132f5;  /* 用量轨 = 命令紫（品牌数据墨） */
+
+  /* ── Overlays & shadows（whisper 级：Subtle 影 = 规格字面值） ── */
+  --overlay-faint: rgba(16, 17, 20, .03);
+  --overlay-soft: rgba(16, 17, 20, .04);  /* nav hover = 冷灰微高亮 */
+  --overlay-line: rgba(16, 17, 20, .06);
+  --overlay-medium: rgba(16, 17, 20, .07);
+  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.03); /* 规格 Subtle：whisper 细影 */
+
+  /* ── brand-mark（白瓷砖 + 紫族三竖条 + 绿状态点；形态近基线） ── */
+  --brand-frame-bg: #ffffff;        /* White Button 白瓷砖 */
+  --brand-frame-border: #dedee5;    /* Border Gray 边 */
+  --brand-frame-shadow: 0 4px 24px rgba(0, 0, 0, 0.03); /* whisper 影 */
+  --brand-bar-1: #7132f5;           /* Kraken Purple */
+  --brand-bar-2: #855bfb;           /* Purple Subtle 基色（rgba(133,91,251) 实底） */
+  --brand-bar-3: #5741d8;           /* Purple Dark */
+  --brand-bar-inset: none;          /* whisper 体系：无内光泽 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: #149e61;             /* Green：在线/正向状态点 */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #7132f5;         /* 当前导航指示 = 命令紫 */
+
+  /* ── 登录页（冷灰页底 + 白壳 + Kraken Purple hero showcase） ── */
+  --login-bg: #f7f7f9;              /* 推导：Silver Blue 4% 洗（白底上托起白壳） */
+  --login-shell-border: #dedee5;
+  --login-shell-shadow: 0 1px 4px rgba(16, 24, 40, 0.04), 0 4px 24px rgba(0, 0, 0, 0.03); /* Micro + Subtle 双影叠（规格字面值） */
+  --login-showcase-bg: #7132f5;     /* Kraken Purple：commanding hero 面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .08); /* 紫面上的白网格（近隐） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: #ffffff;       /* White Button 白瓷砖（紫面上的品牌标） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #7132f5;      /* 三竖条 = 命令紫（brand-mark 同构） */
+  --login-kicker: rgba(255, 255, 255, .66);
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .78);
+  --login-preview-bg: #ffffff;      /* 紫面内嵌白预览卡 */
+  --login-preview-border: transparent;
+  --login-preview-shadow: 0 1px 4px rgba(16, 24, 40, 0.1); /* Micro 影加深（紫面上可见） */
+  --login-preview-divider: #ededf1; /* 推导：Border Gray 提亮 */
+  --login-preview-dot: #7132f5;
+  --login-preview-dot-soft: #9497a9;
+  --login-preview-label: #686b82;
+  --login-preview-row-line: #ededf1;
+  --login-preview-row-ink: #101114;
+  --login-preview-chip-ink: #026b3f;   /* Green Dark：成功徽章字（规格字面值） */
+  --login-preview-chip-bg: rgba(20, 158, 97, 0.16); /* Green 16% 徽章底（规格字面值） */
+  --login-preview-bar: #9497a9;
+  --login-foot: rgba(255, 255, 255, .66);
+  --login-card-kicker: #7132f5;     /* 白卡侧 eyebrow = 命令紫 */
+  --login-card-heading: #101114;
+  --login-card-copy: #686b82;
+  --login-notice-border: rgba(113, 50, 245, 0.28); /* info 通知 = 紫薄纱 + 紫边 */
+  --login-notice-bg: rgba(133, 91, 251, 0.16);
+  --login-notice-ink: #443163;      /* 推导：紫压深（薄纱上的通知字色） */
+  --login-label: #484b5e;
+  --login-input-border: #dedee5;    /* Border Gray 输入边 */
+  --login-input-border-hover: #9497a9;
+  --login-primary: #7132f5;         /* Primary Purple CTA（13px 16px/12px 圆角） */
+  --login-primary-active: #5b1ecf;
+}
+
+/* ============================================================
+   kraken 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="kraken"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 紫选区：Purple Subtle 加浓（品牌紫的功能性使用） ── */
+[data-theme="kraken"] ::selection { background: rgba(133, 91, 251, 0.24); }
+
+/* ── 系统滚动条：细、Border Gray、微圆头 ── */
+[data-theme="kraken"] * { scrollbar-width: thin; scrollbar-color: #dedee5 transparent; }
+[data-theme="kraken"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="kraken"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="kraken"] ::-webkit-scrollbar-thumb { border-radius: 6px; background: #dedee5; }
+[data-theme="kraken"] ::-webkit-scrollbar-thumb:hover { background: #9497a9; }
+
+/* ── Kraken-Brand 700 负字距 display 排版（700 / -0.5px 档） ── */
+[data-theme="kraken"] .panel-heading h2,
+[data-theme="kraken"] .configuration-step-copy h2,
+[data-theme="kraken"] .configuration-summary h2,
+[data-theme="kraken"] .detail-section h3,
+[data-theme="kraken"] .connector-configuration-step__heading h3,
+[data-theme="kraken"] .configuration-inline-title h3 { font-family: var(--font-display); font-weight: 700; letter-spacing: -.01em; }
+/* 指标数值 = display 700 / -0.02em（Display Hero 负字距语汇） */
+[data-theme="kraken"] .business-outcomes__card > strong,
+[data-theme="kraken"] .ratio-card > strong,
+[data-theme="kraken"] .codex-metric > strong { font-family: var(--font-display); font-weight: 700; letter-spacing: -.02em; }
+/* 小号数值/标签 = 600（规格 Feature Title 600） */
+[data-theme="kraken"] .metric-matrix strong,
+[data-theme="kraken"] .codex-token-ledger strong,
+[data-theme="kraken"] .configuration-status-rail > div > strong,
+[data-theme="kraken"] .configuration-summary-grid strong { font-weight: 600; }
+
+/* ── 表头：白底 + 600 字重（Caption 400–700 带取中上） ── */
+[data-theme="kraken"] .admin-table .ant-table-thead > tr > th { font-weight: 600; }
+
+/* ── 登录 showcase：紫 hero 面；标题 = Kraken-Brand 700 / -0.5px（规格 Display 档） ── */
+[data-theme="kraken"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -.5px; }
+[data-theme="kraken"] .login-page__card h1 { font-family: var(--font-display); font-weight: 700; letter-spacing: -.5px; }
+
+/* ── 登录 signal：白瓷砖三竖条与 brand-mark 同构（令牌已足，钉住条的圆角细节） ── */
+[data-theme="kraken"] .login-page__signal span { border-radius: 3px 3px 1px 1px; }

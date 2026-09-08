@@ -1,0 +1,263 @@
+/* ============================================================
+   sanity 主题令牌块 —— 规格驱动（sanity 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Sanity 设计语言（暗色优先的编辑部；文档实证 canvas #0b0b0b 且
+   「dark-first」，站内目录的亮色描述与规格相反，按规格取暗）：
+   - 提升阶梯：canvas #0b0b0b → 卡/面板 #212121（canvas-soft 单步提升，
+     1px #353535 发丝边）→ 嵌套凹陷回落画布黑（studio-window 语汇）
+   - 主 CTA = 白色药丸 + 黑字（规格 button-primary：canvas-light 底 ink 字，
+     极性反转即动作）；coral-red #f36458 是唯一稀缺强调——每屏至多一次，
+     只落 brand-mark、导航指示条、头牌曲线、用量轨
+   - 文字阶梯：标题白 #ffffff（常规字重，让负字距承担轮廓）/ 正文 ash
+     #b9b9b9 / 眉题·细则 mute #797979 / 占位 slate-soft #505b6c
+   - 链接/信息 = link-blue-soft #55beff（暗底链接蓝）；公告条 = 规格
+     surface-blue-bg #afe3ff 黑字（系统唯一彩色表面，极性反转时刻）
+   - 语义：success #37cd84 / error #dd0000；规格无 warning，
+     按暗底可读的中明度琥珀 #e6a23c 推导
+   - 双圆角语言：营销 CTA/徽章 = 药丸 9999，应用件 = 3–6px（rounded.app-*）
+   - 海拔 = 极少投影：深色卡坐平无影（规格「most cards sit flush」）
+   骨架表达不了的形态（brand-mark 三 span 圆形 coral 徽记、IBM Plex Mono
+   眉题、常规字重标题 + 负字距、暗色滚动条/selection）见块后片段。
+   ============================================================ */
+[data-theme="sanity"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: waldenburgNormal, Inter, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace; /* 眉题/小注专用（规格：mono 只做标签系统） */
+  --font-display: waldenburgNormal, Inter, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; /* display = 同一族常规字重（规格：一族承担全部层级） */
+
+  /* ── Radius（规格双语言：应用件 3–6 / 营销卡·药丸 12·9999） ── */
+  --radius-xs: 3px;      /* 输入/应用字段（规格 rounded.app-xs） */
+  --radius-soft: 3px;    /* 登录预览小色块 */
+  --radius-sm: 4px;      /* 内嵌小块 / sparkline 提示（规格 rounded.app-sm） */
+  --radius-md: 5px;      /* 行卡 / 工具钮（规格 rounded.app-md） */
+  --radius-lg: 6px;      /* 指标卡 / 卡容器（规格 rounded.app-lg = studio 窗口档） */
+  --radius-xl: 12px;     /* 面板 / 对话框（规格 rounded.marketing） */
+  --radius-brand: 9999px; /* brand-mark = 圆形 coral 徽记（规格 rounded.full） */
+  --radius-pill: 9999px; /* 迷你徽标 = badge 药丸 */
+  --radius-panel: 12px;  /* 登录外壳 = 营销卡刻度 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #0b0b0b;                 /* 近黑画布（规格 canvas，dark-first） */
+  --canvas-soft: #212121;            /* 分节微染（规格 canvas-soft） */
+  --canvas-card: #212121;            /* 卡 / 面板 = feature-card-dark 底 */
+  --canvas-dark: #0b0b0b;            /* json 凹陷 = 回落画布黑（规格无更深阶，卡内凹陷借画布色） */
+  --surface-sidebar: #0b0b0b;        /* 规格 nav-bar-dark：导航与画布同底 */
+  --surface-bar: rgba(11, 11, 11, .86);
+  --surface-inset: #0b0b0b;          /* 卡内交互/内嵌面 = 凹陷画布黑（规格 text-input-dark/textarea 语汇） */
+  --surface-matrix: #0b0b0b;
+  --surface-tint: rgba(255, 255, 255, .045); /* 表行 hover = 白薄纱单步提亮（推导） */
+  --surface-rail: #0b0b0b;           /* 配置状态轨 = 面板内凹陷面 */
+  --surface-detail: #212121;         /* 详情卡 = canvas-soft */
+  --surface-chip: #ffffff;           /* 徽章 = badge-neutral 白药丸 */
+  --surface-legacy: #212121;
+  --surface-draft: #212121;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担 */
+  --surface-json-bar: #353535;       /* json 头条 = graphite 嵌套提升阶 */
+  --tooltip-bg: #212121;             /* 浮层提示面 = 深色卡（1px 边分层） */
+
+  /* ── Ink & text ladder（标题白 / 正文 ash / 眉题 mute / 占位 slate-soft 四级坍缩） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;             /* 大号数值保持白（coral 不落数字，保持稀缺） */
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #b9b9b9;
+  --ink-row: #ffffff;
+  --ink-list: #b9b9b9;
+  --ink-data: #ffffff;
+  --ink-field: #b9b9b9;
+  --ink-rail: #b9b9b9;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #797979;
+  --ink-chip: #b9b9b9;               /* 凹陷面上的 mono 读数 = ash */
+  --body: #b9b9b9;                   /* 规格 ash：暗面默认正文 */
+  --body-alt: #797979;               /* 次级正文回落 mute */
+  --body-soft: #797979;              /* 占比卡小注 */
+  --mute: #797979;                   /* 规格 mute：mono 眉题灰 */
+  --mute-deep: #b9b9b9;              /* 暗底上「更深」= 更亮：标签比 mute 高一档 */
+  --mute-inline: #797979;
+  --mute-caption: #797979;
+  --mute-intro: #797979;
+  --mute-terse: #797979;
+  --mute-quiet: #797979;
+  --mute-soft: #797979;
+  --mute-dim: #797979;
+  --mute-draft: #797979;
+  --mute-json: #797979;
+  --mute-matrix: #797979;
+  --faint: #797979;
+  --faint-alt: #797979;
+  --faint-soft: #797979;
+  --faint-ghost: #797979;
+  --faint-hint: #797979;
+  --faint-meta: #797979;
+  --faint-note: #797979;
+  --faint-empty: #797979;            /* 空态文案 = mute */
+  --on-dark: #ffffff;
+  --on-dark-soft: #b9b9b9;           /* json 凹陷块文字 = ash */
+  --on-dark-faint: #797979;          /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（白药丸主 CTA；coral 只做稀缺强调） ── */
+  --primary: #ffffff;                /* 主 CTA = 白色药丸（规格 button-primary 极性反转） */
+  --primary-active: #ededed;         /* 按压加深一档（推导：canvas-paper 同灰阶） */
+  --on-primary: #0b0b0b;             /* 签名：白底黑字 */
+  --link: #55beff;                   /* 行内链 = link-blue-soft（规格暗底链接蓝） */
+  --link-hover: #afe3ff;             /* hover 提亮到 surface-blue-bg 同族浅蓝（推导） */
+  --focus-ring: rgba(85, 191, 255, .35); /* 聚焦环 = 蓝（规格 text-input-focused 蓝环，暗底 soft 变体） */
+  --primary-veil: #212121;           /* 激活导航 = canvas-soft 单步提升（白字 + coral 指示条承担识别） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #37cd84;                /* 规格 success：校验/可用标记 */
+  --success-halo: 0 0 0 4px rgba(55, 205, 132, .16);
+  --warning: #e6a23c;                /* 规格无 warning：暗底可读的中明度琥珀（推导） */
+  --warning-soft: rgba(230, 162, 60, .14);
+  --error: #dd0000;                  /* 规格 error = brand-deep */
+  --error-deep: #dd0000;
+  --info: #55beff;                   /* info = 暗底链接蓝 */
+  --info-soft: rgba(85, 191, 255, .14);
+
+  /* ── Hairlines & bars（深色卡 1px #353535 / 可见强线 = slate 冷灰规则线） ── */
+  --hairline: #353535;               /* 侧栏右缘 / 顶栏下缘（规格 hairline-soft） */
+  --hairline-soft: #353535;          /* 深色卡 1px 边（规格 hairline-soft） */
+  --hairline-strong: #3c4758;        /* 强线 = slate 冷灰规则线（规格 slate「rule lines on dark」） */
+  --hairline-card: #353535;          /* 卡外线（规格 feature-card-dark 可选 1px 边） */
+  --hairline-inset: #353535;
+  --hairline-mid: #353535;
+  --hairline-rail: #353535;
+  --hairline-codex: #353535;
+  --hairline-detail: #353535;
+  --hairline-json: #353535;
+  --hairline-dashed: #505b6c;        /* 空态虚线需要可见 = slate-soft 去强调线 */
+  --hairline-legacy: #505b6c;
+  --hairline-row: #353535;
+  --hairline-draft: #505b6c;
+  --bar-value: #353535;              /* 左色条一律无彩（monochrome + coral 的色彩纪律） */
+  --bar-matrix: #353535;
+  --bar-summary: #505b6c;
+  --bar-usage: #f36458;              /* codex 用量进度 = coral（每屏一次的品牌强调位） */
+
+  /* ── Overlays & shadows（海拔 = 极少投影，深色卡坐平） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: #212121;           /* 导航 hover = 提亮到 canvas-soft */
+  --overlay-line: rgba(255, 255, 255, .05);
+  --overlay-medium: rgba(255, 255, 255, .07);
+  --shadow-panel: none;              /* 规格：投影只给亮面卡，深色卡坐平 */
+
+  /* ── brand-mark（coral 圆形徽记 + 三根黑条；形态见片段） ── */
+  --brand-frame-bg: #f36458;         /* brand-dot 的放大：coral 圆 = 主识别记号 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #0b0b0b;            /* 黑条于 coral 上（规格 button-brand：brand 底 ink 字） */
+  --brand-bar-2: #0b0b0b;
+  --brand-bar-3: #0b0b0b;
+  --brand-bar-inset: none;           /* 扁平色块，无高光内描 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #f36458;          /* 当前导航指示条 = coral（brand-dot 逻辑） */
+
+  /* ── 登录页（近黑画布 + #212121 展示板 + 白药丸 CTA + 蓝公告条） ── */
+  --login-bg: #0b0b0b;
+  --login-shell-border: #353535;     /* 深色卡 1px 发丝边（无投影） */
+  --login-shell-shadow: none;
+  --login-showcase-bg: #212121;      /* feature-card-dark 底展示板 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #797979;
+  --login-signal-bg: #f36458;        /* signal = brand-mark 同款 coral 徽记（见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #0b0b0b;
+  --login-kicker: #797979;           /* kicker = mono 眉题灰（IBM Plex Mono，见片段） */
+  --login-heading: #ffffff;
+  --login-copy: #b9b9b9;
+  --login-preview-bg: #0b0b0b;       /* 展示板内嵌预览卡 = 凹陷画布黑 */
+  --login-preview-border: #353535;
+  --login-preview-shadow: none;
+  --login-preview-divider: #353535;
+  --login-preview-dot: #37cd84;      /* 可用/在播点 = success 绿（规格「available」标记） */
+  --login-preview-dot-soft: #797979;
+  --login-preview-label: #797979;
+  --login-preview-row-line: #353535;
+  --login-preview-row-ink: #b9b9b9;
+  --login-preview-chip-ink: #0b0b0b; /* 预览 chip = badge-neutral 白药丸黑字 */
+  --login-preview-chip-bg: #ffffff;
+  --login-preview-bar: #f36458;      /* 进度条 = coral（品牌强调位） */
+  --login-foot: #797979;
+  --login-card-kicker: #797979;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #797979;
+  --login-notice-border: transparent; /* 公告条 = alert-banner：#afe3ff 蓝面黑字，系统唯一彩色表面 */
+  --login-notice-bg: #afe3ff;
+  --login-notice-ink: #0b0b0b;
+  --login-label: #ffffff;
+  --login-input-border: #353535;     /* 输入边 = 深色卡发丝线（规格 dark 输入 1px 边） */
+  --login-input-border-hover: #505b6c; /* hover 提亮到 slate-soft（蓝环留给聚焦态） */
+  --login-primary: #ffffff;          /* 白色药丸 CTA（黑字走 antd colorTextLightSolid） */
+  --login-primary-active: #ededed;   /* 按压加深一档 */
+}
+
+/* ============================================================
+   sanity 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="sanity"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区：coral 薄纱白字（品牌强调的文本级延伸） ── */
+[data-theme="sanity"] ::selection { background: rgba(243, 100, 88, .4); color: #ffffff; }
+
+/* ── 系统滚动条：细、#353535、圆头；hover 提亮到 slate-soft ── */
+[data-theme="sanity"] * { scrollbar-width: thin; scrollbar-color: #353535 transparent; }
+[data-theme="sanity"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="sanity"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="sanity"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #353535; background-clip: padding-box; }
+[data-theme="sanity"] ::-webkit-scrollbar-thumb:hover { background: #505b6c; background-clip: padding-box; }
+
+/* ── IBM Plex Mono 眉题：页头 eyebrow / 面板 kicker = mono 标签系统（规格签名，
+      正文永不 mono）；常规字重 + mute 灰（骨架已给 mono 字族与 .1em 字距） ── */
+[data-theme="sanity"] .page-heading__eyebrow,
+[data-theme="sanity"] .panel-kicker,
+[data-theme="sanity"] .section-label { color: var(--mute); font-weight: 400; }
+
+/* ── 编辑部标题：常规字重 400 + 收紧负字距（规格「让字距承担轮廓」，
+      禁混重对比；数值 strong 不在列，保持骨架的数字层级） ── */
+[data-theme="sanity"] .brand-block strong,
+[data-theme="sanity"] .panel-heading h2,
+[data-theme="sanity"] .configuration-step-copy h2,
+[data-theme="sanity"] .configuration-summary h2,
+[data-theme="sanity"] .configuration-inline-title h3,
+[data-theme="sanity"] .connector-configuration-step__heading h3,
+[data-theme="sanity"] .detail-section h3,
+[data-theme="sanity"] .login-page__brand strong,
+[data-theme="sanity"] .login-page__showcase-copy h2,
+[data-theme="sanity"] .login-page__card h1 { font-weight: 400; letter-spacing: -.012em; }
+
+/* ── 导航：nav-link = 白 500（规格 nav-bar-dark 白字导航），激活靠 coral 指示条 ── */
+[data-theme="sanity"] .workspace-nav a { color: #ffffff; font-weight: 500; }
+
+/* ── brand-mark：coral 圆形徽记内三根黑条（三 span 重绘；底色/圆角走令牌） ── */
+[data-theme="sanity"] .brand-mark { align-items: center; padding: 0; gap: 3px; border: none; }
+[data-theme="sanity"] .brand-mark span { width: 4px; border-radius: 2px; box-shadow: none; }
+[data-theme="sanity"] .brand-mark span:nth-child(1) { height: 12px; opacity: 1; }
+[data-theme="sanity"] .brand-mark span:nth-child(2) { height: 20px; }
+[data-theme="sanity"] .brand-mark span:nth-child(3) { height: 15px; }
+[data-theme="sanity"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="sanity"] .brand-mark span:nth-child(1) { height: 10px; }
+  [data-theme="sanity"] .brand-mark span:nth-child(2) { height: 16px; }
+  [data-theme="sanity"] .brand-mark span:nth-child(3) { height: 12px; }
+}
+
+/* ── 详情格：面板内的嵌套面回落凹陷画布黑（studio-window 凹陷语汇） ── */
+[data-theme="sanity"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录页：signal = brand-mark 同款圆形 coral 徽记（底色/圆角走令牌） ── */
+[data-theme="sanity"] .login-page__signal { align-items: center; padding: 0; gap: 3px; border: none; }
+[data-theme="sanity"] .login-page__signal span { width: 4px; border-radius: 2px; }

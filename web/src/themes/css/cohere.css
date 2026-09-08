@@ -1,0 +1,266 @@
+/* ============================================================
+   cohere 主题令牌块 —— 规格驱动（cohere 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Cohere 设计语言（白画布编辑部 + 暗色产品带）：
+   - 双面结构：白画布 #ffffff 编辑部为默认面，deep-green #003c33
+     暗色带只出现在登录段落；json 凹陷/tooltip 用 near-black #17171c
+     console 面（agent-console-card）
+   - 近黑主操作色：colors.primary #17171c（药丸 CTA），按压落
+     cohere-black #000000；蓝色 #1863dc 只做链接/数据墨水
+   - 暖黄绿温度：soft-stone #eeece7 面（行 hover/头条/draft）+
+     coral #ff7759 小记号（角标/导航指示/kicker），pale-green 家族
+     派生出语义黄绿 #4d7c0f
+   - 文字四阶：ink #212121 / body-muted #616161 / slate #75758a /
+     muted #93939f；近全 400/500 字重（避免 heavy bold）
+   - 圆角刻度 4/8/16/22/药丸：小件 4、卡与对话框 8、面板 16、
+     登录外壳 22、brand-mark 与徽标全圆（pill CTA 语汇）
+   - 近零海拔：卡片靠发丝线 #d9d9dd–#f2f2f2 与留白分隔，无投影
+   骨架表达不了的形态（药丸按钮、mono 大写标签、输入框紫焦点、
+   research-table 400 表头、登录 console 细节）见块后专属片段。
+   ============================================================ */
+[data-theme="cohere"] {
+  /* ── Typography ───────────────────────────── */
+  /* Unica77 → 文档化回退栈（Inter → Arial → system-ui，禁外部字体）；
+     display 位 = CohereText 的近形回退（紧排大标题语汇） */
+  --font-sans: Inter, Arial, ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace; /* CohereMono 的系统 mono 近似 */
+  --font-display: 'CohereText', Inter, Arial, ui-sans-serif, system-ui, sans-serif;
+
+  /* ── Radius（规格刻度 xs4 / sm8 / md16 / lg22 / pill32 / full） ── */
+  --radius-xs: 4px;      /* 规格 xs：搜索框/缩略图/小件 */
+  --radius-soft: 8px;    /* 登录预览小色块 = sm */
+  --radius-sm: 4px;      /* 内嵌小块 = xs */
+  --radius-md: 8px;      /* 行卡 = sm 卡圆角（主 dominate 圆角） */
+  --radius-lg: 8px;      /* 指标卡 = sm */
+  --radius-xl: 16px;     /* 面板 = md 中卡 */
+  --radius-brand: 9999px; /* brand-mark = 药丸 console chip（full） */
+  --radius-pill: 9999px;  /* 迷你徽标 = pill CTA 全圆 */
+  --radius-panel: 22px;   /* 登录外壳 = lg 签名媒体卡圆角 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;              /* Canvas White：主导页面底 */
+  --canvas-soft: #f7f7f8;         /* 派生：card-border 之上的近画布软灰 */
+  --canvas-card: #ffffff;         /* 卡片白，靠发丝线 + 留白分隔 */
+  --canvas-dark: #17171c;         /* json pre = near-black console 面 */
+  --surface-sidebar: #ffffff;     /* 侧栏 = 白（导航无可见底，编辑部式） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f7f7f8;
+  --surface-matrix: #f7f7f8;
+  --surface-tint: #eeece7;        /* 行 hover = Soft Stone 暖高亮 */
+  --surface-rail: #f7f7f8;
+  --surface-detail: #f7f7f8;
+  --surface-chip: #f7f7f8;
+  --surface-legacy: #f7f7f8;
+  --surface-draft: #eeece7;       /* draft = Soft Stone 沉一档 */
+  --surface-empty: #ffffff;       /* 空态不叠面，虚线框承担 */
+  --surface-json-bar: #eeece7;    /* json 头条 = Soft Stone 带 */
+  --tooltip-bg: #17171c;          /* near-black 反转面 */
+
+  /* ── Ink & text ladder（坍缩为规格四级墨） ── */
+  --ink: #212121;
+  --ink-strong: #212121;
+  --ink-display: #212121;
+  --ink-heading: #212121;
+  --ink-value: #212121;
+  --ink-repo: #212121;
+  --ink-step: #212121;
+  --ink-label-strong: #212121;
+  --ink-label: #212121;
+  --ink-row: #212121;
+  --ink-list: #212121;   /* 正文 = ink（规格「Default body text」） */
+  --ink-data: #212121;
+  --ink-field: #212121;
+  --ink-rail: #212121;
+  --ink-rail-value: #212121;
+  --ink-secret: #616161; /* secret-label = 正文静音级 */
+  --ink-chip: #212121;
+  --body: #212121;       /* 规格：正文即 ink */
+  --body-alt: #616161;   /* Body Muted */
+  --body-soft: #75758a;  /* Slate */
+  --mute: #93939f;       /* Muted：日期/元数据 */
+  --mute-deep: #75758a;  /* 指标卡标题抬回 Slate */
+  --mute-inline: #75758a;
+  --mute-caption: #93939f;
+  --mute-intro: #616161; /* 配置导语 = 正文静音级 */
+  --mute-terse: #93939f;
+  --mute-quiet: #93939f;
+  --mute-soft: #93939f;
+  --mute-dim: #93939f;
+  --mute-draft: #75758a;
+  --mute-json: #616161;
+  --mute-matrix: #75758a;
+  --faint: #a8a8b3;      /* 派生：Muted 提亮一档（占位/最弱文字） */
+  --faint-alt: #a8a8b3;
+  --faint-soft: #a8a8b3;
+  --faint-ghost: #a8a8b3;
+  --faint-hint: #a8a8b3;
+  --faint-meta: #a8a8b3;
+  --faint-note: #a8a8b3;
+  --faint-empty: #b9b9c2; /* 派生：空态再弱一档 */
+  --on-dark: #ffffff;     /* 暗面 console 上的字 */
+  --on-dark-soft: rgba(255, 255, 255, .8);
+  --on-dark-faint: rgba(255, 255, 255, .58);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #17171c;    /* Near-Black Primary：药丸 CTA */
+  --primary-active: #000000; /* 按压落 Cohere Black 锚点 */
+  --on-primary: #ffffff;
+  --link: #1863dc;       /* action-blue：编辑链接/分页 */
+  --link-hover: #1257c4; /* 派生：压深一阶 */
+  --focus-ring: rgba(76, 110, 230, .32); /* focus-blue 焦点环（规格 Semantic） */
+  --primary-veil: rgba(23, 23, 28, .06); /* 当前项 = 墨系微高亮而非彩纱 */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #4d7c0f;    /* 派生：pale-green 黄绿家族压到文字级 */
+  --success-halo: 0 0 0 4px rgba(77, 124, 15, .13);
+  --warning: #c2410c;    /* 派生：coral 家族压深到警示文字级 */
+  --warning-soft: rgba(255, 119, 89, .13);
+  --error: #b30000;      /* 规格 Semantic 原文 */
+  --error-deep: #8f0000; /* 派生：压深一阶 */
+  --info: #1863dc;       /* inferred-mark = action-blue */
+  --info-soft: #f1f5ff;  /* Pale Blue Wash（规格字面） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #d9d9dd;         /* Hairline：标准规则线 */
+  --hairline-soft: #e5e7eb;    /* Border Light：次级分隔 */
+  --hairline-strong: #b3b3ba;  /* 派生：控件边/虚线需要的深一档 */
+  --hairline-card: #f2f2f2;    /* Card Border：最软容器线 */
+  --hairline-inset: #e5e7eb;
+  --hairline-mid: #e5e7eb;
+  --hairline-rail: #e5e7eb;
+  --hairline-codex: #e5e7eb;
+  --hairline-detail: #e5e7eb;
+  --hairline-json: #d9d9dd;
+  --hairline-dashed: #b3b3ba;  /* 空态虚线需可见 */
+  --hairline-legacy: #d9d9dd;
+  --hairline-row: #e5e7eb;
+  --hairline-draft: #d9d9dd;
+  --bar-value: #d9d9dd;   /* value-list 左规线 = 发丝线（非彩色条） */
+  --bar-matrix: #d9d9dd;
+  --bar-summary: #b3b3ba;
+  --bar-usage: #1863dc;   /* 用量轨 = action-blue 数据墨水 */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（编辑部平面上极轻的高亮/分隔） */
+  --overlay-faint: rgba(33, 33, 33, .04);
+  --overlay-soft: rgba(33, 33, 33, .05);  /* nav hover = 微高亮 */
+  --overlay-line: rgba(33, 33, 33, .08);  /* nav 分组线 */
+  --overlay-medium: rgba(33, 33, 33, .09);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 近零海拔；零值而非 none，兼容多值拼接 */
+
+  /* ── brand-mark（near-black console 药丸 + 三根彩色数据条，形态见骨架） ── */
+  --brand-frame-bg: #17171c;      /* agent-console 深面 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ff7759;         /* coral */
+  --brand-bar-2: #1863dc;         /* action-blue */
+  --brand-bar-3: #86d474;         /* 派生：pale-green 提到中调（深底上可读） */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ff7759;           /* coral 角标 = 小暖记号 */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #ff7759;       /* 当前导航指示条 = coral 小记号（不做 CTA 体系） */
+
+  /* ── 登录页（deep-green 段落带 + 白卡 + near-black console showcase） ── */
+  --login-bg: #003c33;            /* Deep Enterprise Green 产品带 */
+  --login-shell-border: #e5e7eb;  /* 白卡边（contact-form-card on 暗带） */
+  --login-shell-shadow: none;     /* 近零海拔 */
+  --login-showcase-bg: #17171c;   /* agent-console-card near-black 面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .07);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .62);
+  --login-signal-bg: #26262b;     /* 派生：console 抬升 chip 面 */
+  --login-signal-border: rgba(255, 255, 255, .14);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ff7759;    /* signal 条 = coral */
+  --login-kicker: #ff7759;        /* footer-newsletter 珊瑚标签语汇（暗底珊瑚字） */
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .68);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .1);
+  --login-preview-dot: #86d474;   /* 派生：pale-green 中调在线点 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .35);
+  --login-preview-label: rgba(255, 255, 255, .6);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .88);
+  --login-preview-chip-ink: #ff7759;  /* blog taxonomy coral chip on dark */
+  --login-preview-chip-bg: rgba(255, 119, 89, .14);
+  --login-preview-bar: #1863dc;   /* 进度条 = action-blue */
+  --login-foot: rgba(255, 255, 255, .6);
+  --login-card-kicker: #c2410c;   /* 白卡侧 eyebrow = 深珊瑚（coral 文字级） */
+  --login-card-heading: #212121;
+  --login-card-copy: #616161;
+  --login-notice-border: rgba(24, 99, 220, .25); /* info 通知 = pale-blue 薄面 + 蓝线 */
+  --login-notice-bg: #f1f5ff;
+  --login-notice-ink: #365a9e;    /* 派生：action-blue 降饱和到说明文字级 */
+  --login-label: #212121;
+  --login-input-border: #d9d9dd;  /* 规格：细灰输入边 */
+  --login-input-border-hover: #75758a;
+  --login-primary: #17171c;       /* 近黑药丸 CTA */
+  --login-primary-active: #000000;
+}
+
+/* ============================================================
+   cohere 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="cohere"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：蓝选区 / 细滚动条（Hairline 方头圆角） ── */
+[data-theme="cohere"] ::selection { background: rgba(24, 99, 220, .16); }
+[data-theme="cohere"] * { scrollbar-width: thin; scrollbar-color: #d9d9dd transparent; }
+[data-theme="cohere"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="cohere"] ::-webkit-scrollbar-thumb { border-radius: 8px; background: #d9d9dd; }
+[data-theme="cohere"] ::-webkit-scrollbar-thumb:hover { background: #b3b3ba; }
+[data-theme="cohere"] ::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 药丸按钮：pill CTA 是主操作签名（radius 刻度 pill=32 / full）；
+      字重 500（规格 button 14px/500） ── */
+[data-theme="cohere"] .ant-btn { border-radius: 9999px; font-weight: 500; }
+
+/* ── 文字链接 hover 下划线（button-secondary = underlined text link） ── */
+[data-theme="cohere"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 输入焦点紫：Form Focus Violet #9b60aa（规格 Semantic：输入框焦点边） ── */
+[data-theme="cohere"] .ant-input:focus,
+[data-theme="cohere"] .ant-input-affix-wrapper:focus,
+[data-theme="cohere"] .ant-input-focused { border-color: #9b60aa; box-shadow: 0 0 0 2px rgba(155, 96, 170, .16); }
+
+/* ── eyebrow / kicker：mono 大写宽字距标签（规格「uppercase mono labels」，
+      墨系 Slate 上色，近黑不参与装饰） ── */
+[data-theme="cohere"] .page-heading__eyebrow,
+[data-theme="cohere"] .panel-kicker,
+[data-theme="cohere"] .section-label { color: var(--mute-deep); letter-spacing: .14em; }
+
+/* ── 字重法则：全站压 400/500，无 heavy bold（规格「avoid heavy bold weights」，
+      层级交给字号/留白/表面对比） ── */
+[data-theme="cohere"] .panel-heading h2,
+[data-theme="cohere"] .business-outcomes__card > strong,
+[data-theme="cohere"] .ratio-card > strong,
+[data-theme="cohere"] .codex-metric > strong,
+[data-theme="cohere"] .codex-token-ledger strong,
+[data-theme="cohere"] .configuration-status-rail > div > strong,
+[data-theme="cohere"] .configuration-summary-grid strong,
+[data-theme="cohere"] .configuration-step-copy h2,
+[data-theme="cohere"] .configuration-summary h2,
+[data-theme="cohere"] .configuration-inline-title h3,
+[data-theme="cohere"] .connector-configuration-step__heading h3,
+[data-theme="cohere"] .metric-matrix strong,
+[data-theme="cohere"] .detail-section h3,
+[data-theme="cohere"] .audit-json > summary,
+[data-theme="cohere"] .brand-block strong,
+[data-theme="cohere"] .login-page__brand strong,
+[data-theme="cohere"] .login-page__card h1,
+[data-theme="cohere"] .login-page__card .ant-form-item-label > label { font-weight: 500; }
+
+/* ── research-table 表头：透明底 + Hairline 规则线 + 400 字重
+      （规格 research-table typography = body-large 400） ── */
+[data-theme="cohere"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); font-weight: 400; }
+
+/* ── 登录 showcase：console kicker 大写宽字距（与页内 mono 标签同语汇） ── */
+[data-theme="cohere"] .login-page__showcase-copy > span,
+[data-theme="cohere"] .login-page__card-heading > span { letter-spacing: .14em; }

@@ -19,6 +19,7 @@ export const claudeSwatches: ThemeSwatches = {
 export const claudeTheme: ThemeDefinition = {
   id: 'claude',
   label: 'Claude',
+  family: 'warm',
   isDark: false,
   chromeColor: '#faf9f5',
   swatches: claudeSwatches,

@@ -19,6 +19,7 @@ export const appleSwatches: ThemeSwatches = {
 export const appleTheme: ThemeDefinition = {
   id: 'apple',
   label: 'Apple',
+  family: 'minimal',
   isDark: false,
   chromeColor: '#f5f5f7',
   swatches: appleSwatches,

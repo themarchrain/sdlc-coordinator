@@ -149,7 +149,7 @@ export function ConfigurationPage() {
       </div>
 
       <div className="configuration-workbench">
-        <Steps current={step} items={stepItems} size="small" responsive={false} />
+        <Steps current={step} items={stepItems} size="small" responsive={false} labelPlacement="vertical" />
         <Divider />
         <Form form={form} layout="vertical" requiredMark="optional" className="configuration-form">
           <div hidden={step !== 0}><RuntimeBoundaryStep status={status} /></div>

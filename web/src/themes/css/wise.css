@@ -1,0 +1,260 @@
+/* ============================================================
+   wise 主题令牌块 —— 自设计语言 派生。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取设计语言 正文/色板同类角色的字面值；规格没给的从设计语言推导。
+   Wise 设计语言（北欧金融杂志）：
+   - 表面极性：sage 鼠尾草页画布 #e8ebe6 ↔ 白卡 #ffffff 靠表面对比分层
+     （Level 2 海拔「the surface contrast IS the elevation」）；白卡内嵌面
+     回落 sage（ex-data-table-cell 表头 / card-feature-sage 字面）
+   - 文字三阶：ink #0e0f0c（暖橄榄近黑）/ body #454745 / mute #868685，
+     外加 ink-deep #163300 深林绿作正面状态与品牌文字位
+   - 唯一品牌色 = 柠檬绿 CTA 专色 #9fe870，绿面永远压近黑字（--on-primary）；
+     签名反转：hover/active 提亮到 #cdffad（「the lighter green」）；
+     规格明言品牌绿绝不兼成功色 → success 用 positive #2ead4b 族
+   - 边线语言：输入/三级按钮 = 1px solid ink（Level 1 海拔，--login-input-border
+     / antd colorBorder 承担）；卡间分隔 = sage 系线（规格 rowBorder = canvas-soft）
+   - 圆角即亲和力：24px 签名（rounded.xl）/ 16 lg / 12 md / 8 sm，徽标药丸 9999
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     sage 线阶 #d8dcd4（canvas-soft 压深一档）/ 强线 #b9beb4；
+     嵌面 sage-lighter #eff1ec；描线级品牌绿 #53a626（slots 消费）；
+     info #0b74aa（accent-cyan #38c8ff 压深到文字级）
+   骨架表达不了的部分（lime 作文字色的补正、24px 药丸按钮、mono-caps 表头、
+   登录 ink showcase + 绿标题的 hero-band-dark 时刻、display 900 法则）
+   见块后 [data-theme="wise"] 专属片段。
+   ============================================================ */
+[data-theme="wise"] {
+  /* ── Typography ───────────────────────────── */
+  /* Wise Sans（专有，禁外部加载）→ Inter 栈近似（Inter 是品牌真实第二面孔）；
+     display 由 900 字重承担（见片段），与 sans 同族 */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Inter', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格刻度：sm 8 / md 12 / lg 16 / xl 24 签名 / pill 9999，无 8 以下直角件） ── */
+  --radius-xs: 8px;      /* 图标提示 focus / 示意色块 = rounded.sm */
+  --radius-soft: 8px;    /* 登录预览小色块 */
+  --radius-sm: 8px;      /* 内嵌小块 = rounded.sm */
+  --radius-md: 12px;     /* 行卡 / 输入 = rounded.md（text-input 档） */
+  --radius-lg: 16px;     /* 指标卡 / 中卡 = rounded.lg */
+  --radius-xl: 24px;     /* 面板 = rounded.xl（品牌签名卡圆角） */
+  --radius-brand: 16px;  /* brand-mark / 登录 signal = 绿色圆角方章 */
+  --radius-pill: 9999px; /* 迷你徽标 = rounded.pill（badge 药丸） */
+  --radius-panel: 24px;  /* 登录外壳 = rounded.xl 签名 */
+
+  /* ── Canvas & surfaces（sage 画布 ↔ 白卡表面对比分层） ── */
+  --canvas: #e8ebe6;             /* Canvas Soft sage：页画布（品牌情绪面，规格「defining mood」） */
+  --canvas-soft: #e8ebe6;        /* 嵌面卡/表头 = card-feature-sage / ex-data-table-cell 表头（规格字面） */
+  --canvas-card: #ffffff;        /* 卡内白 = Canvas（规格「white is reserved for cards」） */
+  --canvas-dark: #0e0f0c;        /* json pre 凹陷面 = Ink（footer/hero-band-dark 墨面） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = nav-bar 白（规格字面） */
+  --surface-bar: rgba(255, 255, 255, .88); /* 滚动后导航 = 白磨砂浮在 sage 上 */
+  --surface-inset: #eff1ec;      /* 内嵌面 = sage 提亮一档（推导，白卡内不与页画布抢戏） */
+  --surface-matrix: #eff1ec;
+  --surface-tint: #e2f6d5;       /* 表行 hover = primary-pale 绿纱（规格字面） */
+  --surface-rail: #eff1ec;       /* 配置状态轨 = 嵌面 sage-lighter */
+  --surface-detail: #eff1ec;
+  --surface-chip: #eff1ec;
+  --surface-legacy: #eff1ec;
+  --surface-draft: #e8ebe6;      /* draft 标签 = sage 全染 */
+  --surface-empty: #eff1ec;      /* 空态 = ex-empty-state-card 嵌面 */
+  --surface-json-bar: #e8ebe6;   /* json 头条 = sage 条，接墨色 pre */
+  --tooltip-bg: #0e0f0c;         /* Ink 反转面 */
+
+  /* ── Ink & text ladder（坍缩为 ink/body/mute 三阶 + ink-deep 品牌墨绿） ── */
+  --ink: #0e0f0c;
+  --ink-strong: #0e0f0c;
+  --ink-display: #0e0f0c;
+  --ink-heading: #0e0f0c;
+  --ink-value: #0e0f0c;
+  --ink-repo: #0e0f0c;
+  --ink-step: #0e0f0c;
+  --ink-label-strong: #0e0f0c;
+  --ink-label: #0e0f0c;
+  --ink-row: #0e0f0c;
+  --ink-list: #454745;   /* value-list li = body 正文级 */
+  --ink-data: #0e0f0c;
+  --ink-field: #0e0f0c;
+  --ink-rail: #0e0f0c;
+  --ink-rail-value: #0e0f0c;
+  --ink-secret: #454745; /* secret-label = 正文级 */
+  --ink-chip: #454745;   /* duration 数值 = 正文级 */
+  --body: #454745;       /* 规格 Body 字面 */
+  --body-alt: #454745;
+  --body-soft: #5f615f;  /* 推导：body/mute 中间调（占比卡小注） */
+  --mute: #868685;       /* 规格 Mute 字面：caption/placeholder/fine print */
+  --mute-deep: #454745;  /* context-bar 文字抬回正文级（sage 上可读） */
+  --mute-inline: #868685;
+  --mute-caption: #868685;
+  --mute-intro: #454745; /* 配置导语 = 正文级 */
+  --mute-terse: #868685;
+  --mute-quiet: #868685;
+  --mute-soft: #868685;
+  --mute-dim: #868685;
+  --mute-draft: #5f615f; /* draft 标签踩 sage 底，抬半档保可读（推导） */
+  --mute-json: #454745;  /* json 头条踩 sage 底，抬回正文级 */
+  --mute-matrix: #5f615f;/* matrix 标签踩嵌面，取中间调（推导） */
+  --faint: #868685;
+  --faint-alt: #868685;
+  --faint-soft: #868685;
+  --faint-ghost: #868685;
+  --faint-hint: #868685;
+  --faint-meta: #868685;
+  --faint-note: #868685;
+  --faint-empty: #a1a3a0; /* 推导：mute 提亮半档，空态低语 */
+  --on-dark: #ffffff;     /* 墨面（json pre/showcase）上的字 */
+  --on-dark-soft: rgba(255, 255, 255, .86);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus（品牌绿一族 + 墨链路） ── */
+  --primary: #9fe870;    /* Wise Green：CTA 专色（规格字面） */
+  --primary-active: #cdffad; /* 签名反转：active = 「the lighter green」提亮（规格字面） */
+  --on-primary: #0e0f0c; /* 绿面永远压近黑字（规格 on-primary 字面） */
+  --link: #0e0f0c;       /* 链路 = 墨（nav-link/button-tertiary 全 ink 语汇） */
+  --link-hover: #163300; /* hover 沉入 ink-deep 深林绿（品牌文字位） */
+  --focus-ring: rgba(159, 232, 112, .55); /* 绿纱焦点环 */
+  --primary-veil: rgba(159, 232, 112, .3); /* 激活导航底 ≈ primary-neutral 淡染 */
+
+  /* ── Semantic（positive/warning/negative 三族规格原值；品牌绿不兼成功色） ── */
+  --success: #2ead4b;    /* Positive（context-dot 消费；规格 Do：绿 CTA 不作成功指示） */
+  --success-halo: 0 0 0 4px rgba(46, 173, 75, .14);
+  --warning: #b86700;    /* Warning Deep：文字级（#ffd11a 黄只作软面） */
+  --warning-soft: rgba(255, 209, 26, .2); /* Warning 黄薄纱 */
+  --error: #d03238;      /* Negative */
+  --error-deep: #a72027; /* Negative Deep */
+  --info: #0b74aa;       /* 推导：accent-cyan #38c8ff 压深到文字级对比 */
+  --info-soft: rgba(56, 200, 255, .14);   /* accent-cyan 薄纱 */
+
+  /* ── Hairlines & bars（sage 线阶：#d8dcd4 主 / #e8ebe6 soft / #b9beb4 强，推导） ── */
+  --hairline: #d8dcd4;         /* 侧栏缘 / context-bar 底缘 = sage 压深一档 */
+  --hairline-soft: #e8ebe6;    /* 内部分隔 = canvas-soft（规格 rowBorder/item-divider 字面） */
+  --hairline-strong: #b9beb4;  /* 滚动条 / 强线（推导；1px ink 控件边走 antd/login 令牌） */
+  --hairline-card: #d8dcd4;    /* 白卡描边 = converter-card 边线语言的柔化档 */
+  --hairline-inset: #d8dcd4;
+  --hairline-mid: #d8dcd4;
+  --hairline-rail: #d8dcd4;
+  --hairline-codex: #d8dcd4;
+  --hairline-detail: #d8dcd4;
+  --hairline-json: #d8dcd4;
+  --hairline-dashed: #b9beb4;  /* 空态/legacy 虚线需可见 = 强线档 */
+  --hairline-legacy: #b9beb4;
+  --hairline-row: #d8dcd4;
+  --hairline-draft: #b9beb4;
+  --bar-value: #b9beb4;   /* value-list 左规线 = 中性线（数据墨水不上彩） */
+  --bar-matrix: #b9beb4;
+  --bar-summary: #b9beb4;
+  --bar-usage: #9fe870;   /* codex 用量轨 = 品牌绿功能位（用量计量的 CTA 同源） */
+
+  /* ── Overlays & shadows（墨系 alpha + 表面对比为主的轻投影） ── */
+  --overlay-faint: rgba(14, 15, 12, .04);
+  --overlay-soft: rgba(14, 15, 12, .05);  /* 导航 hover 微染 */
+  --overlay-line: rgba(14, 15, 12, .07);  /* 导航分组线 */
+  --overlay-medium: rgba(14, 15, 12, .09);
+  --shadow-panel: 0 10px 30px rgba(14, 15, 12, .07); /* 白卡浮在 sage 上的纸感软影 */
+
+  /* ── brand-mark（lime 圆角方章 + 三根暖黑条 = fast flag 意象，形态见片段） ── */
+  --brand-frame-bg: #9fe870;         /* 品牌绿方章 */
+  --brand-frame-border: transparent; /* 无边：表面对比分层 */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #0e0f0c;            /* 三条 = on-primary 暖黑 */
+  --brand-bar-2: #0e0f0c;
+  --brand-bar-3: #0e0f0c;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #0e0f0c;              /* 角标 = 墨点 + 绿环 */
+  --brand-dot-border: #9fe870;
+  --brand-dot-glow: none;
+  --nav-indicator: #9fe870;          /* 当前导航指示条 = 品牌绿（装饰位合法） */
+
+  /* ── 登录页（sage 画布 + 白壳 + ink showcase 的 hero-band-dark 时刻） ── */
+  --login-bg: #e8ebe6;               /* sage hero 画布 */
+  --login-shell-border: #d8dcd4;
+  --login-shell-shadow: 0 24px 48px rgba(14, 15, 12, .1); /* ex-modal-card 软影 */
+  --login-showcase-bg: #0e0f0c;      /* showcase = hero-band-dark 墨面（规格字面） */
+  --login-showcase-ink: #9fe870;     /* 墨底绿标题 = 签名极性反转（hero-band-dark 字面） */
+  --login-grid-line: rgba(159, 232, 112, .08); /* 墨面上绿细网格 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #9fe870;        /* 墨底品牌字 = Wise 绿 */
+  --login-brand-mute: rgba(255, 255, 255, .64);
+  --login-signal-bg: #9fe870;        /* signal = brand-mark 同款绿方章 */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #0e0f0c;       /* 三根暖黑条 */
+  --login-kicker: rgba(255, 255, 255, .64);
+  --login-heading: #9fe870;          /* 墨底绿标题（12.7:1） */
+  --login-copy: rgba(255, 255, 255, .68);
+  --login-preview-bg: #ffffff;       /* showcase 上的白迷你卡（card-content 极性回位） */
+  --login-preview-border: transparent;
+  --login-preview-shadow: 0 12px 28px rgba(0, 0, 0, .35); /* 墨面上需要重投影才可见 */
+  --login-preview-divider: #e8ebe6;
+  --login-preview-dot: #2ead4b;      /* 状态点 = positive（状态语义，非品牌绿） */
+  --login-preview-dot-soft: #c5edab; /* primary-neutral */
+  --login-preview-label: #868685;
+  --login-preview-row-line: #e8ebe6;
+  --login-preview-row-ink: #454745;
+  --login-preview-chip-ink: #054d28; /* badge-positive 字 = positive-deep（规格字面） */
+  --login-preview-chip-bg: #e2f6d5;  /* badge-positive 底 = primary-pale（规格字面） */
+  --login-preview-bar: #9fe870;      /* 进度条 = 品牌绿 */
+  --login-foot: rgba(255, 255, 255, .55); /* showcase 脚注踩墨面，用浅白 */
+  --login-card-kicker: #163300;      /* 白卡侧 eyebrow = ink-deep 品牌墨绿 */
+  --login-card-heading: #0e0f0c;
+  --login-card-copy: #454745;
+  --login-notice-border: rgba(11, 116, 170, .35); /* info 通知 = cyan 纱 */
+  --login-notice-bg: rgba(56, 200, 255, .12);
+  --login-notice-ink: #454745;
+  --login-label: #454745;
+  --login-input-border: #0e0f0c;     /* text-input = 1px solid ink（规格字面，Level 1 海拔） */
+  --login-input-border-hover: #163300;
+  --login-primary: #9fe870;          /* 绿色 CTA 药丸 + 墨字（签名） */
+  --login-primary-active: #cdffad;   /* 规格字面：active 提亮反转 */
+}
+
+/* ============================================================
+   wise 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="wise"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 绿选区：品牌绿薄纱（lime 的功能位） ── */
+[data-theme="wise"] ::selection { background: rgba(159, 232, 112, .4); }
+
+/* ── 系统滚动条：细、sage 强线、圆头药丸 ── */
+[data-theme="wise"] * { scrollbar-width: thin; scrollbar-color: #b9beb4 transparent; }
+[data-theme="wise"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="wise"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="wise"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: #b9beb4; background-clip: padding-box; }
+[data-theme="wise"] ::-webkit-scrollbar-thumb:hover { background: #868685; background-clip: padding-box; }
+
+/* ── 24px 药丸法则：按钮 = rounded.xl「pill-rectangle」（规格 Don't：永不做直角矩形）；
+      标签 = button-md 600（与 antd Button 组件令牌双保险） ── */
+[data-theme="wise"] .ant-btn { border-radius: 24px; font-weight: 600; }
+
+/* ── 链路：墨色文字链接 hover 划线（规格 text-link 语汇） ── */
+[data-theme="wise"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── lime 文字补正：#9fe870 在白/sage 上仅 1.5:1，凡 --primary 被当文字消费处
+      一律改墨 / ink-deep（品牌绿只留边线、底纱、指示条等非文字位） ── */
+[data-theme="wise"] .workspace-nav a[aria-current="page"],
+[data-theme="wise"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+[data-theme="wise"] .collapse-toggle:hover { color: var(--ink); }
+[data-theme="wise"] .page-heading__eyebrow,
+[data-theme="wise"] .panel-kicker,
+[data-theme="wise"] .section-label { color: var(--mute-deep); }
+[data-theme="wise"] .explorer-tab:hover,
+[data-theme="wise"] .explorer-more:hover,
+[data-theme="wise"] .term-hint:hover { color: #163300; }
+[data-theme="wise"] .explorer-tab.is-active { color: var(--ink); border-bottom-color: var(--primary); }
+[data-theme="wise"] .run-summary__duration,
+[data-theme="wise"] .theme-card__current { color: #163300; }
+[data-theme="wise"] .appearance-chip:hover { color: #163300; }
+
+/* ── display 900 法则：Wise Sans 的品牌重量 → Inter 800 近似，只给品牌时刻
+      （规格「weight 900 for hero, weight 600 for everything else」） ── */
+[data-theme="wise"] .login-page__brand strong,
+[data-theme="wise"] .login-page__showcase-copy h2,
+[data-theme="wise"] .login-page__card h1 { font-weight: 800; letter-spacing: -.02em; }
+
+/* ── 表头 mono-caps：规格 ex-data-table-cell「header uses mono-caps eyebrow typography」 ── */
+[data-theme="wise"] .admin-table .ant-table-thead > tr > th { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ── brand-mark：绿方章内三根暖黑条收小圆角（fast flag 意象；框/点光影由令牌承担） ── */
+[data-theme="wise"] .brand-mark span { background: #0e0f0c; border-radius: 2px 4px 2px 1px; box-shadow: none; }
+[data-theme="wise"] .brand-mark::after { box-shadow: none; }

@@ -1,0 +1,305 @@
+/* ============================================================
+   slack 主题令牌块 —— 规格驱动（slack 设计语言），
+   无参考实现；正文/色板色值按角色映射进 162 令牌超集。
+   Slack 设计语言（茄紫一神教 + 奶油薰衣草柔面）：
+   - #ffffff 画布 + 白卡；cream #f4ede4 / lavender #f9f0ff 只作
+     内嵌柔面（feature-cream 卡 / 次级药丸面）与登录页底
+   - aubergine #4a154b = 唯一品牌面色：CTA、导航指示、用量轨、
+     tooltip、json 暗块（surface-aubergine 的局部取材）；
+     json 头条用 primary-tint #592466 = 规格「aubergine-on-aubergine
+     边线台阶」字面用法
+   - 文字双阶：ink #1d1d1d / ink-mute #696969（faint 两级为推导灰）；
+     暗面（茄紫上）= on-aubergine-mute #d9bdde 字面值
+   - link-blue #1264a3 / hover #3860be = 唯一彩色点缀（--info 同源）
+   - 发丝线 #e6e6e6（text-input 1px 边）；hairline-strong #000000
+     规格字面值（骨架内仅空态虚线等强线位降档为 cream 族暖灰）
+   - pastel-mesh 渐变（peach #ffe4d1 / lavender #e9d8ff / dusty green
+     #dceade，推导的可见档）只落登录 showcase 展示板 = 规格
+     「渐变即深度」的 hero 时刻；登录外壳/预览卡 = Level 2
+     0 0 32px rgba(0,0,0,.1) mockup 复合影
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     warning #975a16（规格无 warning → 与 error 同族暖度的琥珀）
+     focus-ring = Level 4 茄紫 inset 环 rgb(97,31,105) 40% 同源
+     bar 家族 cream 暖灰（无彩数据墨，黄绿粉不入体系）
+   骨架表达不了的形态（brand-mark 茄紫 squircle + 交叠白短杠、
+   display 负字距排版、micro-cap eyebrow、药丸导航、登录 mesh 渐变
+   showcase）见块后 [data-theme="slack"] 专属片段。
+   ============================================================ */
+[data-theme="slack"] {
+  /* ── Typography ───────────────────────────── */
+  /* 双字族均为授权定制（Salesforce Avant Garde / Salesforce Sans，禁外部加载）
+     → 规格替代指引：Inter（display 与 UI 两档同栈；Lato 为柔版备选） */
+  --font-sans: 'Salesforce Sans', Inter, Lato, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Salesforce Avant Garde', Inter, Lato, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; /* display 档：700 + 负字距（片段） */
+
+  /* ── Radius（规格刻度：xs 2 / sm 4 / md 8 / lg 12 / xl 16 / pill 90） ── */
+  --radius-xs: 2px;      /* hairline tag / 状态 pill（rounded.xs） */
+  --radius-soft: 4px;    /* 登录预览小色块（rounded.sm） */
+  --radius-sm: 4px;      /* 内嵌小块 / 表单输入（rounded.sm） */
+  --radius-md: 8px;      /* 行卡（rounded.md） */
+  --radius-lg: 12px;     /* 指标卡（rounded.lg） */
+  --radius-xl: 16px;     /* 面板 / json 卡 = 定价·特性卡（rounded.xl） */
+  --radius-brand: 10px;  /* brand-mark squircle（推导：rounded.md 8/lg 12 之间 ≈ 应用图标） */
+  --radius-pill: 90px;   /* 迷你徽标 = rounded.pill 字面值（高度 <180px 即满圆） */
+  --radius-panel: 16px;  /* 登录外壳 = rounded.xl 卡 */
+
+  /* ── Canvas & surfaces（白画布 + cream/lavender 内嵌柔面 + 茄紫暗块） ── */
+  --canvas: #ffffff;             /* canvas 白：默认内容面 */
+  --canvas-soft: #f4ede4;        /* canvas-cream：token 账本/摘要面带（feature-cream） */
+  --canvas-card: #ffffff;        /* 白卡 + hairline 分隔（card-pricing） */
+  --canvas-dark: #4a154b;        /* surface-aubergine：json pre 茄紫暗块 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = nav-bar-light 白 */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f9f0ff;      /* lavender：卡内交互/内嵌面（次级药丸面） */
+  --surface-matrix: #f4ede4;
+  --surface-tint: #f9f0ff;       /* 行 hover = lavender 微染 */
+  --surface-rail: #f4ede4;
+  --surface-detail: #f4ede4;
+  --surface-chip: #f9f0ff;
+  --surface-legacy: #f4ede4;
+  --surface-draft: #efe6da;      /* 推导：cream 压深一档（draft 更沉） */
+  --surface-empty: #f9f0ff;
+  --surface-json-bar: #592466;   /* primary-tint：茄紫块上的头条台阶（规格字面用法） */
+  --tooltip-bg: #4a154b;         /* 茄紫面 + 白字 */
+
+  /* ── Ink & text ladder（ink / ink-mute 双阶 + 推导浅灰；暗面 mauve） ── */
+  --ink: #1d1d1d;
+  --ink-strong: #1d1d1d;
+  --ink-display: #1d1d1d;
+  --ink-heading: #1d1d1d;
+  --ink-value: #1d1d1d;
+  --ink-repo: #1d1d1d;
+  --ink-step: #1d1d1d;
+  --ink-label-strong: #1d1d1d;
+  --ink-label: #1d1d1d;
+  --ink-row: #1d1d1d;
+  --ink-list: #1d1d1d;
+  --ink-data: #1d1d1d;
+  --ink-field: #1d1d1d;
+  --ink-rail: #1d1d1d;
+  --ink-rail-value: #1d1d1d;
+  --ink-secret: #1d1d1d;
+  --ink-chip: #1d1d1d;
+  --body: #1d1d1d;       /* body-md：ink 正文 */
+  --body-alt: #696969;   /* ink-mute：次级正文 */
+  --body-soft: #696969;
+  --mute: #696969;       /* ink-mute：辅助文字 */
+  --mute-deep: #1d1d1d;  /* 指标卡标题抬回 ink 级 */
+  --mute-inline: #696969;
+  --mute-caption: #696969;
+  --mute-intro: #696969;
+  --mute-terse: #696969;
+  --mute-quiet: #696969;
+  --mute-soft: #696969;
+  --mute-dim: #696969;
+  --mute-draft: #696969;
+  --mute-json: #d9bdde;  /* 茄紫 json 头条文字 = on-aubergine-mute 字面值 */
+  --mute-matrix: #696969;
+  --faint: #696969;
+  --faint-alt: #696969;
+  --faint-soft: #696969;
+  --faint-ghost: #8c8c8c; /* 推导：ink-mute 提亮一档 */
+  --faint-hint: #8c8c8c;
+  --faint-meta: #696969;
+  --faint-note: #696969;
+  --faint-empty: #8c8c8c; /* 空态最弱级（推导灰） */
+  --on-dark: #ffffff;    /* 茄紫面上白字 */
+  --on-dark-soft: #d9bdde; /* on-aubergine-mute 字面值（json 深块文字） */
+  --on-dark-faint: #bfa0c6; /* 推导：mauve 再压一档（sparkline 提示日期） */
+
+  /* ── Primary / link / focus（茄紫一族 + 蓝链接） ── */
+  --primary: #4a154b;    /* aubergine：唯一品牌面色（CTA/导航点/用量轨） */
+  --primary-active: #611f69; /* primary-press（lift）字面值 */
+  --on-primary: #ffffff;
+  --link: #1264a3;       /* link-blue：唯一彩色点缀 */
+  --link-hover: #3860be; /* link-hover 字面值 */
+  --focus-ring: rgba(97, 31, 105, .4); /* Level 4 茄紫 inset 环 rgb(97,31,105) 同源 */
+  --primary-veil: rgba(74, 21, 75, .08); /* 当前导航 = 茄紫 8% 薄纱 */
+
+  /* ── Semantic（success/error 字面值；warning 推导） ── */
+  --success: #007a5a;    /* semantic-success 字面值 */
+  --success-halo: 0 0 0 4px rgba(0, 122, 90, .14);
+  --warning: #975a16;    /* 推导：规格无 warning → 与 error 同族暖度的琥珀 */
+  --warning-soft: rgba(151, 90, 22, .12);
+  --error: #cc4117;      /* semantic-error 字面值 */
+  --error-deep: #a33512; /* 推导：error 压深一档（code 强调） */
+  --info: #1264a3;       /* link-blue 兼任 info（唯一合法彩色） */
+  --info-soft: #eaf1f8;  /* 推导：蓝 10% 薄纱实底 */
+
+  /* ── Hairlines & bars（#e6e6e6 主线 + 茄紫块 tint 分隔 + cream 暖灰虚线） ── */
+  --hairline: #e6e6e6;         /* hairline：卡/表 1px 边（text-input 同款） */
+  --hairline-soft: #f0f0f0;    /* 推导：hairline 提亮半档 */
+  --hairline-strong: #000000;  /* hairline-strong 规格字面值（骨架内强线位少用） */
+  --hairline-card: #e6e6e6;
+  --hairline-inset: #e6e6e6;
+  --hairline-mid: #e6e6e6;
+  --hairline-rail: #e6e6e6;
+  --hairline-codex: #e6e6e6;
+  --hairline-detail: #e6e6e6;
+  --hairline-json: #592466;    /* primary-tint：茄紫 json 块外描边（规格字面用法） */
+  --hairline-dashed: #d4cfc7;  /* 空态虚线 = cream 族暖灰（推导，全黑过重） */
+  --hairline-legacy: #d4cfc7;
+  --hairline-row: #e6e6e6;
+  --hairline-draft: #d4cfc7;
+  --bar-value: #d4cfc7;   /* value-list 左规线 = 暖灰（无彩数据墨） */
+  --bar-matrix: #d4cfc7;
+  --bar-summary: #a89f93; /* 摘要左规线 = 暖灰沉一档 */
+  --bar-usage: #4a154b;   /* 用量轨 = aubergine（品牌数据墨） */
+
+  /* ── Overlays & shadows（Level 1 浮层影；nav hover 茄紫微纱） ── */
+  --overlay-faint: rgba(29, 29, 29, .03);
+  --overlay-soft: rgba(74, 21, 75, .06);  /* nav hover = 茄紫微染 */
+  --overlay-line: rgba(29, 29, 29, .06);
+  --overlay-medium: rgba(29, 29, 29, .08);
+  --shadow-panel: 0 5px 20px rgba(0, 0, 0, .1); /* Level 1 字面值 */
+
+  /* ── brand-mark（茄紫 squircle + 三根白短杠 ±45° 交错；形态见片段） ── */
+  --brand-frame-bg: #4a154b;        /* surface-aubergine 图标面 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;       /* 品牌标平坦（海拔留给卡面） */
+  --brand-bar-1: #ffffff;
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #e9d8ff;             /* mesh lavender 字面值：唯一 pastel 点缀 */
+  --brand-dot-border: #4a154b;
+  --brand-dot-glow: none;
+  --nav-indicator: #4a154b;         /* 当前导航指示 = aubergine */
+
+  /* ── 登录页（cream hero 画布 + pastel-mesh showcase + 白卡表单） ── */
+  --login-bg: #f4ede4;              /* cream：hero 段画布（规格 hero canvas） */
+  --login-shell-border: #e6e6e6;
+  --login-shell-shadow: 0 0 32px rgba(0, 0, 0, .1); /* Level 2 mockup 复合影字面值 */
+  --login-showcase-bg: radial-gradient(115% 85% at 12% 8%, #ffe4d1, rgba(255, 228, 209, 0) 58%),
+    radial-gradient(105% 95% at 88% 18%, #e9d8ff, rgba(233, 216, 255, 0) 60%),
+    radial-gradient(130% 105% at 50% 105%, #dceade, rgba(220, 234, 222, 0) 62%),
+    #f4ede4; /* pastel-mesh：peach（#fff0e6-ish 加深的可见档）/ lavender 字面值 / dusty green（推导），cream 底 */
+  --login-showcase-ink: #1d1d1d;    /* mesh 是亮面 → ink 字 */
+  --login-grid-line: rgba(29, 29, 29, .04); /* 渐变即深度（片段隐藏网格底纹） */
+  --login-grid-mask: none;
+  --login-brand-ink: #1d1d1d;
+  --login-brand-mute: #696969;
+  --login-signal-bg: #4a154b;       /* signal = brand-mark 同款 squircle（见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: #696969;          /* kicker = micro-cap 大写（ink-mute，茄紫不进小字） */
+  --login-heading: #1d1d1d;         /* display-xl 700 + 负字距（见片段） */
+  --login-copy: #696969;            /* ink-mute 辅助级 */
+  --login-preview-bg: #ffffff;      /* 预览卡 = 浮在 mesh 上的产品 UI 白卡 */
+  --login-preview-border: transparent; /* 规格mockup 无边框，渐变承托 */
+  --login-preview-shadow: 0 0 32px rgba(0, 0, 0, .1); /* Level 2 mockup 复合影 */
+  --login-preview-divider: #f0f0f0;
+  --login-preview-dot: #4a154b;     /* 茄紫数据点 */
+  --login-preview-dot-soft: #d9bdde; /* mauve 点 */
+  --login-preview-label: #696969;
+  --login-preview-row-line: #f0f0f0;
+  --login-preview-row-ink: #1d1d1d;
+  --login-preview-chip-ink: #007a5a; /* 增益 chip = success 绿（正向指标） */
+  --login-preview-chip-bg: rgba(0, 122, 90, .1);
+  --login-preview-bar: #d9bdde;     /* mauve 用量条 */
+  --login-foot: #696969;            /* 页脚在 cream 画布上 */
+  --login-card-kicker: #696969;
+  --login-card-heading: #1d1d1d;
+  --login-card-copy: #696969;
+  --login-notice-border: rgba(18, 100, 163, .3); /* info 通知 = 蓝薄纱 + 淡边 */
+  --login-notice-bg: #eaf1f8;
+  --login-notice-ink: #1d1d1d;
+  --login-label: #1d1d1d;
+  --login-input-border: #e6e6e6;    /* text-input 1px hairline 字面值 */
+  --login-input-border-hover: #696969; /* hover = ink-mute 沉一档（推导） */
+  --login-primary: #4a154b;         /* 主 CTA = aubergine 药丸（白字） */
+  --login-primary-active: #611f69;  /* primary-press lift */
+}
+
+/* ============================================================
+   slack 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="slack"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 茄紫选区（品牌面语汇的功能性使用） ── */
+[data-theme="slack"] ::selection { background: #4a154b; color: #ffffff; }
+
+/* ── 焦点：2px 茄紫 press 环（规格 Level 4 inset 环同源） ── */
+[data-theme="slack"] :focus-visible { outline: 2px solid #611f69; outline-offset: 2px; }
+
+/* ── 链接：默认无下划线，hover 才出现（规格 link-on-light） ── */
+[data-theme="slack"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 系统滚动条：细、暖灰、圆头（药丸圆角） ── */
+[data-theme="slack"] * { scrollbar-width: thin; scrollbar-color: #d4cfc7 transparent; }
+[data-theme="slack"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="slack"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="slack"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #d4cfc7; }
+[data-theme="slack"] ::-webkit-scrollbar-thumb:hover { background: #a89f93; }
+
+/* ── 按钮标签 +0.144px（button-cap 字面值，药丸标签的机械感） ── */
+[data-theme="slack"] .ant-btn { letter-spacing: .144px; }
+
+/* ── 药丸词汇延展：侧栏导航项 = rounded.md 8（非按钮不受 antd 管辖） ── */
+[data-theme="slack"] .workspace-nav a { border-radius: 8px; }
+
+/* ── display 排版：数值/标题 = display 族 700 + 负字距（规格 tight tracking） ── */
+[data-theme="slack"] .business-outcomes__card > strong,
+[data-theme="slack"] .ratio-card > strong,
+[data-theme="slack"] .codex-metric > strong { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.256px; } /* display-md 字面值 */
+[data-theme="slack"] .panel-heading h2,
+[data-theme="slack"] .configuration-step-copy h2,
+[data-theme="slack"] .configuration-summary h2,
+[data-theme="slack"] .detail-section h3,
+[data-theme="slack"] .connector-configuration-step__heading h3,
+[data-theme="slack"] .configuration-inline-title h3 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.096px; } /* heading-lg 字面值 */
+[data-theme="slack"] .metric-matrix strong,
+[data-theme="slack"] .codex-token-ledger strong,
+[data-theme="slack"] .configuration-status-rail > div > strong,
+[data-theme="slack"] .configuration-summary-grid strong,
+[data-theme="slack"] .brand-block strong,
+[data-theme="slack"] .repo-row strong,
+[data-theme="slack"] .intent-row strong,
+[data-theme="slack"] .duration-card strong,
+[data-theme="slack"] .duration-section__heading strong,
+[data-theme="slack"] .value-list__title,
+[data-theme="slack"] .connector-watch__item strong,
+[data-theme="slack"] .audit-json > summary,
+[data-theme="slack"] .login-page__brand strong,
+[data-theme="slack"] .login-page__card h1 { font-family: var(--font-display); font-weight: 700; }
+
+/* ── eyebrow / kicker = micro-cap：12px/700/+0.96px 大写（规格 字面值） ── */
+[data-theme="slack"] .page-heading__eyebrow,
+[data-theme="slack"] .panel-kicker,
+[data-theme="slack"] .section-label { color: var(--mute); font: 700 12px/1 var(--font-sans); letter-spacing: .96px; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="slack"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── brand-mark 重绘：茄紫 squircle + 三根白短杠 ±45° 交错
+      （slack 交叠菱形 wordmark 的三笔抽象；基线 34px 方标） ── */
+[data-theme="slack"] .brand-mark { align-items: center; justify-content: center; padding: 0; gap: 2px; }
+[data-theme="slack"] .brand-mark span { width: 8px; height: 3px; border-radius: 1.5px; background: #ffffff; box-shadow: none; }
+[data-theme="slack"] .brand-mark span:nth-child(1) { transform: rotate(-45deg); }
+[data-theme="slack"] .brand-mark span:nth-child(2) { width: 12px; transform: rotate(45deg); }
+[data-theme="slack"] .brand-mark span:nth-child(3) { transform: rotate(-45deg); }
+[data-theme="slack"] .brand-mark::after { top: -3px; right: -3px; width: 7px; height: 7px; background: #e9d8ff; border: 2px solid #4a154b; box-shadow: none; }
+@media (max-width: 760px) {
+  [data-theme="slack"] .brand-mark span { width: 7px; }
+  [data-theme="slack"] .brand-mark span:nth-child(2) { width: 10px; }
+}
+
+/* ── 登录 showcase：pastel-mesh 渐变即深度（隐藏网格底纹）；
+      标题 = display-xl 700 @ 1.12 行高 + -0.464px 负字距（字面值） ── */
+[data-theme="slack"] .login-page__showcase::before { display: none; }
+[data-theme="slack"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.12; letter-spacing: -0.464px; }
+[data-theme="slack"] .login-page__showcase-copy > span,
+[data-theme="slack"] .login-page__card-heading > span { font: 700 12px/1 var(--font-sans); letter-spacing: .96px; text-transform: uppercase; }
+
+/* ── 登录 signal 重绘 = brand-mark 同款茄紫 squircle 迷你版（40px 基线） ── */
+[data-theme="slack"] .login-page__signal { align-items: center; justify-content: center; padding: 0; gap: 2px; border: none; box-shadow: none; }
+[data-theme="slack"] .login-page__signal span { width: 10px; height: 4px; border-radius: 2px; background: #ffffff; }
+[data-theme="slack"] .login-page__signal span:nth-child(1) { transform: rotate(-45deg); }
+[data-theme="slack"] .login-page__signal span:nth-child(2) { width: 14px; transform: rotate(45deg); }
+[data-theme="slack"] .login-page__signal span:nth-child(3) { transform: rotate(-45deg); }
+
+/* ── 登录预览条药丸化（pill 纪律的微延展）；主 CTA 药丸增高 ── */
+[data-theme="slack"] .login-page__preview-row strong { border-radius: 9999px; }
+[data-theme="slack"] .login-page__card .ant-btn-primary { height: 46px; }

@@ -1,0 +1,287 @@
+/* ============================================================
+   runway 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Runway 设计语言（电影节场刊式编辑极简）：
+   - 纸白画布 #ffffff + Canvas Warm #fefefe（near-imperceptible 半调提升）；
+     卡 = 画布白，靠发丝线与留白分层，零阴影零光晕（深度来自摄影与色阶）
+   - 近黑墨 #030303 承担标题/正文强调；黑药丸 #000000 = 唯一主行动色，
+     无第二交互色；五级灰阶 ink/graphite/slate/stone/hairline 扛全部层级，
+     slate #676f7b 是唯一带色温中性（tertiary 元数据专用）
+   - Featured infill #e7eaf0（hairline）= 「this one is special」的唯一表达
+     （导航当前项/draft/json 头条复用此色阶）
+   - 发丝线双轨：hairline #e7eaf0（分隔/内 infill）/ 规格命名的 hairline-soft
+     #c9ccd1（1px 列规线，实际是更强一档 → 映射进超集 --hairline-strong）
+   - Scrim #1a1a1a = 影像舞台暗层 → json 凹面与登录 showcase（暗面白字）
+   - 圆角严格二分：方角（格子/表行/表单）+ 药丸（按钮）「Never mix」；
+     md 8 / lg 16 只给卡容器
+   - 语义色规格明言不引入 → 派生低饱和标准语义（#2F7A4D/#946F12/#B3261E）
+   骨架表达不了的形态（编辑排印法则：标题 400 + 负字距、eyebrow 大写、
+   三根墨平条 brand-mark、登录 Scrim 舞台、40px 触达高表单）见块后片段。
+   ============================================================ */
+[data-theme="runway"] {
+  /* ── Typography ───────────────────────────── */
+  /* abcNormal（专有族，禁外部加载）→ Inter 规格钦定替代（「Inter at -0.02em tracking」）；
+     一族承担全部层级（规格「One face, every level」），无第二展示族 */
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Inter, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif; /* 数字展示位同 sans；负字距见片段 */
+
+  /* ── Radius（规格 刻度 none 0 / xs 4 / sm 6 / md 8 / lg 16 / full 药丸；方角与药丸严格二分） ── */
+  --radius-xs: 4px;      /* term-hint focus / 示意色块（规格 xs 4） */
+  --radius-soft: 4px;    /* 登录预览小色块（小件 xs） */
+  --radius-sm: 6px;      /* 内嵌小块 = 规格 sm 6（tag chips） */
+  --radius-md: 8px;      /* 行卡 = 规格 md 8（research/studios 卡） */
+  --radius-lg: 8px;      /* 指标卡 = md 8（16 只给 alert-banner 级大容器） */
+  --radius-xl: 16px;     /* 面板 = 规格 lg 16（alert-banner / contained hero） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal = media 容器 md 8 */
+  --radius-pill: 9999px; /* 迷你徽标 = rounded.full（药丸只给 pill 形态） */
+  --radius-panel: 16px;  /* 登录外壳 = contained hero lg 16 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Canvas：纸白阅读底（勘误：亮画布） */
+  --canvas-soft: #fefefe;        /* Canvas Warm：半调提升（规格「near-imperceptible」原文） */
+  --canvas-card: #ffffff;        /* 卡 = 画布白，靠发丝线 + 留白分层 */
+  --canvas-dark: #1a1a1a;        /* Scrim：json 凹面 = 影像舞台暗层 */
+  --surface-sidebar: #ffffff;    /* nav-bar = 画布白（规格「divided by spacing, not hairline」） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #fefefe;      /* 内嵌面 = Canvas Warm 半调 */
+  --surface-matrix: #fefefe;
+  --surface-tint: #f4f6f9;       /* 行 hover = featured infill 减半一档（派生，与 antd rowHoverBg 同源） */
+  --surface-rail: #fefefe;
+  --surface-detail: #fefefe;
+  --surface-chip: #fefefe;
+  --surface-legacy: #fefefe;
+  --surface-draft: #e7eaf0;      /* draft = Featured infill（「the surface step is the badge」） */
+  --surface-empty: #fefefe;
+  --surface-json-bar: #e7eaf0;   /* json 头条 = Featured infill（table-style banner infill 语汇） */
+  --tooltip-bg: #030303;         /* 墨面倒置（黑墨白字的编辑反白面） */
+
+  /* ── Ink & text ladder（坍缩为规格四级：Ink/Graphite/Slate/Stone） ── */
+  --ink: #030303;
+  --ink-strong: #030303;
+  --ink-display: #030303;
+  --ink-heading: #030303;
+  --ink-value: #030303;
+  --ink-repo: #030303;
+  --ink-step: #030303;
+  --ink-label-strong: #030303;
+  --ink-label: #030303;
+  --ink-row: #030303;
+  --ink-list: #404040;   /* value-list li = Graphite 正文 */
+  --ink-data: #030303;
+  --ink-field: #030303;
+  --ink-rail: #030303;
+  --ink-rail-value: #030303;
+  --ink-secret: #404040; /* secret-label = 正文级 */
+  --ink-chip: #404040;   /* duration 数值 = 正文级 */
+  --body: #404040;       /* Graphite：标准正文（规格「Standard body copy」） */
+  --body-alt: #404040;
+  --body-soft: #676f7b;  /* Slate：占比卡小注（唯一带色温中性） */
+  --mute: #676f7b;       /* Slate：tertiary 元数据（规格「tertiary metadata」专用） */
+  --mute-deep: #404040;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #676f7b;
+  --mute-caption: #676f7b;
+  --mute-intro: #404040; /* 配置导语 = 正文级 */
+  --mute-terse: #676f7b;
+  --mute-quiet: #676f7b;
+  --mute-soft: #676f7b;
+  --mute-dim: #676f7b;
+  --mute-draft: #676f7b;
+  --mute-json: #676f7b;
+  --mute-matrix: #676f7b;
+  --faint: #939393;      /* Stone：占位/fine print（规格「placeholders, fine-print」） */
+  --faint-alt: #939393;
+  --faint-soft: #939393;
+  --faint-ghost: #939393;
+  --faint-hint: #939393;
+  --faint-meta: #939393;
+  --faint-note: #939393;
+  --faint-empty: #939393;
+  --on-dark: #ffffff;    /* 暗面上的字 = 纯白（hero 白字） */
+  --on-dark-soft: rgba(255, 255, 255, .7); /* hero eyebrow 70%（规格字面值） */
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus（黑药丸一族；单色系统里墨即交互信号） ── */
+  --primary: #000000;    /* 黑药丸：唯一主行动色（规格「single brand action colour」） */
+  --primary-active: #404040; /* 派生：黑压不动 → graphite 提亮（与 antd colorPrimaryActive 同源） */
+  --on-primary: #ffffff;
+  --link: #030303;       /* 链接 = ink 字（规格 text-link「text {colors.ink}」） */
+  --link-hover: #404040; /* 派生 graphite 微移；下划线信号见片段 */
+  --focus-ring: rgba(3, 3, 3, .3); /* 墨 30% 焦点环（form-field-focused 底线转 ink） */
+  --primary-veil: #e7eaf0; /* 当前导航 = Featured infill（surface step 即选中语言） */
+
+  /* ── Semantic（规格明言不引入信号色 → 派生低饱和标准语义） ── */
+  --success: #2f7a4d;    /* 派生语义绿（context-dot 唯一消费者） */
+  --success-halo: none;  /* 零光环（零阴影体系） */
+  --warning: #946f12;    /* 派生语义琥珀 */
+  --warning-soft: rgba(148, 111, 18, .1);
+  --error: #b3261e;      /* 派生语义红 */
+  --error-deep: #8f1d17;
+  --info: #030303;       /* 墨即交互信号（单色系统） */
+  --info-soft: #ffffff;  /* info Alert = alert-banner 形态（画布白 + hairline-soft 边） */
+
+  /* ── Hairlines & bars（hairline #e7eaf0 / 强线 = 规格 hairline-soft #c9ccd1） ── */
+  --hairline: #e7eaf0;         /* 规格 hairline 字面值（分隔 + featured infill） */
+  --hairline-soft: #e7eaf0;    /* 规格无更轻档 → 与 hairline 坍缩 */
+  --hairline-strong: #c9ccd1;  /* 规格 hairline-soft 字面值（1px 列规线/控件边，实际更强一档） */
+  --hairline-card: #e7eaf0;
+  --hairline-inset: #e7eaf0;
+  --hairline-mid: #e7eaf0;
+  --hairline-rail: #e7eaf0;
+  --hairline-codex: #e7eaf0;
+  --hairline-detail: #e7eaf0;
+  --hairline-json: #e7eaf0;
+  --hairline-dashed: #c9ccd1;  /* 空态虚线 = 强线一档 */
+  --hairline-legacy: #c9ccd1;
+  --hairline-row: #e7eaf0;
+  --hairline-draft: #c9ccd1;
+  --bar-value: #c9ccd1;   /* value-list 左规线 = 强发丝线（无彩结构） */
+  --bar-matrix: #c9ccd1;
+  --bar-summary: #c9ccd1;
+  --bar-usage: #030303;   /* 用量轨 = 墨（数据墨水；黑是唯一强调色） */
+
+  /* ── Overlays & shadows（零阴影；墨系 alpha 家族） ── */
+  --overlay-faint: rgba(3, 3, 3, .03);
+  --overlay-soft: rgba(3, 3, 3, .04);   /* nav hover = 微高亮 */
+  --overlay-line: rgba(3, 3, 3, .06);   /* nav 分组线 */
+  --overlay-medium: rgba(3, 3, 3, .07);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（无框无光影，三根墨平条 = 编辑铅字条；形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #030303;
+  --brand-bar-2: #030303;
+  --brand-bar-3: #030303;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #030303;      /* 角点 = 墨（不发光） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #030303;  /* 当前导航指示 = 墨细线（编辑下划线） */
+
+  /* ── 登录页（showcase = Scrim 影像舞台暗面 + 白卡：规格 暗面白字的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e7eaf0;
+  --login-shell-shadow: none;    /* 零阴影 */
+  --login-showcase-bg: #1a1a1a;  /* showcase = Scrim 舞台暗面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* 近隐（暗面走留白，见片段隐藏网格） */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .55);
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;   /* signal 三平条 = 白（同 brand-mark 反白） */
+  --login-kicker: rgba(255, 255, 255, .7); /* hero eyebrow 70%（规格字面值） */
+  --login-heading: #ffffff;      /* display 48px/400/1.0 负字距（片段缩放到 40px） */
+  --login-copy: rgba(255, 255, 255, .62);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #ffffff;  /* 数据点 = 白（暗面上无彩，黑不参与装饰） */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .28);
+  --login-foot: rgba(255, 255, 255, .5);
+  --login-card-kicker: #676f7b;  /* 白卡侧 eyebrow = slate 小签 */
+  --login-card-heading: #030303;
+  --login-card-copy: #676f7b;
+  --login-notice-border: #c9ccd1; /* 通知条 = alert-banner 形态（画布白 + hairline-soft 边） */
+  --login-notice-bg: #ffffff;
+  --login-notice-ink: #404040;
+  --login-label: #030303;    /* 表单 label = ink（规格 form-field） */
+  --login-input-border: #c9ccd1;  /* 控件边 = 规格 hairline-soft */
+  --login-input-border-hover: #030303; /* focused 底线转 ink（规格「deepens to ink」） */
+  --login-primary: #000000;  /* 主 CTA = 黑药丸 */
+  --login-primary-active: #404040;
+}
+
+/* ============================================================
+   runway 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="runway"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：黑白选区（黑墨即强调）/ 墨焦点环 / 链接 hover 下划线（规格 underline-on-active） ── */
+[data-theme="runway"] ::selection { background: #030303; color: #ffffff; }
+[data-theme="runway"] :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+[data-theme="runway"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 编辑排印法则：标题一律 400 常规字重 + 负字距（规格「every heading is regular
+      weight (400) with tight tracking」；-1.2px/48px ≈ -0.025em → 钉 -0.02em） ── */
+[data-theme="runway"] .panel-heading h2,
+[data-theme="runway"] .detail-section h3,
+[data-theme="runway"] .configuration-step-copy h2,
+[data-theme="runway"] .configuration-summary h2,
+[data-theme="runway"] .configuration-inline-title h3,
+[data-theme="runway"] .connector-configuration-step__heading h3,
+[data-theme="runway"] .value-list__title { font-weight: 400; letter-spacing: -0.02em; }
+
+/* ── 强调位 = body-strong 600（规格「hierarchy through weight, never display family」） ── */
+[data-theme="runway"] .brand-block strong,
+[data-theme="runway"] .business-outcomes__card > strong,
+[data-theme="runway"] .ratio-card > strong,
+[data-theme="runway"] .codex-metric > strong,
+[data-theme="runway"] .metric-matrix strong,
+[data-theme="runway"] .codex-token-ledger strong,
+[data-theme="runway"] .configuration-status-rail > div > strong,
+[data-theme="runway"] .configuration-summary-grid strong,
+[data-theme="runway"] .repo-row strong,
+[data-theme="runway"] .intent-row strong,
+[data-theme="runway"] .duration-card strong,
+[data-theme="runway"] .duration-section__heading strong,
+[data-theme="runway"] .connector-watch__item strong { font-weight: 600; }
+
+/* ── eyebrow / kicker：uppercase editorial 小签（规格 eyebrow 14px/500/+0.35px ≈ .025em） ── */
+[data-theme="runway"] .page-heading__eyebrow,
+[data-theme="runway"] .panel-kicker,
+[data-theme="runway"] .section-label { color: var(--mute); font: 500 10px/1.43 var(--font-sans); letter-spacing: .025em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="runway"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; text-transform: none; }
+
+/* ── 侧栏：当前项 = Featured infill 色阶 + 墨字（规格「the surface step is the badge」） ── */
+[data-theme="runway"] .workspace-nav a { border-radius: 0; }
+[data-theme="runway"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: var(--primary-veil); }
+[data-theme="runway"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：去框去光影，三根墨平条（方角 1px；45/100/70 高度维持基线），
+      角点 = 墨色不发光 —— 编辑铅字条语汇 ── */
+[data-theme="runway"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="runway"] .brand-mark span { border-radius: 1px; background: #030303; box-shadow: none; }
+[data-theme="runway"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="runway"] .brand-mark::after { display: none; }
+
+/* ── 表头：白底 + slate 标签 + 400 字重（规格 meta 13px/400；无大写变换） ── */
+[data-theme="runway"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、hairline-soft #c9ccd1、方角（rounded.none） ── */
+[data-theme="runway"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="runway"] ::-webkit-scrollbar-thumb { border-radius: 0; background: var(--hairline-strong); }
+[data-theme="runway"] ::-webkit-scrollbar-thumb:hover { background: #939393; }
+[data-theme="runway"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="runway"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：Scrim 平面舞台（无网格底纹）；
+      标题 = display-sm 40px/400/1.0 + 负字距（规格字面值；Inter 替代 -0.02em） ── */
+[data-theme="runway"] .login-page__showcase::before { display: none; }
+[data-theme="runway"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 400; line-height: 1.05; letter-spacing: -0.02em; }
+[data-theme="runway"] .login-page__showcase-copy > span,
+[data-theme="runway"] .login-page__card-heading > span { font: 500 10px/1.43 var(--font-sans); letter-spacing: .025em; text-transform: uppercase; }
+
+/* ── 登录 signal：同 brand-mark 的三平条白重绘（无框光影） ── */
+[data-theme="runway"] .login-page__signal { background: transparent; box-shadow: none; }
+[data-theme="runway"] .login-page__signal span { border-radius: 1px; background: #ffffff; }
+
+/* ── 登录卡片：标题 400 + 负字距；输入/主 CTA 对齐 40px 触达高（规格 button-primary
+      height 40px；表单方角 rounded.none 由 antd 全局 0 承担） ── */
+[data-theme="runway"] .login-page__card h1 { font-weight: 400; letter-spacing: -0.01em; }
+[data-theme="runway"] .login-page__card .ant-input,
+[data-theme="runway"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+[data-theme="runway"] .login-page__card .ant-btn-primary { height: 40px; }

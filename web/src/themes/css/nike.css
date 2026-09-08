@@ -1,0 +1,317 @@
+/* ============================================================
+   nike 主题令牌块 —— 自设计语言 派生。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取设计语言 正文同类角色的字面值；规格没给的从设计语言推导
+   （Nike = 摄影优先：纯黑/纯白/单一软灰近单色 chrome，色只留给信号，
+     CTA 全 pill、容器全方角、零投影、1px 发丝线、全大写展示排版）。
+   值来源速查（原文）：
+     #111111 ink / on-primary 反用   → 墨阶顶 / primary / tooltip / 登录 showcase 暗面
+     #ffffff canvas / on-primary     → 画布 / 卡片 / 暗面上的字
+     #f5f5f5 soft-cloud              → 唯一软面：内嵌面 / 表头 hover / utility 条 / 登录舞台
+     #39393b charcoal / #707072 mute / #9e9ea0 stone → 文字阶梯坍缩为这四级
+     #cacacb hairline / #e5e5e5 hairline-soft → 发丝线双阶（控件边 / 分隔线）
+     #d30005 sale / #007d48 success / #1151ff info → 三信号色（slots 同源）
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     warning 琥珀 #9a6700 = 规格无 warning，标准语义克制化（先例 tesla）
+     蓝薄纱 #f0f4ff = info 8% 薄纱（与 antd colorInfoBg 同源）
+     墨系 overlay 家族 = soft-cloud ≈ 墨 4-9% alpha 的等价展开
+   骨架表达不了的部分（brand-mark 前倾墨条重绘、全大写 condensed 排版、
+   tap-collapse 按压、登录 ink 展示面等）见块后 [data-theme="nike"] 专属片段。
+   ============================================================ */
+[data-theme="nike"] {
+  /* ── Typography ───────────────────────────── */
+  /* Helvetica Now（定制族，禁外部加载）→ 系统/web-safe 栈近似；
+     display = Futura ND condensed 的 Arial Narrow/Impact 近似（任务书指定） */
+  --font-sans: "Helvetica Now Text", "Helvetica Neue", Helvetica, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Futura, "Arial Narrow", Impact, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius ───────────────────────────────── */
+  /* 刻度：none 0 / sm 18 / md 24 / lg 30 / full 9999，向超集九档归并。
+     容器一律 rounded.none；pill 词汇只给 chip/徽标两档（CTA 的 pill 在 antd Button 层） */
+  --radius-xs: 0px;      /* term-hint focus（方角） */
+  --radius-sm: 0px;      /* 内嵌小块 */
+  --radius-md: 0px;      /* 行卡 */
+  --radius-lg: 0px;      /* 指标卡 */
+  --radius-xl: 0px;      /* 面板 */
+  --radius-brand: 0px;   /* brand-mark / 登录 signal（方角，见片段重绘） */
+  --radius-soft: 9999px; /* 登录预览 chip = pill */
+  --radius-pill: 9999px; /* 迷你徽标 = pill */
+  --radius-panel: 0px;   /* 登录外壳（容器方角） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Pure White：页面画布（规格 front matter canvas） */
+  --canvas-soft: #f5f5f5;        /* soft-cloud：唯一软面（utility 条 / 表头 / 交替面） */
+  --canvas-card: #ffffff;        /* 卡片白，靠发丝线 + 留白分隔（零投影） */
+  --canvas-dark: #111111;        /* ink 暗面（campaign tile / member-benefit 的墨底语言） */
+  --surface-sidebar: #ffffff;    /* primary-nav：白底 + 发丝线右缘 */
+  --surface-bar: rgba(255, 255, 255, .92); /* 白粘条（深度 = 底缘 1px 发丝线） */
+  --surface-inset: #f5f5f5;
+  --surface-matrix: #f5f5f5;
+  --surface-tint: #f5f5f5;       /* 行 hover = soft-cloud */
+  --surface-rail: #f5f5f5;
+  --surface-detail: #f5f5f5;
+  --surface-chip: #f5f5f5;
+  --surface-legacy: #f5f5f5;
+  --surface-draft: #ebebeb;      /* 派生：draft 更沉半档（灰阶内推导） */
+  --surface-empty: #f5f5f5;
+  --surface-json-bar: #f5f5f5;
+  --tooltip-bg: #111111;         /* 墨反转面 */
+
+  /* ── Ink & text ladder（坍缩为 规格 五级墨） ── */
+  --ink: #111111;
+  --ink-strong: #111111;
+  --ink-display: #111111;
+  --ink-heading: #111111;
+  --ink-value: #111111;
+  --ink-repo: #111111;
+  --ink-step: #111111;
+  --ink-label-strong: #111111;
+  --ink-label: #111111;
+  --ink-row: #111111;
+  --ink-list: #111111;    /* value-list = 产品名级（body-strong = ink） */
+  --ink-data: #111111;
+  --ink-field: #111111;
+  --ink-rail: #111111;
+  --ink-rail-value: #111111;
+  --ink-secret: #39393b;  /* secret-label = charcoal（slightly softer body） */
+  --ink-chip: #39393b;    /* duration 数值 = charcoal */
+  --body: #39393b;        /* 长文正文 = charcoal（「softer body where ink is too heavy」） */
+  --body-alt: #39393b;
+  --body-soft: #707072;   /* 次级正文 = mute */
+  --mute: #707072;        /* caption-md 副标题 / footer 链接色 */
+  --mute-deep: #39393b;   /* 指标卡标题抬回正文级 */
+  --mute-inline: #707072;
+  --mute-caption: #707072;
+  --mute-intro: #39393b;  /* 配置导语 = 正文级 */
+  --mute-terse: #707072;
+  --mute-quiet: #707072;
+  --mute-soft: #707072;
+  --mute-dim: #707072;
+  --mute-draft: #707072;
+  --mute-json: #707072;
+  --mute-matrix: #707072;
+  --faint: #9e9ea0;       /* stone：占位 / 禁用级（规格 最低强调文字） */
+  --faint-alt: #9e9ea0;
+  --faint-soft: #9e9ea0;
+  --faint-ghost: #9e9ea0;
+  --faint-hint: #9e9ea0;
+  --faint-meta: #9e9ea0;
+  --faint-note: #9e9ea0;
+  --faint-empty: #9e9ea0;
+  --on-dark: #ffffff;     /* 暗面上的字 = 纯白 */
+  --on-dark-soft: rgba(255, 255, 255, .72);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #111111;    /* Nike Black：唯一主色（主 CTA = ink，故与墨同源） */
+  --primary-active: #111111; /* true #111111 法则：按压不变灰，反馈交给 tap-collapse 片段 */
+  --on-primary: #ffffff;
+  --link: #111111;       /* link-md = 墨色下划线内链（无蓝色正文链） */
+  --link-hover: #111111; /* hover 靠下划线表达（见片段） */
+  --focus-ring: #111111; /* search-pill-focused：2px 墨色焦点边（宽度见片段收 2px） */
+  --primary-veil: rgba(17, 17, 17, .05); /* 当前项 = 墨系微纱（soft-cloud 等价） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #007d48;    /* context-dot 唯一消费者 */
+  --success-halo: none;  /* 零投影体系，dot 无光环 */
+  --warning: #9a6700;    /* 派生：规格无 warning，标准语义克制化 */
+  --warning-soft: rgba(154, 102, 0, .1);
+  --error: #d30005;      /* sale 红：唯一红，只做信号 */
+  --error-deep: #780700; /* sale-deep */
+  --info: #1151ff;       /* info 蓝：member callout 信号 */
+  --info-soft: #f0f4ff;  /* 派生：info 8% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #cacacb;         /* hairline：分隔线主力（filter 行 / footer 列分隔） */
+  --hairline-soft: #e5e5e5;    /* hairline-soft：粘条内衬线 */
+  --hairline-strong: #cacacb;  /* 控件边（filter-chip 默认 1px hairline） */
+  --hairline-card: #e5e5e5;    /* 大卡外线取软档，避免白画布上线框过重 */
+  --hairline-inset: #e5e5e5;
+  --hairline-mid: #e5e5e5;
+  --hairline-rail: #e5e5e5;
+  --hairline-codex: #e5e5e5;
+  --hairline-detail: #e5e5e5;
+  --hairline-json: #e5e5e5;
+  --hairline-dashed: #cacacb;  /* 空态虚线 = 控件边一档 */
+  --hairline-legacy: #cacacb;
+  --hairline-row: #e5e5e5;
+  --hairline-draft: #cacacb;
+  --bar-value: #cacacb;   /* value-list 左规线 = 发丝线（非彩色条） */
+  --bar-matrix: #cacacb;
+  --bar-summary: #cacacb;
+  --bar-usage: #111111;   /* 用量轨 = 墨（数据墨水即品牌色） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（soft-cloud #f5f5f5 ≈ 墨 4% 的 alpha 等价展开） */
+  --overlay-faint: rgba(17, 17, 17, .03);
+  --overlay-soft: rgba(17, 17, 17, .05);  /* nav hover = 微纱 */
+  --overlay-line: rgba(17, 17, 17, .09);  /* nav 分组线 */
+  --overlay-medium: rgba(17, 17, 17, .07);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（无框无点无光影，三根前倾墨条，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #111111;
+  --brand-bar-2: #111111;
+  --brand-bar-3: #111111;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #111111;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #111111; /* 侧栏当前项左缘墨条（primary-nav 激活下划线的等价物） */
+
+  /* ── 登录页（soft-cloud 舞台 + 白卡 + ink campaign 面） ── */
+  --login-bg: #f5f5f5;   /* 登录舞台 = soft-cloud（「产品置于灰 studio 上」的语言） */
+  --login-shell-border: #cacacb;
+  --login-shell-shadow: none;  /* 零投影 */
+  --login-showcase-bg: #111111; /* showcase = ink campaign tile 面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .06); /* 无底纹，见片段隐藏 */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* signal 三条 = 白（同 brand-mark 前倾条） */
+  --login-kicker: rgba(255, 255, 255, .6);
+  --login-heading: #ffffff;     /* hero 标题白字（巨型 condensed 全大写见片段） */
+  --login-copy: rgba(255, 255, 255, .72);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .16);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: rgba(255, 255, 255, .85);
+  --login-preview-dot-soft: rgba(255, 255, 255, .35);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .88);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .16);
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: rgba(255, 255, 255, .55);
+  --login-card-kicker: #707072; /* 白卡侧 eyebrow = mute */
+  --login-card-heading: #111111;
+  --login-card-copy: #707072;
+  --login-notice-border: rgba(17, 81, 255, .3); /* info 通知 = 蓝薄纱 + 发丝线 */
+  --login-notice-bg: #f0f4ff;
+  --login-notice-ink: #39393b;
+  --login-label: #39393b;       /* 表单标签 = charcoal 500（表单规格缺失，按 caption 语言推导） */
+  --login-input-border: #cacacb;   /* hairline 控件边 */
+  --login-input-border-hover: #111111; /* search-pill-focused：聚焦墨边 */
+  --login-primary: #111111;        /* 主 CTA = Nike Black pill */
+  --login-primary-active: #111111;
+}
+
+/* ============================================================
+   nike 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="nike"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：黑白反转选区 / 2px 墨焦点边 / 链接 hover 下划线 ── */
+[data-theme="nike"] ::selection { background: #111111; color: #ffffff; }
+[data-theme="nike"] :focus-visible { outline-width: 2px; outline-offset: 2px; }
+[data-theme="nike"] a:hover { text-decoration: underline; text-underline-offset: 3px; }
+[data-theme="nike"] .workspace-nav a:hover,
+[data-theme="nike"] a.ant-btn:hover,
+[data-theme="nike"] .ant-pagination a:hover { text-decoration: none; }
+
+/* ── 按压反馈：tap-collapse（规格 button-primary-active「scale + opacity」签名）。
+      原值 scale(.5) 是 96px campaign CTA 的语言，管理台密集控件按等比弱化 ── */
+[data-theme="nike"] .ant-btn:not(:disabled):active { transform: scale(.96); opacity: .75; }
+[data-theme="nike"] .ant-switch,
+[data-theme="nike"] .ant-checkbox,
+[data-theme="nike"] .ant-radio { transition: transform .12s ease, opacity .12s ease; }
+[data-theme="nike"] .ant-switch:active,
+[data-theme="nike"] .ant-checkbox-wrapper:active .ant-checkbox,
+[data-theme="nike"] .ant-radio-wrapper:active .ant-radio { transform: scale(.92); }
+
+/* ── 字重法则：全站只有 400/500，无 bold（规格 字阶全 400/500） ── */
+[data-theme="nike"] .panel-heading h2,
+[data-theme="nike"] .detail-section h3 { font-weight: 500; }
+[data-theme="nike"] .business-outcomes__card > strong,
+[data-theme="nike"] .ratio-card > strong,
+[data-theme="nike"] .codex-metric > strong,
+[data-theme="nike"] .metric-matrix strong { font-weight: 500; }
+[data-theme="nike"] .codex-token-ledger strong,
+[data-theme="nike"] .configuration-status-rail > div > strong,
+[data-theme="nike"] .configuration-summary-grid strong { font-weight: 500; }
+[data-theme="nike"] .brand-block strong,
+[data-theme="nike"] .login-page__brand strong { font-weight: 500; }
+[data-theme="nike"] .login-page__card h1,
+[data-theme="nike"] .login-page__card .ant-form-item-label > label { font-weight: 500; }
+
+/* ── 排版气势（迁移指令）：eyebrow / kicker 全大写小签 + panel 标题
+      全大写 condensed 负字距（Futura ND 展示层向管理台的迁移） ── */
+[data-theme="nike"] .page-heading__eyebrow,
+[data-theme="nike"] .panel-kicker,
+[data-theme="nike"] .section-label { color: var(--mute); font: 500 10px/1.4 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+[data-theme="nike"] .panel-heading h2,
+[data-theme="nike"] .detail-section h3 { font-family: var(--font-display); text-transform: uppercase; letter-spacing: -.01em; }
+[data-theme="nike"] .business-outcomes__card > strong,
+[data-theme="nike"] .ratio-card > strong,
+[data-theme="nike"] .codex-metric > strong,
+[data-theme="nike"] .metric-matrix strong { font-family: var(--font-display); letter-spacing: -.01em; }
+/* context-bar 页标题：15px 承位保留 sans（CJK 与 condensed 混排会碎），
+   只做全大写 + 500（先例：cursor/tesla 同名补正） */
+[data-theme="nike"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: uppercase; }
+
+/* ── chrome 去 mono 化：Nike 全系统无等宽字（caption 一律 sans 500） ── */
+[data-theme="nike"] .brand-block span { font: 500 11px/1.2 var(--font-sans); letter-spacing: .1em; }
+[data-theme="nike"] .nav-caption,
+[data-theme="nike"] .nav-group-title { font: 500 10px/1.2 var(--font-sans); letter-spacing: .14em; }
+[data-theme="nike"] .business-outcomes__card > small,
+[data-theme="nike"] .ratio-card__sample,
+[data-theme="nike"] .codex-metric > span,
+[data-theme="nike"] .codex-token-ledger span { font-family: var(--font-sans); }
+
+/* ── 侧栏：当前项 = 墨字 + 墨左缘条，无底色填充（primary-nav 激活 = 下划线无填充的等价物） ── */
+[data-theme="nike"] .workspace-nav a { border-radius: 0; }
+[data-theme="nike"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: transparent; font-weight: 500; }
+[data-theme="nike"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：三根前倾（skewX）墨条 + 上升高度 38/68/100%，
+      去框去点去光影 —— swoosh 的「前倾加速」抽象（克制装饰） ── */
+[data-theme="nike"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="nike"] .brand-mark span { border-radius: 0; background: #111111; box-shadow: none; transform: skewX(-12deg); }
+[data-theme="nike"] .brand-mark span:nth-child(1) { height: 38%; opacity: 1; }
+[data-theme="nike"] .brand-mark span:nth-child(2) { height: 68%; }
+[data-theme="nike"] .brand-mark span:nth-child(3) { height: 100%; }
+[data-theme="nike"] .brand-mark::after { display: none; }
+
+/* ── repository-switcher：search-pill 几何（rounded.md 24px 在 32px 高上 ≈ pill） ── */
+[data-theme="nike"] .repository-switcher .ant-select-selector { border-radius: 9999px !important; }
+
+/* ── 表头：白底 + 发丝线底缘 + mute 标签（utility 条语言，无大写变换） ── */
+[data-theme="nike"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、方角、hairline-strong ── */
+[data-theme="nike"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="nike"] ::-webkit-scrollbar-thumb { border-radius: 0; background: var(--hairline-strong); }
+[data-theme="nike"] ::-webkit-scrollbar-thumb:hover { background: var(--mute); }
+[data-theme="nike"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="nike"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：ink campaign 面（无网格底纹）；
+      h2 = display-campaign 迁移（condensed 全大写、0.9 行高、负字距、
+      桌面 96px 按登录面板宽度等比收到 52px）；signal 同 brand-mark 前倾白条 ── */
+[data-theme="nike"] .login-page__showcase::before { display: none; }
+[data-theme="nike"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-size: 52px; font-weight: 500; line-height: .9; letter-spacing: -.01em; text-transform: uppercase; }
+[data-theme="nike"] .login-page__showcase-copy > span,
+[data-theme="nike"] .login-page__card-heading > span { font: 500 10px/1.4 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+[data-theme="nike"] .login-page__signal { background: transparent; box-shadow: none; }
+[data-theme="nike"] .login-page__signal span { border-radius: 0; background: #ffffff; transform: skewX(-12deg); }
+[data-theme="nike"] .login-page__signal span:nth-child(1) { height: 38%; }
+[data-theme="nike"] .login-page__signal span:nth-child(2) { height: 68%; }
+[data-theme="nike"] .login-page__signal span:nth-child(3) { height: 100%; }
+
+/* ── 登录卡片：白卡侧 h1 = condensed 全大写；输入对齐 search-pill 40px、
+      主 CTA 对齐 button-primary 48px 高（规格 触达规格） ── */
+[data-theme="nike"] .login-page__card h1 { font-family: var(--font-display); letter-spacing: -.01em; text-transform: uppercase; }
+[data-theme="nike"] .login-page__card .ant-input,
+[data-theme="nike"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+[data-theme="nike"] .login-page__card .ant-btn-primary { height: 48px; font-weight: 500; }

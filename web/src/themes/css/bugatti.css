@@ -1,0 +1,338 @@
+/* ============================================================
+   bugatti 主题令牌块 —— 规格驱动（bugatti 设计语言），
+   无参考实现；正文令牌表可直接取值，角色按 /
+   映射进 162 令牌超集。
+   Bugatti 设计语言（纯黑极简奢侈品）：
+   - 纯黑画布 #000000（无浅色模式）；提升阶梯
+     #000000 → surface-soft #0d0d0d（表/密数据）→ 卡 #141414
+     → 嵌套/浮层 #1f1f1f；json 凹陷面无法比纯黑更深 → 保持 #000000，
+     靠 hairline-json 勾边（推导取舍）
+   - 三体分立：Display（标题/数值，大写宽字距）/ Text Regular（衬线正文）/
+     Monospace（按钮/标签/导航）——字重一律 400，无 bold
+   - 白即品牌主色（primary #ffffff / on-primary #000000）；
+     唯一非单色 = 冰蓝链接 #c3d9f3，只落在链接（焦点一律白，
+     规格输入 focus「thickens to white」）
+   - 语义：warning #d4a017 / success #5fa657 直译；error 规格缺位 →
+     #c0584f 推导（与 success 同明度的去饱和红砖，见 slots.ts 注）
+   - 发丝线双轨：#262626 主分隔 / #3a3a3a 强线（输入底线/滚动条/虚线）
+   - 圆角二值：除按钮药丸外一切 0px；零阴影零渐变零装饰，
+     hover 覆盖一律反转为聚光白纱（黑雾在黑底不可见，照 lamborghini 先例）
+   骨架表达不了的形态（brand-mark 三 span 白色方角碑条、透明描边药丸按钮、
+   纪念碑式大写排版、下划线式登录输入、暗色滚动条/selection）见块后片段。
+   ============================================================ */
+[data-theme="bugatti"] {
+  color-scheme: dark;
+
+  /* ── Typography（规格三体分立：Display 标题 / Text Regular 衬线正文 / Monospace 按钮与标签） ── */
+  --font-sans: 'Bugatti Text Regular', Garamond, Georgia, 'Times New Roman', serif; /* 正文 = 衬线（规格「literary, considered, slow-reading prose」；Garamond 为规格回退栈） */
+  --font-mono: 'Bugatti Monospace', ui-monospace, 'SF Mono', 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Bugatti Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 纪念碑式展示字（大写宽字距见片段） */
+
+  /* ── Radius（规格二值刻度：除按钮药丸 9999px 外一切 0px「engineered, not designed」） ── */
+  --radius-xs: 0px;      /* 图标提示 focus 圆角 = 零 */
+  --radius-soft: 0px;    /* 登录预览小色块 = 零（规格照片/卡 0px） */
+  --radius-sm: 0px;      /* 内嵌小块 = 零 */
+  --radius-md: 0px;      /* 行卡 = 零 */
+  --radius-lg: 0px;      /* 指标卡 = 零（规格「cards completely sharp」） */
+  --radius-xl: 0px;      /* 面板 = 零 */
+  --radius-brand: 0px;   /* brand-mark = 方角碑条（形态见片段） */
+  --radius-pill: 0px;    /* 迷你徽标亦方角（规格「no rounded corners outside buttons」；按钮药丸走 antd Button/片段） */
+  --radius-panel: 0px;   /* 登录外壳 = 零 */
+
+  /* ── Canvas & surfaces（海拔 = 明度阶梯；#000000 → #0d0d0d → #141414 → #1f1f1f） ── */
+  --canvas: #000000;                 /* Pure Black：主导背景（规格「default page floor across every surface」） */
+  --canvas-soft: #0d0d0d;            /* 嵌面卡/表头 = Surface Soft（规格「spec table rows and dense data sections」） */
+  --canvas-card: #141414;            /* 面板/卡 = Surface Card（规格「barely-different-from-black」） */
+  --canvas-dark: #000000;            /* json pre 凹陷面：纯黑已到底，保黑靠 hairline-json 勾边（推导） */
+  --surface-sidebar: #000000;        /* 规格 top-nav/footer 透明浮于画布（no fill） */
+  --surface-bar: rgba(0, 0, 0, .88);
+  --surface-inset: #1f1f1f;          /* 卡内交互/内嵌面 = Surface Elevated（规格「nested cards」） */
+  --surface-matrix: #0d0d0d;         /* 密数据矩阵 = Surface Soft */
+  --surface-tint: rgba(255, 255, 255, .04); /* 表行 hover = 聚光白纱（黑雾不可见，推导反转） */
+  --surface-rail: #1f1f1f;           /* 配置状态轨 = 面板内嵌面 */
+  --surface-detail: #141414;         /* 详情卡 = Surface Card */
+  --surface-chip: #1f1f1f;
+  --surface-legacy: #1f1f1f;
+  --surface-draft: #0d0d0d;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担 */
+  --surface-json-bar: #0d0d0d;       /* json 头条 = Surface Soft 凹一档 */
+  --tooltip-bg: #1f1f1f;             /* 浮层 = Surface Elevated（推导：卡面上仍可见的提升阶） */
+
+  /* ── Ink & text ladder（四级：on-dark #ffffff / body #cccccc / muted #999999 / muted-soft #666666） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #ffffff;
+  --ink-data: #ffffff;
+  --ink-field: #ffffff;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #999999;  /* 密钥标签 = muted（次级可读） */
+  --ink-chip: #cccccc;    /* chip 文字 = body 灰白 */
+  --body: #cccccc;                   /* 规格：默认正文「slightly cooler than pure white」 */
+  --body-alt: #cccccc;
+  --body-soft: #999999;              /* 占比卡小注 = muted */
+  --mute: #999999;                   /* 规格：日期/页脚/caption 主静音色 */
+  --mute-deep: #cccccc;              /* 暗底上「更深」= 更亮：标签比 mute 高半档（照 spotify 思路） */
+  --mute-inline: #999999;
+  --mute-caption: #999999;
+  --mute-intro: #999999;
+  --mute-terse: #999999;
+  --mute-quiet: #999999;
+  --mute-soft: #999999;
+  --mute-dim: #999999;
+  --mute-draft: #999999;
+  --mute-json: #999999;
+  --mute-matrix: #999999;
+  --faint: #666666;       /* Muted Soft：规格「very-secondary text（legal/copyright）」 */
+  --faint-alt: #666666;
+  --faint-soft: #666666;
+  --faint-ghost: #666666;
+  --faint-hint: #666666;
+  --faint-meta: #666666;
+  --faint-note: #666666;
+  --faint-empty: #666666;
+  --on-dark: #ffffff;     /* 深块（tooltip/json bar）文字 */
+  --on-dark-soft: #cccccc;
+  --on-dark-faint: #999999;
+
+  /* ── Primary / link / focus（白即主色；冰蓝只留链接；焦点一律白） ── */
+  --primary: #ffffff;                /* 白 = 唯一品牌色（规格 primary #ffffff） */
+  --primary-active: #e6e6e6;         /* 按压 = body-strong 灰白阶（推导：白无法压深，退一格） */
+  --on-primary: #000000;             /* 白底黑字（规格 on-primary #000000） */
+  --link: #c3d9f3;                   /* 冰蓝 = 系统唯一非单色（Link） */
+  --link-hover: #ffffff;             /* hover 提亮到白（冰蓝稀缺，不加深） */
+  --focus-ring: rgba(255, 255, 255, .45); /* 焦点 = 白（规格输入 focus「thickens to white」） */
+  --primary-veil: rgba(255, 255, 255, .06); /* 激活导航 = 白纱（黑雾不可见，推导反转） */
+
+  /* ── Semantic（warning/success 规格直译；error/info-soft 推导） ── */
+  --success: #5fa657;                      /* 规格：order confirmation 绿 */
+  --success-halo: 0 0 0 4px rgba(95, 166, 87, .16); /* 推导：随 success 的白纱级 halo */
+  --warning: #d4a017;                      /* 规格：technical-warning 金 */
+  --warning-soft: rgba(212, 160, 23, .14);
+  --error: #c0584f;                        /* 推导：规格 error 缺位，success 同明度去饱和红砖 */
+  --error-deep: #99453e;                   /* 推导：按压深红 */
+  --info: #c3d9f3;                         /* 冰蓝 = info 同源（唯一非单色） */
+  --info-soft: rgba(195, 217, 243, .12);
+
+  /* ── Hairlines & bars（#262626 主分隔 / #3a3a3a 强线；色条一律无彩） ── */
+  --hairline: #262626;        /* 画布/表行主分隔（规格「visible but quiet」） */
+  --hairline-soft: #202020;   /* 推导：卡面上比 #262626 再近隐半档的最弱分隔 */
+  --hairline-strong: #3a3a3a; /* 输入底线/滚动条/空态虚线（规格强分隔线） */
+  --hairline-card: #262626;   /* 卡外线近隐：明度分层承担（规格卡无边框） */
+  --hairline-inset: #262626;
+  --hairline-mid: #262626;
+  --hairline-rail: #262626;
+  --hairline-codex: #262626;
+  --hairline-detail: #262626;
+  --hairline-json: #262626;
+  --hairline-dashed: #3a3a3a; /* 空态虚线需要可见 = 强线 */
+  --hairline-legacy: #3a3a3a;
+  --hairline-row: #262626;    /* 表行分隔 = 规格表行发丝线 */
+  --hairline-draft: #3a3a3a;
+  --bar-value: #3a3a3a;       /* 左色条一律无彩（全单色纪律） */
+  --bar-matrix: #3a3a3a;
+  --bar-summary: #3a3a3a;
+  --bar-usage: #ffffff;       /* 推导：用量进度 = 黑画布上的白电压（白即主色） */
+
+  /* ── Overlays & shadows（黑画布上黑雾不可见 → 反转为聚光白纱；零阴影） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: rgba(255, 255, 255, .05);  /* 导航 hover = 白纱 */
+  --overlay-line: rgba(255, 255, 255, .06);
+  --overlay-medium: rgba(255, 255, 255, .08);
+  --shadow-panel: none;  /* 零阴影（「no shadows, no gradients」） */
+
+  /* ── brand-mark（透明框无 chrome + 三根白色方角碑条；形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffffff;   /* 碑条三根全白（全单色；wordmark 即品牌） */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;  /* 角标隐藏（规格「no badge, no emblem」；片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #ffffff;  /* 当前导航指示 = 白（白即主色） */
+
+  /* ── 登录页（纯黑画布 + #141414 展示板 + 透明描边药丸 CTA + 下划线输入） ── */
+  --login-bg: #000000;
+  --login-shell-border: #262626;
+  --login-shell-shadow: none;
+  --login-showcase-bg: #141414;
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #999999;
+  --login-signal-bg: transparent;   /* signal = brand-mark 同款白碑条（见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: #999999;          /* kicker = Monospace 大写宽字距静音标签（规格 category-tag 语汇） */
+  --login-heading: #ffffff;
+  --login-copy: #cccccc;            /* 正文 = body 灰白 */
+  --login-preview-bg: #0d0d0d;      /* 展示板内嵌预览 = Surface Soft 凹一档 */
+  --login-preview-border: #262626;
+  --login-preview-shadow: none;
+  --login-preview-divider: #262626;
+  --login-preview-dot: #5fa657;     /* 在线状态点 = 规格 success 绿（推导） */
+  --login-preview-dot-soft: #999999;
+  --login-preview-label: #999999;
+  --login-preview-row-line: #262626;
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #c3d9f3; /* 在播 chip = 冰蓝字冰蓝染（唯一非单色的合法场景） */
+  --login-preview-chip-bg: rgba(195, 217, 243, .12);
+  --login-preview-bar: #ffffff;     /* 进度条 = 白（方角见片段） */
+  --login-foot: #666666;            /* 页脚版权行 = Muted Soft（规格版权行角色） */
+  --login-card-kicker: #999999;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #999999;
+  --login-notice-border: rgba(195, 217, 243, .3); /* 公告条 = 冰蓝淡染 */
+  --login-notice-bg: rgba(195, 217, 243, .08);
+  --login-notice-ink: #cccccc;
+  --login-label: #ffffff;
+  --login-input-border: #3a3a3a;    /* 规格 text-input：仅 hairline-strong 下划线 */
+  --login-input-border-hover: #ffffff; /* 规格：focus 加粗转白 */
+  --login-primary: #ffffff;          /* 白色 CTA（黑字走 antd colorTextLightSolid；透明药丸形态见片段） */
+  --login-primary-active: #e6e6e6;
+}
+
+/* ============================================================
+   bugatti 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="bugatti"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 白色聚光选区：黑底上唯一的整块白（墨反黑） ── */
+[data-theme="bugatti"] ::selection { background: #ffffff; color: #000000; }
+
+/* ── 系统滚动条：细、hairline-strong #3a3a3a、方角（零圆角纪律） ── */
+[data-theme="bugatti"] * { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+[data-theme="bugatti"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="bugatti"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="bugatti"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #3a3a3a; }
+[data-theme="bugatti"] ::-webkit-scrollbar-thumb:hover { background: #666666; }
+
+/* ── 按钮词汇：Bugatti Monospace 大写 2.5px 宽字距、字重 400、药丸圆角 ── */
+[data-theme="bugatti"] .ant-btn:not(.ant-btn-link) {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 2.5px;
+  border-radius: 9999px;
+}
+
+/* ── 主 CTA 签名：透明底 + 1px 白描边（规格「transparent pill IS the button」）；
+     hover/按压反相为白底黑字（primary/on-primary 令牌对的合法翻转，规格只记
+     Default 与 Active 两态） ── */
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous) {
+  background: transparent;
+  border-color: #ffffff;
+  color: #ffffff;
+}
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):hover,
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):active,
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):focus-visible {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+}
+
+/* ── 纪念碑式排版（本主题排版签名）：标题/数值一律 Bugatti Display 大写、
+     字重 400、宽字距 2–4px（取 .08em 中值；强调靠字距不靠粗细） ── */
+[data-theme="bugatti"] .brand-block strong,
+[data-theme="bugatti"] .panel-heading h2,
+[data-theme="bugatti"] .business-outcomes__card > strong,
+[data-theme="bugatti"] .ratio-card__title,
+[data-theme="bugatti"] .ratio-card > strong,
+[data-theme="bugatti"] .codex-metric > strong,
+[data-theme="bugatti"] .codex-token-ledger strong,
+[data-theme="bugatti"] .metric-matrix strong,
+[data-theme="bugatti"] .configuration-status-rail > div > strong,
+[data-theme="bugatti"] .configuration-summary-grid strong,
+[data-theme="bugatti"] .configuration-step-copy h2,
+[data-theme="bugatti"] .configuration-summary h2,
+[data-theme="bugatti"] .configuration-inline-title h3,
+[data-theme="bugatti"] .connector-configuration-step__heading h3,
+[data-theme="bugatti"] .repo-row strong,
+[data-theme="bugatti"] .intent-row strong,
+[data-theme="bugatti"] .duration-card strong,
+[data-theme="bugatti"] .duration-section__heading strong,
+[data-theme="bugatti"] .value-list__title,
+[data-theme="bugatti"] .connector-watch__item strong,
+[data-theme="bugatti"] .detail-section h3,
+[data-theme="bugatti"] .audit-json > summary,
+[data-theme="bugatti"] .login-page__brand strong,
+[data-theme="bugatti"] .login-page__showcase-copy h2,
+[data-theme="bugatti"] .login-page__card h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* ── 页头 eyebrow / 面板 kicker：caption-uppercase 语汇（Monospace 大写 2px 字距、muted） ── */
+[data-theme="bugatti"] .page-heading__eyebrow,
+[data-theme="bugatti"] .panel-kicker,
+[data-theme="bugatti"] .section-label {
+  color: var(--mute);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+/* ── 导航：nav-link 语汇（Monospace 大写宽字距、静音白）；激活 = 白无底色 ── */
+[data-theme="bugatti"] .workspace-nav a {
+  color: var(--mute);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+}
+[data-theme="bugatti"] .workspace-nav a[aria-current="page"] { color: #ffffff; background: transparent; }
+[data-theme="bugatti"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── 表头：caption-uppercase 语汇（Monospace 大写、muted、无粗体） ── */
+[data-theme="bugatti"] .admin-table .ant-table-thead > tr > th {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+}
+
+/* ── brand-mark：无 chrome 框 + 三根白色方角碑条（wordmark 的抽象；无徽记） ── */
+[data-theme="bugatti"] .brand-mark { gap: 3px; }
+[data-theme="bugatti"] .brand-mark span { width: 4px; border-radius: 0; opacity: 1; box-shadow: none; }
+[data-theme="bugatti"] .brand-mark::after { display: none; }
+
+/* ── 详情格：卡内嵌面回落 Surface Elevated #1f1f1f（明度分层） ── */
+[data-theme="bugatti"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录输入：规格 text-input —— 透明底、仅 hairline-strong 下划线、方角、
+     focus 加粗转白 ── */
+[data-theme="bugatti"] .login-page .ant-input,
+[data-theme="bugatti"] .login-page .ant-input-affix-wrapper {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 1px solid #3a3a3a;
+  border-radius: 0;
+}
+[data-theme="bugatti"] .login-page .ant-input::placeholder { color: #999999; }
+[data-theme="bugatti"] .login-page .ant-input:focus,
+[data-theme="bugatti"] .login-page .ant-input-affix-wrapper:focus,
+[data-theme="bugatti"] .login-page .ant-input-affix-wrapper-focused {
+  border-bottom-color: #ffffff;
+}
+
+/* ── 登录页：signal = brand-mark 同款方角碑条；预览进度条方角 ── */
+[data-theme="bugatti"] .login-page__signal span { border-radius: 0; box-shadow: none; }
+[data-theme="bugatti"] .login-page__preview-row strong { border-radius: 0; }

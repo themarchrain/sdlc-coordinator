@@ -19,6 +19,7 @@ export const supabaseSwatches: ThemeSwatches = {
 export const supabaseTheme: ThemeDefinition = {
   id: 'supabase',
   label: 'Supabase',
+  family: 'brand',
   isDark: false,
   chromeColor: '#ffffff',
   swatches: supabaseSwatches,

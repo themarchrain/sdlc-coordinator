@@ -1,0 +1,303 @@
+/* ============================================================
+   playstation 主题令牌块 —— 规格驱动（playstation 设计语言，
+   frontmatter 令牌表），无参考实现；令牌表 + 正文色值按角色映射进
+   162 令牌超集。
+   PlayStation 三面营销系统（黑/白/PS Blue 章节交替），管理台取白亮轨：
+   - 白亮轨三面：--canvas #ffffff（canvas-light）→ 冷蓝染次级卡
+     #f5f7fa（surface-card，8px 卡系统）→ 软面 #f3f3f3（surface-soft）
+   - PS Blue 一族：--primary #0070d1（universal primary CTA）/
+     pressed #0064b7（hover 位）/ active #004d8d；link = link-light #0064b7 字面值
+   - 文字阶梯坍缩为亮面四级：ink #000000 / body-light rgba(0,0,0,.6)
+     （系统默认段落色，字面值）/ mute-light #6b6b6b / ash-light #cccccc
+     （禁用档；faint 族派生墨 40% 合成 #999999 维持层级）
+   - 黑章节面（canvas-dark #000000 / elevated #121314 / card #181818）
+     只保留给 json 深卡、tooltip 与登录 showcase（暗 hero 带）；
+     暗面文字 = on-dark #ffffff / body-dark .7 / mute-dark .55 字面值
+   - 发丝线双轨：hairline-light #f3f3f3（1px 分隔线）/ ash-light #cccccc
+     （输入 1px 边 = 强线档）
+   - 语义：规格 warning #c81b3a 实为校验/破坏性红相 → error；
+     warning 琥珀与 success 绿规格未给 → 派生 #97650d / #1f7a3d
+   - commerce 橙 / PS Plus 金渐变 / marathon 黄按规格保留条款不进管理台铬
+   - 平坦系统：静止卡零影；浮层唯一 0 4px 12px rgba(0,0,0,.16)
+   骨架表达不了的形态（brand-mark 手柄四符号重绘、SST 感 weight-300
+   展示字阶梯、药丸导航、登录暗 hero 带与 signal）见块后片段。
+   ============================================================ */
+[data-theme="playstation"] {
+  /* ── Typography ───────────────────────────── */
+  /* PlayStation SST 专有（禁外部加载）→ 规格回退 sst/Arial/Helvetica；
+     替代栈：body 切 Inter（规格推荐），display 切 Roboto（Light 300 观感） */
+  --font-sans: 'PlayStation SST', SST, Inter, Arial, Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-display: 'PlayStation SST', SST, Roboto, Inter, Arial, Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 规格 Don't「不引入 monospace」——但骨架 json 卡 DOM 固定消费 --font-mono，保留默认等宽栈 */
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+
+  /* ── Radius（规格 rounded 刻度：0 结构面 / 4 输入 / 8 卡 / 16 稀有容器 / 9999 药丸） ── */
+  --radius-xs: 2px;      /* 微件近方角（规格无对应，推导最小档） */
+  --radius-soft: 4px;    /* 登录预览小色块 = rounded.sm 输入档 */
+  --radius-sm: 4px;      /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 8px;      /* 行卡 = rounded.md 次级卡系统 */
+  --radius-lg: 8px;      /* 指标卡 = 8px 卡系统 */
+  --radius-xl: 8px;      /* 面板 = 8px 卡系统 */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 药丸词汇 */
+  --radius-pill: 9999px; /* 迷你徽标 = badge-info 全圆药丸 */
+  --radius-panel: 16px;  /* 登录外壳 = rounded.lg 稀有大容器（dialog 卡档） */
+
+  /* ── Canvas & surfaces（白亮轨 + 冷蓝染次级卡 + 黑章节深岛） ── */
+  --canvas: #ffffff;             /* canvas-light：白亮轨画布 */
+  --canvas-soft: #f3f3f3;        /* surface-soft：软面/分隔带 */
+  --canvas-card: #ffffff;        /* feature-card 白卡（亮轨上靠发丝线分层） */
+  --canvas-dark: #121314;        /* json pre 凹陷面 = surface-dark-elevated（黑章节内嵌面） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白亮轨（亮轨工具面） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f5f7fa;      /* 内嵌面 = surface-card 冷蓝染 */
+  --surface-matrix: #f5f7fa;
+  --surface-tint: #f5f7fa;       /* 行 hover = 冷蓝染 */
+  --surface-rail: #f5f7fa;
+  --surface-detail: #f5f7fa;
+  --surface-chip: #f5f7fa;
+  --surface-legacy: #f5f7fa;
+  --surface-draft: #f3f3f3;      /* draft 沉一档 = surface-soft */
+  --surface-empty: #f5f7fa;
+  --surface-json-bar: #181818;   /* json 头条 = surface-dark-card（黑章节卡面） */
+  --tooltip-bg: #121314;         /* ink-deep 近黑反转面 */
+
+  /* ── Ink & text ladder（坍缩为亮面四级 + 暗面白阶） ── */
+  --ink: #000000;          /* ink：标题/主数据（亮轨主墨） */
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #121314;    /* 标准标签 = ink-deep 近黑（微暖一档） */
+  --ink-row: #000000;
+  --ink-list: rgba(0, 0, 0, .6); /* value-list li = body-light 段落级 */
+  --ink-data: #000000;
+  --ink-field: #121314;
+  --ink-rail: #121314;
+  --ink-rail-value: #000000;
+  --ink-secret: #6b6b6b;   /* secret-label = mute-light 说明档 */
+  --ink-chip: #121314;     /* duration 数值 = 近黑 */
+  --body: rgba(0, 0, 0, .6); /* body-light：系统默认段落色（字面值） */
+  --body-alt: rgba(0, 0, 0, .6);
+  --body-soft: #6b6b6b;    /* mute-light：占比卡小注 */
+  --mute: #6b6b6b;         /* mute-light：metadata 档 */
+  --mute-deep: rgba(0, 0, 0, .6); /* 区块头标签抬回段落级 */
+  --mute-inline: #6b6b6b;
+  --mute-caption: #6b6b6b;
+  --mute-intro: rgba(0, 0, 0, .6); /* 配置导语 = 段落级 */
+  --mute-terse: #6b6b6b;
+  --mute-quiet: #6b6b6b;
+  --mute-soft: #6b6b6b;
+  --mute-dim: #6b6b6b;
+  --mute-draft: #6b6b6b;
+  --mute-json: rgba(229, 229, 229, .65); /* json 深头条上的字（暗面白阶推导） */
+  --mute-matrix: #6b6b6b;
+  --faint: #999999;        /* 派生：墨 40% 合成（body-light alpha 阶梯下探一档） */
+  --faint-alt: #999999;
+  --faint-soft: #999999;
+  --faint-ghost: #999999;
+  --faint-hint: #999999;
+  --faint-meta: #999999;
+  --faint-note: #999999;
+  --faint-empty: #cccccc;  /* ash-light：禁用态文字（规格字面值） */
+  --on-dark: #ffffff;      /* on-dark：黑章节主文字 */
+  --on-dark-soft: rgba(255, 255, 255, .7); /* body-dark 字面值 */
+  --on-dark-faint: rgba(229, 229, 229, .55); /* mute-dark 字面值 */
+
+  /* ── Primary / link / focus（PS Blue 一族；蓝承载每颗 CTA） ── */
+  --primary: #0070d1;    /* PS Blue：universal primary CTA */
+  --primary-active: #004d8d; /* primary-active 字面值（按压深档） */
+  --on-primary: #ffffff;
+  --link: #0064b7;       /* link-light 字面值（同 primary-pressed） */
+  --link-hover: #004d8d;
+  --focus-ring: rgba(0, 112, 209, .28); /* 派生：蓝 28% 焦点环（规格聚焦信号 = 2px 蓝边） */
+  --primary-veil: rgba(0, 112, 209, .08); /* 当前导航 = 蓝 8% 薄纱 */
+
+  /* ── Semantic（warning 红相字面值归 error；琥珀/绿派生） ── */
+  --success: #1f7a3d;    /* 派生：规格无 success，标准语义绿克制化 */
+  --success-halo: 0 0 0 4px rgba(31, 122, 61, .14);
+  --warning: #97650d;    /* 派生：规格无真琥珀警示（warning #c81b3a 为红相归 error） */
+  --warning-soft: rgba(151, 101, 13, .12);
+  --error: #c81b3a;      /* 规格 warning 字面值（validation errors / destructive） */
+  --error-deep: #a0152e; /* 派生：压深一档 */
+  --info: #0070d1;       /* info = PS Blue（badge-info 同源） */
+  --info-soft: rgba(0, 112, 209, .09); /* 蓝 9% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（f3f3f3 分隔 / cccccc 控件边 + 蓝数据墨） ── */
+  --hairline: #f3f3f3;         /* hairline-light 字面值 */
+  --hairline-soft: #f3f3f3;
+  --hairline-strong: #cccccc;  /* ash-light：输入 1px 边（强线档） */
+  --hairline-card: #f3f3f3;
+  --hairline-inset: #f3f3f3;
+  --hairline-mid: #f3f3f3;
+  --hairline-rail: #f3f3f3;
+  --hairline-codex: #f3f3f3;
+  --hairline-detail: #f3f3f3;
+  --hairline-json: rgba(229, 229, 229, .2); /* hairline-dark 字面值（json 深岛边） */
+  --hairline-dashed: #cccccc;  /* 空态虚线 = 控件边一档保可见 */
+  --hairline-legacy: #cccccc;
+  --hairline-row: #f3f3f3;
+  --hairline-draft: #cccccc;
+  --bar-value: #cccccc;   /* value-list 左规线 = ash-light 中性 */
+  --bar-matrix: #cccccc;
+  --bar-summary: #0064b7; /* 摘要左规线 = pressed 蓝次级数据墨 */
+  --bar-usage: #0070d1;   /* 用量轨 = PS Blue（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows（平坦系统：静止卡零影；浮层 Level 2 字面值） ── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: rgba(0, 0, 0, .04);  /* nav hover = 微高亮 */
+  --overlay-line: rgba(0, 0, 0, .06);  /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .07);
+  --shadow-panel: 0 4px 12px rgba(0, 0, 0, 0); /* 静止卡零影（零值而非 none，兼容多值拼接） */
+
+  /* ── brand-mark（无框四符号：△ ○ ✕ □ 手柄glyph 墨色重绘，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #121314;   /* 三角 = ink-deep 墨（quiet chrome：不引未入档的glyph彩） */
+  --brand-bar-2: transparent; /* 圆 = 描边glyph（边色见片段） */
+  --brand-bar-3: #121314;   /* 叉 = ink-deep 墨 */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent; /* 角标重绘为第四符号 □（描边，见片段） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #0070d1; /* 当前导航指示条 = PS Blue */
+
+  /* ── 登录页（白卡 + 黑章节暗 hero 带：三面系统的一屏缩影） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #f3f3f3;
+  --login-shell-shadow: 0 4px 12px rgba(0, 0, 0, 0); /* 平坦系统零影 */
+  --login-showcase-bg: #000000;  /* showcase = canvas-dark 全黑 hero 带 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(229, 229, 229, .05); /* 无装饰铬（规格无网格），近隐并见片段隐藏 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .7);  /* body-dark 字面值 */
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(229, 229, 229, .2); /* hairline-dark 字面值 */
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* signal 四符号 = 白重绘（同 brand-mark） */
+  --login-kicker: #53b1ff;      /* link-dark 字面值（暗底亮蓝小签） */
+  --login-heading: #ffffff;     /* hero 标题白字（display 300 见片段） */
+  --login-copy: rgba(255, 255, 255, .7);
+  --login-preview-bg: #121314;  /* 暗带内嵌预览卡 = surface-dark-elevated */
+  --login-preview-border: rgba(229, 229, 229, .2);
+  --login-preview-shadow: 0 4px 12px rgba(0, 0, 0, 0);
+  --login-preview-divider: rgba(229, 229, 229, .14);
+  --login-preview-dot: #53b1ff;      /* 数据点 = link-dark */
+  --login-preview-dot-soft: rgba(229, 229, 229, .35);
+  --login-preview-label: rgba(229, 229, 229, .55); /* mute-dark 字面值 */
+  --login-preview-row-line: rgba(229, 229, 229, .12);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #53b1ff; /* chip = 亮蓝字（暗底 badge-info 变体） */
+  --login-preview-chip-bg: rgba(83, 177, 255, .14);
+  --login-preview-bar: #53b1ff;      /* 预览进度条 = link-dark（暗底蓝数据墨） */
+  --login-foot: rgba(229, 229, 229, .55);
+  --login-card-kicker: #6b6b6b; /* 白卡侧 eyebrow = mute-light */
+  --login-card-heading: #000000;
+  --login-card-copy: rgba(0, 0, 0, .6);
+  --login-notice-border: rgba(0, 112, 209, .28); /* info 通知 = 蓝薄纱 + 发丝线 */
+  --login-notice-bg: #e8f2fb;  /* 蓝 9% 展开实底（与 antd colorInfoBg 同源） */
+  --login-notice-ink: rgba(0, 0, 0, .6);
+  --login-label: rgba(0, 0, 0, .6);
+  --login-input-border: #cccccc;   /* ash-light：text-input 1px 边字面值 */
+  --login-input-border-hover: #6b6b6b; /* mute-light 提亮一档 */
+  --login-primary: #0070d1;        /* 主 CTA = PS Blue 药丸 */
+  --login-primary-active: #004d8d;
+}
+
+/* ============================================================
+   playstation 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="playstation"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 蓝选区（PS Blue 的功能性使用） ── */
+[data-theme="playstation"] ::selection { background: rgba(0, 112, 209, .18); }
+
+/* ── 系统滚动条：细、ash-light、圆头（药丸词汇） ── */
+[data-theme="playstation"] * { scrollbar-width: thin; scrollbar-color: #cccccc transparent; }
+[data-theme="playstation"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="playstation"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="playstation"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #cccccc; }
+[data-theme="playstation"] ::-webkit-scrollbar-thumb:hover { background: #6b6b6b; }
+
+/* ── 药丸标签微字距：button-md 0.324px @14px ≈ .02em（规格「preserve tracking」） ── */
+[data-theme="playstation"] .ant-btn { letter-spacing: .02em; }
+
+/* ── SST 感 weight-300 展示字：display/heading 大字一律 300（规格「brand voice」）
+      + 0.1px 微字距 ≈ .005em（骨架默认 600–650） ── */
+[data-theme="playstation"] .brand-block strong,
+[data-theme="playstation"] .panel-heading h2,
+[data-theme="playstation"] .configuration-step-copy h2,
+[data-theme="playstation"] .configuration-summary h2,
+[data-theme="playstation"] .detail-section h3,
+[data-theme="playstation"] .connector-configuration-step__heading h3,
+[data-theme="playstation"] .login-page__brand strong,
+[data-theme="playstation"] .login-page__showcase-copy h2,
+[data-theme="playstation"] .login-page__card h1 { font-weight: 300; letter-spacing: .005em; }
+
+/* ── 数据/标签强档：heading-md 600（与 display 300 构成编辑部式字重反差） ── */
+[data-theme="playstation"] .business-outcomes__card > span,
+[data-theme="playstation"] .business-outcomes__card > strong,
+[data-theme="playstation"] .ratio-card__title,
+[data-theme="playstation"] .ratio-card > strong,
+[data-theme="playstation"] .codex-metric > strong,
+[data-theme="playstation"] .codex-token-ledger strong,
+[data-theme="playstation"] .configuration-status-rail > div > strong,
+[data-theme="playstation"] .configuration-summary-grid strong,
+[data-theme="playstation"] .repo-row strong,
+[data-theme="playstation"] .intent-row strong,
+[data-theme="playstation"] .duration-card strong,
+[data-theme="playstation"] .duration-section__heading strong,
+[data-theme="playstation"] .value-list__title,
+[data-theme="playstation"] .connector-watch__item strong,
+[data-theme="playstation"] .admin-table .ant-table-thead > tr > th,
+[data-theme="playstation"] .audit-json > summary { font-weight: 600; }
+
+/* ── eyebrow / kicker：sans 500 大写宽字距小签（caption/badge 语汇，蓝可读保留） ── */
+[data-theme="playstation"] .page-heading__eyebrow,
+[data-theme="playstation"] .panel-kicker,
+[data-theme="playstation"] .section-label { color: var(--mute); font: 500 10px/1.4 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="playstation"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 药丸导航：filter-pill 词汇延伸到侧栏项（非按钮不受 antd 管辖） ── */
+[data-theme="playstation"] .workspace-nav a { border-radius: 9999px; }
+
+/* ── brand-mark 重绘：手柄四符号 △ ○ ✕ □ —— 骨架三 span + 角点重绘为
+      三角(实)/圆(描边)/叉(实)/方(描边)，ink-deep 墨色（quiet chrome，
+      规格 glyph 彩色未入档不引入；两实两描呼应 DualShock 线刻语言） ── */
+[data-theme="playstation"] .brand-mark { align-items: center; justify-content: center; padding: 0; gap: 4px; }
+[data-theme="playstation"] .brand-mark span { box-shadow: none; }
+[data-theme="playstation"] .brand-mark span:nth-child(1) { width: 12px; height: 11px; border-radius: 0; opacity: 1; background: #121314; clip-path: polygon(50% 0, 0 100%, 100% 100%); }
+[data-theme="playstation"] .brand-mark span:nth-child(2) { width: 12px; height: 12px; border-radius: 50%; background: transparent; border: 2px solid #121314; }
+[data-theme="playstation"] .brand-mark span:nth-child(3) { width: 12px; height: 12px; border-radius: 0; background: #121314; clip-path: polygon(36% 0, 64% 0, 64% 36%, 100% 36%, 100% 64%, 64% 64%, 64% 100%, 36% 100%, 36% 64%, 0 64%, 0 36%, 36% 36%); }
+[data-theme="playstation"] .brand-mark::after { position: static; width: 11px; height: 11px; border-radius: 1px; background: transparent; border: 2px solid #121314; box-shadow: none; }
+@media (max-width: 760px) {
+  [data-theme="playstation"] .brand-mark { gap: 3px; }
+  [data-theme="playstation"] .brand-mark span:nth-child(1) { width: 9px; height: 8px; }
+  [data-theme="playstation"] .brand-mark span:nth-child(2) { width: 9px; height: 9px; }
+  [data-theme="playstation"] .brand-mark span:nth-child(3) { width: 9px; height: 9px; }
+  [data-theme="playstation"] .brand-mark::after { width: 8px; height: 8px; }
+}
+
+/* ── 登录 showcase：黑章节 hero 带（无装饰铬，网格底纹隐藏）；
+      h2 = display-lg 规格（44px 过大取 40px / 300 / 1.25 / 0.1px） ── */
+[data-theme="playstation"] .login-page__showcase::before { display: none; }
+[data-theme="playstation"] .login-page__showcase-copy h2 { font-size: 40px; line-height: 1.25; letter-spacing: .1px; }
+[data-theme="playstation"] .login-page__showcase-copy > span,
+[data-theme="playstation"] .login-page__card-heading > span { font: 500 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── 登录 signal：同 brand-mark 的四符号白重绘（暗带上的描边 hairline-dark 框） ── */
+[data-theme="playstation"] .login-page__signal { align-items: center; justify-content: center; padding: 0; gap: 4px; }
+[data-theme="playstation"] .login-page__signal span:nth-child(1) { width: 11px; height: 10px; border-radius: 0; background: #ffffff; clip-path: polygon(50% 0, 0 100%, 100% 100%); }
+[data-theme="playstation"] .login-page__signal span:nth-child(2) { width: 11px; height: 11px; border-radius: 50%; background: transparent; border: 2px solid #ffffff; }
+[data-theme="playstation"] .login-page__signal span:nth-child(3) { width: 11px; height: 11px; border-radius: 0; background: #ffffff; clip-path: polygon(36% 0, 64% 0, 64% 36%, 100% 36%, 100% 64%, 64% 64%, 64% 100%, 36% 100%, 36% 64%, 0 64%, 0 36%, 36% 36%); }
+
+/* ── 登录卡片：输入/主 CTA 对齐 44px 触达高（AAA 下沿，见 antd controlHeight 注） ── */
+[data-theme="playstation"] .login-page__card .ant-input,
+[data-theme="playstation"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="playstation"] .login-page__card .ant-btn-primary { height: 44px; }

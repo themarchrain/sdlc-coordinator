@@ -1,0 +1,282 @@
+/* ============================================================
+   mintlify 主题令牌块 —— 规格驱动（mintlify 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Mintlify 设计语言（亮轨 · 现代文档站）：
+   - 画布全白 #ffffff，卡也白，靠 #e5e5e5 发丝线分隔；surface #f7f7f7
+     只做侧栏激活/搜索静止/内嵌面；json pre = surface-code #1c1c1e
+     深代码面（暗变体 canvas-dark #0a0a0a 留给 promo/tooltip）
+   - 黑药丸 CTA 是主导交互（--primary #0a0a0a，pressed 拾到 charcoal
+     #1c1c1e）；Mint 绿 #00d4a4 一族只做强调：激活指示条、focus 环、
+     用量进度、brand-mark，绝不做正文色
+   - 文字阶梯 = 原文：Ink #0a0a0a / Charcoal #1c1c1e /
+     Slate #3a3a3c / Steel #5a5a5c / Stone #888888 / Muted #a8a8aa
+   - 语义三色原生：annotate 绿 #1ba673 / warn 琥珀 #c37d0d / error 红
+     #d45656；info 走 brand-tag 引用蓝 #3772cf（文档引用色）
+   - link = 引用蓝（规格 button-link 本体是墨色，骨架全局锚点角色
+     借用「引用色」以保证可辨识，推导位）
+   - 圆角纪律：药丸 9999（按钮/徽章）、卡 12（rounded.lg）、紧凑件 8/6/4
+   - 海拔克制：Level 2 卡 0 4px 12px 8% / Level 3 深扩散只给浮层
+   - 渐变装饰只进展示位：登录 showcase = startups hero 深青→薄荷
+     渐变（135deg）+ 薄荷辉光；眉题 kicker = 薄荷→引用蓝渐变字；
+     brand-mark 框 = 同款 hero 渐变
+   骨架表达不了的形态（药丸按钮、眉题渐变字、Steel 侧栏激活 500、
+   json 深色头条、负字距 display、薄荷新月选区）见块后片段。
+   ============================================================ */
+[data-theme="mintlify"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', Menlo, Consolas, monospace; /* 规格 Geist Mono + 其回退栈 */
+  --font-display: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; /* display 同 Inter：层级靠 600 字重 + 负字距（见片段） */
+
+  /* ── Radius（规格刻度：xs 4 / sm 6 / md 8 / lg 12 / full 9999；Do「卡片一律 12」） ── */
+  --radius-xs: 4px;      /* 图标提示 focus 圆角 = rounded.xs 行内代码 chip */
+  --radius-soft: 4px;    /* 登录预览小色块 = rounded.xs */
+  --radius-sm: 6px;      /* 内嵌小块 = rounded.sm 徽章 */
+  --radius-md: 8px;      /* 行卡 / 输入 = rounded.md 紧凑件 */
+  --radius-lg: 12px;     /* 指标卡 = rounded.lg 标准卡 */
+  --radius-xl: 12px;     /* 面板 = 卡族一律 12（规格 Do，不取 16 大面板档） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal = rounded.md 小件 */
+  --radius-pill: 9999px; /* 迷你徽标 = rounded.full（徽章即药丸） */
+  --radius-panel: 12px;  /* 登录外壳 = rounded.lg 卡 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;                 /* Canvas White：页面与卡同底 */
+  --canvas-soft: #fafafa;            /* 嵌面卡/表头 = surface-soft 安静节 */
+  --canvas-card: #ffffff;            /* 卡白（card-base：canvas + hairline 边） */
+  --canvas-dark: #1c1c1e;            /* json pre = surface-code 深代码面（暗变体 #0a0a0a 留给 promo/tooltip） */
+  --surface-sidebar: #ffffff;        /* 顶栏/侧栏白（规格 Top Navigation 白底） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f7f7f7;          /* 卡内交互/内嵌面 = surface（侧栏激活/搜索静止） */
+  --surface-matrix: #f7f7f7;
+  --surface-tint: #fafafa;           /* 表行 hover = surface-soft（比激活档轻一档） */
+  --surface-rail: #f7f7f7;
+  --surface-detail: #fafafa;
+  --surface-chip: #f7f7f7;           /* chip = badge-type 底 surface */
+  --surface-legacy: #f7f7f7;
+  --surface-draft: #f7f7f7;
+  --surface-empty: #fafafa;
+  --surface-json-bar: #f7f7f7;       /* json 摘要条亮轨（json-viewer 头条由片段转深） */
+  --tooltip-bg: #0a0a0a;             /* 浮层提示 = canvas-dark（promo 带同底近黑） */
+
+  /* ── Ink & text ladder（六级：Ink/Charcoal/Slate/Steel/Stone/Muted） ── */
+  --ink: #0a0a0a;
+  --ink-strong: #0a0a0a;
+  --ink-display: #0a0a0a;
+  --ink-heading: #0a0a0a;
+  --ink-value: #0a0a0a;
+  --ink-repo: #0a0a0a;
+  --ink-step: #0a0a0a;
+  --ink-label-strong: #0a0a0a;
+  --ink-label: #1c1c1e;
+  --ink-row: #1c1c1e;
+  --ink-list: #1c1c1e;
+  --ink-data: #1c1c1e;
+  --ink-field: #1c1c1e;
+  --ink-rail: #1c1c1e;
+  --ink-rail-value: #0a0a0a;
+  --ink-secret: #3a3a3c;
+  --ink-chip: #3a3a3c;
+  --body: #1c1c1e;                   /* 规格：Charcoal = 正文 */
+  --body-alt: #3a3a3c;               /* Slate = 次级正文/元数据 */
+  --body-soft: #5a5a5c;              /* Steel = 占比卡小注 */
+  --mute: #5a5a5c;                   /* Steel = 三级文字/表头 */
+  --mute-deep: #3a3a3c;              /* 「更深」= 更重的 Slate */
+  --mute-inline: #5a5a5c;
+  --mute-caption: #888888;           /* Stone = caption */
+  --mute-intro: #5a5a5c;
+  --mute-terse: #5a5a5c;
+  --mute-quiet: #5a5a5c;
+  --mute-soft: #888888;
+  --mute-dim: #888888;
+  --mute-draft: #5a5a5c;
+  --mute-json: #5a5a5c;
+  --mute-matrix: #5a5a5c;
+  --faint: #888888;
+  --faint-alt: #888888;
+  --faint-soft: #888888;
+  --faint-ghost: #888888;
+  --faint-hint: #888888;
+  --faint-meta: #888888;
+  --faint-note: #888888;
+  --faint-empty: #a8a8aa;            /* 空态/禁用 = Muted */
+  --on-dark: #ffffff;
+  --on-dark-soft: #ffffff;           /* json pre 代码字 = On Dark 白 */
+  --on-dark-faint: #b3b3b3;          /* On Dark Muted = 代码头条字色 */
+
+  /* ── Primary / link / focus（黑药丸 + 薄荷信号 + 引用蓝 link） ── */
+  --primary: #0a0a0a;                /* 黑药丸 CTA（规格 button-primary） */
+  --primary-active: #1c1c1e;         /* pressed「lifts to charcoal」 */
+  --on-primary: #ffffff;
+  --link: #3772cf;                   /* brand-tag 引用蓝（推导位：规格 button-link 为墨色，全局锚点借用引用色） */
+  --link-hover: #2f61b0;             /* 引用蓝压深（推导） */
+  --focus-ring: rgba(0, 212, 164, .32); /* text-input-focused 2px 品牌绿 = 激活信号 */
+  --primary-veil: #f7f7f7;           /* 激活导航 = surface 底（sidebar-nav-item-active） */
+
+  /* ── Semantic（规格原生三色 + tag 蓝 info） ── */
+  --success: #1ba673;                /* brand-annotate 绿 */
+  --success-halo: 0 0 0 4px rgba(27, 166, 115, .14);
+  --warning: #c37d0d;                /* brand-warn 琥珀 */
+  --warning-soft: #f7eddd;           /* brand-warn 14% 预混薄纱（推导） */
+  --error: #d45656;                  /* brand-error 红 */
+  --error-deep: #b44949;             /* error 压深 15%（推导） */
+  --info: #3772cf;                   /* brand-tag 引用蓝 */
+  --info-soft: rgba(55, 114, 207, .15); /* badge-tag 底原文 */
+
+  /* ── Hairlines & bars（hairline #e5e5e5 / soft #ededed 双轨；色条走墨阶 + 薄荷用量） ── */
+  --hairline: #e5e5e5;               /* 规格主分隔线 */
+  --hairline-soft: #ededed;          /* 规格 quieter 行分隔 */
+  --hairline-strong: #d4d4d4;        /* 强线档（推导：hairline 压深一阶） */
+  --hairline-card: #e5e5e5;
+  --hairline-inset: #ededed;
+  --hairline-mid: #e5e5e5;
+  --hairline-rail: #e5e5e5;
+  --hairline-codex: #ededed;
+  --hairline-detail: #e5e5e5;
+  --hairline-json: #ededed;
+  --hairline-dashed: #d4d4d4;        /* 空态虚线需可见 = 强线档 */
+  --hairline-legacy: #e5e5e5;
+  --hairline-row: #ededed;           /* 表行分隔 = hairline-soft（comparison-row 原文） */
+  --hairline-draft: #e5e5e5;
+  --bar-value: #0a0a0a;              /* 左色条 = 墨（黑药丸同源的克制强调） */
+  --bar-matrix: #3a3a3c;             /* Slate */
+  --bar-summary: #888888;            /* Stone */
+  --bar-usage: #00d4a4;              /* codex 用量进度 = Mint 绿填充（featured tier 绿/对勾绿族） */
+
+  /* ── Overlays & shadows（海拔：Level 1 .04 / Level 2 .08 卡 / Level 3 深扩散） ── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: rgba(0, 0, 0, .04);   /* hover tile = Level 1 原文透明度 */
+  --overlay-line: rgba(0, 0, 0, .05);
+  --overlay-medium: rgba(0, 0, 0, .07);
+  --shadow-panel: 0 4px 12px rgba(0, 0, 0, .08); /* 规格 Level 2 卡阴影原文 */
+
+  /* ── brand-mark（startups hero 深青→薄荷渐变框 + 薄荷/白三柱；形态见片段区注释） ── */
+  --brand-frame-bg: linear-gradient(150deg, #1a3d4a, #2d5a4f); /* hero-band-dark 135deg 的方形化 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 4px 12px rgba(0, 0, 0, .08);
+  --brand-bar-1: linear-gradient(180deg, #7cebcb, #00b48a); /* soft-mint → 深薄荷 */
+  --brand-bar-2: linear-gradient(180deg, #ffffff, #7cebcb);
+  --brand-bar-3: #ffffff;            /* 白柱压住渐变框 */
+  --brand-bar-inset: inset 0 1px 0 rgba(255, 255, 255, .35);
+  --brand-bar-inset-strong: inset 0 1px 0 rgba(255, 255, 255, .4), 0 0 10px rgba(0, 212, 164, .45);
+  --brand-dot: #00d4a4;              /* Mint 角标（激活指示绿） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: 0 0 8px rgba(0, 212, 164, .75);
+  --nav-indicator: #00d4a4;          /* 侧栏激活指示点 = Mint（规格 sidebar active dots） */
+
+  /* ── 登录页（奶油 hero 底 + 深青→薄荷 showcase + 白 mockup 预览卡） ── */
+  --login-bg: #f5e9d8;               /* hero-sky-to 奶油：首页 hero 渐变的落地端 */
+  --login-shell-border: #e7e0d2;     /* 暖调发丝线（推导：hairline 暖化贴合奶油底） */
+  --login-shell-shadow: 0 8px 24px rgba(0, 0, 0, .08); /* Level 2 */
+  --login-showcase-bg: linear-gradient(135deg, #1a3d4a 0%, #2d5a4f 100%); /* hero-band-dark 原文渐变 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .1);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #b3b3b3;
+  --login-signal-bg: rgba(26, 61, 74, .55);  /* 渐变板上的半透明深青瓦 */
+  --login-signal-border: rgba(255, 255, 255, .22);
+  --login-signal-shadow: none;
+  --login-signal-bar: #00d4a4;       /* signal 三柱 = Mint */
+  --login-kicker: #7cebcb;           /* kicker = soft-mint（暗底上的薄荷眉题） */
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .82);
+  --login-preview-bg: #ffffff;       /* 预览卡 = hero product mockup 白卡 */
+  --login-preview-border: transparent;
+  --login-preview-shadow: 0 24px 48px -8px rgba(0, 0, 0, .3); /* Level 3 mockup 深扩散（暗底加深） */
+  --login-preview-divider: #ededed;
+  --login-preview-dot: #00d4a4;      /* 在播点 = Mint */
+  --login-preview-dot-soft: #7cebcb;
+  --login-preview-label: #5a5a5c;    /* Steel */
+  --login-preview-row-line: #ededed;
+  --login-preview-row-ink: #1c1c1e;
+  --login-preview-chip-ink: #3772cf; /* chip = badge-tag 原文（蓝字蓝染） */
+  --login-preview-chip-bg: rgba(55, 114, 207, .15);
+  --login-preview-bar: #00d4a4;      /* 进度条 = Mint 药丸（圆角见片段） */
+  --login-foot: rgba(255, 255, 255, .62);
+  --login-card-kicker: #c37d0d;      /* 卡侧眉题 = brand-warn 暖琥珀（奶油底上的暖强调） */
+  --login-card-heading: #0a0a0a;
+  --login-card-copy: #5a5a5c;
+  --login-notice-border: #e5e5e5;
+  --login-notice-bg: #f7f7f7;
+  --login-notice-ink: #3a3a3c;
+  --login-label: #0a0a0a;
+  --login-input-border: #e5e5e5;     /* 规格 text-input 1px hairline */
+  --login-input-border-hover: #00b48a; /* focus 信号薄荷的 hover 预告（推导位） */
+  --login-primary: #0a0a0a;          /* 黑药丸 CTA（白字走 antd colorTextLightSolid） */
+  --login-primary-active: #1c1c1e;
+}
+
+/* ============================================================
+   mintlify 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="mintlify"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 薄荷新月选区：Mint 只做信号（绿不进正文，selection 是信号位） ── */
+[data-theme="mintlify"] ::selection { background: rgba(0, 212, 164, .25); color: var(--ink); }
+
+/* ── 系统滚动条：细、强发丝线档 #d4d4d4、圆头 ── */
+[data-theme="mintlify"] * { scrollbar-width: thin; scrollbar-color: #d4d4d4 transparent; }
+[data-theme="mintlify"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="mintlify"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="mintlify"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #d4d4d4; background-clip: padding-box; }
+[data-theme="mintlify"] ::-webkit-scrollbar-thumb:hover { background: #a8a8aa; background-clip: padding-box; }
+
+/* ── 药丸按钮：rounded.full 是全站按钮唯一形（规格 Do「never soften pill corners」；
+      与 antd components.Button.borderRadius 双保险，覆盖非 antd 渲染位） ── */
+[data-theme="mintlify"] .ant-btn { border-radius: 9999px; }
+
+/* ── 眉题渐变字（装饰位）：panel kicker / section label = 薄荷→引用蓝渐变字，
+      mono 600 大写 + .05em（规格 micro-uppercase 0.5px @11px）；
+      page-heading__eyebrow 因 context-heading-slot 复用同一类名，不参与渐变 ── */
+[data-theme="mintlify"] .panel-kicker,
+[data-theme="mintlify"] .section-label {
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #00b48a, #3772cf);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── 导航：未激活 = Steel 400（规格 sidebar-nav-item），激活 = surface 底 +
+      Ink 500（sidebar-nav-item-active：bg surface / text ink / medium） ── */
+[data-theme="mintlify"] .workspace-nav a { color: #5a5a5c; }
+[data-theme="mintlify"] .workspace-nav a[aria-current="page"] { color: #0a0a0a; font-weight: 500; }
+[data-theme="mintlify"] .workspace-nav a[aria-current="page"] .anticon { color: #0a0a0a; }
+
+/* ── 表头：micro-uppercase 化（规格 feature-comparison 分节行 + 「Steel: table
+      headers」）——mono 600 大写宽字距，压到 11px ── */
+[data-theme="mintlify"] .admin-table .ant-table-thead > tr > th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+/* ── json 头条转深：code-block-header 原文（surface-code 底 + on-dark-muted 字 +
+      hairline-dark 分隔）；仅作用 json-viewer__bar，audit-json 摘要保持亮轨 ── */
+[data-theme="mintlify"] .json-viewer__bar { background: #1c1c1e; color: #b3b3b3; border-bottom: 1px solid #1f1f1f; }
+
+/* ── 负字距 display：规格 display 字阶带 -0.5~-2px 负字距，按骨架字号比例内插 ── */
+[data-theme="mintlify"] .panel-heading h2,
+[data-theme="mintlify"] .configuration-step-copy h2,
+[data-theme="mintlify"] .configuration-summary h2 { letter-spacing: -.2px; }
+[data-theme="mintlify"] .business-outcomes__card > strong,
+[data-theme="mintlify"] .ratio-card > strong { letter-spacing: -.4px; }
+[data-theme="mintlify"] .login-page__showcase-copy h2 { letter-spacing: -.5px; }
+[data-theme="mintlify"] .login-page__card h1 { letter-spacing: -.6px; }
+
+/* ── 登录页：showcase 右下薄荷辉光（hero 渐变板上的品牌绿氛围）；预览进度条
+      药丸圆角；showcase/kicker 眉题统一 mono 600 大写 ── */
+[data-theme="mintlify"] .login-page__showcase::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(420px 300px at 86% 90%, rgba(0, 212, 164, .28), transparent 70%);
+}
+[data-theme="mintlify"] .login-page__preview-row strong { border-radius: 9999px; }
+[data-theme="mintlify"] .login-page__showcase-copy > span,
+[data-theme="mintlify"] .login-page__card-heading > span { font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }

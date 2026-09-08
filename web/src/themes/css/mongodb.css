@@ -1,0 +1,254 @@
+/* ============================================================
+   mongodb 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   MongoDB 设计语言（白文档画布 + 亮 MongoDB 绿；双面身份、默认亮面）：
+   - 亮轨：canvas/card #ffffff、surface #f9fbfa、surface-soft #f4f7f6 三档白；
+     卡靠 hairline #e1e5e8 一等边线分层（Level 0 = flat + border）
+   - 暗面只落在固定角色：json 代码面/提示/登录 showcase = brand-teal-deep
+     #001e2b（hero 带、code mockup、footer 的深青）
+   - 品牌绿一族：--primary #00ed64（CTA 基色，绿底配深青墨 on-primary）/
+     hover #00b545（primary-deep）/ 按压 #008c34；文字级绿一律
+     brand-green-dark #00684a（规格 Don'ts「亮绿不做正文色」）
+   - 文字阶梯：ink #001e2b / charcoal #1c2d38 / slate #3d4f5b / steel #5c6c7a /
+     stone #7c8c9a / muted #a8b3bc（规格六级，faint 档吃 stone+muted）
+   - 语义：warning 规格 #946f3f/#fff8e0；success=深绿；error/info 派生
+     （error #d94141；info 借类目 accent-blue #3d4f9f）
+   - 薄荷高亮面 surface-feature #e3fcef：featured 档/选中态语汇 → 导航当前项 veil
+   - 阴影 = 深青调 rgba(0,30,43,…)（规格 Elevation 阶梯原值）
+   - 圆角：徽标/输入 6-8 / 卡 12 / 按钮·状态徽标全药丸 9999（brand-mark 同为圆形）
+   骨架表达不了的形态（导航当前项深青墨化、display 负字距、类目 kicker
+   大写化、登录 showcase hero 排版）见块后 [data-theme="mongodb"] 专属片段。
+   ============================================================ */
+[data-theme="mongodb"] {
+  /* ── Typography ───────────────────────────── */
+  /* Euclid Circular A（授权字体，禁外部加载）→ 规格 fallback 栈 + CJK 补齐；
+     display 与正文同族（规格 hero/display 均 Euclid Circular A） */
+  --font-sans: "Euclid Circular A", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Source Code Pro", "SF Mono", Menlo, Consolas, monospace; /* 规格代码栈 */
+  --font-display: "Euclid Circular A", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度：标签 4 / 徽标·chip 6 / 输入·代码块 8 / 卡 12 / 面板 16 / 按钮全药丸） ── */
+  --radius-xs: 4px;      /* 图标提示 focus = 课程标签 4px */
+  --radius-soft: 6px;    /* 登录预览小色块 = 徽标 6px */
+  --radius-sm: 6px;      /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 8px;      /* 行卡 = 规格 rounded.md（输入/代码块） */
+  --radius-lg: 12px;     /* 指标卡 = 规格 rounded.lg（卡面一律 12） */
+  --radius-xl: 16px;     /* 面板 = 规格 rounded.xl（大特性面板） */
+  --radius-brand: 9999px; /* brand-mark = 圆形（leaf 几何的圆面替身） */
+  --radius-pill: 9999px; /* 迷你徽标 = 状态徽标全药丸（规格 Do） */
+  --radius-panel: 16px;  /* 登录外壳 = 大面板 16px */
+
+  /* ── Canvas & surfaces（亮轨三档白；暗面只在固定深青角色） ── */
+  --canvas: #ffffff;             /* Canvas White：页面画布 */
+  --canvas-soft: #f9fbfa;        /* surface：交替/表头面 */
+  --canvas-card: #ffffff;        /* 卡面白，靠 hairline 边线分层 */
+  --canvas-dark: #001e2b;        /* canvas-dark：json 代码面/深青英雄带 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 top-nav 白底 + hairline 底线） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 滚动后导航白磨（规格无、白系推导） */
+  --surface-inset: #f4f7f6;      /* surface-soft：卡内嵌面 */
+  --surface-matrix: #f9fbfa;     /* why-card 式安静面 */
+  --surface-tint: #f4f7f6;       /* 行 hover = surface-soft */
+  --surface-rail: #f9fbfa;
+  --surface-detail: #f9fbfa;
+  --surface-chip: #f4f7f6;
+  --surface-legacy: #f4f7f6;
+  --surface-draft: #eef5f2;      /* 派生：soft 与薄荷面之间的灰绿（draft 静档） */
+  --surface-empty: #fbfdfc;      /* 空态近白一档 */
+  --surface-json-bar: #f4f7f6;
+  --tooltip-bg: #001e2b;         /* 提示 = 深青墨（暗面角色） */
+
+  /* ── Ink & text ladder（规格六级：ink/charcoal/slate/steel/stone/muted） ── */
+  --ink: #001e2b;
+  --ink-strong: #001e2b;
+  --ink-display: #001e2b;
+  --ink-heading: #001e2b;
+  --ink-value: #001e2b;
+  --ink-repo: #001e2b;
+  --ink-step: #001e2b;
+  --ink-label-strong: #001e2b;
+  --ink-label: #001e2b;
+  --ink-row: #001e2b;
+  --ink-list: #1c2d38;   /* value-list li = charcoal 正文级 */
+  --ink-data: #001e2b;
+  --ink-field: #001e2b;
+  --ink-rail: #001e2b;
+  --ink-rail-value: #001e2b;
+  --ink-secret: #1c2d38; /* secret-label = 正文级 */
+  --ink-chip: #1c2d38;   /* duration 数值 = 正文级 */
+  --body: #1c2d38;       /* charcoal：正文强调级 */
+  --body-alt: #3d4f5b;   /* slate：次级正文 */
+  --body-soft: #3d4f5b;
+  --mute: #5c6c7a;       /* steel：三级文字/说明 */
+  --mute-deep: #3d4f5b;  /* 指标卡标题抬回 slate */
+  --mute-inline: #5c6c7a;
+  --mute-caption: #5c6c7a;
+  --mute-intro: #3d4f5b; /* 配置导语 = slate */
+  --mute-terse: #5c6c7a;
+  --mute-quiet: #5c6c7a;
+  --mute-soft: #5c6c7a;
+  --mute-dim: #5c6c7a;
+  --mute-draft: #5c6c7a;
+  --mute-json: #5c6c7a;
+  --mute-matrix: #5c6c7a;
+  --faint: #7c8c9a;      /* stone：静音标签 */
+  --faint-alt: #7c8c9a;
+  --faint-soft: #7c8c9a;
+  --faint-ghost: #a8b3bc; /* muted：占位/禁用级 */
+  --faint-hint: #a8b3bc;
+  --faint-meta: #7c8c9a;
+  --faint-note: #7c8c9a;
+  --faint-empty: #a8b3bc;
+  --on-dark: #ffffff;    /* 深青面上的字 = 纯白 */
+  --on-dark-soft: #cfe3da; /* 派生：green-soft 系淡染白（json 代码面正文） */
+  --on-dark-faint: #a8b3bc; /* 规格 on-dark-muted */
+
+  /* ── Primary / link / focus（亮绿 CTA / 深绿文字 / 深绿聚焦环） ── */
+  --primary: #00ed64;    /* brand-green：亮绿 CTA 基色（与 antd colorPrimary 同源） */
+  --primary-active: #008c34; /* 规格 primary-pressed */
+  --on-primary: #001e2b; /* 绿底配深青墨（规格 on-primary 签名） */
+  --link: #00684a;       /* brand-green-dark（规格 button-link 文字色） */
+  --link-hover: #00a35c; /* green-mid 提亮一档（派生，规格只给基色与按压） */
+  --focus-ring: rgba(0, 104, 74, .35); /* 聚焦 = brand-green-dark 环（规格输入聚焦 2px 深绿） */
+  --primary-veil: #e3fcef; /* 当前项 = surface-feature 薄荷面（featured 档语汇） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #00684a;             /* brand-green-dark：文字级绿（亮绿不做文字色） */
+  --success-halo: 0 0 0 4px rgba(0, 237, 100, .22); /* 亮绿光环只作 dot 光晕 */
+  --warning: #946f3f;             /* 规格 semantic-warning-text */
+  --warning-soft: #fff8e0;        /* 规格 semantic-warning-bg */
+  --error: #d94141;               /* 派生：规格无红（类目四色不挪用） */
+  --error-deep: #b83232;
+  --info: #3d4f9f;                /* 类目 accent-blue（类目色中唯一中性冷色） */
+  --info-soft: #edf0fa;           /* 派生：accent-blue 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（规格三档：strong #c1ccd6 / hairline #e1e5e8 / soft #eceff1） ── */
+  --hairline: #e1e5e8;         /* 卡边/主分隔 */
+  --hairline-soft: #eceff1;    /* 行缝/安静分隔 */
+  --hairline-strong: #c1ccd6;  /* 输入一等边 */
+  --hairline-card: #e1e5e8;
+  --hairline-inset: #e1e5e8;
+  --hairline-mid: #e1e5e8;
+  --hairline-rail: #e1e5e8;
+  --hairline-codex: #e1e5e8;
+  --hairline-detail: #e1e5e8;
+  --hairline-json: #e1e5e8;
+  --hairline-dashed: #c1ccd6;  /* 空态虚线 = 强边一档 */
+  --hairline-legacy: #c1ccd6;
+  --hairline-row: #eceff1;
+  --hairline-draft: #c1ccd6;
+  --bar-value: #c1ccd6;   /* value-list 左规线 = 中性强边（非彩色条） */
+  --bar-matrix: #c1ccd6;
+  --bar-summary: #00a35c; /* summary 左规线 = green-mid（数据绿） */
+  --bar-usage: #00ed64;   /* 用量轨填充 = 亮绿进度条（Atlas 用量条语汇） */
+
+  /* ── Overlays & shadows（深青调 rgba(0,30,43,…) = 规格 Elevation 阶梯同源） ── */
+  --overlay-faint: rgba(0, 30, 43, .03);
+  --overlay-soft: rgba(0, 30, 43, .04);
+  --overlay-line: rgba(0, 30, 43, .06);
+  --overlay-medium: rgba(0, 30, 43, .07);
+  --shadow-panel: 0 4px 12px rgba(0, 30, 43, .08); /* 规格 Level 2（feature cards）原值 */
+
+  /* ── brand-mark（暗英雄带上绿药丸的缩影：深青圆面 + 三根亮绿条） ── */
+  --brand-frame-bg: #001e2b;        /* brand-teal-deep（hero 带面） */
+  --brand-frame-border: transparent; /* 圆面自承（Level 0 = flat） */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #00ed64;           /* 三根全亮绿（green CTA on dark band） */
+  --brand-bar-2: #00ed64;
+  --brand-bar-3: #00ed64;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #00ed64;             /* 角标 = 绿状态点（badge-green 语汇） */
+  --brand-dot-border: #001e2b;
+  --brand-dot-glow: 0 0 8px rgba(0, 237, 100, .6);
+  --nav-indicator: #00ed64;         /* 当前导航指示条 = 亮绿（3px 条非文字，可用亮绿） */
+
+  /* ── 登录页（白卡 + deep-teal 英雄带 showcase = 规格 hero-band-dark） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e1e5e8;
+  --login-shell-shadow: 0 22px 55px rgba(0, 30, 43, .14); /* 派生：Level 4 量级面板影 */
+  --login-showcase-bg: #001e2b;    /* hero-band-dark 深青英雄带 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(0, 237, 100, .07); /* 绿调氛围网格（hero 带 atmospheric depth） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #a8b3bc;     /* 规格 on-dark-muted */
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(0, 237, 100, .4); /* 绿描边圆环（暗带上的绿信号） */
+  --login-signal-shadow: none;
+  --login-signal-bar: #00ed64;
+  --login-kicker: #00ed64;         /* kicker = 暗带上的亮绿（绿配深青的对偶） */
+  --login-heading: #ffffff;        /* hero 标题白字（36px/500 见片段） */
+  --login-copy: #a8b3bc;
+  --login-preview-bg: rgba(255, 255, 255, .05);
+  --login-preview-border: rgba(255, 255, 255, .12);
+  --login-preview-shadow: 0 12px 24px -4px rgba(0, 0, 0, .35); /* 暗带上 mockup 深影（Level 3 加深） */
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #00ed64;    /* 数据点 = 亮绿 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #00ed64; /* chip = 绿字绿染（badge-green-soft 语汇） */
+  --login-preview-chip-bg: rgba(0, 237, 100, .14);
+  --login-preview-bar: #00ed64;    /* 进度条 = 亮绿（药丸圆角见片段） */
+  --login-foot: #a8b3bc;
+  --login-card-kicker: #00684a;    /* 白卡侧 eyebrow = brand-green-dark */
+  --login-card-heading: #001e2b;
+  --login-card-copy: #5c6c7a;
+  --login-notice-border: #c3f0d2;  /* 通知 = green-soft 薄薄荷面 */
+  --login-notice-bg: #f2faf5;
+  --login-notice-ink: #1c2d38;
+  --login-label: #3d4f5b;
+  --login-input-border: #c1ccd6;   /* hairline-strong 输入一等边 */
+  --login-input-border-hover: #7c8c9a;
+  --login-primary: #00ed64;        /* 绿药丸 CTA（深青墨字走 antd colorTextLightSolid） */
+  --login-primary-active: #00b545; /* hover = primary-deep */
+}
+
+/* ============================================================
+   mongodb 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="mongodb"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 亮绿选区（品牌绿的功能性使用） ── */
+[data-theme="mongodb"] ::selection { background: rgba(0, 237, 100, .22); }
+
+/* ── 导航当前项：亮绿 #00ed64 对白底文字对比不足（规格 Don'ts「亮绿不做正文色」）
+      → 文字回落深青墨，底用薄荷 veil（令牌 --primary-veil），指示条/图标保留绿 ── */
+[data-theme="mongodb"] .workspace-nav a[aria-current="page"] { color: #001e2b; }
+[data-theme="mongodb"] .workspace-nav a[aria-current="page"] .anticon { color: #00684a; }
+
+/* ── eyebrow / kicker：brand-green-dark + 大写宽字距（规格 micro-uppercase 课程类目标签语汇） ── */
+[data-theme="mongodb"] .page-heading__eyebrow,
+[data-theme="mongodb"] .panel-kicker,
+[data-theme="mongodb"] .section-label { color: #00684a; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="mongodb"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── display 排版：标题/数值 500 + 负字距（规格 display 系 -0.5px 起的紧排） ── */
+[data-theme="mongodb"] .ratio-card > strong,
+[data-theme="mongodb"] .codex-metric > strong,
+[data-theme="mongodb"] .metric-matrix strong,
+[data-theme="mongodb"] .duration-card strong,
+[data-theme="mongodb"] .login-page__card h1 { font-weight: 500; letter-spacing: -.5px; }
+
+/* ── 表头：caption 级 600（规格 caption-bold/micro 600 是小字号字重） ── */
+[data-theme="mongodb"] .admin-table .ant-table-thead > tr > th { font-weight: 600; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、hairline-strong、圆头（药丸几何的延续） ── */
+[data-theme="mongodb"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="mongodb"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: var(--hairline-strong); }
+[data-theme="mongodb"] ::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+[data-theme="mongodb"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="mongodb"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：hero-band-dark 排版 —— 标题 36px/500/-0.5px = 规格 heading-2，
+      kicker 大写宽字距，绿网格保留（规格 hero 带 atmospheric depth） ── */
+[data-theme="mongodb"] .login-page__showcase-copy h2 { font-size: 36px; font-weight: 500; line-height: 1.25; letter-spacing: -.5px; }
+[data-theme="mongodb"] .login-page__showcase-copy > span,
+[data-theme="mongodb"] .login-page__card-heading > span { font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+
+/* ── 登录卡片：输入 44px 触达高（规格 text-input height 44）；预览进度条药丸圆角 ── */
+[data-theme="mongodb"] .login-page__card .ant-input,
+[data-theme="mongodb"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; border-radius: 8px; }
+[data-theme="mongodb"] .login-page__preview-row strong { border-radius: 9999px; }

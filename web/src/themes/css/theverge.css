@@ -1,0 +1,320 @@
+/* ============================================================
+   theverge 主题令牌块 —— 自设计语言 派生。
+   The Verge 2024 设计语言（暗色，无亮色对应物）：
+   - 近黑画布 #131313（newsprint negative，非 OLED 纯黑）；零阴影 —— 海拔全靠
+     1px 白/薄荷/紫外发丝线与饱和色块（color-as-elevation）
+   - 双 hazard 强调：Jelly Mint #3CFFD0（主 CTA/活动态/kicker）+ Verge Ultraviolet
+     #5200FF（第二强调/错误强调，error border = ultraviolet 而非红）
+   - 瓦片卡 = #131313 + 1px 白描边（--hairline-card），或 slate #2D2D2D 二级面
+   - 全系统零渐变：颜色只以实心块出现（Gradient System）
+   值来源速查（正文提取）：
+     #131313 Canvas Black → 画布/瓦片底/反白字
+     #2D2D2D Surface Slate → 二级面/侧栏/嵌面
+     #313131 Image Frame → 静发丝线
+     #FFFFFF Hazard White → 瓦片描边/标题墨/默认节点
+     #E9E9E9 Muted Text → 正文阶（slate 按钮字）
+     #949494 Secondary Text → 元数据阶（署名/时间戳）
+     #8C8C8C Dim Gray → 占位/禁用阶
+     #3CFFD0 Jelly Mint → primary/link/info/nav 指示/用量条
+     #5200FF Verge Ultraviolet → 第二强调/错误阶/summary 左条
+     #309875 Console Mint Border → primary 压深/value 左条
+     #3860BE Deep Link Blue → 全部链接 hover（Do）
+     #1EAEDB Focus Cyan → 键盘焦点环（绝不静态出现）
+     #3D00BF Purple Rule → StoryStream 轨道线（状态栏 rail/matrix 左条）
+     #000000 Absolute Black → json 暗井/薄荷底上文字
+   派生值（规格未给 hex、按设计语言推导，均在行内注明）：
+     薄荷 hover #63FFD9 = rgba(255,255,255,.2) 叠加薄荷的合成色（按钮 hover）
+     黄 #FFE500 / 粉 #FF64B8 / 橙 #FF6A2B = 瓦片调色板酸饱和定值
+     紫外文字阶 #9D7BFF = #5200FF 的可读提升阶（error 文字消费者，近黑上 6:1）
+     slate hover #3D3D3D = rgba(255,255,255,.2) over slate 合成色
+   骨架表达不了的部分（brand-mark hazard 三色条重绘、mono-uppercase kicker 签名、
+   白虚线 StoryStream 轨、登录 ultraviolet flyer + Manuka hero、.ant-* 覆写）
+   见块后 [data-theme="theverge"] 专属片段。
+   ============================================================ */
+[data-theme="theverge"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  /* PolySans（定制族，禁外部加载）→ 系统/web-safe 栈近似（fallback: Helvetica, Arial）；
+     PolySans Mono → Courier 家族（fallback: Courier New, Courier，typewriter 质感）；
+     --font-display 承载 12–29px 数据数字 —— Manuka 规格「只在 60px+ / 绝不做 UI」，
+     故数字走 sans，Manuka 近似（Impact）仅供登录 showcase hero（--font-hero，见片段） */
+  --font-sans: Helvetica, Arial, system-ui, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Courier New", Courier, "Cascadia Code", Consolas, monospace;
+  --font-display: Helvetica, Arial, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-hero: Impact, Haettenschweiler, "Arial Black", Helvetica, sans-serif; /* Manuka 近似（fallback: Impact, Helvetica） */
+
+  /* ── Radius ───────────────────────────────── */
+  /* 八档刻度：2 输入 / 3-4 图 / 20 瓦片 / 24 feature / 30-40 大药丸 / 50% 圆钮，
+     向超集九档归并 */
+  --radius-xs: 2px;      /* term-hint focus / 输入 = typewriter tag */
+  --radius-soft: 4px;    /* 登录预览小色块 = 嵌套图 */
+  --radius-sm: 4px;      /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 20px;     /* 行卡 = StoryStream 标准瓦片 */
+  --radius-lg: 20px;     /* 指标卡 = 瓦片 */
+  --radius-xl: 24px;     /* 面板 = feature tile */
+  --radius-brand: 9999px;/* brand-mark / 登录 signal = 50% 圆钮 */
+  --radius-pill: 9999px; /* 迷你徽标 = pill tag */
+  --radius-panel: 24px;  /* 登录外壳 = feature tile */
+
+  /* ── Canvas & surfaces（瓦片 = 画布 + 白发丝线；嵌面 = slate） ── */
+  --canvas: #131313;             /* Canvas Black：页面画布 */
+  --canvas-soft: #2d2d2d;        /* Surface Slate：二级面 */
+  --canvas-card: #131313;        /* 瓦片底与画布同色，靠 1px 白描边分界 */
+  --canvas-dark: #000000;        /* Absolute Black：json 暗井 */
+  --surface-sidebar: #2d2d2d;    /* 侧栏 = slate 分区（画布连面上无边界则失焦） */
+  --surface-bar: rgba(19, 19, 19, .92);
+  --surface-inset: #2d2d2d;
+  --surface-matrix: #2d2d2d;
+  --surface-tint: #2d2d2d;       /* 行 hover = slate */
+  --surface-rail: #2d2d2d;
+  --surface-detail: #2d2d2d;
+  --surface-chip: #2d2d2d;
+  --surface-legacy: #2d2d2d;
+  --surface-draft: #2d2d2d;
+  --surface-empty: #2d2d2d;
+  --surface-json-bar: #2d2d2d;
+  --tooltip-bg: #2d2d2d;         /* slate 面（tip 文字 = --on-dark 白） */
+
+  /* ── Ink & text ladder（坍缩为 规格 四阶：白/e9e9e9/949494/8c8c8c） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #e9e9e9;   /* value-list li = Muted Text 正文阶 */
+  --ink-data: #ffffff;
+  --ink-field: #e9e9e9;
+  --ink-rail: #949494;   /* 状态栏标签 = Secondary Text 元数据阶 */
+  --ink-rail-value: #ffffff;
+  --ink-secret: #949494;
+  --ink-chip: #e9e9e9;
+  --body: #e9e9e9;
+  --body-alt: #949494;
+  --body-soft: #949494;
+  --mute: #949494;
+  --mute-deep: #e9e9e9;  /* 顶栏/业务卡标题抬回正文级 */
+  --mute-inline: #949494;
+  --mute-caption: #949494;
+  --mute-intro: #e9e9e9; /* 配置导语 = 正文级 */
+  --mute-terse: #949494;
+  --mute-quiet: #949494;
+  --mute-soft: #949494;
+  --mute-dim: #949494;
+  --mute-draft: #949494;
+  --mute-json: #949494;
+  --mute-matrix: #949494;
+  --faint: #8c8c8c;      /* Dim Gray：占位/禁用级 */
+  --faint-alt: #8c8c8c;
+  --faint-soft: #8c8c8c;
+  --faint-ghost: #8c8c8c;
+  --faint-hint: #8c8c8c;
+  --faint-meta: #8c8c8c;
+  --faint-note: #8c8c8c;
+  --faint-empty: #8c8c8c;
+  --on-dark: #ffffff;    /* 暗面/slate 面上的字 = 白 */
+  --on-dark-soft: #e9e9e9;
+  --on-dark-faint: #949494;
+
+  /* ── Primary / link / focus ── */
+  --primary: #3cffd0;    /* Jelly Mint：主 CTA / 活动电压 */
+  --primary-active: #309875; /* Console Mint Border：按压压深 */
+  --on-primary: #000000; /* Absolute Black：薄荷底上的字（Primary 按钮字色） */
+  --link: #3cffd0;       /* 链接 = 薄荷（「link underlines」语言） */
+  --link-hover: #3860be; /* Deep Link Blue：唯一 hover 色（Do） */
+  --focus-ring: #1eaedb; /* Focus Cyan：只给键盘焦点（骨架 :focus-visible 消费） */
+  --primary-veil: rgba(255, 255, 255, .08); /* 当前导航项 = 白 8% 纱（薄荷绝不做底洗，Don't） */
+
+  /* ── Semantic（success=薄荷 / warning=黄 / error=紫外族） ── */
+  --success: #3cffd0;    /* context-dot = 薄荷 */
+  --success-halo: 0 0 0 4px rgba(60, 255, 208, .16);
+  --warning: #ffe500;    /* 派生：瓦片调色板 yellow 定值 */
+  --warning-soft: rgba(255, 229, 0, .12);
+  --error: #9d7bff;      /* 派生：ultraviolet 可读文字阶（error-copy 文字消费者，6:1） */
+  --error-deep: #5200ff; /* hazard 边框/大点阶（error 边框本值） */
+  --info: #3cffd0;       /* inferred-mark = 活动电压薄荷 */
+  --info-soft: rgba(60, 255, 208, .08);
+
+  /* ── Hairlines & bars（白描边 = 海拔；Image Frame = 静线；紫规 = 轨道） ── */
+  --hairline: #313131;
+  --hairline-soft: #313131;
+  --hairline-strong: #ffffff;  /* Hazard White：强调描边（= 瓦片轮廓语言） */
+  --hairline-card: #ffffff;    /* 瓦片签名：#131313 + 1px 白描边 */
+  --hairline-inset: #313131;
+  --hairline-mid: #313131;
+  --hairline-rail: #3d00bf;    /* Purple Rule：StoryStream 轨道线（状态栏 rail 的纵向分隔） */
+  --hairline-codex: #313131;
+  --hairline-detail: #313131;
+  --hairline-json: #313131;
+  --hairline-dashed: #949494;  /* detail-empty 虚线 = 元数据灰 typewriter 虚框 */
+  --hairline-legacy: #313131;
+  --hairline-row: #313131;
+  --hairline-draft: #313131;
+  --bar-value: #309875;   /* value-list 左条 = Console Mint Border（纯薄荷过饱和处的深薄荷） */
+  --bar-matrix: #3d00bf;  /* metric-matrix 左条 = Purple Rule */
+  --bar-summary: #5200ff; /* summary 左条 = Verge Ultraviolet */
+  --bar-usage: #3cffd0;   /* 用量轨 = 薄荷数据墨水 */
+
+  /* ── Overlays & shadows（白 alpha 微纱；投影一律关闭） ── */
+  --overlay-faint: rgba(255, 255, 255, .04);
+  --overlay-soft: rgba(255, 255, 255, .06);
+  --overlay-line: rgba(255, 255, 255, .08);
+  --overlay-medium: rgba(255, 255, 255, .1);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（hazard 三色条：薄荷/白/紫外，白发丝线圆钮框，无点无光） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: #ffffff;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #3cffd0;
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #5200ff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #3cffd0;   /* 惰性值：::after 已隐藏 */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #3cffd0; /* 当前导航薄荷左标（「active tab borders」） */
+
+  /* ── 登录页（近黑画布 + 白发丝线外壳 + ultraviolet promo 瓦片 showcase） ── */
+  --login-bg: #131313;
+  --login-shell-border: #ffffff;      /* 外壳 = 白描边瓦片 */
+  --login-shell-shadow: 0 0 0 1px rgba(0, 0, 0, .33); /* Level 5 唯一「气氛环」 */
+  --login-showcase-bg: #5200ff;       /* showcase = Verge Ultraviolet 实心 promo 瓦片（"Join the Stream"） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .14); /* 惰性值：网格见片段隐藏（实心色块语言） */
+  --login-grid-mask: none;            /* 零渐变：不使用 mask 渐隐 */
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .72);
+  --login-signal-bg: transparent;     /* signal = 白描边圆钮（同 brand-mark） */
+  --login-signal-border: #ffffff;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;        /* 基色；三色条见片段 */
+  --login-kicker: #3cffd0;            /* 薄荷 mono kicker 在紫外底上 = hazard tape 时刻 */
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .85);
+  --login-preview-bg: rgba(255, 255, 255, .08);  /* 紫外底上的白纱 mockup 面 */
+  --login-preview-border: rgba(255, 255, 255, .3);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .18);
+  --login-preview-dot: #3cffd0;
+  --login-preview-dot-soft: rgba(255, 255, 255, .4);
+  --login-preview-label: rgba(255, 255, 255, .72);
+  --login-preview-row-line: rgba(255, 255, 255, .16);
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #000000;  /* 薄荷 pill tag 黑字（Pill Tag） */
+  --login-preview-chip-bg: #3cffd0;
+  --login-preview-bar: rgba(255, 255, 255, .38);
+  --login-foot: rgba(255, 255, 255, .72);
+  --login-card-kicker: #3cffd0;   /* 表单侧 eyebrow = 薄荷 mono kicker */
+  --login-card-heading: #ffffff;
+  --login-card-copy: #949494;
+  --login-notice-border: #313131;
+  --login-notice-bg: #2d2d2d;
+  --login-notice-ink: #e9e9e9;
+  --login-label: #e9e9e9;
+  --login-input-border: #ffffff;     /* 输入 = 近黑底 + 白描边（Inputs） */
+  --login-input-border-hover: #3cffd0; /* 输入 focus 边框转薄荷（Inputs） */
+  --login-primary: #3cffd0;          /* 主 CTA = Jelly Mint Pill */
+  --login-primary-active: #309875;
+
+  /* ── The Verge 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --verge-yellow: #ffe500;        /* 瓦片调色板 yellow（派生定值） */
+  --verge-pink: #ff64b8;          /* 瓦片调色板 pink（派生定值） */
+  --verge-orange: #ff6a2b;        /* 瓦片调色板 orange（派生定值） */
+  --ultraviolet-bright: #9d7bff;  /* ultraviolet 可读文字阶（与 --error 同源） */
+  --motion-duration: .18s;        /* 按钮 ~180ms ease */
+}
+
+/* ============================================================
+   theverge 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="theverge"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：薄荷选区 / Focus Cyan 焦点环（规格：cyan 绝不静态出现） ── */
+[data-theme="theverge"] ::selection { background: rgba(60, 255, 208, .3); color: #ffffff; }
+[data-theme="theverge"] :focus-visible { outline: 2px solid #1eaedb; outline-offset: 2px; }
+[data-theme="theverge"] .term-hint:focus-visible { outline-color: #1eaedb; }
+
+/* ── 系统滚动条：细、pill、元数据灰 ── */
+[data-theme="theverge"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="theverge"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: var(--hairline-dashed); background-clip: padding-box; }
+[data-theme="theverge"] ::-webkit-scrollbar-thumb:hover { background: #ffffff; background-clip: padding-box; }
+[data-theme="theverge"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="theverge"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-dashed) transparent; }
+
+/* ── kicker 签名：mono UPPERCASE 1.8px 字距薄荷小标（Do「apply 1.5–1.9px
+      letter-spacing to every ALL-CAPS label」；示例 1 即 12px 薄荷 kicker） ── */
+[data-theme="theverge"] .page-heading__eyebrow,
+[data-theme="theverge"] .panel-kicker,
+[data-theme="theverge"] .section-label { color: var(--primary); font-family: var(--font-mono); font-size: 11px; font-weight: 600; line-height: 1.3; letter-spacing: .16em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla/apple/cursor 同名补正） */
+[data-theme="theverge"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 导航铬装：mono UPPERCASE 分组题 + 药丸导航项（round everything） ── */
+[data-theme="theverge"] .brand-block strong { color: #ffffff; }
+[data-theme="theverge"] .brand-block span { font-family: var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }
+[data-theme="theverge"] .nav-caption,
+[data-theme="theverge"] .nav-group-title { font-family: var(--font-mono); font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
+[data-theme="theverge"] .workspace-nav a { border-radius: 9999px; }
+[data-theme="theverge"] .workspace-nav a[aria-current="page"] .anticon { color: var(--primary); }
+
+/* ── brand-mark 重绘：白发丝线圆钮 + hazard 三色条（薄荷 45 / 白 100 / 紫外 70），
+      无框底、无点、无光晕（零阴影体系） ── */
+[data-theme="theverge"] .brand-mark { background: transparent; box-shadow: none; }
+[data-theme="theverge"] .brand-mark span { border-radius: 9999px; box-shadow: none; }
+[data-theme="theverge"] .brand-mark span:nth-child(1) { height: 45%; background: var(--brand-bar-1); }
+[data-theme="theverge"] .brand-mark span:nth-child(2) { height: 100%; background: var(--brand-bar-2); }
+[data-theme="theverge"] .brand-mark span:nth-child(3) { height: 70%; background: var(--brand-bar-3); }
+[data-theme="theverge"] .brand-mark::after { display: none; }
+
+/* ── 表头：mono UPPERCASE 1.2 字距（typewriter console 表头） ── */
+[data-theme="theverge"] .admin-table .ant-table-thead > tr > th { font-family: var(--font-mono); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── 瓦片 hover = 仅标题色转 Deep Link Blue，150ms ease（StoryStream Tile
+      「no lift, no scale — headline transitions to #3860be」） ── */
+[data-theme="theverge"] .repo-row strong,
+[data-theme="theverge"] .test-result strong,
+[data-theme="theverge"] .intent-row strong { transition: color 150ms ease; }
+[data-theme="theverge"] .repo-row:hover strong,
+[data-theme="theverge"] .test-result:hover strong,
+[data-theme="theverge"] .intent-row:hover strong { color: #3860be; }
+[data-theme="theverge"] .term-hint:hover { color: #3860be; }
+
+/* ── 白虚线 StoryStream 轨：分区顶的 git-log 轨道回声（规格轨道色 #3d00bf or #ffffff，
+      白在近黑上可辨） ── */
+[data-theme="theverge"] .duration-section,
+[data-theme="theverge"] .tick-result,
+[data-theme="theverge"] .configuration-actions { border-top: 1px dashed rgba(255, 255, 255, .35); }
+
+/* ── 顶栏仓库切换器 = 药丸（nav 元素走 pill，表单输入保持 2px typewriter） ── */
+[data-theme="theverge"] .repository-switcher .ant-select-selector { border-radius: 9999px !important; }
+
+/* ── 登录 showcase：ultraviolet 实心 promo 瓦片 —— 无网格无渐隐（solid color block）；
+      hero 标题走 Manuka 近似（Impact 900），行高按替换注记 0.80 → 0.95 ── */
+[data-theme="theverge"] .login-page__showcase::before { display: none; }
+[data-theme="theverge"] .login-page__showcase-copy h2 { font-family: var(--font-hero); font-size: 46px; font-weight: 900; line-height: .95; letter-spacing: .01em; }
+[data-theme="theverge"] .login-page__showcase-copy > span,
+[data-theme="theverge"] .login-page__card-heading > span { font-family: var(--font-mono); font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+
+/* ── 登录 signal：同 brand-mark 的三色条（紫外底上紫外条不可辨 → 第三条走 Verge 黄） ── */
+[data-theme="theverge"] .login-page__signal { background: transparent; box-shadow: none; }
+[data-theme="theverge"] .login-page__signal span { border-radius: 9999px; }
+[data-theme="theverge"] .login-page__signal span:nth-child(1) { height: 45%; background: var(--brand-bar-1); }
+[data-theme="theverge"] .login-page__signal span:nth-child(2) { height: 100%; background: var(--brand-bar-2); }
+[data-theme="theverge"] .login-page__signal span:nth-child(3) { height: 70%; background: var(--verge-yellow); }
+
+/* ── 登录卡片：输入对齐 44px 触达高；主 CTA = mono UPPERCASE 药丸
+      （「PolySans Mono 12px / 600 UPPERCASE 1.5px」+ 触达高） ── */
+[data-theme="theverge"] .login-page__card .ant-input,
+[data-theme="theverge"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="theverge"] .login-page__card .ant-btn-primary { height: 44px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .15em; text-transform: uppercase; }
+
+/* ── 节奏统一：交互色转 180ms ease（按钮 transition） ── */
+[data-theme="theverge"] a { transition: color var(--motion-duration) ease; }
+[data-theme="theverge"] .ant-btn { transition: background-color var(--motion-duration) ease, border-color 150ms ease, color 150ms ease; }

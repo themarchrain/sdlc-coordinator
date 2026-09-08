@@ -1,0 +1,297 @@
+/* ============================================================
+   together 主题令牌块 —— 规格驱动（together 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Together AI 设计语言（亮轨 · 黑白带律的工程蓝图风）：
+   - 画布纯白 #ffffff，卡也白，海拔全靠 #ebebeb 发丝线（= 规格
+     borderColor rgba(0,0,0,.08) 的预混值）；唯一软面 #ebebeb 只做
+     表头轨 / toggle 轨 / 徽章底；json pre = canvas-dark #010120
+     深代码编辑器面（code-editor-mockup 原文）
+   - 文字两律：Ink #000000（标题+正文全是墨）/ Body #959494（规格
+     frontmatter 唯一次级文字色，无独立 mute 档）
+   - 唯一黑 #000000 CTA（4px 微圆角矩形，规格 Don't「never a full
+     pill」）；按压沉入 canvas-dark #010120 藏青黑（推导）；激活导航
+     不叠底色，用左缘黑指示条（ex-app-shell-row 原文）
+   - 语义色板：规格明示不维护、「采用框架默认值」→ success #52c41a /
+     warning #faad14 / error #ff4d4f / info #1677ff（antd 默认）
+   - 三色渐变丝带（orange #fc4c02 → magenta #ef2cc1 → periwinkle
+     #bdbbff）是全部品牌装饰：只进登录 showcase 的 hero 尺度（片段），
+     不降为图表线/控件色；periwinkle/mint 只做暗底上的填充点缀
+   - 圆角纪律：正典 4px（rounded.sm，卡/钮/徽章/表行）、次档 3.25px、
+     容器 8px；全药丸只属悬浮 orb，本主题不使用
+   - 海拔：浅面卡零软影（shadow-panel 关），藏青染色软投影
+     rgba(1,1,32,.1) 只给浮层/登录外壳
+   骨架表达不了的形态（大写 mono 按钮/表头、Inter ss01 替代、负字距
+   display、方角 brand-mark、蓝图网格 + 渐变丝带 showcase）见块后片段。
+   ============================================================ */
+[data-theme="together"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'The Future', Inter, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 专有几何 display sans → 规格 documented 替代 Inter（ss01 见片段） */
+  --font-mono: 'PP Neue Montreal Mono', 'JetBrains Mono', 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace; /* 大写 mono 眉面 → 规格 documented 替代 */
+  --font-display: 'The Future', Inter, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* display 同 sans：层级靠 500 字重 + 负字距（见片段） */
+
+  /* ── Radius（规格刻度：xs 3.25 / sm 4 正典 / md 8 容器；full 只属悬浮 orb，不用） ── */
+  --radius-xs: 3.25px;   /* 图标提示 focus 圆角 = rounded.xs 收紧档 */
+  --radius-soft: 4px;    /* 登录预览小色块 = rounded.sm */
+  --radius-sm: 4px;      /* 内嵌小块 = 正典 */
+  --radius-md: 4px;      /* 行卡 = data-table-row 正典 4px */
+  --radius-lg: 4px;      /* 指标卡 = 卡正典 4px */
+  --radius-xl: 8px;      /* 面板 = rounded.md feature-tab 容器 */
+  --radius-brand: 4px;   /* brand-mark / 登录 signal = code-editor-mockup 4px */
+  --radius-pill: 4px;    /* 迷你徽标 = badge-neutral 4px（规格无药丸徽章） */
+  --radius-panel: 4px;   /* 登录外壳 = article-card 4px */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;                 /* Canvas 白带：产品/定价/文档默认底 */
+  --canvas-soft: #ebebeb;            /* 嵌面卡/表头 = hairline 软面（data-table-header 底） */
+  --canvas-card: #ffffff;            /* 卡白 + 发丝线（article/testimonial 卡 chrome） */
+  --canvas-dark: #010120;            /* json pre = code-editor-mockup 深代码面（canvas-dark 原文） */
+  --surface-sidebar: #ffffff;        /* 滚过 hero 后的白导航（nav-bar 白态） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #ebebeb;          /* 卡内交互/内嵌面 = toggle 轨软面 */
+  --surface-matrix: #ebebeb;
+  --surface-tint: rgba(1, 1, 32, .04); /* 表行 hover = 藏青 4%（Level 3 投影色族，推导） */
+  --surface-rail: #ebebeb;           /* 配置状态轨 = toggle-pill-group 轨 */
+  --surface-detail: #ffffff;
+  --surface-chip: #ebebeb;           /* chip = badge-neutral 底 */
+  --surface-legacy: #ffffff;
+  --surface-draft: #ebebeb;
+  --surface-empty: #ffffff;
+  --surface-json-bar: #ebebeb;       /* json 摘要条 = 软面轨（窗口 chrome 极简） */
+  --tooltip-bg: #010120;             /* 浮层提示 = canvas-dark 带同底 */
+
+  /* ── Ink & text ladder（两律：墨 #000000 / Body #959494，规格无中间灰） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #000000;
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #000000;
+  --ink-chip: #000000;
+  --body: #000000;                   /* 规格：浅带正文段落 = Ink 墨（body-md 承载正文） */
+  --body-alt: #959494;               /* 次级正文 = Body 灰 */
+  --body-soft: #959494;              /* 占比卡小注 = Body 灰 */
+  --mute: #959494;                   /* 规格：caption/mute 同乘 Body 灰（无独立档） */
+  --mute-deep: #959494;
+  --mute-inline: #959494;
+  --mute-caption: #959494;
+  --mute-intro: #959494;
+  --mute-terse: #959494;
+  --mute-quiet: #959494;
+  --mute-soft: #959494;
+  --mute-dim: #959494;
+  --mute-draft: #959494;
+  --mute-json: #959494;
+  --mute-matrix: #959494;
+  --faint: #959494;
+  --faint-alt: #959494;
+  --faint-soft: #959494;
+  --faint-ghost: #959494;
+  --faint-hint: #959494;
+  --faint-meta: #959494;
+  --faint-note: #959494;
+  --faint-empty: #959494;
+  --on-dark: #ffffff;
+  --on-dark-soft: #ffffff;           /* json pre 代码字 = On Dark 白 */
+  --on-dark-faint: rgba(255, 255, 255, .72); /* 深代码面上的次级字（预混推导） */
+
+  /* ── Primary / link / focus（唯一黑 CTA + 左缘指示激活；link 同墨） ── */
+  --primary: #000000;                /* 规格黑 CTA（每视口一颗） */
+  --primary-active: #010120;         /* 按压沉入 canvas-dark 藏青黑（推导） */
+  --on-primary: #ffffff;
+  --link: #000000;                   /* 规格：inline link 属 display sans 墨色 */
+  --link-hover: #333333;             /* 墨抬升一档（推导：规格无 hover 档） */
+  --focus-ring: rgba(1, 1, 32, .22); /* 藏青染焦环（Level 3 投影色族，推导） */
+  --primary-veil: transparent;       /* 激活导航不叠底（ex-app-shell-row：左缘黑指示条承担） */
+
+  /* ── Semantic（采用框架默认值） ── */
+  --success: #52c41a;
+  --success-halo: 0 0 0 4px rgba(82, 196, 26, .15);
+  --warning: #faad14;
+  --warning-soft: #fffbe6;
+  --error: #ff4d4f;
+  --error-deep: #cf1322;             /* 框架红压深档（推导） */
+  --info: #1677ff;
+  --info-soft: #e6f4ff;
+
+  /* ── Hairlines & bars（#ebebeb = rgba(0,0,0,.08) 预混单轨；色条全墨/灰，渐变不降为线） ── */
+  --hairline: #ebebeb;               /* 规格 1px 分隔线（表行/卡 chrome/badge 边） */
+  --hairline-soft: #f2f2f2;          /* 更轻档 = rgba(0,0,0,.05) 预混（推导） */
+  --hairline-strong: #d9d9d9;        /* 强线档 = rgba(0,0,0,.15) 预混（推导） */
+  --hairline-card: #ebebeb;
+  --hairline-inset: #ebebeb;
+  --hairline-mid: #ebebeb;
+  --hairline-rail: #ebebeb;
+  --hairline-codex: #f2f2f2;
+  --hairline-detail: #ebebeb;
+  --hairline-json: #ebebeb;
+  --hairline-dashed: #d9d9d9;        /* 空态虚线需可见 = 强线档 */
+  --hairline-legacy: #ebebeb;
+  --hairline-row: #ebebeb;           /* data-table-row 底边 = hairline 原文 */
+  --hairline-draft: #ebebeb;
+  --bar-value: #000000;              /* 左色条 = 墨（黑 CTA 同源） */
+  --bar-matrix: #959494;             /* Body 灰 */
+  --bar-summary: #959494;
+  --bar-usage: #000000;              /* 用量进度 = toggle 激活黑钮同源（黑填充 + 软面轨） */
+
+  /* ── Overlays & shadows（藏青染色叠层；浅面卡零软影 → shadow-panel 关） ── */
+  --overlay-faint: rgba(1, 1, 32, .03);
+  --overlay-soft: rgba(1, 1, 32, .04);   /* hover = 藏青微染 */
+  --overlay-line: rgba(1, 1, 32, .05);
+  --overlay-medium: rgba(1, 1, 32, .06);
+  --shadow-panel: none;              /* 规格 Don't：浅面卡不落软影，发丝线承担 */
+
+  /* ── brand-mark（canvas-dark 藏青黑方瓦 + 白柱 + 单点长春花填充；形态见片段区注释） ── */
+  --brand-frame-bg: #010120;         /* 深代码/hero 带同底方瓦 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;        /* 平面（规格：零阴影卡） */
+  --brand-bar-1: #ffffff;
+  --brand-bar-2: #bdbbff;            /* 长春花 = 规格允许的软填充位（stat tile 同族） */
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #000000;          /* 激活导航 = 左缘黑指示条（ex-app-shell-row 原文） */
+
+  /* ── 登录页（白带 + canvas-dark 蓝图 showcase + 三色渐变丝带（片段） + 黑 CTA） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #ebebeb;
+  --login-shell-shadow: 0 4px 10px 0 rgba(1, 1, 32, .1); /* Level 3 藏青软投影原文 */
+  --login-showcase-bg: #010120;      /* hero-band-dark 藏青黑带 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .09); /* 工程蓝图细线网格（密度见片段） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #959494;
+  --login-signal-bg: #313641;        /* surface-dark-soft：暗带上的徽章/瓦面 */
+  --login-signal-border: #26263a;    /* hairline-on-dark 1px */
+  --login-signal-shadow: none;
+  --login-signal-bar: #bdbbff;       /* 长春花柱（暗底填充位） */
+  --login-kicker: #bdbbff;           /* kicker = 长春花大写 mono 眉题 */
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .78);
+  --login-preview-bg: #313641;       /* 预览卡 = research-card 暗带卡面 */
+  --login-preview-border: #26263a;
+  --login-preview-shadow: none;      /* 暗带卡零软影 */
+  --login-preview-divider: #26263a;
+  --login-preview-dot: #bdbbff;
+  --login-preview-dot-soft: rgba(189, 187, 255, .5);
+  --login-preview-label: rgba(255, 255, 255, .65);
+  --login-preview-row-line: #26263a;
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #bdbbff; /* chip = badge-subtle-on-dark 同语汇 */
+  --login-preview-chip-bg: rgba(189, 187, 255, .16);
+  --login-preview-bar: #bdbbff;      /* 进度条 = 长春花填充 */
+  --login-foot: rgba(255, 255, 255, .6);
+  --login-card-kicker: #959494;      /* 卡侧眉题 = Body 灰大写 mono */
+  --login-card-heading: #000000;
+  --login-card-copy: #959494;
+  --login-notice-border: rgba(22, 119, 255, .3); /* 公告条 = 框架 info 淡染 */
+  --login-notice-bg: #e6f4ff;
+  --login-notice-ink: #3d4a5c;
+  --login-label: #000000;
+  --login-input-border: #ebebeb;     /* 规格 text-input 1px rgba(0,0,0,.08) */
+  --login-input-border-hover: #959494; /* hover = Body 灰显形 */
+  --login-primary: #000000;          /* 黑 CTA（白字走 antd colorTextLightSolid） */
+  --login-primary-active: #010120;
+}
+
+/* ============================================================
+   together 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="together"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 藏青黑选区：canvas-dark 的 selection 用途（墨即留白的另一面） ── */
+[data-theme="together"] ::selection { background: #010120; color: #ffffff; }
+
+/* ── 系统滚动条：细、强发丝线档 #d9d9d9、方头 ── */
+[data-theme="together"] * { scrollbar-width: thin; scrollbar-color: #d9d9d9 transparent; }
+[data-theme="together"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="together"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="together"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 4px; background: #d9d9d9; background-clip: padding-box; }
+[data-theme="together"] ::-webkit-scrollbar-thumb:hover { background: #959494; background-clip: padding-box; }
+
+/* ── 大写 mono 按钮：mono-caps-button（16px/500/正字距）——按钮标签属 mono 面，
+      display sans 禁止承载按钮 ── */
+[data-theme="together"] .ant-btn {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+/* ── 表头大写 mono：data-table-header = mono-caps-eyebrow（11px/500/.055px 正字距） ── */
+[data-theme="together"] .admin-table .ant-table-thead > tr > th {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* ── 眉题 / 面板 kicker：大写 mono + Body 灰 + 正字距（mono-caps-eyebrow 语汇） ── */
+[data-theme="together"] .page-heading__eyebrow,
+[data-theme="together"] .panel-kicker,
+[data-theme="together"] .section-label {
+  color: var(--mute);
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* ── Inter ss01 替代 + 负字距：The Future 的压缩观感（
+      Substitutes：Inter + ss01，display 尺度再收紧字距） ── */
+[data-theme="together"] body { font-feature-settings: 'ss01' 1; }
+[data-theme="together"] .panel-heading h2,
+[data-theme="together"] .business-outcomes__card > span,
+[data-theme="together"] .ratio-card__title,
+[data-theme="together"] .value-list__title,
+[data-theme="together"] .detail-section h3,
+[data-theme="together"] .configuration-step-copy h2,
+[data-theme="together"] .configuration-summary h2,
+[data-theme="together"] .configuration-inline-title h3,
+[data-theme="together"] .connector-configuration-step__heading h3 { letter-spacing: -.2px; }
+[data-theme="together"] .business-outcomes__card > strong,
+[data-theme="together"] .ratio-card > strong,
+[data-theme="together"] .duration-card strong,
+[data-theme="together"] .codex-metric > strong { font-weight: 500; letter-spacing: -.4px; }
+
+/* ── 导航：激活 = 左缘黑指示条 + 500 字重、不叠底（ex-app-shell-row 原文） ── */
+[data-theme="together"] .workspace-nav a[aria-current="page"] { font-weight: 500; }
+
+/* ── brand-mark：方角三柱（1px 内圆角呼应 4px 正典）；角标隐藏 ── */
+[data-theme="together"] .brand-mark span { border-radius: 1px; }
+[data-theme="together"] .brand-mark::after { display: none; }
+
+/* ── 登录页：canvas-dark 蓝图 showcase——细线网格加密到 24px（工程蓝图密度），
+      三色渐变丝带以 hero 尺度斜切右上角（orange→magenta→periwinkle 原序
+      原三停，不裁切不复用）；kicker/眉题统一大写 mono ── */
+[data-theme="together"] .login-page__showcase::before { background-size: 24px 24px; }
+[data-theme="together"] .login-page__showcase::after {
+  content: '';
+  position: absolute;
+  top: -70px;
+  right: -150px;
+  width: 620px;
+  height: 170px;
+  transform: rotate(24deg);
+  background: linear-gradient(90deg, #fc4c02 0%, #ef2cc1 52%, #bdbbff 100%);
+  opacity: .92;
+  pointer-events: none;
+}
+[data-theme="together"] .login-page__showcase-copy h2 { font-weight: 500; letter-spacing: -.8px; }
+[data-theme="together"] .login-page__card h1 { font-weight: 500; letter-spacing: -.8px; }
+[data-theme="together"] .login-page__showcase-copy > span,
+[data-theme="together"] .login-page__card-heading > span { font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+[data-theme="together"] .login-page__preview-row strong { border-radius: 2px; }

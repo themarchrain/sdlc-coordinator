@@ -1,0 +1,281 @@
+/* ============================================================
+   vodafone 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Vodafone 设计语言（白画布 + 唯一红）：
+   - 品牌红 #E60000：唯一强调色，包揽 CTA 药丸 / 演讲符 speechmark 红章 /
+     destructive 信号（规格：「no second accent colour」「red doubles as validation」）
+   - 近黑墨 #25282B：ink 暗带（hero/nav/footer）+ 主文字；深度 = 表面对比而非阴影
+   - 灰阶三步（文字阶梯坍缩）：ink #25282B / body #7E7E7E / mute #BEBEBE
+   - 软面 #F2F2F2（canvas-soft）：badge-chip / inset / 表头等内嵌面
+   - 单一字体家族（Vodafone 定制族 → Inter 800 替代栈，规格「Font Substitutes」）；
+     规格「no mono companion」→ 技术位借用同族 sans（「technical labels borrow the same face」）
+   - 圆角：卡/输入 6px（rounded.card）、徽标药丸 32px（pill-md）、CTA 药丸 60px（走 antd 9999）
+   - 零软阴影（规格 Don't：「Don't drop a soft drop-shadow on cards」）
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     红压深两阶 #CC0000/#B30000 = 红不降饱和只压明度（规格「never desaturated」）
+     发丝线中间档 #E6E6E6 = mute 叠白 40%（规格边色只有 mute 一极与 soft 面）
+     语义绿 #0E8A3E / 琥珀 #9A6700 = 标准语义克制化（规格无 success/warning 语义段）
+     info = 墨 #25282B = 规格「禁第二强调色」→ 中性墨承担 info
+   骨架表达不了的形态（演讲符红章 brand-mark、大写 800 eyebrow、
+   表头 caption-uppercase、ink 暗带登录 hero）见块后专属片段。
+   ============================================================ */
+[data-theme="vodafone"] {
+  /* ── Typography ───────────────────────────── */
+  /* Vodafone 定制无衬线（禁外部加载）→ Inter 800 替代栈（规格「Font Substitutes」原文指定）；
+     规格「no mono companion」→ mono 技术位借用同族 sans（单一家族法则） */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Inter", system-ui, -apple-system, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; /* display 800 大写 = hero stencil 语汇 */
+
+  /* ── Radius（规格刻度 xs 1 / sm·card 6 / pill-md 32 / pill-lg 60，向超集十档归并） ── */
+  --radius-xs: 1px;      /* 规格 rounded.xs：最紧内联指示 */
+  --radius-soft: 6px;    /* 登录预览小色块 = card 半径 */
+  --radius-sm: 6px;      /* 内嵌小块 = 规格 rounded.sm「canonical content radius」 */
+  --radius-md: 6px;      /* 行卡 = card */
+  --radius-lg: 6px;      /* 指标卡 = card */
+  --radius-xl: 6px;      /* 面板 = card chrome */
+  --radius-brand: 6px;   /* brand-mark / 登录 signal = 演讲符红章（规格 speechmark rounded.sm） */
+  --radius-pill: 32px;   /* 迷你徽标 = 规格 pill-md */
+  --radius-panel: 6px;   /* 登录外壳 = card */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* 规格 canvas：白画布 */
+  --canvas-soft: #f2f2f2;        /* 规格 canvas-soft：chip/内嵌软面 */
+  --canvas-card: #ffffff;        /* 卡片白，靠发丝线 + 留白分隔 */
+  --canvas-dark: #25282b;        /* 规格 ink：暗带面（hero/nav/footer 的极性翻转时刻） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（admin 画布不做暗导航） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f2f2f2;
+  --surface-matrix: #f2f2f2;
+  --surface-tint: #f2f2f2;       /* 行 hover = canvas-soft 微高亮 */
+  --surface-rail: #f2f2f2;
+  --surface-detail: #f2f2f2;
+  --surface-chip: #f2f2f2;       /* badge-chip 底 = canvas-soft 字面值 */
+  --surface-legacy: #f2f2f2;
+  --surface-draft: #f2f2f2;
+  --surface-empty: #f2f2f2;
+  --surface-json-bar: #f2f2f2;
+  --tooltip-bg: #25282b;         /* ink 反转面 */
+
+  /* ── Ink & text ladder（坍缩为规格三级：ink / body / mute） ── */
+  --ink: #25282b;
+  --ink-strong: #25282b;
+  --ink-display: #25282b;
+  --ink-heading: #25282b;
+  --ink-value: #25282b;
+  --ink-repo: #25282b;
+  --ink-step: #25282b;
+  --ink-label-strong: #25282b;
+  --ink-label: #25282b;
+  --ink-row: #25282b;
+  --ink-list: #25282b;
+  --ink-data: #25282b;
+  --ink-field: #25282b;
+  --ink-rail: #25282b;
+  --ink-rail-value: #25282b;
+  --ink-secret: #7e7e7e; /* secret-label = body 级 */
+  --ink-chip: #7e7e7e;   /* duration 数值 = body 级 */
+  --body: #7e7e7e;       /* 规格 body：次级正文/说明 */
+  --body-alt: #7e7e7e;
+  --body-soft: #7e7e7e;
+  --mute: #7e7e7e;       /* 面板标签 = body 灰（mute #BEBEBE 留给占位级，见 faint） */
+  --mute-deep: #25282b;  /* 指标卡标题抬回墨级 */
+  --mute-inline: #7e7e7e;
+  --mute-caption: #7e7e7e;
+  --mute-intro: #7e7e7e;
+  --mute-terse: #7e7e7e;
+  --mute-quiet: #7e7e7e;
+  --mute-soft: #7e7e7e;
+  --mute-dim: #7e7e7e;
+  --mute-draft: #7e7e7e;
+  --mute-json: #7e7e7e;
+  --mute-matrix: #7e7e7e;
+  --faint: #bebebe;      /* 规格 mute：最低优先文字（占位/禁用级） */
+  --faint-alt: #bebebe;
+  --faint-soft: #bebebe;
+  --faint-ghost: #bebebe;
+  --faint-hint: #bebebe;
+  --faint-meta: #bebebe;
+  --faint-note: #bebebe;
+  --faint-empty: #bebebe;
+  --on-dark: #ffffff;    /* 暗带上的字 = 纯白（规格 on-dark） */
+  --on-dark-soft: rgba(255, 255, 255, .72);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #e60000;    /* Vodafone Red：唯一品牌色 */
+  --primary-active: #b30000; /* 派生：红压深（「never desaturated」→ 只压明度） */
+  --on-primary: #ffffff;
+  --link: #e60000;       /* 链接 = 红（outline-red 按钮同源：白底红字） */
+  --link-hover: #cc0000;
+  --focus-ring: rgba(230, 0, 0, .3); /* 派生：红 30% 焦点环 */
+  --primary-veil: rgba(230, 0, 0, .08); /* 激活行红纱（ex-app-shell-row activeIndicator） */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* 无独立语义谱系，红兼任 validation/destructive；
+     success/warning 派生为标准语义克制化 */
+  --success: #0e8a3e;    /* context-dot（派生：功能绿，克制饱和） */
+  --success-halo: none;  /* 零阴影体系，dot 无光环 */
+  --warning: #9a6700;
+  --warning-soft: rgba(154, 103, 0, .12);
+  --error: #e60000;      /* 规格：红兼任 destructive 信号 */
+  --error-deep: #b30000;
+  --info: #25282b;       /* 派生：禁第二强调色 → 近黑墨承担 info */
+  --info-soft: #f2f2f2;  /* 墨系软面（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  /* 规格 边色只有 mute #BEBEBE 一极（row/卡边）与 canvas-soft 面；
+     中间档 #E6E6E6 = mute 叠白 40% 派生 */
+  --hairline: #e6e6e6;
+  --hairline-soft: #f2f2f2;
+  --hairline-strong: #bebebe;  /* mute：控件边/强线（ex-data-table rowBorder 同源） */
+  --hairline-card: #e6e6e6;
+  --hairline-inset: #e6e6e6;
+  --hairline-mid: #e6e6e6;
+  --hairline-rail: #e6e6e6;
+  --hairline-codex: #e6e6e6;
+  --hairline-detail: #e6e6e6;
+  --hairline-json: #e6e6e6;
+  --hairline-dashed: #bebebe; /* 空态虚线 = mute 一档 */
+  --hairline-legacy: #bebebe;
+  --hairline-row: #e6e6e6;
+  --hairline-draft: #bebebe;
+  --bar-value: #bebebe;   /* value-list 左规线 = mute（无彩装饰原则） */
+  --bar-matrix: #bebebe;
+  --bar-summary: #bebebe;
+  --bar-usage: #e60000;   /* 用量轨 = 红（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（ink #25282B 的微暗示家族） */
+  --overlay-faint: rgba(37, 40, 43, .04);
+  --overlay-soft: rgba(37, 40, 43, .05);
+  --overlay-line: rgba(37, 40, 43, .08);
+  --overlay-medium: rgba(37, 40, 43, .08);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零值而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（演讲符红章 speechmark orb：红面 6px + 白 marks，形态见片段） ── */
+  --brand-frame-bg: #e60000;   /* speechmark-logo-orb：红章底 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffffff;      /* 红章上的白 marks */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;    /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #e60000;    /* ex-app-shell-row：激活指示 = 红左缘条 */
+
+  /* ── 登录页（白画布 + ink 暗带 showcase = 规格 hero-band-dark 的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e6e6e6;
+  --login-shell-shadow: none;  /* 规格：「brand uses scrim, not card shadow」 */
+  --login-showcase-bg: #25282b; /* hero-band-dark：ink 暗带 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* 无底纹（规格禁 illustration/氛围渐变），片段隐藏 */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: #e60000;    /* signal = 演讲符红章（透明边、无光影） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;   /* 红章上的白 marks */
+  --login-kicker: rgba(255, 255, 255, .6);
+  --login-heading: #ffffff;      /* hero 800 大写 stencil（40px 见片段） */
+  --login-copy: rgba(255, 255, 255, .72);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #e60000;      /* 暗带上唯一红 = 数据点 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .28); /* 预览进度条保持中性，红只落在数据点与 CTA */
+  --login-foot: rgba(255, 255, 255, .55);
+  --login-card-kicker: #7e7e7e;  /* 白卡侧 eyebrow = body 灰（800 大写见片段） */
+  --login-card-heading: #25282b;
+  --login-card-copy: #7e7e7e;
+  --login-notice-border: #e6e6e6;
+  --login-notice-bg: #f2f2f2;
+  --login-notice-ink: #7e7e7e;
+  --login-label: #25282b;        /* 规格 text-input 文字 = ink */
+  --login-input-border: #25282b; /* 规格 text-input：1px solid ink */
+  --login-input-border-hover: #e60000; /* 派生：聚焦红 = CTA affordance */
+  --login-primary: #e60000;      /* 主 CTA 红药丸（9999 圆角走 antd） */
+  --login-primary-active: #cc0000;
+}
+
+/* ============================================================
+   vodafone 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="vodafone"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 红纱选区 / 红焦点环（红是唯一交互信号） ── */
+[data-theme="vodafone"] ::selection { background: rgba(230, 0, 0, .18); }
+[data-theme="vodafone"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 纪念碑排版：eyebrow = 800 大写宽字距（规格 eyebrow-uppercase 语汇，admin 尺度缩放） ── */
+[data-theme="vodafone"] .page-heading__eyebrow,
+[data-theme="vodafone"] .panel-kicker,
+[data-theme="vodafone"] .section-label { color: var(--mute); font: 800 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="vodafone"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 400; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 标题字重：面板/卡片标题 700（规格 display-sm 700 档）；强调件 700（caption-strong） ── */
+[data-theme="vodafone"] .panel-heading h2,
+[data-theme="vodafone"] .detail-section h3 { font-weight: 700; }
+[data-theme="vodafone"] .business-outcomes__card > strong,
+[data-theme="vodafone"] .ratio-card > strong,
+[data-theme="vodafone"] .codex-metric > strong,
+[data-theme="vodafone"] .metric-matrix strong { font-weight: 700; }
+[data-theme="vodafone"] .codex-token-ledger strong,
+[data-theme="vodafone"] .configuration-status-rail > div > strong,
+[data-theme="vodafone"] .configuration-summary-grid strong { font-weight: 700; }
+[data-theme="vodafone"] .brand-block strong,
+[data-theme="vodafone"] .login-page__brand strong { font-weight: 700; }
+/* 登录卡标题 = hero 800 stencil 语汇（规格「a shout, then a calm sentence」） */
+[data-theme="vodafone"] .login-page__card h1 { font-weight: 800; letter-spacing: -0.01em; }
+
+/* ── 侧栏导航：行 = card 6px；激活 = 墨字 700 + 红图标（指示条走 --nav-indicator） ── */
+[data-theme="vodafone"] .workspace-nav a { border-radius: 6px; font-weight: 400; }
+[data-theme="vodafone"] .workspace-nav a[aria-current="page"] { color: var(--ink); font-weight: 700; }
+[data-theme="vodafone"] .workspace-nav a[aria-current="page"] .anticon { color: var(--primary); }
+
+/* ── brand-mark 重绘：演讲符红章 —— 红面 6px、三根白 marks、去点去光影
+      （规格 speechmark-logo-orb：品牌的 centre of gravity，红章是唯一非 CTA 装饰） ── */
+[data-theme="vodafone"] .brand-mark { background: var(--brand-frame-bg); border-color: transparent; box-shadow: none; }
+[data-theme="vodafone"] .brand-mark span { border-radius: 1px; background: #ffffff; box-shadow: none; }
+[data-theme="vodafone"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="vodafone"] .brand-mark::after { display: none; }
+
+/* ── 表头：caption-uppercase 语汇 —— 12px/600/大写/.06em（ex-data-table headerTypography） ── */
+[data-theme="vodafone"] .admin-table .ant-table-thead > tr > th { text-transform: uppercase; letter-spacing: .06em; font-size: 12px; font-weight: 600; }
+
+/* ── 系统滚动条：方角 + mute 灰（无圆角装饰） ── */
+[data-theme="vodafone"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="vodafone"] ::-webkit-scrollbar-thumb { border-radius: 0; background: var(--hairline-strong); }
+[data-theme="vodafone"] ::-webkit-scrollbar-thumb:hover { background: #7e7e7e; }
+[data-theme="vodafone"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="vodafone"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：ink 暗带 hero —— 标题 40px/800/大写（hero stencil -1px tracking 的
+      admin 尺度 = -0.025em）；无底纹（规格：唯一装饰系统是编辑摄影，禁 illustration） ── */
+[data-theme="vodafone"] .login-page__showcase::before { display: none; }
+[data-theme="vodafone"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 800; line-height: 1.1; letter-spacing: -0.025em; text-transform: uppercase; }
+[data-theme="vodafone"] .login-page__showcase-copy > span,
+[data-theme="vodafone"] .login-page__card-heading > span { font: 800 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── 登录 signal：演讲符红章重绘（红面 + 白 marks，同 brand-mark 形态） ── */
+[data-theme="vodafone"] .login-page__signal { background: var(--login-signal-bg); border-color: transparent; box-shadow: none; }
+[data-theme="vodafone"] .login-page__signal span { border-radius: 1px; background: #ffffff; }
+
+/* ── 登录卡片：输入 = 规格 text-input ink 边 + 红 hover；CTA/输入对齐 44px 触达高
+      （规格营销位 CTA ~52px，admin 密度收敛为 44px） ── */
+[data-theme="vodafone"] .login-page__card .ant-input,
+[data-theme="vodafone"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="vodafone"] .login-page__card .ant-btn-primary { height: 44px; }

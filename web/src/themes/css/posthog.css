@@ -1,0 +1,301 @@
+/* ============================================================
+   posthog 主题令牌块 —— 规格驱动（posthog 设计语言，
+   frontmatter 令牌表），无参考实现；令牌表 + 正文色值按角色映射进
+   162 令牌超集。
+   PostHog 产品分析品牌，管理台 = cream 画布 + 白卡薄橄榄边平铺：
+   - 双面系统：--canvas #eeefe9（cream 暖灰白，连绵到底不换面）→
+     --canvas-card #ffffff（surface-card 主卡面）/ #fcfcfa（surface-doc
+     暖白内层面）/ #e5e7e0（surface-soft 奶灰内嵌面）
+   - 文字阶梯坍缩为规格六级取频四档 + faint：ink #23251d（深橄榄炭）/
+     body #4d4f46（橄榄灰正文）/ mute #6c6e63 / ash #9b9c92（禁用档），
+     faint-empty = stone #b6b7af（最弱级）
+   - 单一饱和 CTA：--primary #f7a501（黄橙药丸）+ 按压 #dd9001（hover 位）/
+     active #b17816；签名 = 黄底深橄榄字（on-primary #23251d 字面值）
+   - 链接 = link-teal #1078a3（link-inline 组件绑定值，品牌主内联链色）
+   - 四彩 soft 通告族（blue/green/red/purple）只进 info/语义/图表位：
+     info = accent-blue #2c84e0 + soft #dceaf6 字面值；error = accent-red
+     #cd4239（规格警示横幅即红族）；success = accent-green #2c8c66；
+     warning 琥珀派生 #97650d（规格无真琥珀）
+   - 发丝线双轨：hairline #bfc1b7（1px 卡边）/ hairline-soft #dcdfd2（行分隔）
+   - 深橄榄炭 #23251d 只作 json 深码岛（surface-dark = code-block）、
+     tooltip 与登录 showcase（白卡内暗码块的沉面时刻）
+   - 零投影系统：卡平铺 cream，海拔全部由薄橄榄边承担
+   骨架表达不了的形态（brand-mark 刺猬抽象重绘、导航墨字反转激活、
+   登录暗码岛 showcase、黄药丸登录 CTA、Plex 字重阶梯）见块后片段。
+   ============================================================ */
+[data-theme="posthog"] {
+  /* ── Typography ───────────────────────────── */
+  /* IBM Plex Sans Variable（开源，Google Fonts 可托管）→ 规格回退栈
+     Plex → -apple-system → system-ui；display 与 UI 同族（规格唯六字重阶梯） */
+  --font-sans: 'IBM Plex Sans Variable', 'IBM Plex Sans', -apple-system, system-ui, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 规格代码双族：ui-monospace 内联 chip 切 + Source Code Pro 展示切 */
+  --font-mono: ui-monospace, 'Source Code Pro', 'Cascadia Code', Consolas, monospace;
+  --font-display: 'IBM Plex Sans Variable', 'IBM Plex Sans', -apple-system, system-ui, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格 rounded 刻度：0 结构面 / 2 内联码 / 4 小件 / 6 标准 / 8 稀有 / 9999 药丸） ── */
+  --radius-xs: 2px;      /* 内联 code chip = rounded.xs 字面值 */
+  --radius-soft: 4px;    /* 登录预览小色块 = rounded.sm */
+  --radius-sm: 4px;      /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 6px;      /* 行卡 = rounded.md 标准档 */
+  --radius-lg: 6px;      /* 指标卡 = rounded.md */
+  --radius-xl: 6px;      /* 面板 = rounded.md（几乎全部组件的标准档） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal = 圆角方 outline 图标（doc 侧栏图标语汇） */
+  --radius-pill: 9999px; /* 迷你徽标 = badge-promo 全圆药丸 */
+  --radius-panel: 8px;   /* 登录外壳 = rounded.lg 稀有容器档 */
+
+  /* ── Canvas & surfaces（cream 画布 + 白卡 + 深橄榄炭码岛） ── */
+  --canvas: #eeefe9;             /* canvas：cream 暖灰白画布（连绵到底） */
+  --canvas-soft: #e5e7e0;        /* surface-soft：奶灰内嵌面（sub-nav/次钮底） */
+  --canvas-card: #ffffff;        /* surface-card：白卡主面（薄橄榄边分层） */
+  --canvas-dark: #23251d;        /* json pre 凹陷面 = surface-dark（code-block 深码岛） */
+  --surface-sidebar: #eeefe9;    /* 侧栏 = 画布同底（规格 doc-sidebar 亦同 canvas） */
+  --surface-bar: rgba(238, 239, 233, .92);
+  --surface-inset: #e5e7e0;      /* 内嵌面 = surface-soft */
+  --surface-matrix: #ffffff;     /* 指标矩阵 = 白卡 */
+  --surface-tint: #fcfcfa;       /* 行 hover = surface-doc 暖白轻抬 */
+  --surface-rail: #ffffff;       /* 配置状态轨 = 白卡 */
+  --surface-detail: #ffffff;     /* 详情卡 = 白卡 */
+  --surface-chip: #fcfcfa;       /* chip = 暖白内层面 */
+  --surface-legacy: #e5e7e0;
+  --surface-draft: #e5e7e0;
+  --surface-empty: #fcfcfa;
+  --surface-json-bar: #23251d;   /* json 头条 = surface-dark（code-block 头条同面） */
+  --tooltip-bg: #23251d;         /* surface-dark 反转面 */
+
+  /* ── Ink & text ladder（规格六级：ink/charcoal/body/mute/ash/stone） ── */
+  --ink: #23251d;          /* ink：标题/主数据（深橄榄炭近黑） */
+  --ink-strong: #23251d;
+  --ink-display: #23251d;
+  --ink-heading: #23251d;
+  --ink-value: #23251d;
+  --ink-repo: #23251d;
+  --ink-step: #23251d;
+  --ink-label-strong: #23251d;
+  --ink-label: #33342d;    /* 标准标签 = charcoal 强正文档 */
+  --ink-row: #23251d;
+  --ink-list: #33342d;     /* value-list li = charcoal */
+  --ink-data: #23251d;
+  --ink-field: #33342d;
+  --ink-rail: #33342d;
+  --ink-rail-value: #23251d;
+  --ink-secret: #6c6e63;   /* secret-label = mute 说明档 */
+  --ink-chip: #33342d;     /* duration 数值 = charcoal */
+  --body: #4d4f46;         /* body：橄榄灰正文（最常用文字色） */
+  --body-alt: #4d4f46;
+  --body-soft: #6c6e63;    /* mute：占比卡小注 */
+  --mute: #6c6e63;         /* mute：metadata/页脚链接档 */
+  --mute-deep: #4d4f46;    /* 区块头标签抬回正文级 */
+  --mute-inline: #6c6e63;
+  --mute-caption: #6c6e63;
+  --mute-intro: #4d4f46;   /* 配置导语 = 正文级 */
+  --mute-terse: #6c6e63;
+  --mute-quiet: #6c6e63;
+  --mute-soft: #6c6e63;
+  --mute-dim: #6c6e63;
+  --mute-draft: #6c6e63;
+  --mute-json: rgba(255, 255, 255, .72); /* json 深头条上的字（码岛白阶，推导） */
+  --mute-matrix: #6c6e63;
+  --faint: #9b9c92;        /* ash：弱化/禁用标签档（规格字面值） */
+  --faint-alt: #9b9c92;
+  --faint-soft: #9b9c92;
+  --faint-ghost: #9b9c92;
+  --faint-hint: #9b9c92;
+  --faint-meta: #9b9c92;
+  --faint-note: #9b9c92;
+  --faint-empty: #b6b7af;  /* stone：最弱级（规格字面值） */
+  --on-dark: #ffffff;      /* on-dark：码岛/深面上的字 */
+  --on-dark-soft: rgba(255, 255, 255, .85); /* json 深块文字（白 alpha 阶，推导） */
+  --on-dark-faint: rgba(255, 255, 255, .6); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（黄橙一族 + teal 内联链） ── */
+  --primary: #f7a501;    /* PostHog Yellow：唯一饱和 CTA */
+  --primary-active: #b17816; /* primary-active 字面值（deep gold 按压档） */
+  --on-primary: #23251d; /* 签名：黄底深橄榄字（规格字面值） */
+  --link: #1078a3;       /* link-teal：link-inline 绑定值（品牌主内联链色） */
+  --link-hover: #0d6488; /* 派生：teal 深化一档（规格无 hover 态） */
+  --focus-ring: rgba(59, 130, 246, .5); /* focus-ring 字面值 */
+  --primary-veil: rgba(35, 37, 29, .08); /* 当前导航 = 橄榄纱（pill-tab-active 墨反转的浅位） */
+
+  /* ── Semantic（四彩通告族；警示走红、琥珀派生） ── */
+  --success: #2c8c66;    /* accent-green（✅ Success 族字面值） */
+  --success-halo: 0 0 0 4px rgba(44, 140, 102, .16);
+  --warning: #97650d;    /* 派生：规格警示横幅走红，真琥珀未 captured */
+  --warning-soft: rgba(151, 101, 13, .12);
+  --error: #cd4239;      /* accent-red（⚠️ Warning/Caution 族字面值） */
+  --error-deep: #b0352c; /* 派生：压深一档 */
+  --info: #2c84e0;       /* accent-blue（💡 Tip/Info 族字面值） */
+  --info-soft: #dceaf6;  /* accent-blue-soft 字面值 */
+
+  /* ── Hairlines & bars（bfc1b7 卡边 / dcdfd2 行分隔 + 四彩数据墨） ── */
+  --hairline: #bfc1b7;         /* hairline：1px 卡边（规格字面值） */
+  --hairline-soft: #dcdfd2;    /* hairline-soft：卡内行分隔（规格字面值） */
+  --hairline-strong: #9b9c92;  /* 派生：ash 作强线档（空态/滚动条保可见） */
+  --hairline-card: #dcdfd2;
+  --hairline-inset: #dcdfd2;
+  --hairline-mid: #dcdfd2;
+  --hairline-rail: #dcdfd2;
+  --hairline-codex: #dcdfd2;
+  --hairline-detail: #dcdfd2;
+  --hairline-json: rgba(255, 255, 255, .12); /* json 深码岛边（白 alpha 阶，推导） */
+  --hairline-dashed: #bfc1b7;  /* 空态虚线 = 卡边档 */
+  --hairline-legacy: #bfc1b7;
+  --hairline-row: #dcdfd2;
+  --hairline-draft: #bfc1b7;
+  --bar-value: #bfc1b7;   /* value-list 左规线 = hairline 中性 */
+  --bar-matrix: #bfc1b7;
+  --bar-summary: #2c84e0; /* 摘要左规线 = accent-blue（通告族数据墨） */
+  --bar-usage: #2c8c66;   /* 用量轨 = accent-green（黄不进数据位，规格保留条款） */
+
+  /* ── Overlays & shadows（橄榄炭 alpha 阶 + 零投影） ── */
+  --overlay-faint: rgba(35, 37, 29, .03);
+  --overlay-soft: rgba(35, 37, 29, .04);  /* nav hover = 橄榄纱 */
+  --overlay-line: rgba(35, 37, 29, .06);  /* nav 分组线 */
+  --overlay-medium: rgba(35, 37, 29, .08);
+  --shadow-panel: 0 8px 28px rgba(35, 37, 29, 0); /* 零投影（零值而非 none，兼容多值拼接） */
+
+  /* ── brand-mark（白圆角方 outline 图标 + 三根墨刺 + 黄橙鼻点；形态见片段） ── */
+  --brand-frame-bg: #ffffff;    /* doc 侧栏圆角方 outline 图标的底 */
+  --brand-frame-border: #bfc1b7; /* hairline 字面值 */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #23251d;   /* 刺猬背刺 = ink 深橄榄炭 */
+  --brand-bar-2: #23251d;
+  --brand-bar-3: #23251d;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #f7a501;     /* 角点 = 黄橙鼻点（品牌唯一饱和色的点缀位） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #23251d; /* 当前导航指示条 = 墨（pill-tab-active 反转语汇） */
+
+  /* ── 登录页（cream 画布 + 白卡 + surface-dark 深码岛 showcase） ── */
+  --login-bg: #eeefe9;
+  --login-shell-border: #bfc1b7;
+  --login-shell-shadow: 0 8px 28px rgba(35, 37, 29, 0); /* 零投影 */
+  --login-showcase-bg: #23251d;  /* showcase = surface-dark code-block 深码岛 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* 无装饰铬（规格无网格），近隐并见片段隐藏 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;  /* signal = 刺猬抽象（黄刺，见片段） */
+  --login-signal-border: rgba(255, 255, 255, .18);
+  --login-signal-shadow: none;
+  --login-signal-bar: #f7a501;    /* 深码岛上的黄刺 = 品牌唯一饱和色的暗底化身 */
+  --login-kicker: #f7a501;        /* kicker = 黄橙（暗底上可读的品牌小签） */
+  --login-heading: #ffffff;       /* hero 标题白字（display 800 见片段） */
+  --login-copy: rgba(255, 255, 255, .7);
+  --login-preview-bg: #ffffff;    /* 深码岛内嵌白 mockup 卡（白卡内暗码块的对偶） */
+  --login-preview-border: transparent;
+  --login-preview-shadow: 0 8px 28px rgba(35, 37, 29, 0);
+  --login-preview-divider: #dcdfd2;
+  --login-preview-dot: #2c84e0;      /* 数据点 = accent-blue */
+  --login-preview-dot-soft: #b6b7af; /* stone */
+  --login-preview-label: #6c6e63;    /* mute */
+  --login-preview-row-line: #dcdfd2;
+  --login-preview-row-ink: #33342d;  /* charcoal */
+  --login-preview-chip-ink: #1d4ed8; /* chip = badge-promo 字面值对（link-blue 字） */
+  --login-preview-chip-bg: #dceaf6;  /* accent-blue-soft 字面值 */
+  --login-preview-bar: #2c8c66;      /* 预览进度条 = accent-green（数据墨） */
+  --login-foot: #6c6e63;    /* mute：页脚链接档 */
+  --login-card-kicker: #6c6e63;
+  --login-card-heading: #23251d;
+  --login-card-copy: #4d4f46;
+  --login-notice-border: rgba(44, 132, 224, .35); /* 公告条 = banner-tip-blue 蓝粉彩 */
+  --login-notice-bg: #dceaf6;  /* accent-blue-soft 字面值 */
+  --login-notice-ink: #33342d;
+  --login-label: #33342d;
+  --login-input-border: #bfc1b7;   /* hairline：text-input 1px 边字面值 */
+  --login-input-border-hover: #9b9c92; /* ash 提亮一档 */
+  --login-primary: #f7a501;        /* 主 CTA = 黄橙药丸（sticky「Get started — free」） */
+  --login-primary-active: #b17816;
+}
+
+/* ============================================================
+   posthog 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="posthog"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 黄橙马克笔选区（品牌唯一饱和色的功能性使用） ── */
+[data-theme="posthog"] ::selection { background: rgba(247, 165, 1, .3); }
+
+/* ── 系统滚动条：细、hairline、圆头 ── */
+[data-theme="posthog"] * { scrollbar-width: thin; scrollbar-color: #bfc1b7 transparent; }
+[data-theme="posthog"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="posthog"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="posthog"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #bfc1b7; }
+[data-theme="posthog"] ::-webkit-scrollbar-thumb:hover { background: #9b9c92; }
+
+/* ── 字重阶梯：标题/数值 700（规格 body-strong/caption-md/heading 档；
+      骨架默认 600–650） ── */
+[data-theme="posthog"] .brand-block strong,
+[data-theme="posthog"] .panel-heading h2,
+[data-theme="posthog"] .business-outcomes__card > span,
+[data-theme="posthog"] .business-outcomes__card > strong,
+[data-theme="posthog"] .ratio-card__title,
+[data-theme="posthog"] .ratio-card > strong,
+[data-theme="posthog"] .codex-metric > strong,
+[data-theme="posthog"] .codex-token-ledger strong,
+[data-theme="posthog"] .configuration-status-rail > div > strong,
+[data-theme="posthog"] .configuration-summary-grid strong,
+[data-theme="posthog"] .configuration-step-copy h2,
+[data-theme="posthog"] .configuration-summary h2,
+[data-theme="posthog"] .configuration-inline-title h3,
+[data-theme="posthog"] .connector-configuration-step__heading h3,
+[data-theme="posthog"] .repo-row strong,
+[data-theme="posthog"] .intent-row strong,
+[data-theme="posthog"] .duration-card strong,
+[data-theme="posthog"] .duration-section__heading strong,
+[data-theme="posthog"] .value-list__title,
+[data-theme="posthog"] .connector-watch__item strong,
+[data-theme="posthog"] .detail-section h3,
+[data-theme="posthog"] .admin-table .ant-table-thead > tr > th,
+[data-theme="posthog"] .audit-json > summary,
+[data-theme="posthog"] .login-page__brand strong,
+[data-theme="posthog"] .login-page__card h1 { font-weight: 700; }
+
+/* ── eyebrow / kicker：utility-xs 大写小签（黄作正文色不可读 → mute 橄榄灰，
+      sans 700 12px 档；先例：meta.css 同名改法） ── */
+[data-theme="posthog"] .page-heading__eyebrow,
+[data-theme="posthog"] .panel-kicker,
+[data-theme="posthog"] .section-label { color: var(--mute); font: 700 11px/1.33 var(--font-sans); letter-spacing: 0; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="posthog"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 导航：黄主色作正文不可读 → 激活态改墨字 + 橄榄纱（pill-tab-active
+      墨反转语汇的浅位版）；指示条 = 墨 ── */
+[data-theme="posthog"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: var(--primary-veil); }
+[data-theme="posthog"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：刺猬抽象 —— 白圆角方 outline 图标底（doc 侧栏图标语汇）
+      + 三根深橄榄炭背刺（外八张开）+ 黄橙鼻点（角点令牌） ── */
+[data-theme="posthog"] .brand-mark { align-items: center; padding: 0 7px; box-shadow: none; }
+[data-theme="posthog"] .brand-mark span { width: 3px; border-radius: 9999px; background: #23251d; box-shadow: none; }
+[data-theme="posthog"] .brand-mark span:nth-child(1) { height: 12px; opacity: 1; transform: rotate(-16deg); }
+[data-theme="posthog"] .brand-mark span:nth-child(2) { height: 17px; }
+[data-theme="posthog"] .brand-mark span:nth-child(3) { height: 13px; transform: rotate(16deg); }
+[data-theme="posthog"] .brand-mark::after { width: 7px; height: 7px; background: #f7a501; border-color: #ffffff; box-shadow: none; }
+@media (max-width: 760px) {
+  [data-theme="posthog"] .brand-mark span:nth-child(1) { height: 9px; }
+  [data-theme="posthog"] .brand-mark span:nth-child(2) { height: 14px; }
+  [data-theme="posthog"] .brand-mark span:nth-child(3) { height: 10px; }
+}
+
+/* ── 登录 showcase：surface-dark 深码岛（无装饰铬，网格底纹隐藏）；
+      h2 = display 档 800 + 负字距（display-lg 24px/800/-0.6px 的放大位） ── */
+[data-theme="posthog"] .login-page__showcase::before { display: none; }
+[data-theme="posthog"] .login-page__showcase-copy h2 { font-size: 33px; font-weight: 800; line-height: 1.33; letter-spacing: -.02em; }
+[data-theme="posthog"] .login-page__showcase-copy > span,
+[data-theme="posthog"] .login-page__card-heading > span { font: 700 11px/1.33 var(--font-sans); letter-spacing: 0; text-transform: uppercase; }
+
+/* ── 登录 signal：刺猬抽象的暗底版（黄刺 + 白框） ── */
+[data-theme="posthog"] .login-page__signal { align-items: center; padding: 0 9px; gap: 5px; box-shadow: none; }
+[data-theme="posthog"] .login-page__signal span { width: 4px; border-radius: 9999px; background: #f7a501; }
+[data-theme="posthog"] .login-page__signal span:nth-child(1) { height: 14px; transform: rotate(-14deg); }
+[data-theme="posthog"] .login-page__signal span:nth-child(2) { height: 22px; }
+[data-theme="posthog"] .login-page__signal span:nth-child(3) { height: 16px; transform: rotate(14deg); }
+
+/* ── 登录卡片：输入 36 = text-input 字面高；主 CTA 40 + 全圆药丸
+      （sticky nav「Get started — free」的签名形态，管理台常规钮仍 6px） ── */
+[data-theme="posthog"] .login-page__card .ant-input,
+[data-theme="posthog"] .login-page__card .ant-input-affix-wrapper { min-height: 36px; }
+[data-theme="posthog"] .login-page__card .ant-btn-primary { height: 40px; border-radius: 9999px; }

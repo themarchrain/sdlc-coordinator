@@ -1,0 +1,283 @@
+/* ============================================================
+   wired 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   WIRED 设计语言（编辑部黑白二重奏）：
+   - 纯黑 #000000 即品牌色：wordmark / CTA / footer 带 / 主文字（「never softened」）
+   - 唯一彩色 = 内文链接蓝 #057DBC（「reserved for inline body links only」，
+     此处兼任 info 与数据对比色）
+   - 灰阶：ink-soft #1A1A1A / body #757575 / hairline #E0E0E0 / canvas-soft #F5F5F5
+   - 三族排版：WiredDisplay 展示衬线 / BreveText 正文衬线 / Apercu 结构 sans
+     （「serif for narrative, sans for structure」）；mono kicker = 系统 mono 栈
+     （ex-data-table「mono-style eyebrow」语汇，杂志技术签）
+   - 方角几何：全站 0px（规格 rounded 刻度只有 none/full，full 不入令牌）
+   - 零软阴影：海拔 = hairline 与表面对比
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     黑提亮两阶 #1A1A1A/#333333 = 纯黑 hover/active 无法压深，只能提亮
+     强线 #9E9E9E = body 提亮（规格只给 hairline #E0E0E0 与 ink 边两极）
+     语义三色 #1E7B34/#9A6700/#B3261E = 标准语义克制化（规格无语义段）
+     info = 链接蓝 #057DBC = 唯一彩色的功能化复用
+   骨架表达不了的形态（masthead 字标 brand-mark、衬线展示标题、
+   mono kicker eyebrow、表头 mono-caps、黑 footer 带登录 hero）见块后专属片段。
+   ============================================================ */
+[data-theme="wired"] {
+  /* ── Typography ───────────────────────────── */
+  /* 三族（定制族禁外部加载，规格「Font Substitutes」的 web-safe 近似）：
+     sans = Apercu 结构位；mono = kicker/表头技术签（规格无 mono 族，ex-data-table 语汇借用）；
+     display = WiredDisplay 高对比衬线（Georgia/Times 系近似） */
+  --font-sans: "Apercu", "Helvetica Neue", Helvetica, Arial, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace;
+  --font-display: "WiredDisplay", "Times New Roman", Georgia, "Songti SC", SimSun, serif;
+
+  /* ── Radius（规格刻度仅 none 0 / full 9999；full 留给圆形图标容器不入令牌 → 十档全 0） ── */
+  --radius-xs: 0px;      /* 规格 rounded.none */
+  --radius-soft: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-brand: 0px;   /* brand-mark = 方角字标条 */
+  --radius-pill: 0px;    /* 徽标也方角（品牌无药丸） */
+  --radius-panel: 0px;
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* 规格 canvas：白纸画布 */
+  --canvas-soft: #f5f5f5;        /* 规格 canvas-soft：hover/内嵌软面 */
+  --canvas-card: #ffffff;        /* 卡片白（规格 story-card 无边，卡活在画布上） */
+  --canvas-dark: #000000;        /* 规格 ink：黑 footer 带 / 反转面 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 nav-bar light by default） */
+  --surface-bar: rgba(255, 255, 255, .94);
+  --surface-inset: #f5f5f5;
+  --surface-matrix: #f5f5f5;
+  --surface-tint: #f5f5f5;       /* 行 hover = canvas-soft（规格 search-hover 面） */
+  --surface-rail: #f5f5f5;
+  --surface-detail: #f5f5f5;
+  --surface-chip: #f5f5f5;
+  --surface-legacy: #f5f5f5;
+  --surface-draft: #f5f5f5;
+  --surface-empty: #f5f5f5;
+  --surface-json-bar: #f5f5f5;
+  --tooltip-bg: #000000;         /* 纯黑反转面 */
+
+  /* ── Ink & text ladder（坍缩为规格三级：ink / ink-soft / body） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #000000;
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #1a1a1a; /* secret-label = ink-soft */
+  --ink-chip: #1a1a1a;   /* duration 数值 = ink-soft */
+  --body: #1a1a1a;       /* 正文 = ink-soft（规格：正文段落即墨黑衬线） */
+  --body-alt: #757575;   /* 规格 body：次级正文/署名 */
+  --body-soft: #757575;
+  --mute: #757575;       /* 面板标签 = body 灰（规格最浅文字档） */
+  --mute-deep: #1a1a1a;  /* 指标卡标题抬回 ink-soft */
+  --mute-inline: #757575;
+  --mute-caption: #757575;
+  --mute-intro: #757575;
+  --mute-terse: #757575;
+  --mute-quiet: #757575;
+  --mute-soft: #757575;
+  --mute-dim: #757575;
+  --mute-draft: #757575;
+  --mute-json: #757575;
+  --mute-matrix: #757575;
+  --faint: #757575;      /* 规格 body 即最浅灰（严格双色原则，不另造浅灰） */
+  --faint-alt: #757575;
+  --faint-soft: #757575;
+  --faint-ghost: #757575;
+  --faint-hint: #757575;
+  --faint-meta: #757575;
+  --faint-note: #757575;
+  --faint-empty: #757575;
+  --on-dark: #ffffff;    /* 黑带上的字 = 纯白（规格 footer on-primary） */
+  --on-dark-soft: rgba(255, 255, 255, .75);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #000000;    /* 纯黑即品牌 CTA 色（「Ink Black IS the accent」） */
+  --primary-active: #333333; /* 派生：纯黑无法压深，按压提亮一阶 */
+  --on-primary: #ffffff;
+  --link: #057dbc;       /* 规格 link：唯一彩色，内文链接蓝 */
+  --link-hover: #045d99; /* 派生：蓝压深一阶 */
+  --focus-ring: rgba(5, 125, 188, .35); /* 派生：链接蓝 35% 焦点环 */
+  --primary-veil: rgba(0, 0, 0, .05);   /* 激活行 = 墨系微高亮（指示条走 --nav-indicator） */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* 无独立语义谱系（validation 走 ink+body 灰阶）→
+     图表/时间线派生为标准语义克制化；info = 链接蓝复用 */
+  --success: #1e7b34;    /* context-dot（派生：功能绿，克制饱和） */
+  --success-halo: none;  /* 零阴影体系，dot 无光环 */
+  --warning: #9a6700;
+  --warning-soft: rgba(154, 103, 0, .12);
+  --error: #b3261e;
+  --error-deep: #8f1d17;
+  --info: #057dbc;       /* inferred-mark = 链接蓝（唯一彩色的功能化复用） */
+  --info-soft: #eaf3fa;  /* 蓝 6% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  /* 规格 hairline #E0E0E0 为唯一线色；强线 #9E9E9E = body 提亮派生
+     （滚动条/空态虚线等需要可见的场合） */
+  --hairline: #e0e0e0;
+  --hairline-soft: #ededed;  /* 派生：hairline 叠白一档 */
+  --hairline-strong: #9e9e9e;
+  --hairline-card: #e0e0e0;
+  --hairline-inset: #e0e0e0;
+  --hairline-mid: #e0e0e0;
+  --hairline-rail: #e0e0e0;
+  --hairline-codex: #e0e0e0;
+  --hairline-detail: #e0e0e0;
+  --hairline-json: #e0e0e0;
+  --hairline-dashed: #9e9e9e; /* 空态虚线 = 强线一档 */
+  --hairline-legacy: #9e9e9e;
+  --hairline-row: #e0e0e0;    /* 规格 story-row：行间 1px hairline */
+  --hairline-draft: #9e9e9e;
+  --bar-value: #000000;   /* value-list 左规线 = 墨（印刷信息图的黑数据条） */
+  --bar-matrix: #1a1a1a;
+  --bar-summary: #757575;
+  --bar-usage: #000000;   /* 用量轨 = 墨（数据墨水黑白主调） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（纯黑微暗示家族） */
+  --overlay-faint: rgba(0, 0, 0, .035);
+  --overlay-soft: rgba(0, 0, 0, .045);
+  --overlay-line: rgba(0, 0, 0, .07);
+  --overlay-medium: rgba(0, 0, 0, .08);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零值而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（masthead 字标：透明框 + 三根方角黑条，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #000000;      /* wordmark 黑条 */
+  --brand-bar-2: #000000;
+  --brand-bar-3: #000000;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;    /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #000000;    /* ex-app-shell-row：激活指示 = 黑左缘条 */
+
+  /* ── 登录页（白画布 + 纯黑 showcase 带 = 规格 footer band 的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e0e0e0;
+  --login-shell-shadow: none;  /* 零阴影（hairline 承担海拔） */
+  --login-showcase-bg: #000000; /* 黑带（规格 footer fill #000000） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .06); /* 极淡印刷网格（印刷杂志的纸感残留） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;  /* signal = 同 brand-mark 的三根白条 */
+  --login-signal-border: rgba(255, 255, 255, .3);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: rgba(255, 255, 255, .6);  /* mono kicker（形态见片段） */
+  --login-heading: #ffffff;      /* 衬线展示 48px/400（display-lg 见片段） */
+  --login-copy: rgba(255, 255, 255, .72);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #057dbc;      /* 黑带上唯一彩色 = 链接蓝数据点 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: rgba(255, 255, 255, .55);
+  --login-card-kicker: #757575;  /* 白卡侧 mono kicker = body 灰 */
+  --login-card-heading: #000000; /* 衬线展示（形态见片段） */
+  --login-card-copy: #757575;
+  --login-notice-border: #e0e0e0;
+  --login-notice-bg: #f5f5f5;
+  --login-notice-ink: #4d4d4d;   /* 派生：body 与 ink 之间（公告正文可读档） */
+  --login-label: #1a1a1a;        /* 规格 text-input 文字 = ink */
+  --login-input-border: #000000; /* 规格 text-input：1px solid ink */
+  --login-input-border-hover: #057dbc; /* 派生：聚焦蓝 = 唯一彩色的 affordance 化 */
+  --login-primary: #000000;      /* 主 CTA 方角黑块（0px 圆角走 antd） */
+  --login-primary-active: #333333;
+}
+
+/* ============================================================
+   wired 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="wired"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 编辑部选区：黑底白字 / 链接蓝焦点环（唯一彩色的 affordance 化） ── */
+[data-theme="wired"] ::selection { background: #000000; color: #ffffff; }
+[data-theme="wired"] :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+/* ── 衬线展示：面板/详情/登录标题 = WiredDisplay 栈 weight 400（规格 display-md 语汇，
+      「优雅来自字型而非 bold」——展示位不加粗） ── */
+[data-theme="wired"] .panel-heading h2,
+[data-theme="wired"] .detail-section h3 { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
+[data-theme="wired"] .login-page__card h1 { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
+
+/* ── mono kicker：eyebrow / 面板 kicker = mono 大写宽字距（杂志技术签，
+      ex-data-table「mono-style eyebrow」语汇） ── */
+[data-theme="wired"] .page-heading__eyebrow,
+[data-theme="wired"] .panel-kicker,
+[data-theme="wired"] .section-label { color: var(--mute); font-family: var(--font-mono); font-weight: 600; font-size: 10px; line-height: 1.5; letter-spacing: .14em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="wired"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 结构字重：强调件 700（Apercu 700 = byline/nav-link/body-md-strong 档） ── */
+[data-theme="wired"] .business-outcomes__card > strong,
+[data-theme="wired"] .ratio-card > strong,
+[data-theme="wired"] .codex-metric > strong,
+[data-theme="wired"] .metric-matrix strong { font-weight: 700; }
+[data-theme="wired"] .codex-token-ledger strong,
+[data-theme="wired"] .configuration-status-rail > div > strong,
+[data-theme="wired"] .configuration-summary-grid strong { font-weight: 700; }
+[data-theme="wired"] .brand-block strong,
+[data-theme="wired"] .login-page__brand strong { font-weight: 700; }
+
+/* ── 侧栏导航：行 = 方角；nav-link = sans 700（规格 nav-link 字面） ── */
+[data-theme="wired"] .workspace-nav a { border-radius: 0; font-weight: 700; }
+[data-theme="wired"] .workspace-nav a[aria-current="page"] { color: var(--ink); }
+[data-theme="wired"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：masthead 字标 —— 透明框、三根方角黑条、去点去光影
+      （规格唯一签名装饰 = 黑字 masthead 带，无其他 chrome） ── */
+[data-theme="wired"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="wired"] .brand-mark span { border-radius: 0; background: #000000; box-shadow: none; }
+[data-theme="wired"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="wired"] .brand-mark::after { display: none; }
+
+/* ── 表头：mono-caps eyebrow（ex-data-table「Header uses mono-caps eyebrow typography」） ── */
+[data-theme="wired"] .admin-table .ant-table-thead > tr > th { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; font-weight: 600; }
+
+/* ── 系统滚动条：方角 + 派生灰 ── */
+[data-theme="wired"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="wired"] ::-webkit-scrollbar-thumb { border-radius: 0; background: var(--hairline-strong); }
+[data-theme="wired"] ::-webkit-scrollbar-thumb:hover { background: #757575; }
+[data-theme="wired"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="wired"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：黑 footer 带 —— 标题 = WiredDisplay 48px/400/-0.4px（display-lg 字面），
+      保留极淡印刷网格（印刷杂志的纸感） ── */
+[data-theme="wired"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-size: 48px; font-weight: 400; line-height: 1.05; letter-spacing: -0.008em; }
+[data-theme="wired"] .login-page__showcase-copy > span,
+[data-theme="wired"] .login-page__card-heading > span { font-family: var(--font-mono); font-weight: 600; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── 登录 signal：三根方角白条（同 brand-mark 形态的黑带镜像） ── */
+[data-theme="wired"] .login-page__signal { background: transparent; border-color: var(--login-signal-border); box-shadow: none; }
+[data-theme="wired"] .login-page__signal span { border-radius: 0; background: #ffffff; }
+
+/* ── 登录卡片：输入 = 规格 text-input 1px ink 边；触达高 44px（规格 Touch Targets ~44px） ── */
+[data-theme="wired"] .login-page__card .ant-input,
+[data-theme="wired"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="wired"] .login-page__card .ant-btn-primary { height: 44px; }

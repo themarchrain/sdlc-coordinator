@@ -1,0 +1,286 @@
+/* ============================================================
+   shopify 主题令牌块 —— 规格驱动（shopify 设计语言），
+   无参考实现；正文/色板色值按角色映射进 162 令牌超集。
+   Shopifi 双轨设计语言，管理台取事务轨（light track）：
+   - 乳白事务轨：--canvas #fbfbf5（canvas-cream，pricing 页底）+ 白卡
+     #ffffff（canvas-light），aloe #c1fbd4 / pistachio #d4f9e0 只作
+     成功/增长面（本主题内消费于 swatch/brand-dot/登录成功 chip 族）
+   - 交互色即墨：--primary #000000 黑药丸 CTA，按压 shade-70 #3f3f46
+   - shade 阶（zinc）承担文字/边线：#3f3f46/#52525b/#71717a/#a1a1aa/
+     #d4d4d8；hairline-light #e4e4e7 为亮面唯一 1px 边
+   - cool link tones（#9dabad/#9797a2/#bdbdca）= 暗面上白字之下的
+     安静层级 → json 深块二级文字 / 登录 showcase 次级文字
+   - 近黑轨局部取材：json pre #0a0a0a（canvas-night-elevated）+
+     surface-elevated-dark #1e2c31 头条与 hairline-dark 边、
+     tooltip #000000、登录 showcase #000000
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     深化 aloe 绿 #17824f（pastel 不够描线对比）→ 语义 success
+     标准 amber/red 克制化 #96660a/#b3372e → warning/error
+     锌灰薄纱 #f4f4f5 / #ececef（shade 阶内插）→ info-soft/软分隔
+   骨架表达不了的形态（ss03 字形集、药丸导航/品牌标、330 细字重
+   display 数值、白描边 showcase signal、暗卡顶部光泽）见块后片段。
+   ============================================================ */
+[data-theme="shopify"] {
+  /* OpenType ss03 字形集 = 规格全站签名（规格「applied universally」） */
+  font-feature-settings: "ss03";
+
+  /* ── Typography ───────────────────────────── */
+  /* 正文 Inter Variable（规格 UI 档 420–550）；mono = 规格 code 档 ui-monospace；
+     display = Neue Haas Grotesk Display 细字重（禁外部加载 → 按规格替代指引
+     落 Inter Display/Helvetica light，细字重由块后片段钉住） */
+  --font-sans: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-display: 'NeueHaasGrotesk Display', 'Helvetica Now Display', 'Inter Display', Inter, Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格刻度：xs 4 / sm 5 / md 8 / lg 12 / xl 20 / pill 9999） ── */
+  --radius-xs: 4px;      /* 输入件/hairline tag（rounded.xs） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 5px;      /* 内嵌小块（rounded.sm） */
+  --radius-md: 8px;      /* 行卡（rounded.md） */
+  --radius-lg: 12px;     /* 指标卡 = 定价/特性卡 rounded.lg */
+  --radius-xl: 12px;     /* 面板（卡容器同 lg；20px 只属摄影框，非面板角色） */
+  --radius-brand: 9999px; /* brand-mark = 黑药丸（pill 词汇） */
+  --radius-pill: 9999px; /* 迷你徽标 = pill-tag 药丸 */
+  --radius-panel: 20px;  /* 登录外壳 = rounded.xl hero 框 */
+
+  /* ── Canvas & surfaces（事务轨：cream 页底 + 白卡 + cream 内嵌） ── */
+  --canvas: #fbfbf5;                 /* canvas-cream：pricing 页画布（事务轨页底） */
+  --canvas-soft: #ffffff;            /* canvas-light：指标/结果卡、表头（白卡浮在 cream 上） */
+  --canvas-card: #ffffff;            /* card-pricing：白卡 + hairline 分隔 */
+  --canvas-dark: #0a0a0a;            /* canvas-night-elevated：json pre 凹陷暗卡 */
+  --surface-sidebar: #ffffff;        /* nav-bar-light = canvas-light */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #fbfbf5;          /* 白卡内嵌面 = cream（「invisibly different」的暖调） */
+  --surface-matrix: #fbfbf5;
+  --surface-tint: #fbfbf5;           /* 行 hover = cream 微暖 */
+  --surface-rail: #fbfbf5;
+  --surface-detail: #fbfbf5;
+  --surface-chip: #fbfbf5;
+  --surface-legacy: #fbfbf5;
+  --surface-draft: #f4f4f5;          /* 推导：锌灰薄纱（shade 阶内插），draft 更沉一档 */
+  --surface-empty: #fbfbf5;
+  --surface-json-bar: #1e2c31;       /* surface-elevated-dark：暗 json 卡头条（青移深面） */
+  --tooltip-bg: #000000;             /* 近黑轨取材：黑底白字 tooltip */
+
+  /* ── Ink & text ladder（ink #000000 + shade-70/60/50/40 四级） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #3f3f46;   /* value-list li = shade-70 正文级 */
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #3f3f46; /* secret-label = shade-70 正文级 */
+  --ink-chip: #3f3f46;   /* duration 数值 = shade-70 正文级 */
+  --body: #3f3f46;       /* shade-70：body-md 420 的墨系正文 */
+  --body-alt: #52525b;   /* shade-60 */
+  --body-soft: #52525b;
+  --mute: #52525b;       /* shade-60：次级标签 */
+  --mute-deep: #3f3f46;  /* 卡片标题抬回正文级 */
+  --mute-inline: #52525b;
+  --mute-caption: #52525b;
+  --mute-intro: #52525b;
+  --mute-terse: #52525b;
+  --mute-quiet: #52525b;
+  --mute-soft: #52525b;
+  --mute-dim: #52525b;
+  --mute-draft: #52525b;
+  --mute-json: #52525b;
+  --mute-matrix: #52525b;
+  --faint: #71717a;      /* shade-50：占位/提示级 */
+  --faint-alt: #71717a;
+  --faint-soft: #71717a;
+  --faint-ghost: #71717a;
+  --faint-hint: #71717a;
+  --faint-meta: #71717a;
+  --faint-note: #71717a;
+  --faint-empty: #a1a1aa; /* shade-40：空态最弱级 */
+  --on-dark: #ffffff;    /* 暗面（json/tooltip/showcase）白字 */
+  --on-dark-soft: #bdbdca; /* link-cool-3：白字之下的安静层级 */
+  --on-dark-faint: #9797a2; /* link-cool-2：暗面日期/最弱级 */
+
+  /* ── Primary / link / focus（黑药丸一族；墨即交互色） ── */
+  --primary: #000000;    /* button-primary-pill：黑底白字 */
+  --primary-active: #3f3f46; /* shade-70 按压态（规格唯一命名状态变体） */
+  --on-primary: #ffffff;
+  --link: #000000;       /* 亮轨链接 = 墨（规格无第二交互色相） */
+  --link-hover: #3f3f46;
+  --focus-ring: rgba(0, 0, 0, .22); /* 推导：墨 22% 焦点环 */
+  --primary-veil: rgba(0, 0, 0, .05); /* 当前导航 = 墨系微高亮 */
+
+  /* ── Semantic（推导：success = aloe 深化；warn/error = 标准语义克制化） ── */
+  --success: #17824f;    /* aloe 同 hue 深化到文字/描线级（pastel #c1fbd4 对比不足） */
+  --success-halo: 0 0 0 4px rgba(23, 130, 79, .12);
+  --warning: #96660a;
+  --warning-soft: rgba(150, 102, 10, .1);
+  --error: #b3372e;
+  --error-deep: #8f2a22;
+  --info: #3f3f46;       /* 墨系 info（规格：灰/米/蓝不入系统） */
+  --info-soft: #f4f4f5;  /* 锌灰薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（hairline-light #e4e4e7 主边 / shade-30 强线） ── */
+  --hairline: #e4e4e7;         /* hairline-light：亮面 1px 边/表格分隔 */
+  --hairline-soft: #ececef;    /* 推导：hairline-light 提亮半档（软分隔） */
+  --hairline-strong: #d4d4d8;  /* shade-30：控件强边 */
+  --hairline-card: #e4e4e7;
+  --hairline-inset: #e4e4e7;
+  --hairline-mid: #e4e4e7;
+  --hairline-rail: #e4e4e7;
+  --hairline-codex: #e4e4e7;
+  --hairline-detail: #e4e4e7;
+  --hairline-json: #1e2c31;    /* hairline-dark：暗 json 卡可见铬 */
+  --hairline-dashed: #d4d4d8;  /* 空态虚线 = shade-30 保可见 */
+  --hairline-legacy: #d4d4d8;
+  --hairline-row: #e4e4e7;
+  --hairline-draft: #d4d4d8;
+  --bar-value: #d4d4d8;   /* value-list 左规线 = shade-30（无彩数据墨） */
+  --bar-matrix: #d4d4d8;
+  --bar-summary: #a1a1aa; /* 摘要左规线 = shade-40 沉一档 */
+  --bar-usage: #000000;   /* 用量轨 = 交互墨色（黑药丸的功能性数据墨） */
+
+  /* ── Overlays & shadows（Level 3 四层小影纸晕 = 亮轨签名深度） ── */
+  --overlay-faint: rgba(0, 0, 0, .035);
+  --overlay-soft: rgba(0, 0, 0, .045);  /* nav hover = 墨系微高亮 */
+  --overlay-line: rgba(0, 0, 0, .06);
+  --overlay-medium: rgba(0, 0, 0, .075);
+  --shadow-panel: 0 8px 8px rgba(0, 0, 0, .1), 0 4px 4px rgba(0, 0, 0, .1), 0 2px 2px rgba(0, 0, 0, .1), 0 0 0 1px rgba(0, 0, 0, .1); /* 规格 Level 3 字面值 */
+
+  /* ── brand-mark（黑药丸 + 三根白细条 + aloe 角点；形态见片段） ── */
+  --brand-frame-bg: #000000;        /* canvas-night 药丸（黑药丸 CTA 的品牌标版） */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;       /* 亮轨海拔归卡面纸晕，品牌标平坦 */
+  --brand-bar-1: #ffffff;
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #c1fbd4;             /* aloe-10：唯一Commerce绿点缀 */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #17824f;         /* 推导：aloe 深化（pastel aloe 在白底不可见） */
+
+  /* ── 登录页（cream 页底 + 白卡 + 近黑 cinematic showcase） ── */
+  --login-bg: #fbfbf5;              /* 事务轨页底 */
+  --login-shell-border: #e4e4e7;
+  --login-shell-shadow: 0 25px 50px -12px rgba(0, 0, 0, .25); /* 规格 Level 4 modal 影 */
+  --login-showcase-bg: #000000;     /* 近黑轨取材面：cinematic hero */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* Level 1 顶光泽同档（近隐） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #9dabad;      /* link-cool-1：暗面次级 */
+  --login-signal-bg: #000000;       /* button-outline-on-dark：黑底白描边药丸（形态见片段） */
+  --login-signal-border: #ffffff;   /* 规格 2px 白描边（宽度见片段） */
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: #9dabad;          /* 暗面 eyebrow = 冷调安静层级 */
+  --login-heading: #ffffff;
+  --login-copy: #bdbdca;            /* link-cool-3 */
+  --login-preview-bg: #0a0a0a;      /* canvas-night-elevated：showcase 内嵌暗卡 */
+  --login-preview-border: rgba(255, 255, 255, .08); /* Level 2 暗卡发丝线 */
+  --login-preview-shadow: none;     /* 近黑轨平坦（规格 Don't：暗卡不加投影） */
+  --login-preview-divider: #1e2c31; /* hairline-dark */
+  --login-preview-dot: #ffffff;
+  --login-preview-dot-soft: #9797a2; /* link-cool-2 */
+  --login-preview-label: #9797a2;
+  --login-preview-row-line: #1e2c31;
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: #9dabad;
+  --login-card-kicker: #71717a;     /* 白卡侧 eyebrow = shade-50 */
+  --login-card-heading: #000000;
+  --login-card-copy: #52525b;
+  --login-notice-border: #e4e4e7;   /* info 通知 = 锌灰薄纱 + 发丝线（墨系） */
+  --login-notice-bg: #f4f4f5;
+  --login-notice-ink: #3f3f46;
+  --login-label: #3f3f46;
+  --login-input-border: #e4e4e7;    /* text-input：1px hairline-light */
+  --login-input-border-hover: #71717a;
+  --login-primary: #000000;         /* 黑药丸 CTA（白字） */
+  --login-primary-active: #3f3f46;  /* shade-70 按压 */
+}
+
+/* ============================================================
+   shopify 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="shopify"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 编辑部式黑底选区（黑药丸语汇的功能性延伸） ── */
+[data-theme="shopify"] ::selection { background: rgba(0, 0, 0, .9); color: #fbfbf5; }
+
+/* ── 系统滚动条：细、shade-30、圆头（药丸圆角） ── */
+[data-theme="shopify"] * { scrollbar-width: thin; scrollbar-color: #d4d4d8 transparent; }
+[data-theme="shopify"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="shopify"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="shopify"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #d4d4d8; }
+[data-theme="shopify"] ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+/* ── 药丸导航：pill 词汇延伸到侧栏项（非按钮不受 antd 管辖） ── */
+[data-theme="shopify"] .workspace-nav a { border-radius: 9999px; }
+
+/* ── 细字重 display 排版（规格 Principles「Display thinness is the brand」） ──
+   指标数值 = display 档 330 细字重；标题 = heading 档 500 */
+[data-theme="shopify"] .business-outcomes__card > strong,
+[data-theme="shopify"] .ratio-card > strong,
+[data-theme="shopify"] .codex-metric > strong { font-weight: 330; }
+[data-theme="shopify"] .panel-heading h2,
+[data-theme="shopify"] .configuration-step-copy h2,
+[data-theme="shopify"] .configuration-summary h2,
+[data-theme="shopify"] .detail-section h3,
+[data-theme="shopify"] .connector-configuration-step__heading h3,
+[data-theme="shopify"] .configuration-inline-title h3 { font-family: var(--font-display); font-weight: 500; }
+/* 小号数值/标签 = heading 档 500（13px 以下不落细字重，保读性） */
+[data-theme="shopify"] .metric-matrix strong,
+[data-theme="shopify"] .codex-token-ledger strong,
+[data-theme="shopify"] .configuration-status-rail > div > strong,
+[data-theme="shopify"] .configuration-summary-grid strong { font-weight: 500; }
+
+/* ── eyebrow / kicker = eyebrow-cap：12px/400/+0.72px 大写（Inter，去 mono 化） ── */
+[data-theme="shopify"] .page-heading__eyebrow,
+[data-theme="shopify"] .panel-kicker,
+[data-theme="shopify"] .section-label { color: var(--mute); font: 400 12px/1.2 var(--font-sans); letter-spacing: .72px; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="shopify"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 表头：白底 + hairline 分隔 + 500 字重（无大写变换） ── */
+[data-theme="shopify"] .admin-table .ant-table-thead > tr > th { font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── json 暗卡：Level 1 顶部光泽（规格「light hitting a glass surface」字面值） ── */
+[data-theme="shopify"] .json-viewer,
+[data-theme="shopify"] .audit-json { box-shadow: 0 1px 2px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+
+/* ── brand-mark 重绘：黑药丸 + 三根白细条（黑药丸 CTA 的图标版；
+      基线 34px 方标拉宽为 44×30 药丸） ── */
+[data-theme="shopify"] .brand-mark { width: 44px; height: 30px; align-items: center; padding: 0 11px; gap: 3px; }
+[data-theme="shopify"] .brand-mark span { width: 3px; border-radius: 9999px; box-shadow: none; }
+[data-theme="shopify"] .brand-mark span:nth-child(1) { height: 10px; opacity: 1; }
+[data-theme="shopify"] .brand-mark span:nth-child(2) { height: 18px; }
+[data-theme="shopify"] .brand-mark span:nth-child(3) { height: 14px; box-shadow: none; }
+@media (max-width: 760px) {
+  [data-theme="shopify"] .brand-mark { width: 36px; height: 24px; padding: 0 8px; }
+}
+
+/* ── 登录 showcase：近黑 cinematic 面；标题 = 330 细字重 display（正字距归零） ── */
+[data-theme="shopify"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-weight: 330; letter-spacing: 0; }
+[data-theme="shopify"] .login-page__showcase-copy > span,
+[data-theme="shopify"] .login-page__card-heading > span { font: 400 12px/1.4 var(--font-sans); letter-spacing: .72px; text-transform: uppercase; }
+
+/* ── 登录 signal 重绘 = button-outline-on-dark：黑底 2px 白描边药丸 + 三根白细条 ── */
+[data-theme="shopify"] .login-page__signal { width: 52px; height: 30px; align-items: center; padding: 0 10px; gap: 3px; border: 2px solid var(--login-signal-border); }
+[data-theme="shopify"] .login-page__signal span { width: 3px; border-radius: 9999px; }
+[data-theme="shopify"] .login-page__signal span:nth-child(1) { height: 9px; }
+[data-theme="shopify"] .login-page__signal span:nth-child(2) { height: 16px; }
+[data-theme="shopify"] .login-page__signal span:nth-child(3) { height: 12px; }
+
+/* ── 登录卡标题 = heading-xl：display 500 / +0.42px ── */
+[data-theme="shopify"] .login-page__card h1 { font-family: var(--font-display); font-weight: 500; letter-spacing: .42px; }

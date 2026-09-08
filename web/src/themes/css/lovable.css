@@ -1,0 +1,303 @@
+/* ============================================================
+   lovable 主题令牌块 —— 规格驱动（lovable 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Lovable 设计语言（暖纸编辑风 / warm parchment editorial）：
+   - 画布 = 羊皮纸奶油 #f7f4ed（「creamy, parchment-toned background
+     (#f7f4ed)」）；卡与页面同底无缝（「Background: #f7f4ed (matches page)」），
+     边线 #eceae4 即容器（「No box-shadow by default — borders define
+     boundaries」），浮层半档提升 = Off-White #fcfbf8「subtle highlight」
+   - 全站灰阶 = 近黑炭墨 #1c1c1c 的透明度模型（「modulates #1c1c1c at
+     varying opacities (0.03, 0.04, 0.4, 0.82–0.83)」）：
+     压奶油合成值 —— 3%≈#f0eee7 / 4%≈#eeebe5 / 82%≈#434342 / 83%≈#414140；
+     文字另加 Muted Gray #5f5f5d（「Secondary text, descriptions, captions」）
+   - 主 CTA = 炭墨 #1c1c1c（「Primary CTA: Charcoal」），暗面文字
+     Off-White #fcfbf8（「Button text on dark backgrounds」）
+   - 边线双轨：#eceae4 被动 / rgba(28,28,28,.4) 交互（末段字面）
+   - 唯一功能性彩色 = Ring Blue #3b82f6 @50%（「--tw-ring-color」）；
+     语义三色按规格技术栈 shadcn/Tailwind 取 700 文字级（推导，行内注明）
+   - 阴影只有两种：暗钮签名内阴影 + Focus Shadow rgba(0,0,0,.1) 0 4px 12px
+     （「Focus and active state shadow — soft, warm, diffused」）
+   骨架表达不了的形态（brand-mark 药丸重绘、标题负字距 400/600 字重法则、
+   链接下划线承载交互、登录 hero 暖彩渐变薄纱、active opacity .8 触觉反馈）
+   见块后 [data-theme="lovable"] 专属片段。
+   ============================================================ */
+[data-theme="lovable"] {
+  /* ── Typography ───────────────────────────── */
+  /* Camera Plain Variable（定制族，禁外部加载）+ 规格声明回退
+     ui-sans-serif, system-ui（「fallbacks: ui-sans-serif, system-ui」）；
+     展示级同族：靠 600 字重 + 负字距而非换族 */
+  --font-sans: "Camera Plain Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Camera Plain Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; /* 展示级 = 同族人文无衬线（负字距见片段） */
+
+  /* ── Radius（规格刻度 Micro 4 / Standard 6 / Comfortable 8 / Card 12 / Container 16 / Full Pill 9999） ── */
+  --radius-xs: 4px;      /* 图标提示 focus = Micro */
+  --radius-soft: 4px;    /* 登录预览小色块 = Micro */
+  --radius-sm: 6px;      /* 内嵌小块 = Standard */
+  --radius-md: 8px;      /* 行卡 = Comfortable 8（compact cards/divs） */
+  --radius-lg: 12px;     /* 指标卡 = Card 12（standard cards） */
+  --radius-xl: 12px;     /* 面板 = Card 12（Container 16 留给登录外壳） */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = Full Pill（「used extensively for action buttons and icon containers」） */
+  --radius-pill: 9999px; /* 迷你徽标 = Full Pill */
+  --radius-panel: 16px;  /* 登录外壳 = Container 16 */
+
+  /* ── Canvas & surfaces（奶油单一画布：面与面靠边线区分，不靠明度） ── */
+  --canvas: #f7f4ed;                 /* Cream：页面画布（Primary） */
+  --canvas-soft: #f0eee7;            /* 内嵌卡/表头 = 炭墨 3% 压奶油合成（「barely-visible overlays」） */
+  --canvas-card: #f7f4ed;            /* 卡片 = 与页面同底（Cards「matches page」） */
+  --canvas-dark: #1c1c1c;            /* 暗面 = 炭墨（json pre 凹陷 / 暗钮同面） */
+  --surface-sidebar: #f7f4ed;        /* 侧栏 = 奶油无缝 */
+  --surface-bar: rgba(247, 244, 237, .9); /* 滚动后导航 = 奶油磨砂 */
+  --surface-inset: #f0eee7;          /* 卡内嵌面 = 炭墨 3% */
+  --surface-matrix: #f0eee7;
+  --surface-tint: rgba(28, 28, 28, .04); /* 行 hover = 炭墨 4% 微染（「subtle hover backgrounds」字面） */
+  --surface-rail: #f0eee7;
+  --surface-detail: #f0eee7;
+  --surface-chip: #f0eee7;
+  --surface-legacy: #f0eee7;
+  --surface-draft: #eeebe5;          /* draft = 炭墨 4% 压奶油（更沉一档） */
+  --surface-empty: transparent;      /* 空态不叠面：虚线边即容器 */
+  --surface-json-bar: #f0eee7;       /* json 头条 = 炭墨 3% 嵌面 */
+  --tooltip-bg: #1c1c1c;             /* 浮层提示 = 炭墨反转面 */
+
+  /* ── Ink & text ladder（坍缩为炭墨透明度四级 + Muted Gray） ── */
+  --ink: #1c1c1c;                    /* Charcoal 100%：标题/数值/行墨 */
+  --ink-strong: #1c1c1c;
+  --ink-display: #1c1c1c;
+  --ink-heading: #1c1c1c;
+  --ink-value: #1c1c1c;
+  --ink-repo: #1c1c1c;
+  --ink-step: #1c1c1c;
+  --ink-label-strong: #1c1c1c;
+  --ink-label: #1c1c1c;
+  --ink-row: #1c1c1c;
+  --ink-list: rgba(28, 28, 28, .82); /* 列表行 = 正文 82%（「Body copy」） */
+  --ink-data: #1c1c1c;
+  --ink-field: #1c1c1c;
+  --ink-rail: #1c1c1c;
+  --ink-rail-value: #1c1c1c;
+  --ink-secret: #5f5f5d;             /* secret 标签 = 说明级 */
+  --ink-chip: #1c1c1c;               /* duration 数值 = 数据墨水 */
+  --body: rgba(28, 28, 28, .82);     /* Body copy = Charcoal 82%（字面） */
+  --body-alt: rgba(28, 28, 28, .83); /* 次强正文 = Charcoal 83% */
+  --body-soft: #5f5f5d;              /* Muted Gray */
+  --mute: #5f5f5d;                   /* Muted Gray：说明/描述/占位 */
+  --mute-deep: rgba(28, 28, 28, .83); /* 「更深」= 83% 正文级 */
+  --mute-inline: #5f5f5d;
+  --mute-caption: #5f5f5d;
+  --mute-intro: rgba(28, 28, 28, .82); /* 配置导语 = 正文级 */
+  --mute-terse: #5f5f5d;
+  --mute-quiet: #5f5f5d;
+  --mute-soft: #5f5f5d;
+  --mute-dim: #5f5f5d;
+  --mute-draft: #5f5f5d;
+  --mute-json: #5f5f5d;
+  --mute-matrix: #5f5f5d;
+  --faint: #5f5f5d;                  /* 占位/禁用 = Muted Gray（Inputs「Placeholder: #5f5f5d」字面） */
+  --faint-alt: #5f5f5d;
+  --faint-soft: #5f5f5d;
+  --faint-ghost: #5f5f5d;
+  --faint-hint: #5f5f5d;
+  --faint-meta: #5f5f5d;
+  --faint-note: #5f5f5d;
+  --faint-empty: #5f5f5d;
+  --on-dark: #fcfbf8;                /* 暗面文字 = Off-White（「Button text on dark」） */
+  --on-dark-soft: rgba(252, 251, 248, .85); /* json 深块正文（透明度模型套在 Off-White 上） */
+  --on-dark-faint: rgba(252, 251, 248, .6); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（炭墨即主 CTA；链接靠下划线不靠变色） ── */
+  --primary: #1c1c1c;                /* Primary CTA = Charcoal（字面） */
+  --primary-active: rgba(28, 28, 28, .8); /* 「Active: opacity 0.8」字面 */
+  --on-primary: #fcfbf8;             /* Off-White 按钮文字 */
+  --link: #1c1c1c;                   /* 链接 = 炭墨（Links「Color: #1c1c1c」字面） */
+  --link-hover: #1c1c1c;             /* hover 不变色：下划线承载信号（字面） */
+  --focus-ring: rgba(59, 130, 246, .5); /* Ring Blue @50%（字面） */
+  --primary-veil: rgba(28, 28, 28, .04); /* 当前导航 = 炭墨 4% 微染（微 tint 而非彩纱） */
+
+  /* ── Semantic（推导：规格「Don't introduce saturated accent colors」；
+        语义态按规格技术栈 shadcn/Tailwind 取 700 文字级克制档） ── */
+  --success: #15803d;    /* context-dot 在线绿（Tailwind green-700） */
+  --success-halo: 0 0 0 4px rgba(21, 128, 61, .12);
+  --warning: #b45309;    /* Tailwind amber-700 */
+  --warning-soft: rgba(180, 83, 9, .08); /* 微染薄纱（呼应 3–4% tint 语汇） */
+  --error: #b91c1c;      /* Tailwind red-700 */
+  --error-deep: #991b1b; /* red-800 */
+  --info: #3b82f6;       /* Ring Blue：规格唯一功能性彩色 */
+  --info-soft: rgba(59, 130, 246, .08);
+
+  /* ── Hairlines & bars（双轨：#eceae4 被动 / 炭墨 40% 交互） ── */
+  --hairline: #eceae4;              /* Light Cream 暖分隔线（Surface & Border） */
+  --hairline-soft: #f0eee7;         /* 更轻一档 = 炭墨 3% 合成 */
+  --hairline-strong: rgba(28, 28, 28, .4); /* 交互边界（「stronger interactive boundaries」字面） */
+  --hairline-card: #eceae4;         /* 卡外线（边线即容器） */
+  --hairline-inset: #eceae4;
+  --hairline-mid: #eceae4;
+  --hairline-rail: #eceae4;
+  --hairline-codex: #eceae4;
+  --hairline-detail: #eceae4;
+  --hairline-json: #eceae4;
+  --hairline-dashed: rgba(28, 28, 28, .4); /* 空态虚线 = 交互轨一档（需可见） */
+  --hairline-legacy: #eceae4;
+  --hairline-row: #eceae4;
+  --hairline-draft: #eceae4;
+  --bar-value: #1c1c1c;             /* value-list 左规线 = 炭墨数据墨水（无彩纪律） */
+  --bar-matrix: #5f5f5d;            /* Muted Gray */
+  --bar-summary: #5f5f5d;
+  --bar-usage: #3b82f6;             /* 用量轨 = Ring Blue（数据墨水，功能性彩色） */
+
+  /* ── Overlays & shadows（透明度微染；卡零投影） ── */
+  --overlay-faint: rgba(28, 28, 28, .03); /* Charcoal 3%「barely-visible overlays」字面 */
+  --overlay-soft: rgba(28, 28, 28, .04);  /* nav hover = Charcoal 4% 字面 */
+  --overlay-line: #eceae4;                /* 分组线 = Light Cream（暖线代替黑叠） */
+  --overlay-medium: rgba(28, 28, 28, .08); /* 中染（推导：4% 与 40% 之间取 8%） */
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 卡零投影（「borders are the containment mechanism」）；零值而非 none，兼容多值拼接 */
+
+  /* ── brand-mark（奶油药丸框 + 炭墨三柱透明度分层：40% / 100% / 82% ——
+        透明度灰阶的物化展示；形态见片段） ── */
+  --brand-frame-bg: #f7f4ed;        /* 奶油面 */
+  --brand-frame-border: #eceae4;    /* Light Cream 边（边线即容器） */
+  --brand-frame-shadow: none;       /* 无投影 */
+  --brand-bar-1: rgba(28, 28, 28, .4);  /* 炭墨 40% 交互档 */
+  --brand-bar-2: #1c1c1c;               /* Charcoal 100% */
+  --brand-bar-3: rgba(28, 28, 28, .82); /* Charcoal 82% 正文档 */
+  --brand-bar-inset: none;          /* 内阴影只属于暗钮，柱面扁平 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;         /* 角标隐藏（片段 display:none）：克制无点缀 */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #1c1c1c;         /* 当前导航指示 = 炭墨墨条（无彩信号） */
+
+  /* ── 登录页（奶油画布 + 暖彩渐变薄纱 hero + 炭墨暗钮 signal） ── */
+  --login-bg: #f7f4ed;
+  --login-shell-border: #eceae4;
+  --login-shell-shadow: 0 4px 12px rgba(0, 0, 0, .1); /* 规格 Focus Shadow 字面（唯一的壳提升） */
+  --login-showcase-bg: #f7f4ed;     /* hero = 奶油（暖彩渐变薄纱见片段） */
+  --login-showcase-ink: #1c1c1c;
+  --login-grid-line: rgba(28, 28, 28, .03); /* 网格让位于渐变薄纱（片段重绘 ::before） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #1c1c1c;
+  --login-brand-mute: #5f5f5d;
+  --login-signal-bg: #1c1c1c;       /* signal = 炭墨暗钮药丸（主 CTA 的 showroom 时刻） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: inset 0 0.5px 0 rgba(255, 255, 255, .2), inset 0 0 0 0.5px rgba(0, 0, 0, .2), 0 1px 2px rgba(0, 0, 0, .05); /* 暗钮签名内阴影字面（Inset Shadows） */
+  --login-signal-bar: #fcfbf8;      /* Off-White 三柱 */
+  --login-kicker: #5f5f5d;
+  --login-heading: #1c1c1c;         /* hero 标题（600/-0.9px 负字距见片段） */
+  --login-copy: rgba(28, 28, 28, .82);
+  --login-preview-bg: #fcfbf8;      /* Off-White 预览卡「subtle highlight」 */
+  --login-preview-border: #eceae4;
+  --login-preview-shadow: 0 1px 2px rgba(0, 0, 0, .05); /* 暗钮投影的落地分量（字面末段） */
+  --login-preview-divider: #eceae4;
+  --login-preview-dot: #3b82f6;     /* 数据点 = Ring Blue */
+  --login-preview-dot-soft: #5f5f5d;
+  --login-preview-label: #5f5f5d;
+  --login-preview-row-line: #eceae4;
+  --login-preview-row-ink: rgba(28, 28, 28, .83);
+  --login-preview-chip-ink: #1c1c1c;
+  --login-preview-chip-bg: rgba(28, 28, 28, .04); /* chip = 炭墨 4% 微染 */
+  --login-preview-bar: #1c1c1c;     /* 进度条 = 炭墨数据墨水 */
+  --login-foot: #5f5f5d;
+  --login-card-kicker: #5f5f5d;
+  --login-card-heading: #1c1c1c;
+  --login-card-copy: #5f5f5d;
+  --login-notice-border: rgba(59, 130, 246, .35); /* 公告条 = Ring Blue 薄纱 */
+  --login-notice-bg: rgba(59, 130, 246, .06);
+  --login-notice-ink: rgba(28, 28, 28, .83);
+  --login-label: rgba(28, 28, 28, .83);
+  --login-input-border: #eceae4;    /* 输入边（Inputs「Border: 1px solid #eceae4」字面） */
+  --login-input-border-hover: rgba(28, 28, 28, .4); /* hover 升交互轨（双轨字面） */
+  --login-primary: #1c1c1c;         /* 主 CTA = 炭墨暗钮 */
+  --login-primary-active: rgba(28, 28, 28, .8); /* active opacity .8 */
+}
+
+/* ============================================================
+   lovable 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="lovable"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 选区：炭墨微染（透明度模型的选区投影，推导 8%） ── */
+[data-theme="lovable"] ::selection { background: rgba(28, 28, 28, .08); }
+
+/* ── 软焦点指示：弃锐利 outline，用规格 Focus Shadow（Don't「sharp focus outlines」） ── */
+[data-theme="lovable"] :focus-visible { outline: none; box-shadow: 0 4px 12px rgba(0, 0, 0, .1); border-radius: 4px; }
+
+/* ── 链接：下划线承载交互信号，颜色不变（Links「decoration carries the
+      interactive signal」）；被动下划线 = 炭墨 40%，hover 收实为 100% ── */
+[data-theme="lovable"] a:not(.ant-btn):not(.ant-dropdown-menu-item) { text-decoration: underline; text-decoration-color: rgba(28, 28, 28, .4); text-underline-offset: 3px; }
+[data-theme="lovable"] a:not(.ant-btn):not(.ant-dropdown-menu-item):hover { color: inherit; text-decoration-color: #1c1c1c; }
+
+/* ── 按钮触觉反馈：active = opacity .8（Do「Apply opacity 0.8 on active states」字面） ── */
+[data-theme="lovable"] .ant-btn:active { opacity: .8; }
+
+/* ── 字重法则 + 编辑风负字距：全站只有 400/600，标题压缩排字
+      （「negative letter-spacing (-0.9px to -1.5px) compresses headlines」；
+      小号标题按比例取 -.015em） ── */
+[data-theme="lovable"] .brand-block strong,
+[data-theme="lovable"] .panel-heading h2,
+[data-theme="lovable"] .business-outcomes__card > strong,
+[data-theme="lovable"] .ratio-card > strong,
+[data-theme="lovable"] .codex-metric > strong,
+[data-theme="lovable"] .codex-token-ledger strong,
+[data-theme="lovable"] .configuration-status-rail > div > strong,
+[data-theme="lovable"] .configuration-summary-grid strong,
+[data-theme="lovable"] .configuration-step-copy h2,
+[data-theme="lovable"] .configuration-summary h2,
+[data-theme="lovable"] .configuration-inline-title h3,
+[data-theme="lovable"] .connector-configuration-step__heading h3,
+[data-theme="lovable"] .repo-row strong,
+[data-theme="lovable"] .intent-row strong,
+[data-theme="lovable"] .duration-card strong,
+[data-theme="lovable"] .duration-section__heading strong,
+[data-theme="lovable"] .value-list__title,
+[data-theme="lovable"] .connector-watch__item strong,
+[data-theme="lovable"] .detail-section h3,
+[data-theme="lovable"] .audit-json > summary,
+[data-theme="lovable"] .login-page__brand strong,
+[data-theme="lovable"] .login-page__card h1 { font-weight: 600; letter-spacing: -.015em; }
+
+/* ── eyebrow / kicker：Muted Gray 人文无衬线小签（弃骨架 mono；600 上限） ── */
+[data-theme="lovable"] .page-heading__eyebrow,
+[data-theme="lovable"] .panel-kicker,
+[data-theme="lovable"] .section-label { color: var(--mute); font: 600 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="lovable"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; text-transform: none; }
+
+/* ── brand-mark 重绘：奶油药丸框 + 三根炭墨柱按 40%/100%/82% 透明度分层
+      （透明度灰阶物化），柱端全圆；角标隐藏（克制无点缀） ── */
+[data-theme="lovable"] .brand-mark { border-radius: 9999px; }
+[data-theme="lovable"] .brand-mark span { border-radius: 9999px; box-shadow: none; }
+[data-theme="lovable"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="lovable"] .brand-mark::after { display: none; }
+
+/* ── 表头：奶油同底 + Muted Gray 500（无大写、无字距） ── */
+[data-theme="lovable"] .admin-table .ant-table-thead > tr > th { font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、炭墨 25%、圆头（透明度模型） ── */
+[data-theme="lovable"] * { scrollbar-width: thin; scrollbar-color: rgba(28, 28, 28, .25) transparent; }
+[data-theme="lovable"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="lovable"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="lovable"] ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 9999px; background: rgba(28, 28, 28, .25); background-clip: padding-box; }
+[data-theme="lovable"] ::-webkit-scrollbar-thumb:hover { background: rgba(28, 28, 28, .4); background-clip: padding-box; }
+
+/* ── 登录 showcase：hero 暖彩渐变薄纱（「soft, warm multi-color gradient wash
+      (pinks, oranges, blues) behind hero — atmospheric, barely visible」字面重绘
+      骨架网格 ::before；去 mask 让薄纱满幅） ── */
+[data-theme="lovable"] .login-page__showcase::before {
+  background-image:
+    radial-gradient(56% 64% at 16% 10%, rgba(255, 176, 138, .26), transparent 62%),
+    radial-gradient(48% 58% at 88% 14%, rgba(148, 170, 255, .22), transparent 64%),
+    radial-gradient(64% 58% at 46% 102%, rgba(255, 132, 172, .18), transparent 66%);
+  opacity: 1;
+  mask-image: none;
+}
+
+/* ── 登录 showcase 标题：Sub-heading 规格 36px/600/-0.9px（表格字面，
+      30px 骨架槽位放不下取 34px 近似）；行高 1.10 tight ── */
+[data-theme="lovable"] .login-page__showcase-copy h2 { font-size: 34px; font-weight: 600; line-height: 1.1; letter-spacing: -.9px; }
+
+/* ── 登录 kicker：Muted Gray 大写宽字距（同 eyebrow 语汇） ── */
+[data-theme="lovable"] .login-page__showcase-copy > span,
+[data-theme="lovable"] .login-page__card-heading > span { color: var(--login-kicker); font: 600 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── 登录 signal：炭墨暗钮药丸（内阴影由令牌承担），三柱 Off-White 圆头 ── */
+[data-theme="lovable"] .login-page__signal span { border-radius: 9999px; }

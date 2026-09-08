@@ -1,0 +1,286 @@
+/* ============================================================
+   lamborghini 主题令牌块 —— 规格驱动（lamborghini 设计语言），
+   无参考实现。规格为「# Design System Inspired by …」简化格式（无令牌表），
+   色值埋于正文段落，角色按 正文提取：
+   - 真黑画布 #000000（「Not dark gray, not near-black — true,
+     uncompromising black」）+ Charcoal #202020 提升 + Dark Iron #181818
+     内嵌；海拔 = 表面变亮（阶梯 #000000→#181818→#202020→#494949），零阴影
+   - 文字：Pure White #FFFFFF 主文 / Smoke #F5F5F5 次文 / Ash #7D7D7D
+     时间戳元数据 / Steel #969696 细标签 / Slate #666666 最暗占位
+   - Lamborghini Gold #FFC000 唯一彩强调（仅主 CTA，金底黑字，hover 转
+     Dark Gold #917300）；Gold Text #FFCE3E 高亮标签；Cyan Pulse #29ABE2
+     信息高亮兼 focus；Link Blue #3860BE 通用链接 hover；Teal #1EAEDB ghost hover
+   - 语义色规格缺位：success #34D399 / error #FF453A 为暗底标准语义克制化
+     （照 tesla「浏览器默认→克制化」先例推导），warning 直接用品牌金琥珀
+   - 零圆角（仅徽章 2px）；字重 400 主导；规格黑雾覆盖（Level 3/4
+     rgba(0,0,0,.5/.25)）在黑画布上不可见 → hover/覆盖一律反转为聚光灯
+     白纱（推导，呼应「every element emerges from the void like a machine
+     under a spotlight」）
+   骨架表达不了的形态（brand-mark 三 span 12° 斜切杆、全大写 400 字重
+   显示排版、ghost 按钮大写、暗色滚动条/selection）见块后片段。
+   ============================================================ */
+[data-theme="lamborghini"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'LamboType', Roboto, 'Open Sans', 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 推导：规格无等宽角色，沿用骨架默认 */
+  --font-display: 'LamboType', Roboto, 'Open Sans', 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 显示字 = LamboType 全场景（规格单字族纪律） */
+
+  /* ── Radius（刻度：默认一切 0px / 徽章 2px「barely perceptible」/ 唯一圆元素是 20px 开关——骨架无开关） ── */
+  --radius-xs: 0px;      /* 图标提示 focus 圆角 = 零 */
+  --radius-soft: 4px;    /* 登录预览小色块（推导：chip 类小件贴徽章档，2px 过细） */
+  --radius-sm: 0px;      /* 内嵌小块 = 零 */
+  --radius-md: 0px;      /* 行卡 = 零 */
+  --radius-lg: 0px;      /* 指标卡 = 零（规格「cards — completely sharp corners」） */
+  --radius-xl: 0px;      /* 面板 = 零 */
+  --radius-brand: 0px;   /* brand-mark = 棱角矩形（12° 斜切杆见片段） */
+  --radius-pill: 2px;    /* 迷你徽标 = 规格「Badges, close buttons — 2px」 */
+  --radius-panel: 0px;   /* 登录外壳 = 零 */
+
+  /* ── Canvas & surfaces（海拔 = 表面变亮；#000000 → #181818 → #202020） ── */
+  --canvas: #000000;                 /* Absolute Black：主导面（Level 0 Abyss） */
+  --canvas-soft: #202020;            /* 指标卡/表头 = Charcoal（规格「cards, panels, and text containers」） */
+  --canvas-card: #202020;            /* 卡/面板（Level 1 Surface） */
+  --canvas-dark: #181818;            /* json pre 凹陷面 = Dark Iron（比卡面深一档的 recessed，兼暗色徽标底） */
+  --surface-sidebar: #000000;        /* 导航透明浮于黑画布（no background color on the header） */
+  --surface-bar: rgba(0, 0, 0, .88); /* 顶栏近不透明黑（推导：保持「漂浮于黑暗」） */
+  --surface-inset: #181818;          /* 卡内交互/内嵌面 = Dark Iron */
+  --surface-matrix: #181818;
+  --surface-tint: rgba(255, 255, 255, .05); /* 表行 hover = 聚光灯白纱（推导：黑雾在黑底不可见） */
+  --surface-rail: #181818;           /* 配置状态轨 = 面板内嵌面 */
+  --surface-detail: #202020;         /* 详情卡 = Charcoal */
+  --surface-chip: #181818;
+  --surface-legacy: #181818;
+  --surface-draft: #181818;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担 */
+  --surface-json-bar: #202020;       /* json 头条与卡同阶（分隔靠 hairline-json） */
+  --tooltip-bg: #202020;             /* 浮层 = Charcoal 提升面 */
+
+  /* ── Ink & text ladder（白 #FFFFFF / Smoke #F5F5F5 / Steel #969696 / Ash #7D7D7D / Slate #666666） ── */
+  --ink: #ffffff;          /* Pure White：标题/数值/行文主色（「Primary text color on dark surfaces」） */
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #ffffff;
+  --ink-data: #ffffff;
+  --ink-field: #ffffff;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #969696;  /* 密钥标签 = Steel（次级可读） */
+  --ink-chip: #f5f5f5;    /* chip 文字 = Smoke */
+  --body: #f5f5f5;        /* Smoke：暗面次级文字（「Secondary text on dark surfaces」） */
+  --body-alt: #f5f5f5;
+  --body-soft: #f5f5f5;
+  --mute: #7d7d7d;        /* Ash：时间戳/元数据 */
+  --mute-deep: #969696;   /* 卡片标签 = Steel 半档更亮（推导：暗底反演，照 spotify mute-deep 思路） */
+  --mute-inline: #7d7d7d;
+  --mute-caption: #7d7d7d;
+  --mute-intro: #7d7d7d;
+  --mute-terse: #7d7d7d;
+  --mute-quiet: #969696;  /* 表头 11px 小字 = Steel（可读性） */
+  --mute-soft: #7d7d7d;
+  --mute-dim: #7d7d7d;
+  --mute-draft: #7d7d7d;
+  --mute-json: #969696;   /* json 头条 10px 大写小字 = Steel */
+  --mute-matrix: #7d7d7d;
+  --faint: #969696;       /* Steel：细标签（比 mute 亮半档，照 default faint/mute 关系） */
+  --faint-alt: #969696;
+  --faint-soft: #969696;
+  --faint-ghost: #969696;
+  --faint-hint: #969696;
+  --faint-meta: #969696;
+  --faint-note: #969696;
+  --faint-empty: #666666; /* Slate：空态占位最暗（规格「Alternative mid-gray for secondary content」） */
+  --on-dark: #ffffff;     /* 深块（tooltip/json bar）文字 */
+  --on-dark-soft: #f5f5f5;
+  --on-dark-faint: #969696;
+
+  /* ── Primary / link / focus（金仅主 CTA；白链 + Link Blue hover；青 = 交互高亮） ── */
+  --primary: #ffc000;               /* Lamborghini Gold：唯一彩强调（规格「the only chromatic color in the entire interface」） */
+  --primary-active: #917300;        /* Dark Gold：hover/按压（规格「darkens the gold to signal interaction」） */
+  --on-primary: #000000;            /* 金底黑字（Gold Accent CTA） */
+  --link: #ffffff;                  /* 链接 = 白（「white underlined 'Read More' link」） */
+  --link-hover: #3860be;            /* Link Blue：通用 hover（「used universally for link hover states」） */
+  --focus-ring: rgba(41, 171, 226, .55); /* Cyan Pulse：交互高亮兼 focus */
+  --primary-veil: transparent;      /* 激活导航不叠底（「no visible nav containers」白标漂浮） */
+
+  /* ── Semantic（规格缺位推导：success/error 暗底标准语义克制化；warning = 品牌金琥珀） ── */
+  --success: #34d399;                     /* 推导：规格无绿，暗底克制化（照 tesla 先例） */
+  --success-halo: 0 0 0 4px rgba(52, 211, 153, .15); /* 推导：随 success 的白纱级 halo（规格无光晕） */
+  --warning: #ffc000;                     /* 品牌金即暖琥珀警示（推导：金 = amber 警示族） */
+  --warning-soft: rgba(255, 192, 0, .14);
+  --error: #ff453a;                       /* 推导：规格无红，暗底克制化 */
+  --error-deep: #c9302c;                  /* 推导：按压深红 */
+  --info: #29abe2;                        /* Cyan Pulse：信息高亮（Semantic） */
+  --info-soft: rgba(41, 171, 226, .14);
+
+  /* ── Hairlines & bars（画布级 #202020 / 卡内 #313131 Shadow / 强线 #494949 Graphite；色条无彩） ── */
+  --hairline: #202020;        /* 画布分隔线（「1px solid bottom border in #202020 on a black canvas」） */
+  --hairline-soft: #181818;   /* 最弱分隔 = Dark Iron 近隐 */
+  --hairline-strong: #494949; /* 结构强线/滚动条 = Graphite（阶梯顶档） */
+  --hairline-card: #202020;   /* 卡外线近隐：明度分层承担（规格：卡无边框） */
+  --hairline-inset: #313131;  /* Shadow：#202020 卡上可见的最深分隔灰 */
+  --hairline-mid: #313131;
+  --hairline-rail: #313131;
+  --hairline-codex: #313131;
+  --hairline-detail: #313131;
+  --hairline-json: #313131;
+  --hairline-dashed: #494949; /* 空态虚线需要可见 = Graphite */
+  --hairline-legacy: #494949;
+  --hairline-row: #202020;    /* 表行分隔 = 画布分隔线色 */
+  --hairline-draft: #494949;
+  --bar-value: #494949;       /* 左色条一律无彩（「Keep the gray palette achromatic」） */
+  --bar-matrix: #494949;
+  --bar-summary: #494949;
+  --bar-usage: #ffffff;       /* 进度 = 「Progress Bar: Thin white line」 */
+
+  /* ── Overlays & shadows（黑画布上黑雾不可见 → 反转为聚光灯白纱；零阴影） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: rgba(255, 255, 255, .05);  /* 导航 hover = 白纱 */
+  --overlay-line: rgba(255, 255, 255, .06);  /* 分组标题分隔线 */
+  --overlay-medium: rgba(255, 255, 255, .08);
+  --shadow-panel: none;  /* 零阴影：海拔 = 表面变亮（「shadows are meaningless」） */
+
+  /* ── brand-mark（#202020 棱角框 + 金/白/灰三杆 12° 斜切；形态见片段） ── */
+  --brand-frame-bg: #202020;
+  --brand-frame-border: #313131;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffc000;   /* Giallo 金 = 品牌签名杆 */
+  --brand-bar-2: #ffffff;   /* Pure White */
+  --brand-bar-3: #7d7d7d;   /* Ash */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ffffff;     /* 角标白点（片段隐藏） */
+  --brand-dot-border: #000000;
+  --brand-dot-glow: none;
+  --nav-indicator: #ffc000; /* 当前导航指示 = 金（骨架激活字色本取 --primary 金，指示条同源） */
+
+  /* ── 登录页（真黑画布 + Charcoal 展示板 + 金色 CTA + 白细线进度） ── */
+  --login-bg: #000000;
+  --login-shell-border: #202020;
+  --login-shell-shadow: none;
+  --login-showcase-bg: #202020;
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #7d7d7d;
+  --login-signal-bg: #202020;        /* signal = brand-mark 同款斜切杆（见片段） */
+  --login-signal-border: #313131;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffc000;
+  --login-kicker: #ffce3e;           /* Gold Text：高亮标签（「inline text accents and highlighted labels」） */
+  --login-heading: #ffffff;
+  --login-copy: #7d7d7d;             /* 正文 = Ash（新闻卡示例「body text in #7D7D7D at 16px」） */
+  --login-preview-bg: #181818;       /* 展示板内嵌预览 = Dark Iron 凹陷 */
+  --login-preview-border: #313131;
+  --login-preview-shadow: none;
+  --login-preview-divider: #313131;
+  --login-preview-dot: #34d399;      /* 在线状态点 = 语义绿（推导） */
+  --login-preview-dot-soft: #7d7d7d;
+  --login-preview-label: #969696;
+  --login-preview-row-line: #313131;
+  --login-preview-row-ink: #f5f5f5;
+  --login-preview-chip-ink: #ffce3e; /* 在播 chip = Gold Text 金字金染 */
+  --login-preview-chip-bg: rgba(255, 192, 0, .12);
+  --login-preview-bar: #ffffff;      /* 进度条 = 白细线（hero 进度条） */
+  --login-foot: #666666;             /* Slate：页脚最暗文字 */
+  --login-card-kicker: #ffce3e;      /* Gold Text */
+  --login-card-heading: #ffffff;
+  --login-card-copy: #7d7d7d;
+  --login-notice-border: rgba(41, 171, 226, .35); /* 公告条 = Cyan Pulse 淡染 */
+  --login-notice-bg: rgba(41, 171, 226, .1);
+  --login-notice-ink: #f5f5f5;
+  --login-label: #f5f5f5;
+  --login-input-border: #7d7d7d;     /* 输入框「white text on black with #7D7D7D borders」 */
+  --login-input-border-hover: #f5f5f5;
+  --login-primary: #ffc000;          /* 金色 CTA（黑字走 antd colorTextLightSolid） */
+  --login-primary-active: #917300;   /* hover 显著压深 */
+}
+
+/* ============================================================
+   lamborghini 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="lamborghini"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 白色聚光灯选区：黑底上唯一的整块白（墨反黑） ── */
+[data-theme="lamborghini"] ::selection { background: #ffffff; color: #000000; }
+
+/* ── 系统滚动条：细、Graphite #494949、方角（零圆角纪律） ── */
+[data-theme="lamborghini"] * { scrollbar-width: thin; scrollbar-color: #494949 transparent; }
+[data-theme="lamborghini"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="lamborghini"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="lamborghini"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #494949; }
+[data-theme="lamborghini"] ::-webkit-scrollbar-thumb:hover { background: #7d7d7d; }
+
+/* ── ghost 按钮词汇：白边透明底 → 大写 + 微字距（Button Standard「uppercase, 0.14–0.2px」） ── */
+[data-theme="lamborghini"] .ant-btn:not(.ant-btn-primary):not(.ant-btn-link) {
+  text-transform: uppercase;
+  letter-spacing: .014em;
+}
+
+/* ── 全大写显示排版 + 字重 400（「ALL-CAPS is the default voice」「Weight 400 dominates」） ── */
+[data-theme="lamborghini"] .brand-block strong,
+[data-theme="lamborghini"] .panel-heading h2,
+[data-theme="lamborghini"] .business-outcomes__card > strong,
+[data-theme="lamborghini"] .ratio-card__title,
+[data-theme="lamborghini"] .ratio-card > strong,
+[data-theme="lamborghini"] .codex-metric > strong,
+[data-theme="lamborghini"] .codex-token-ledger strong,
+[data-theme="lamborghini"] .configuration-status-rail > div > strong,
+[data-theme="lamborghini"] .configuration-summary-grid strong,
+[data-theme="lamborghini"] .configuration-step-copy h2,
+[data-theme="lamborghini"] .configuration-summary h2,
+[data-theme="lamborghini"] .configuration-inline-title h3,
+[data-theme="lamborghini"] .connector-configuration-step__heading h3,
+[data-theme="lamborghini"] .repo-row strong,
+[data-theme="lamborghini"] .intent-row strong,
+[data-theme="lamborghini"] .duration-card strong,
+[data-theme="lamborghini"] .duration-section__heading strong,
+[data-theme="lamborghini"] .value-list__title,
+[data-theme="lamborghini"] .connector-watch__item strong,
+[data-theme="lamborghini"] .detail-section h3,
+[data-theme="lamborghini"] .admin-table .ant-table-thead > tr > th,
+[data-theme="lamborghini"] .audit-json > summary,
+[data-theme="lamborghini"] .login-page__brand strong,
+[data-theme="lamborghini"] .login-page__showcase-copy h2,
+[data-theme="lamborghini"] .login-page__card h1 {
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: .01em;
+}
+
+/* ── 页头 eyebrow / 面板 kicker：Gold Text 高亮标签（「highlighted labels」）+ Label 大写宽字距语汇 ── */
+[data-theme="lamborghini"] .page-heading__eyebrow,
+[data-theme="lamborghini"] .panel-kicker,
+[data-theme="lamborghini"] .section-label {
+  color: #ffce3e;
+  font-weight: 400;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* ── 导航：白色大写标记漂浮于黑暗（「'MENU' label: white text… uppercase」）；激活 = 金 ── */
+[data-theme="lamborghini"] .workspace-nav a { color: var(--mute); font-weight: 400; text-transform: uppercase; letter-spacing: .04em; }
+[data-theme="lamborghini"] .workspace-nav a[aria-current="page"] { background: transparent; }
+[data-theme="lamborghini"] .workspace-nav a[aria-current="page"] .anticon { color: var(--primary); }
+
+/* ── brand-mark：三杆 12° 斜切（LamboType 斜切终端 → skewX(-12deg)）、金/白/灰、方角 ── */
+[data-theme="lamborghini"] .brand-mark { gap: 3px; padding: 7px 6px 6px; }
+[data-theme="lamborghini"] .brand-mark span { width: 5px; border-radius: 0; opacity: 1; transform: skewX(-12deg); box-shadow: none; }
+[data-theme="lamborghini"] .brand-mark span:nth-child(3) { box-shadow: none; }
+[data-theme="lamborghini"] .brand-mark::after { display: none; }
+
+/* ── 登录 signal = brand-mark 同款斜切杆；预览进度条方角 ── */
+[data-theme="lamborghini"] .login-page__signal span { border-radius: 0; transform: skewX(-12deg); }
+[data-theme="lamborghini"] .login-page__preview-row strong { border-radius: 0; }
+
+/* ── 详情格：卡内嵌面回落 Dark Iron #181818（明度分层） ── */
+[data-theme="lamborghini"] .detail-grid > div { background: var(--surface-inset); }

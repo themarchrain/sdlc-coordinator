@@ -90,12 +90,17 @@ export interface ThemeSlots {
   sparkline: SparklineSlots
 }
 
+/** 策展家族 id（手工归组，可增不可乱；有序清单见 registry.THEME_FAMILIES）。 */
+export type ThemeFamilyId = 'system' | 'minimal' | 'dark' | 'warm' | 'retro' | 'brand'
+
 /** 单套内置主题的完整定义。 */
 export interface ThemeDefinition {
   /** 主题 id，同时是 [data-theme="<id>"] 与 localStorage 存储值 */
   id: string
   /** 外观面板展示名 */
   label: string
+  /** 策展家族（外观面板按家族分节收纳） */
+  family: ThemeFamilyId
   /** 是否暗色主题（影响卡片徽标与首屏防白闪底色） */
   isDark: boolean
   /** 浏览器 chrome 预设色（meta[name=theme-color] 与首屏底色） */

@@ -1,0 +1,283 @@
+/* ============================================================
+   replicate 主题令牌块 —— 规格驱动（replicate 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Replicate 设计语言（暖白工程杂志）：
+   - 分层阶梯：cream 画布 #F9F7F3 → bone 内嵌 #F3F0E8 → 白卡 #FFFFFF
+     → 暗代码井 #202020 / 深条 #000000（海拔 = 色彩分层，不靠影）
+   - 文字阶梯：Ink #202020（暖墨，非纯黑）/ Body #3A3A3A / Charcoal #575757
+     / Mute #646464 / Ash #8D8D8D / Stone #BBBBBB（规格六级）
+   - 热橙一族：--primary #EA2804（戳记 CTA）/ 按压 #C01F00（primary-deep）/
+     hover 浅橙 #FF6A3D（hero-glow，no-hover policy 下的悬停档）
+   - 橙稀缺法：橙只给 CTA/链接/用量轨/brand-dot 一枚印；
+     导航指示 = 暖墨 #202020（button-dark 职能），默认描线/节点 = 中性墨
+   - 语义：success #2B9A66（规格 badge-success）；warning/error 规格未给，
+     暖调推导 ochre #8A6A1E / 红 #CF222E；info = 聚焦蓝 #3B82F6（功能性）
+   - 边线单轨：暖墨 alpha hairline rgba(32,32,32,.12)；暗井内 = 规格
+     divider-dark rgba(255,255,255,.2)；聚焦环 = 规格 ring-focus 蓝
+   - 骨架表达不了的形态（brand-mark 三圆钉、mono kicker/表头的工程气质、
+     药丸导航、展示字体数值、登录橙 hero mesh）见块后片段。
+   ============================================================ */
+[data-theme="replicate"] {
+  /* ── Typography ───────────────────────────── */
+  /* 三族各守其位：basier-square（专有，禁外部加载）→ 规格替身 Inter；
+     display = rb-freigeist-neue → 规格替身 Bricolage Grotesque；
+     mono = JetBrains Mono（开源，规格要求直接使用） */
+  --font-sans: "basier-square", Inter, "Segoe UI", system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-display: "rb-freigeist-neue", "Bricolage Grotesque", Inter, "Segoe UI", system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度 4/6/10/16/9999 向超集九档归并；
+        交互面全药丸、内容卡 never sharp never full） ── */
+  --radius-xs: 4px;      /* 代码 tab / 井内小签（rounded.xs） */
+  --radius-soft: 6px;    /* 登录预览小色块（rounded.sm） */
+  --radius-sm: 6px;      /* 内嵌小块 */
+  --radius-md: 10px;     /* 行卡 / model 卡 / 代码井（rounded.md） */
+  --radius-lg: 10px;     /* 指标卡（内容卡停在 md） */
+  --radius-xl: 16px;     /* 面板 / pricing 档（rounded.lg） */
+  --radius-brand: 9999px; /* brand-mark = 三圆钉（圆形几何） */
+  --radius-pill: 9999px; /* 迷你徽标 = Full Pill */
+  --radius-panel: 16px;  /* 登录外壳（pricing 卡档） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f9f7f3;             /* Cream：默认页面底（规格铁律：页面级永不纯白） */
+  --canvas-soft: #f3f0e8;        /* Bone：半步深的内嵌面 */
+  --canvas-card: #ffffff;        /* 白卡（规格：白只上卡/输入/浮层） */
+  --canvas-dark: #202020;        /* surface-dark：代码井 / featured 反转面 */
+  --surface-sidebar: #f9f7f3;    /* 规格 nav-bar：画布同底 + 单 hairline 下缘 */
+  --surface-bar: rgba(249, 247, 243, .92);
+  --surface-inset: #f3f0e8;      /* Bone inset：卡内嵌 / 分组容器 */
+  --surface-matrix: #f3f0e8;
+  --surface-tint: #f3f0e8;       /* 行 hover = 回落 bone */
+  --surface-rail: #f3f0e8;
+  --surface-detail: #ffffff;     /* 详情卡 = model 卡白 */
+  --surface-chip: #ffffff;       /* badge-tag = 白签 */
+  --surface-legacy: #f3f0e8;
+  --surface-draft: #f3f0e8;
+  --surface-empty: transparent;  /* 空态不叠面（色彩分层语言） */
+  --surface-json-bar: #000000;   /* json 头条 = surface-deep 代码 tab 条 */
+  --tooltip-bg: #202020;         /* surface-dark 同面 */
+
+  /* ── Ink & text ladder（坍缩为规格六级：Ink/Body/Charcoal/Mute/Ash/Stone） ── */
+  --ink: #202020;
+  --ink-strong: #202020;
+  --ink-display: #202020;
+  --ink-heading: #202020;
+  --ink-value: #202020;
+  --ink-repo: #202020;
+  --ink-step: #202020;
+  --ink-label-strong: #202020;
+  --ink-label: #202020;
+  --ink-row: #202020;
+  --ink-list: #3a3a3a;     /* value-list li = Body 正文 */
+  --ink-data: #202020;
+  --ink-field: #202020;
+  --ink-rail: #202020;
+  --ink-rail-value: #202020;
+  --ink-secret: #575757;   /* secret-label = Charcoal 次级 */
+  --ink-chip: #3a3a3a;     /* duration 数值 = 正文级 */
+  --body: #3a3a3a;         /* 规格 Body：长文正文 */
+  --body-alt: #3a3a3a;
+  --body-soft: #575757;    /* 占比卡小注 = Charcoal */
+  --mute: #646464;         /* 规格 Mute：supporting text / inactive */
+  --mute-deep: #575757;    /* 「更深」= Charcoal 抬半档 */
+  --mute-inline: #646464;
+  --mute-caption: #646464;
+  --mute-intro: #575757;
+  --mute-terse: #646464;
+  --mute-quiet: #646464;
+  --mute-soft: #646464;
+  --mute-dim: #646464;
+  --mute-draft: #646464;
+  --mute-json: #646464;
+  --mute-matrix: #646464;
+  --faint: #8d8d8d;        /* Ash：tertiary / placeholder */
+  --faint-alt: #8d8d8d;
+  --faint-soft: #575757;
+  --faint-ghost: #8d8d8d;
+  --faint-hint: #8d8d8d;
+  --faint-meta: #8d8d8d;
+  --faint-note: #575757;
+  --faint-empty: #bbbbbb;  /* 空态 = Stone（规格 disabled 档） */
+  --on-dark: #fcfcfc;      /* 规格 On-Dark（暖白非纯白） */
+  --on-dark-soft: rgba(252, 252, 252, .72); /* 规格 on-dark-mute */
+  --on-dark-faint: rgba(252, 252, 252, .5);
+
+  /* ── Primary / link / focus（橙一族 + 功能性聚焦蓝） ── */
+  --primary: #ea2804;      /* 橙戳记 CTA（规格 primary） */
+  --primary-active: #c01f00; /* 规格 primary-deep（pressed） */
+  --on-primary: #ffffff;   /* 规格 on-primary */
+  --link: #ea2804;         /* 规格 link = 同橙 */
+  --link-hover: #c01f00;   /* 文字链接悬停压深（浅橙在 cream 上不可读） */
+  --focus-ring: rgba(59, 130, 246, .5); /* 规格 ring-focus（功能性蓝环） */
+  --primary-veil: #f3f0e8; /* 当前导航 = bone 内嵌面（色彩分层，橙不作底） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #2b9a66;      /* 规格 badge-success（running 绿） */
+  --success-halo: 0 0 0 4px rgba(43, 154, 102, .15);
+  --warning: #8a6a1e;      /* 派生：暖调 ochre（规格无 warning） */
+  --warning-soft: rgba(138, 106, 30, .12);
+  --error: #cf222e;        /* 派生：与主橙拉开的红（规格无 error） */
+  --error-deep: #a40e26;
+  --info: #3b82f6;         /* 聚焦环蓝的实心档（功能性，非装饰） */
+  --info-soft: rgba(59, 130, 246, .1);
+
+  /* ── Hairlines & bars（暖墨 alpha 单轨 + 暗井白线） ── */
+  --hairline: rgba(32, 32, 32, .12);        /* 规格 hairline */
+  --hairline-soft: rgba(32, 32, 32, .07);   /* 半档更静（推导） */
+  --hairline-strong: #202020;               /* 规格 hairline-strong（聚焦输入/结构线） */
+  --hairline-card: rgba(32, 32, 32, .12);   /* model 卡 1px 边 */
+  --hairline-inset: rgba(32, 32, 32, .12);
+  --hairline-mid: rgba(32, 32, 32, .12);
+  --hairline-rail: rgba(32, 32, 32, .12);
+  --hairline-codex: rgba(32, 32, 32, .12);
+  --hairline-detail: rgba(32, 32, 32, .12);
+  --hairline-json: rgba(255, 255, 255, .2); /* 暗井内 = 规格 divider-dark */
+  --hairline-dashed: rgba(32, 32, 32, .3);  /* 空态虚线保可见（推导） */
+  --hairline-legacy: rgba(32, 32, 32, .12);
+  --hairline-row: rgba(32, 32, 32, .1);     /* 行缝半静 */
+  --hairline-draft: rgba(32, 32, 32, .12);
+  --bar-value: #bbbbbb;   /* 左规线 = Stone（中性轮廓档） */
+  --bar-matrix: #bbbbbb;
+  --bar-summary: #8d8d8d;
+  --bar-usage: #ea2804;   /* 用量轨 = 橙（功能数据印，与 CTA 同职） */
+
+  /* ── Overlays & shadows（暖墨 alpha；面板影 = 规格唯一软投影） ── */
+  --overlay-faint: rgba(32, 32, 32, .04);
+  --overlay-soft: rgba(32, 32, 32, .05);  /* nav hover 微沉 */
+  --overlay-line: rgba(32, 32, 32, .07);
+  --overlay-medium: rgba(32, 32, 32, .08);
+  --shadow-panel: 0 8px 24px rgba(32, 32, 32, .08); /* 规格 Level 4 soft drop */
+
+  /* ── brand-mark（bone 圆框 + 三枚暖墨圆钉 + 一点橙印；形态见片段） ── */
+  --brand-frame-bg: #f3f0e8;   /* bone inset 面 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #202020;      /* 三圆钉 = 暖墨（中性 wordmark） */
+  --brand-bar-2: #202020;
+  --brand-bar-3: #202020;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ea2804;        /* 角标 = 橙印（logo 位的一枚戳记） */
+  --brand-dot-border: #f9f7f3;
+  --brand-dot-glow: 0 0 8px rgba(234, 40, 4, .55);
+  --nav-indicator: #202020;    /* 当前导航指示 = 暖墨（button-dark 职能，橙不铺导航） */
+
+  /* ── 登录页（cream 画布 + 白卡 + 橙 hero band showcase：mesh 见片段） ── */
+  --login-bg: #f9f7f3;
+  --login-shell-border: rgba(32, 32, 32, .12);
+  --login-shell-shadow: 0 8px 24px rgba(32, 32, 32, .08); /* 唯一软投影给浮卡 */
+  --login-showcase-bg: #ea2804; /* 规格 hero-warm 橙带 */
+  --login-showcase-ink: #fcfcfc;
+  --login-grid-line: rgba(255, 255, 255, .14); /* 橙带上的暖光格 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #fcfcfc;
+  --login-brand-mute: rgba(252, 252, 252, .72);
+  --login-signal-bg: rgba(255, 255, 255, .12);
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #fcfcfc; /* signal 三圆 = 暖白（同 brand-mark 语汇） */
+  --login-kicker: rgba(252, 252, 252, .8);
+  --login-heading: #fcfcfc;    /* hero 白字（展示字体规格见片段） */
+  --login-copy: rgba(252, 252, 252, .8);
+  --login-preview-bg: rgba(255, 255, 255, .1);
+  --login-preview-border: rgba(255, 255, 255, .26);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .18);
+  --login-preview-dot: #fcfcfc;
+  --login-preview-dot-soft: rgba(255, 255, 255, .4);
+  --login-preview-label: rgba(252, 252, 252, .68);
+  --login-preview-row-line: rgba(255, 255, 255, .16);
+  --login-preview-row-ink: #fcfcfc;
+  --login-preview-chip-ink: #ea2804;  /* chip = 白签橙字（badge-tag 反转印） */
+  --login-preview-chip-bg: rgba(255, 255, 255, .92);
+  --login-preview-bar: rgba(255, 255, 255, .38);
+  --login-foot: #646464;       /* Mute：页脚级 */
+  --login-card-kicker: #575757;
+  --login-card-heading: #202020;
+  --login-card-copy: #575757;
+  --login-notice-border: rgba(59, 130, 246, .35); /* 通知 = 聚焦蓝水彩 */
+  --login-notice-bg: rgba(59, 130, 246, .07);
+  --login-notice-ink: #3a3a3a;
+  --login-label: #3a3a3a;
+  --login-input-border: rgba(32, 32, 32, .15);  /* 规格 text-input hairline 档 */
+  --login-input-border-hover: #202020;          /* 规格 hairline-strong = 聚焦输入 */
+  --login-primary: #ea2804;    /* 主 CTA = 橙戳记药丸 */
+  --login-primary-active: #c01f00;
+}
+
+/* ============================================================
+   replicate 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="replicate"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 橙色选区（品牌戳记的功能性使用） ── */
+[data-theme="replicate"] ::selection { background: rgba(234, 40, 4, .18); color: var(--ink); }
+
+/* ── 系统滚动条：细、Ash、圆头（全药丸几何延伸） ── */
+[data-theme="replicate"] * { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+[data-theme="replicate"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="replicate"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="replicate"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: var(--faint); background-clip: padding-box; }
+[data-theme="replicate"] ::-webkit-scrollbar-thumb:hover { background: var(--mute); background-clip: padding-box; }
+
+/* ── 药丸输入/选择器：text-input 规格 rounded.full（textarea 保持 md 软角） ── */
+[data-theme="replicate"] .ant-input:not(textarea),
+[data-theme="replicate"] .ant-input-affix-wrapper,
+[data-theme="replicate"] .ant-select .ant-select-selector,
+[data-theme="replicate"] .ant-pagination .ant-pagination-item { border-radius: 9999px; }
+
+/* ── eyebrow / kicker / 表头 = JetBrains Mono 大写宽字距（工程 monospace 气质） ── */
+[data-theme="replicate"] .page-heading__eyebrow,
+[data-theme="replicate"] .panel-kicker,
+[data-theme="replicate"] .section-label { color: var(--mute); font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+/* context-bar 页标题不受 mono kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="replicate"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+[data-theme="replicate"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); color: var(--mute); font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+
+/* ── 展示字体法则：面板标题/登录标题换 rb-freigeist-neue 替身栈 + 负字距
+      （规格「Emphasis comes from family change」） ── */
+[data-theme="replicate"] .panel-heading h2,
+[data-theme="replicate"] .detail-section h3,
+[data-theme="replicate"] .configuration-step-copy h2,
+[data-theme="replicate"] .configuration-summary h2,
+[data-theme="replicate"] .login-page__card h1 { font-family: var(--font-display); letter-spacing: -.3px; }
+
+/* ── 大数值 = 展示字体 + 负字距（stat-display 的杂志排印感） ── */
+[data-theme="replicate"] .business-outcomes__card > strong,
+[data-theme="replicate"] .ratio-card > strong,
+[data-theme="replicate"] .codex-metric > strong,
+[data-theme="replicate"] .duration-card strong { font-family: var(--font-display); letter-spacing: -.5px; }
+
+/* ── 导航：白药丸签 + hairline（规格 sub-nav-pill）；当前项 = bone 面 + Strong 边 ── */
+[data-theme="replicate"] .workspace-nav a { background: #ffffff; border: 1px solid rgba(32, 32, 32, .12); border-radius: 9999px; }
+[data-theme="replicate"] .workspace-nav a[aria-current="page"] { background: #f3f0e8; border-color: #202020; color: #202020; font-weight: 600; }
+[data-theme="replicate"] .workspace-nav a[aria-current="page"] .anticon { color: #202020; }
+
+/* ── brand-mark 重绘：bone 圆框内三枚等大暖墨圆钉（圆形 wordmark） ── */
+[data-theme="replicate"] .brand-mark { align-items: center; padding: 0 8px; gap: 4px; border: none; }
+[data-theme="replicate"] .brand-mark span { width: 7px; height: 7px; border-radius: 9999px; box-shadow: none; }
+[data-theme="replicate"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="replicate"] .brand-mark span:nth-child(2) { height: 7px; }
+[data-theme="replicate"] .brand-mark span:nth-child(3) { height: 7px; }
+@media (max-width: 760px) {
+  [data-theme="replicate"] .brand-mark span { width: 5px; height: 5px; }
+}
+
+/* ── 详情格：面板内的嵌套面回落 bone（色彩分层语言） ── */
+[data-theme="replicate"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录 showcase：规格 hero mesh —— 橙核 → hero-glow → hero-pink 暖光层；
+      标题 40px/700/1.05/-1px = display 系（替身栈 + 紧行高） ── */
+[data-theme="replicate"] .login-page__showcase { background-image: radial-gradient(120% 90% at 85% 10%, rgba(244, 168, 160, .55), transparent 55%), radial-gradient(95% 75% at 12% 100%, rgba(255, 106, 61, .5), transparent 60%); }
+[data-theme="replicate"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-size: 40px; font-weight: 700; line-height: 1.05; letter-spacing: -1px; }
+[data-theme="replicate"] .login-page__showcase-copy > span,
+[data-theme="replicate"] .login-page__card-heading > span { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* ── 登录 signal：三圆钉白重绘（同 brand-mark 语汇） ── */
+[data-theme="replicate"] .login-page__signal { align-items: center; gap: 4px; border-radius: 9999px; }
+[data-theme="replicate"] .login-page__signal span { width: 6px; height: 6px; border-radius: 9999px; }
+
+/* ── 登录卡片：输入/主 CTA 钉 44px 触达高（规格 height 44px / WCAG AAA） ── */
+[data-theme="replicate"] .login-page__card .ant-input,
+[data-theme="replicate"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="replicate"] .login-page__card .ant-btn-primary { height: 44px; }

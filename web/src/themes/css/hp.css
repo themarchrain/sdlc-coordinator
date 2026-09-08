@@ -1,0 +1,287 @@
+/* ============================================================
+   hp 主题令牌块 —— 规格驱动（hp 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   HP 设计语言（白纸企业-消费目录系统，亮色）：
+   - 纯白画布 #ffffff（Canvas/Paper 同白）+ Cloud #f7f7f7 / Fog #e8e8e8
+     灰带节奏；深度靠色面对比（cloud 带 vs 白卡），不靠投影
+   - 文字阶梯坍缩为 Ink #1a1a1a / Charcoal #3d3d3d / Graphite #636363 三级
+     （Steel #c2c2c2 只做控件强边与暗板弱化，不入白底文字阶）
+   - HP Electric Blue #024ad8 = 唯一信号（每视口至多两处火焰）：
+     --primary/--link/--info/--bar-usage/--nav-indicator 全部同源蓝
+   - 语义：error = Bloom Deep #b3262b（error-deep = Bloom Wine #5a1313）、
+     success = Storm Deep #356373（「neutral status accent」原文）；
+     warning #8a5a00 为派生（规格无 warning 色码）
+   - 暗板语汇：Ink #1a1a1a slab 收尾一切节奏 → json 卡 = promo-strip-dark
+     时刻（bar = Ink Soft #292929、弱化字 = Steel #c2c2c2）
+   - 阴影只两档：Soft Lift 0 2px 8px / Floating Modal 0 8px 24px（字面值）
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     hover 亮蓝 #296ef9（规格 hover 态静默过滤 → 同族亮阶挪用）
+     hairline-soft #f0f0f0（fog 与 cloud 之间的分隔档）
+     overlays = Ink 系 alpha（≈ Soft Lift 阴影的墨系等价）
+   骨架表达不了的形态（蓝色 chevron 斜杠 brand-mark、按钮全大写字距、
+   展示字重恒 500 法则、登录 showcase 暗板）见块后片段。
+   ============================================================ */
+[data-theme="hp"] {
+  /* ── Typography ───────────────────────────── */
+  /* Forma DJR Micro（专有族）→ 规格 fallback Arial；单一族横跨 display/body/button */
+  --font-sans: 'Forma DJR Micro', Arial, Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 规格无 mono → 保留骨架等宽栈（json 可读性） */
+  --font-display: 'Forma DJR Micro', Arial, Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格刻度：xs 2 chip / sm 3 / md 4 按钮·输入 / lg 8 徽章 / xl 16 卡·框 / pill 9999；
+        双层哲学：按钮 sharp、卡 soft） ── */
+  --radius-xs: 2px;      /* 图标提示 focus = 规格 rounded.xs */
+  --radius-soft: 2px;    /* 登录预览小色块 / chip */
+  --radius-sm: 3px;      /* 内嵌小块 / sparkline 提示 = 规格 rounded.sm */
+  --radius-md: 8px;      /* 行卡 = 徽章容器 lg 8（卡向 soft 侧靠） */
+  --radius-lg: 16px;     /* 指标卡 = 规格 rounded.xl（product card） */
+  --radius-xl: 16px;     /* 面板 = 规格 rounded.xl */
+  --radius-brand: 2px;   /* brand-mark / 登录 signal（近方角，chevron 几何） */
+  --radius-pill: 9999px; /* 迷你徽标 = category pill */
+  --radius-panel: 16px;  /* 登录外壳 = 卡框 16 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;                 /* Canvas：纯白页面画布 */
+  --canvas-soft: #f7f7f7;            /* Cloud：表头/嵌面/交替灰带 */
+  --canvas-card: #ffffff;            /* Paper：卡面与画布同白，靠发丝线 + Soft Lift 分层 */
+  --canvas-dark: #1a1a1a;            /* Ink 暗板：json pre = promo-strip-dark 时刻 */
+  --surface-sidebar: #ffffff;        /* 侧栏 = 白（规格 nav-bar-top 白底） */
+  --surface-bar: rgba(255, 255, 255, .94);
+  --surface-inset: #f7f7f7;          /* 卡内交互/内嵌面 = Cloud */
+  --surface-matrix: #f7f7f7;
+  --surface-tint: #f7f7f7;           /* 表行 hover = Cloud 灰带 */
+  --surface-rail: #f7f7f7;
+  --surface-detail: #f7f7f7;
+  --surface-chip: #f7f7f7;
+  --surface-legacy: #f7f7f7;
+  --surface-draft: #e8e8e8;          /* draft 更沉一档 = Fog */
+  --surface-empty: #f7f7f7;
+  --surface-json-bar: #292929;       /* json 头条 = Ink Soft（暗板内纹理层，规格原文） */
+  --tooltip-bg: #1a1a1a;             /* Ink 暗板反转 */
+
+  /* ── Ink & text ladder（坍缩为 Ink / Charcoal / Graphite 三级） ── */
+  --ink: #1a1a1a;
+  --ink-strong: #1a1a1a;
+  --ink-display: #1a1a1a;
+  --ink-heading: #1a1a1a;
+  --ink-value: #1a1a1a;
+  --ink-repo: #1a1a1a;
+  --ink-step: #1a1a1a;
+  --ink-label-strong: #1a1a1a;
+  --ink-label: #1a1a1a;
+  --ink-row: #1a1a1a;
+  --ink-list: #3d3d3d;   /* value-list li = Charcoal 正文 */
+  --ink-data: #1a1a1a;
+  --ink-field: #1a1a1a;
+  --ink-rail: #1a1a1a;
+  --ink-rail-value: #1a1a1a;
+  --ink-secret: #3d3d3d; /* secret-label = Charcoal */
+  --ink-chip: #3d3d3d;   /* duration 数值 = Charcoal */
+  --body: #1a1a1a;       /* Ink = universal text（规格正文原文） */
+  --body-alt: #3d3d3d;   /* Charcoal：次级正文 */
+  --body-soft: #3d3d3d;  /* 占比卡小注 = Charcoal */
+  --mute: #636363;       /* Graphite：次级文字/未激活导航 */
+  --mute-deep: #3d3d3d;  /* 「更深」= Charcoal：标签抬回正文级 */
+  --mute-inline: #636363;
+  --mute-caption: #636363;
+  --mute-intro: #3d3d3d; /* 配置导语 = 正文级 */
+  --mute-terse: #636363;
+  --mute-quiet: #636363;
+  --mute-soft: #636363;
+  --mute-dim: #636363;
+  --mute-draft: #636363;
+  --mute-json: #c2c2c2;  /* json 头条标签 = Steel（暗板上弱化，规格 footer 语汇） */
+  --mute-matrix: #636363;
+  --faint: #636363;      /* Graphite：占位/禁用级（legal/timestamp 原文角色） */
+  --faint-alt: #636363;
+  --faint-soft: #636363;
+  --faint-ghost: #636363;
+  --faint-hint: #636363;
+  --faint-meta: #636363;
+  --faint-note: #636363;
+  --faint-empty: #767676; /* 空态占位提亮半档（派生：虚线面板上可读） */
+  --on-dark: #ffffff;    /* On Ink：暗板文字 = 纯白（规格原文） */
+  --on-dark-soft: #ffffff;
+  --on-dark-faint: #c2c2c2; /* Steel：暗板弱化（规格 footer legal 用色） */
+
+  /* ── Primary / link / focus（Electric Blue = 唯一信号，每视口至多两处） ── */
+  --primary: #024ad8;                /* HP Electric Blue */
+  --primary-active: #0e3191;         /* Deep Navy：按压（规格 pressed 原文） */
+  --on-primary: #ffffff;
+  --link: #024ad8;                   /* 链接 = 蓝（规格 link 色） */
+  --link-hover: #296ef9;             /* 派生 hover：Bright Blue 亮阶挪用 */
+  --focus-ring: rgba(2, 74, 216, .28); /* 蓝 28% 焦点环 */
+  --primary-veil: #c9e0fc;           /* 当前导航 = Soft Blue 选择 chip（规格原文用色） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #356373;                /* Storm Deep：中性状态 accent（规格原文） */
+  --success-halo: 0 0 0 4px rgba(53, 99, 115, .14);
+  --warning: #8a5a00;                /* 派生琥珀（规格无 warning 色码，白底 ≥5:1） */
+  --warning-soft: rgba(138, 90, 0, .12);
+  --error: #b3262b;                  /* Bloom Deep：error/sale 色（规格原文） */
+  --error-deep: #5a1313;             /* Bloom Wine：折扣强调深红（规格原文） */
+  --info: #024ad8;                   /* info = 蓝（蓝即唯一信号） */
+  --info-soft: #c9e0fc;              /* Soft Blue 薄面（规格 selection chip 用色） */
+
+  /* ── Hairlines & bars（Fog #e8e8e8 分隔 / Steel #c2c2c2 强边） ── */
+  --hairline: #e8e8e8;               /* 侧栏右缘 / 顶栏下缘 = Fog */
+  --hairline-soft: #f0f0f0;          /* 面板底部分隔（派生：fog 与 cloud 之间） */
+  --hairline-strong: #c2c2c2;        /* Steel：滚动条/强调边（规格 focus/active filter） */
+  --hairline-card: #e8e8e8;          /* 卡外线 = Fog（HP 卡靠 Soft Lift，线极淡） */
+  --hairline-inset: #e8e8e8;
+  --hairline-mid: #e8e8e8;
+  --hairline-rail: #e8e8e8;
+  --hairline-codex: #e8e8e8;
+  --hairline-detail: #e8e8e8;
+  --hairline-json: #c2c2c2;          /* json 暗板外缘 = Steel（白卡上的暗板描边） */
+  --hairline-dashed: #c2c2c2;        /* 空态虚线 = Steel 强边 */
+  --hairline-legacy: #c2c2c2;
+  --hairline-row: #e8e8e8;
+  --hairline-draft: #c2c2c2;
+  --bar-value: #c2c2c2;              /* value-list 左规线 = Steel 中性规线 */
+  --bar-matrix: #c2c2c2;
+  --bar-summary: #c2c2c2;
+  --bar-usage: #024ad8;              /* codex 用量进度条 = 蓝（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows（Ink 系 alpha；阴影只 Soft Lift / Modal 两档） ── */
+  --overlay-faint: rgba(26, 26, 26, .04);
+  --overlay-soft: rgba(26, 26, 26, .05);   /* 导航 hover = Cloud 级微沉 */
+  --overlay-line: rgba(26, 26, 26, .07);   /* nav 分组线 */
+  --overlay-medium: rgba(26, 26, 26, .08);
+  --shadow-panel: 0 2px 8px rgba(26, 26, 26, .08); /* Soft Lift（规格字面值） */
+
+  /* ── brand-mark（无框无点无光影，三根蓝色 chevron 斜杠，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #024ad8;            /* wordmark 双斜杠的三杠扩展，角度见片段 */
+  --brand-bar-2: #024ad8;
+  --brand-bar-3: #024ad8;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #024ad8;          /* 当前导航指示 = 蓝（规格 nav-link 2px 蓝下划线） */
+
+  /* ── 登录页（白卡 + Ink 暗板 showcase：HP 页面节奏的收尾暗板时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e8e8e8;
+  --login-shell-shadow: 0 8px 24px rgba(26, 26, 26, .12); /* Floating Modal（规格字面值） */
+  --login-showcase-bg: #1a1a1a;      /* showcase = Ink 暗板（help-band-dark 语汇） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #c2c2c2;       /* Steel：暗板弱化（规格 footer 语汇） */
+  --login-signal-bg: transparent;
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #296ef9;       /* Bright Blue：暗板内的蓝（规格 dark-slab CTA 蓝原文） */
+  --login-kicker: #c2c2c2;           /* kicker = 暗板 caption（Steel 弱化） */
+  --login-heading: #ffffff;
+  --login-copy: #c2c2c2;
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;      /* 暗板上投影不可见，白描边承担 */
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #296ef9;      /* 数据点 = 暗板亮蓝 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #296ef9; /* 在播 chip = 暗板亮蓝 */
+  --login-preview-chip-bg: rgba(41, 110, 249, .16);
+  --login-preview-bar: #296ef9;
+  --login-foot: #636363;             /* Graphite：白卡侧 legal */
+  --login-card-kicker: #636363;
+  --login-card-heading: #1a1a1a;
+  --login-card-copy: #636363;
+  --login-notice-border: rgba(2, 74, 216, .3); /* info 通知 = Soft Blue 薄面 + 蓝边 */
+  --login-notice-bg: rgba(2, 74, 216, .08);
+  --login-notice-ink: #292929;
+  --login-label: #3d3d3d;
+  --login-input-border: #c2c2c2;     /* Steel：规格 text-input 默认边 */
+  --login-input-border-hover: #3d3d3d; /* hover 转 Charcoal（趋向聚焦 Ink 边） */
+  --login-primary: #024ad8;          /* 主 CTA = Electric Blue */
+  --login-primary-active: #0e3191;   /* hover/按压 = Deep Navy（规格 pressed） */
+}
+
+/* ============================================================
+   hp 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="hp"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 蓝选区 + 蓝 focus 环（蓝是唯一信号） ── */
+[data-theme="hp"] ::selection { background: rgba(2, 74, 216, .16); }
+[data-theme="hp"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 系统滚动条：细、Steel #c2c2c2、圆头 ── */
+[data-theme="hp"] * { scrollbar-width: thin; scrollbar-color: #c2c2c2 transparent; }
+[data-theme="hp"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="hp"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="hp"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #c2c2c2; background-clip: padding-box; }
+[data-theme="hp"] ::-webkit-scrollbar-thumb:hover { background: #636363; background-clip: padding-box; }
+
+/* ── 按钮标签：button-md 全大写 + 0.7px 字距（≈.05em@14px；600 字重由 antd Button 承担；
+      规格原文「the only place the system tracks letters」） ── */
+[data-theme="hp"] .ant-btn { text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── 展示字重恒 500 法则：标题/数值/表头一律 500（骨架默认 650–700 → 压回；
+      规格「resist the urge to bump weight at hero scale」） ── */
+[data-theme="hp"] .brand-block strong,
+[data-theme="hp"] .panel-heading h2,
+[data-theme="hp"] .business-outcomes__card > strong,
+[data-theme="hp"] .ratio-card > strong,
+[data-theme="hp"] .codex-metric > strong,
+[data-theme="hp"] .codex-token-ledger strong,
+[data-theme="hp"] .configuration-status-rail > div > strong,
+[data-theme="hp"] .configuration-summary-grid strong,
+[data-theme="hp"] .configuration-step-copy h2,
+[data-theme="hp"] .configuration-summary h2,
+[data-theme="hp"] .configuration-inline-title h3,
+[data-theme="hp"] .connector-configuration-step__heading h3,
+[data-theme="hp"] .repo-row strong,
+[data-theme="hp"] .intent-row strong,
+[data-theme="hp"] .duration-card strong,
+[data-theme="hp"] .connector-watch__item strong,
+[data-theme="hp"] .detail-section h3,
+[data-theme="hp"] .value-list__title,
+[data-theme="hp"] .duration-section__heading strong,
+[data-theme="hp"] .generic-record__group > strong,
+[data-theme="hp"] .admin-table .ant-table-thead > tr > th,
+[data-theme="hp"] .audit-json > summary,
+[data-theme="hp"] .login-page__brand strong,
+[data-theme="hp"] .login-page__showcase-copy h2,
+[data-theme="hp"] .login-page__card h1,
+[data-theme="hp"] .login-page__card .ant-form-item-label > label { font-weight: 500; }
+
+/* ── eyebrow / kicker：caption 体（Graphite 500、正常大小写 —— HP 只在按钮上用大写字距） ── */
+[data-theme="hp"] .page-heading__eyebrow,
+[data-theme="hp"] .panel-kicker,
+[data-theme="hp"] .section-label { color: var(--mute); font: 500 10px/1.4 var(--font-sans); letter-spacing: 0; text-transform: none; }
+
+/* ── context-bar 页标题不受 caption 化影响（先例：tesla.css 同名补正） ── */
+[data-theme="hp"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 导航：当前项 = 蓝字 + Soft Blue chip 底（令牌承担），指示条 = 蓝（令牌承担） ── */
+[data-theme="hp"] .workspace-nav a { border-radius: 9999px; }
+[data-theme="hp"] .workspace-nav a[aria-current="page"] .anticon { color: var(--primary); }
+
+/* ── brand-mark：wordmark 双斜杠的三杠扩展 —— 三根 Electric Blue 平行四边形
+      （skewX(-24deg) ≈ 规格 ~60° 切角），方角、无框、无点、无光影；
+      chevron 只落在 wordmark 位（规格 Don't：不做卡片内噪点装饰） ── */
+[data-theme="hp"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; gap: 4px; }
+[data-theme="hp"] .brand-mark span { border-radius: 0; background: #024ad8; box-shadow: none; transform: skewX(-24deg); }
+[data-theme="hp"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="hp"] .brand-mark::after { display: none; }
+
+/* ── 登录 showcase：Ink 暗板时刻 —— 标题 36px/500/1.0（display-md–lg 之间、
+      规格「display line-height 1.0」），kicker = 暗板 caption 正常大小写 ── */
+[data-theme="hp"] .login-page__showcase-copy h2 { font-size: 36px; line-height: 1; }
+[data-theme="hp"] .login-page__showcase-copy > span,
+[data-theme="hp"] .login-page__card-heading > span { font-family: var(--font-sans); font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 登录 signal：brand-mark 同款三杠 chevron，暗板内转 Bright Blue ── */
+[data-theme="hp"] .login-page__signal { background: transparent; border-color: transparent; box-shadow: none; gap: 5px; }
+[data-theme="hp"] .login-page__signal span { border-radius: 0; background: #296ef9; transform: skewX(-24deg); }

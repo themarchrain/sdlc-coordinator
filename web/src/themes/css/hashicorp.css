@@ -1,0 +1,255 @@
+/* ============================================================
+   hashicorp 主题令牌块 —— 规格驱动（hashicorp 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   HashiCorp 设计语言（企业基建黑底）：
+   - 画布 #000000（文档实证纯黑）+ charcoal 提升阶梯 surface-1
+     #15181e → surface-2 #1f232b → surface-3 #3b3d45；海拔 =
+     surface lift，暗底无投影（规格「No drop shadows on dark」）
+   - 文字三级坍缩：白 #ffffff / ink-muted #b2b6bd / ink-subtle
+     #656a76（规格禁加第四灰）
+   - 主 CTA = 白底黑字（inverse-canvas/inverse-ink）：--primary
+     #ffffff + --on-primary #000000；hover/active 推导微降白阶
+   - chrome 单色纪律：产品色（Terraform 紫 / Vault 黄 / Consul 红 /
+     Waypoint 青…）是身份令牌，不进通用 chrome；功能蓝
+     accent-blue #2b89ff 承担链接、焦点、数据主色
+   - 语义三色与产品色同值（规格明文复用）：success #00ca8e /
+     warning #ffcf25 / error #e62b1e
+   - 发丝线双轨：半透明灰 rgba(178,182,189,.1)（主导边缘，
+     「borders are felt more than seen」）+ hairline #3b3d45 /
+     hairline-soft #252830（结构线）
+   - json 凹陷面 = blue-7 #101a59（规格「unified-core gradients」
+     的深海军蓝，代码位的产品气质；推导用法）
+   - 圆角：输入/CTA 8（rounded.md）/ 卡 12（lg）/ chip 药丸 /
+     登录外壳 24（cta-banner xxl）
+   骨架表达不了的形态（反相选区、eyebrow 大写宽字距、display 700
+   负字距、单色 brand-mark、导航激活态）见块后片段。
+   ============================================================ */
+[data-theme="hashicorp"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'hashicorpSans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* hashicorpSans 专有字体，Inter 为规格书面替代 */
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 规格「No mono」限营销面；本台是 in-product 面，规格明文「code voice is reserved for in-product surfaces」 */
+  --font-display: 'hashicorpSans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 单一字体族贯穿全层级（规格原文） */
+
+  /* ── Radius（规格刻度：xs 4 / sm 6 / md·CTA·输入 8 / lg·卡 12 / xl 16 / xxl 24 / pill 9999） ── */
+  --radius-xs: 4px;      /* 小 chip / 徽章（规格 rounded.xs） */
+  --radius-soft: 6px;    /* 登录预览小色块 = logo chip 6px 瓦片 */
+  --radius-sm: 6px;      /* 内嵌小块 = 规格 rounded.sm（inline tag） */
+  --radius-md: 8px;      /* 行卡 = CTA/输入/列表项同级（rounded.md） */
+  --radius-lg: 12px;     /* 指标卡 = feature/product/pricing 卡（rounded.lg） */
+  --radius-xl: 16px;     /* 面板 = 大面瓦片（rounded.xl） */
+  --radius-brand: 6px;   /* brand-mark = logo chip 6px 瓦片 + 发丝线 */
+  --radius-pill: 9999px; /* product-pill 药丸 */
+  --radius-panel: 24px;  /* 登录外壳 = cta-banner 大圆角（rounded.xxl） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #000000;            /* 纯黑画布（规格 frontmatter 实证） */
+  --canvas-soft: #15181e;       /* 嵌面卡/表头 = surface-1 同底扁平 + 发丝线 */
+  --canvas-card: #15181e;       /* 卡/面板 = surface-1（charcoal 一阶） */
+  --canvas-dark: #101a59;       /* json pre 凹陷 = blue-7 深海军蓝（unified-core 渐变成员；推导用法） */
+  --surface-sidebar: #000000;   /* 侧栏与画布同底（规格 top-nav bg = canvas） */
+  --surface-bar: rgba(0, 0, 0, .9);
+  --surface-inset: #1f232b;     /* 卡内交互/内嵌面 = surface-2 */
+  --surface-matrix: #1f232b;    /* 矩阵单元 = 卡内嵌面（同 inset） */
+  --surface-tint: rgba(178, 182, 189, .06); /* 表行 hover = 半透明灰纱（规格发丝线色复用；推导用法） */
+  --surface-rail: #1f232b;      /* 配置状态轨 = 卡内嵌面 */
+  --surface-detail: #15181e;    /* 详情卡 = surface-1 */
+  --surface-chip: #15181e;      /* chip = product-pill 底（规格 surface-1） */
+  --surface-legacy: #15181e;
+  --surface-draft: #15181e;
+  --surface-empty: transparent; /* 空态不叠面，半透明虚线承担 */
+  --surface-json-bar: #1f232b;  /* json 头条 = surface-2 提升（海军蓝井口上沿） */
+  --tooltip-bg: #1f232b;        /* 浮层提示 = surface-2（与 antd colorBgSpotlight 同源） */
+
+  /* ── Ink & text ladder（白 #ffffff / #b2b6bd / #656a76 三级，规格禁加第四灰） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #ffffff;
+  --ink-data: #ffffff;
+  --ink-field: #ffffff;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #b2b6bd;  /* 掩码值回落 ink-muted（推导：弱化非重点数据） */
+  --ink-chip: #ffffff;
+  --body: #ffffff;        /* 规格 product-card 正文字色 = ink 白（body 500） */
+  --body-alt: #b2b6bd;    /* ink-muted：次级正文/元信息 */
+  --body-soft: #b2b6bd;   /* 占比卡小注 */
+  --mute: #b2b6bd;        /* ink-muted：次级文字/未激活导航 */
+  --mute-deep: #ffffff;   /* 暗底「更深」= 更亮：标签提白半档（照 spotify 反转先例） */
+  --mute-inline: #b2b6bd;
+  --mute-caption: #b2b6bd;
+  --mute-intro: #b2b6bd;
+  --mute-terse: #b2b6bd;
+  --mute-quiet: #b2b6bd;
+  --mute-soft: #b2b6bd;
+  --mute-dim: #b2b6bd;
+  --mute-draft: #b2b6bd;
+  --mute-json: #b2b6bd;
+  --mute-matrix: #b2b6bd;
+  --faint: #656a76;       /* ink-subtle：帮助文字/时间戳/脚注（规格原文角色） */
+  --faint-alt: #656a76;
+  --faint-soft: #656a76;
+  --faint-ghost: #656a76;
+  --faint-hint: #656a76;
+  --faint-meta: #656a76;
+  --faint-note: #656a76;
+  --faint-empty: #656a76;
+  --on-dark: #ffffff;
+  --on-dark-soft: #b2b6bd; /* json 海军蓝深块文字 */
+  --on-dark-faint: #656a76;
+
+  /* ── Primary / link / focus（白 CTA 签名 + 功能蓝；产品色不进 chrome） ── */
+  --primary: #ffffff;                 /* inverse-canvas：主 CTA 白底（规格 button-primary） */
+  --primary-active: #e0e3e8;          /* 按压微降白阶（规格按压同白面，推导保留反馈） */
+  --on-primary: #000000;              /* 白底黑字（规格 inverse-ink） */
+  --link: #2b89ff;                    /* accent-blue：规格超链接色 */
+  --link-hover: #5aa7ff;              /* hover 提亮蓝（推导：纯黑底可分辨） */
+  --focus-ring: rgba(43, 137, 255, .5); /* 焦点 = accent-blue 1px outline（规格 text-input-focused） */
+  --primary-veil: rgba(255, 255, 255, .08); /* 选中纱 = 白纱（chrome 单色纪律；推导） */
+
+  /* ── Semantic（与 Nomad/Vault/Consul 产品色同值，规格明文复用） ── */
+  --success: #00ca8e;
+  --success-halo: 0 0 0 4px rgba(0, 202, 142, .16);
+  --warning: #ffcf25;
+  --warning-soft: rgba(255, 207, 37, .14);
+  --error: #e62b1e;
+  --error-deep: #c21f14;              /* 按压深阶（推导：error 同族压暗） */
+  --info: #2b89ff;                    /* accent-blue 承担 info */
+  --info-soft: rgba(43, 137, 255, .14);
+
+  /* ── Hairlines & bars（半透明灰为主导边缘 + #3b3d45 结构线 + #252830 柔线） ── */
+  --hairline: #3b3d45;               /* 规格 hairline（结构分隔） */
+  --hairline-soft: #252830;          /* 规格 hairline-soft（比较表行分隔） */
+  --hairline-strong: #3b3d45;        /* 规格定义的最强线 */
+  --hairline-card: rgba(178, 182, 189, .1);  /* 卡描边 = 规格半透明灰原文 */
+  --hairline-inset: rgba(178, 182, 189, .1);
+  --hairline-mid: #252830;
+  --hairline-rail: #252830;
+  --hairline-codex: #252830;
+  --hairline-detail: rgba(178, 182, 189, .1);
+  --hairline-json: #252830;
+  --hairline-dashed: rgba(178, 182, 189, .22); /* 空态虚线需可见 = 半透明灰加强 */
+  --hairline-legacy: rgba(178, 182, 189, .1);
+  --hairline-row: #252830;           /* 行分隔 = hairline-soft（与 antd Table borderColor 同源） */
+  --hairline-draft: rgba(178, 182, 189, .14);
+  --bar-value: #3b3d45;              /* 左色条一律无彩（chrome 单色纪律） */
+  --bar-matrix: #3b3d45;
+  --bar-summary: #656a76;            /* 汇总条 = ink-subtle 级灰 */
+  --bar-usage: #00ca8e;              /* codex 用量进度 = success 绿（Nomad green 的功能用法） */
+
+  /* ── Overlays & shadows（海拔 = surface lift，暗底无投影） ── */
+  --overlay-faint: rgba(178, 182, 189, .04);
+  --overlay-soft: rgba(178, 182, 189, .07); /* 导航 hover = 半透明灰纱 */
+  --overlay-line: rgba(178, 182, 189, .08);
+  --overlay-medium: rgba(178, 182, 189, .1);
+  --shadow-panel: none;              /* 规格「No drop shadows on dark」 */
+
+  /* ── brand-mark（surface-2 铭牌 + 白→灰三连条：logomark 单色；产品色不装饰） ── */
+  --brand-frame-bg: #1f232b;
+  --brand-frame-border: rgba(178, 182, 189, .1);
+  --brand-frame-shadow: none;    /* 无投影（规格） */
+  --brand-bar-1: #ffffff;        /* 单色三连条：白 → 灰阶（logomark 语气） */
+  --brand-bar-2: #b2b6bd;
+  --brand-bar-3: #656a76;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ffffff;          /* 角标 = 白点（chrome 单色纪律） */
+  --brand-dot-border: #000000;
+  --brand-dot-glow: none;        /* 无发光（规格禁暗底投影装饰） */
+  --nav-indicator: #ffffff;      /* 当前导航指示 = 白（chrome 单色） */
+
+  /* ── 登录页（纯黑地 + charcoal 展示板 + 海军蓝 unified-core 渐变 + 白 CTA） ── */
+  --login-bg: #000000;
+  --login-shell-border: rgba(178, 182, 189, .12);
+  --login-shell-shadow: none;    /* 无投影，发丝线承担边界 */
+  --login-showcase-bg: linear-gradient(160deg, #15181e 52%, #101a59 130%); /* surface-1 → blue-7 unified-core 渐变（推导组色） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(43, 137, 255, .08); /* 网格 = 功能蓝细线 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #b2b6bd;
+  --login-signal-bg: #1f232b;    /* signal = surface-2 铭牌（单色三连条见令牌） */
+  --login-signal-border: rgba(178, 182, 189, .1);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: #b2b6bd;       /* kicker = eyebrow 语气（片段钉大写宽字距） */
+  --login-heading: #ffffff;
+  --login-copy: #b2b6bd;
+  --login-preview-bg: #1f232b;   /* 展示板内嵌预览卡 = surface-2 */
+  --login-preview-border: rgba(178, 182, 189, .1);
+  --login-preview-shadow: none;
+  --login-preview-divider: #252830;
+  --login-preview-dot: #00ca8e;  /* 在播/状态点 = success 绿 */
+  --login-preview-dot-soft: #656a76;
+  --login-preview-label: #656a76;
+  --login-preview-row-line: #252830;
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #b2b6bd; /* product-pill：surface-1 底 + ink-muted 字（规格原文） */
+  --login-preview-chip-bg: #15181e;
+  --login-preview-bar: #2b89ff;  /* 进度条 = 功能蓝 */
+  --login-foot: #656a76;
+  --login-card-kicker: #b2b6bd;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #b2b6bd;
+  --login-notice-border: rgba(43, 137, 255, .35); /* 公告条 = accent-blue 淡染 */
+  --login-notice-bg: rgba(43, 137, 255, .12);
+  --login-notice-ink: #b2b6bd;
+  --login-label: #ffffff;
+  --login-input-border: #3b3d45;        /* 规格 text-input：surface-1 底 + hairline 边 */
+  --login-input-border-hover: rgba(178, 182, 189, .35); /* hover 半透明灰加强（推导） */
+  --login-primary: #ffffff;              /* 白底黑字 CTA（规格 button-primary；黑字走 antd colorTextLightSolid） */
+  --login-primary-active: #e0e3e8;
+}
+
+/* ============================================================
+   hashicorp 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="hashicorp"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 反相选区：白底黑字（inverse-canvas/inverse-ink 的系统级表达） ── */
+[data-theme="hashicorp"] ::selection { background: #ffffff; color: #000000; }
+
+/* ── 系统滚动条：细、hairline #3b3d45、圆头 ── */
+[data-theme="hashicorp"] * { scrollbar-width: thin; scrollbar-color: #3b3d45 transparent; }
+[data-theme="hashicorp"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="hashicorp"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="hashicorp"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 4px; background: #3b3d45; background-clip: padding-box; }
+[data-theme="hashicorp"] ::-webkit-scrollbar-thumb:hover { background: #656a76; background-clip: padding-box; }
+
+/* ── display 700 + 负字距（规格 display 600/700、-0.4 ~ -2.5px；骨架默认 600–650 抬到 700） ── */
+[data-theme="hashicorp"] .panel-heading h2,
+[data-theme="hashicorp"] .configuration-step-copy h2,
+[data-theme="hashicorp"] .configuration-summary h2,
+[data-theme="hashicorp"] .login-page__brand strong,
+[data-theme="hashicorp"] .login-page__showcase-copy h2,
+[data-theme="hashicorp"] .login-page__card h1 { font-weight: 700; letter-spacing: -0.4px; }
+
+/* ── eyebrow / kicker：12px/600/0.6px 大写（规格「eyebrow mandatory above every section」） ── */
+[data-theme="hashicorp"] .page-heading__eyebrow,
+[data-theme="hashicorp"] .panel-kicker,
+[data-theme="hashicorp"] .section-label { color: var(--mute); font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
+
+/* ── 导航：次级 #b2b6bd / 激活 = 白 600 无底色（chrome 单色纪律；规格 body-sm 500） ── */
+[data-theme="hashicorp"] .workspace-nav a { color: var(--mute); }
+[data-theme="hashicorp"] .workspace-nav a[aria-current="page"] { color: #ffffff; background: transparent; font-weight: 600; }
+[data-theme="hashicorp"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── brand-mark：surface-2 铭牌 + 白→灰三连条（logomark 单色；瓦片圆角走 --radius-brand） ── */
+[data-theme="hashicorp"] .brand-mark span { border-radius: 2px; box-shadow: none; }
+
+/* ── 详情格：卡内嵌面 = surface-2 #1f232b（charcoal 提升阶梯） ── */
+[data-theme="hashicorp"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录页：signal = 单色三连条铭牌；kicker 大写宽字距（eyebrow 语气） ── */
+[data-theme="hashicorp"] .login-page__signal span { border-radius: 2px; box-shadow: none; }
+[data-theme="hashicorp"] .login-page__showcase-copy > span,
+[data-theme="hashicorp"] .login-page__card-heading > span { font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }

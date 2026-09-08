@@ -1,0 +1,278 @@
+/* ============================================================
+   airtable 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Airtable 设计语言（编辑式白画布）：
+   - 黑即主色：--primary #181d26（近黑 CTA），蓝 #1b61c9 只做链接；
+     规格 Don'ts 明文警告「别把 link 蓝当主按钮色」——照办
+   - 白画布三面全白，hairline #dddddd 发丝线分层，无渐变/无氛围底纹
+   - 文字四级：ink #181d26 / body #333840 / muted #41454d / border-strong #9297a0
+   - 软面唯一档：surface-soft #f8fafc（feature 卡/featured 档）；沉一档
+     surface-strong #e0e2e6 只给 draft 类「灰 CTA 横幅」角色
+   - 品牌电压色（签名卡面）：coral #aa2d00 / forest #0a2e0e / cream #f5e9d4 /
+     peach #fcab79 / mint #a8d8c4 / yellow #f4d35e / mustard #d9a441
+     —— 按 规格 约束只作整面色，语义派生与 brand-mark 是其仅有的小面积出口
+   - 语义派生（规格未给 error/warning）：error = 签名 coral（氧化红）、
+     warning = mustard 压深到文字级 #8f6412、warning-soft = 签名 cream #f5e9d4
+   - focus = 蓝（规格：输入聚焦环 info-border #458fff、按钮焦点 2px 蓝环）
+   骨架表达不了的形态（brand-mark 彩虹条纹重绘、字重 400/500 法则、
+   kicker 大写化、登录 showcase 深墨 hero 卡）见块后 [data-theme="airtable"] 专属片段。
+   ============================================================ */
+[data-theme="airtable"] {
+  /* ── Typography ───────────────────────────── */
+  /* Haas Grotesk（授权字体，禁外部加载）→ 规格 fallback 栈原文 + CJK 补齐；
+     display = Inter Display（规格 pricing 方言，亦是 Haas 的开源最近似） */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Inter Display", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度：2 legal / 6 输入·小件 / 10 内容卡 / 12 主 CTA·签名卡；pill 仅 pricing 方言不外用） ── */
+  --radius-xs: 2px;      /* 图标提示 focus 圆角 = 规格 legal 2px */
+  --radius-soft: 6px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块 = 规格 rounded.sm */
+  --radius-md: 10px;     /* 行卡 = 规格 rounded.md（内容卡） */
+  --radius-lg: 12px;     /* 指标卡 = 规格 rounded.lg */
+  --radius-xl: 12px;     /* 面板 = 大面同 12 */
+  --radius-brand: 12px;  /* brand-mark / 登录 signal = 签名卡圆角 */
+  --radius-pill: 6px;    /* 迷你徽标（药丸不外用 → 小件 6px） */
+  --radius-panel: 12px;  /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* 规格画布：白是每一页的底 */
+  --canvas-soft: #f8fafc;        /* surface-soft：内嵌/交替面 */
+  --canvas-card: #ffffff;        /* 卡片白，靠发丝线 + 留白分隔 */
+  --canvas-dark: #181d26;        /* surface-dark：深墨 CTA 卡面 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 top-nav 全页保持白） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 滚动后导航白磨（规格无、白系推导） */
+  --surface-inset: #f8fafc;
+  --surface-matrix: #f8fafc;
+  --surface-tint: #f8fafc;       /* 行 hover = surface-soft 微高亮 */
+  --surface-rail: #f8fafc;
+  --surface-detail: #f8fafc;
+  --surface-chip: #f8fafc;
+  --surface-legacy: #f8fafc;
+  --surface-draft: #e0e2e6;      /* draft 档 = surface-strong（灰 CTA 横幅面） */
+  --surface-empty: #fbfcfd;      /* 空态近白一档 */
+  --surface-json-bar: #f8fafc;
+  --tooltip-bg: #181d26;         /* 墨反转面（白画布上的提示） */
+
+  /* ── Ink & text ladder（坍缩为规格四级墨） ── */
+  --ink: #181d26;
+  --ink-strong: #181d26;
+  --ink-display: #181d26;
+  --ink-heading: #181d26;
+  --ink-value: #181d26;
+  --ink-repo: #181d26;
+  --ink-step: #181d26;
+  --ink-label-strong: #181d26;
+  --ink-label: #181d26;
+  --ink-row: #181d26;
+  --ink-list: #333840;   /* value-list li = body 正文级 */
+  --ink-data: #181d26;
+  --ink-field: #181d26;
+  --ink-rail: #181d26;
+  --ink-rail-value: #181d26;
+  --ink-secret: #333840; /* secret-label = 正文级 */
+  --ink-chip: #333840;   /* duration 数值 = 正文级 */
+  --body: #333840;       /* 规格正文色 */
+  --body-alt: #333840;
+  --body-soft: #41454d;
+  --mute: #41454d;       /* muted：页脚/面包屑/说明 */
+  --mute-deep: #333840;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #41454d;
+  --mute-caption: #41454d;
+  --mute-intro: #333840; /* 配置导语 = 正文级 */
+  --mute-terse: #41454d;
+  --mute-quiet: #41454d;
+  --mute-soft: #41454d;
+  --mute-dim: #41454d;
+  --mute-draft: #41454d;
+  --mute-json: #41454d;
+  --mute-matrix: #41454d;
+  --faint: #9297a0;      /* border-strong：占位/禁用级 */
+  --faint-alt: #9297a0;
+  --faint-soft: #9297a0;
+  --faint-ghost: #9297a0;
+  --faint-hint: #9297a0;
+  --faint-meta: #9297a0;
+  --faint-note: #9297a0;
+  --faint-empty: #9297a0;
+  --on-dark: #ffffff;    /* 深墨面上的字 = 纯白 */
+  --on-dark-soft: rgba(255, 255, 255, .72);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus（黑即主色；蓝只做链接与聚焦） ── */
+  --primary: #181d26;    /* 近黑主 CTA（规格 primary；与 ink 同角色） */
+  --primary-active: #0d1218; /* 规格 button-primary-active */
+  --on-primary: #ffffff;
+  --link: #1b61c9;       /* 链接蓝（规格 link「actual link blue」） */
+  --link-hover: #1a3866; /* 规格 link-active（只记录了 press 压深） */
+  --focus-ring: rgba(69, 143, 255, .45); /* 规格 info-border 蓝环 */
+  --primary-veil: rgba(24, 29, 38, .05); /* 当前项 = 墨系微高亮（不叠蓝纱） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #006400;             /* 规格 success */
+  --success-halo: 0 0 0 4px rgba(0, 100, 0, .1);
+  --warning: #8f6412;             /* 派生：签名 mustard #d9a441 压到文字级 */
+  --warning-soft: #f5e9d4;        /* 签名 cream（beige callout 面即警示底） */
+  --error: #aa2d00;               /* 签名 coral（dark coral / oxide red） */
+  --error-deep: #8c2400;          /* 派生：coral 压深一档 */
+  --info: #254fad;                /* 规格 info */
+  --info-soft: #eaf1fd;           /* 派生：info 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（hairline #dddddd / 控件强边 border-strong） ── */
+  --hairline: #dddddd;         /* 规格 hairline：输入/表格/次按钮描边 */
+  --hairline-soft: #e8e8e8;    /* 派生：更安静的分隔线 */
+  --hairline-strong: #9297a0;  /* 规格 border-strong（禁用描边级） */
+  --hairline-card: #e4e4e4;
+  --hairline-inset: #e8e8e8;
+  --hairline-mid: #e8e8e8;
+  --hairline-rail: #dddddd;
+  --hairline-codex: #e8e8e8;
+  --hairline-detail: #e4e4e4;
+  --hairline-json: #e0e0e0;
+  --hairline-dashed: #9297a0;  /* 空态虚线需要可见 = 强边一档 */
+  --hairline-legacy: #dddddd;
+  --hairline-row: #ebebeb;
+  --hairline-draft: #dddddd;
+  --bar-value: #c9cdd3;   /* 派生：hairline 与 border-strong 之间的中灰（左规线） */
+  --bar-matrix: #c9cdd3;
+  --bar-summary: #c9cdd3;
+  --bar-usage: #1b61c9;   /* 用量轨 = 链接蓝（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows（墨系 alpha；海拔克制） ── */
+  --overlay-faint: rgba(24, 29, 38, .04);
+  --overlay-soft: rgba(24, 29, 38, .05);
+  --overlay-line: rgba(24, 29, 38, .07);
+  --overlay-medium: rgba(24, 29, 38, .08);
+  --shadow-panel: 0 4px 16px rgba(24, 29, 38, .08); /* 克制薄影（color-block first） */
+
+  /* ── brand-mark（articles 彩虹条纹 hero 的缩影：深墨面 + 三根 pastel 竖条） ── */
+  --brand-frame-bg: #1d1f25;        /* surface-dark-elevated（条纹 hero 基面） */
+  --brand-frame-border: transparent; /* 扁平无框（card flat 无阴影） */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #fcab79;           /* peach */
+  --brand-bar-2: #f4d35e;           /* yellow */
+  --brand-bar-3: #a8d8c4;           /* mint */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #fcab79;             /* 角标 = peach 小图钉 */
+  --brand-dot-border: #1d1f25;
+  --brand-dot-glow: none;
+  --nav-indicator: #181d26;         /* 当前导航指示 = 墨（蓝不进导航） */
+
+  /* ── 登录页（白卡 + surface-dark 深墨 hero 卡：规格「ink 即签名暗面」） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #dddddd;
+  --login-shell-shadow: 0 22px 55px rgba(24, 29, 38, .12); /* 派生：墨系克制投影 */
+  --login-showcase-bg: #181d26;    /* showcase = surface-dark CTA 卡 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* hero 无底纹（片段隐藏网格） */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #fcab79;     /* signal 三竖条 = peach（片段分色） */
+  --login-kicker: rgba(255, 255, 255, .6);
+  --login-heading: #ffffff;        /* hero 标题白字（40px/400 见片段） */
+  --login-copy: rgba(255, 255, 255, .6);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;    /* 卡扁平（card flat） */
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #458fff;    /* 数据点 = info-border 亮蓝（暗面上的蓝） */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #fcab79; /* chip = peach 淡染（demo 卡面色） */
+  --login-preview-chip-bg: rgba(252, 171, 121, .16);
+  --login-preview-bar: #458fff;    /* 进度条 = 亮蓝 */
+  --login-foot: rgba(255, 255, 255, .6);
+  --login-card-kicker: #41454d;    /* 白卡侧 eyebrow = muted */
+  --login-card-heading: #181d26;
+  --login-card-copy: #41454d;
+  --login-notice-border: rgba(69, 143, 255, .4); /* info 通知 = 蓝环 + 蓝纱 */
+  --login-notice-bg: #eaf1fd;
+  --login-notice-ink: #333840;
+  --login-label: #333840;
+  --login-input-border: #dddddd;   /* hairline 输入描边 */
+  --login-input-border-hover: #41454d;
+  --login-primary: #181d26;        /* 主 CTA = 近黑（黑即主色） */
+  --login-primary-active: #0d1218;
+}
+
+/* ============================================================
+   airtable 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="airtable"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 蓝调选区（链接蓝的功能性使用）；聚焦环 = 规格 2px 蓝环 ── */
+[data-theme="airtable"] ::selection { background: rgba(27, 97, 201, .14); }
+[data-theme="airtable"] :focus-visible { outline: 2px solid #458fff; outline-offset: 2px; }
+
+/* ── brand-mark：三根 pastel 竖条去透明度（彩虹条纹全电压） ── */
+[data-theme="airtable"] .brand-mark span:nth-child(1) { opacity: 1; }
+
+/* ── 字重法则：全站只有 400/500，无 bold（规格「never bold for its own sake」） ── */
+[data-theme="airtable"] .brand-block strong,
+[data-theme="airtable"] .panel-heading h2,
+[data-theme="airtable"] .business-outcomes__card > span,
+[data-theme="airtable"] .business-outcomes__card > strong,
+[data-theme="airtable"] .ratio-card__title,
+[data-theme="airtable"] .ratio-card > strong,
+[data-theme="airtable"] .codex-metric > strong,
+[data-theme="airtable"] .codex-token-ledger strong,
+[data-theme="airtable"] .configuration-status-rail > div > strong,
+[data-theme="airtable"] .configuration-summary-grid strong,
+[data-theme="airtable"] .configuration-step-copy h2,
+[data-theme="airtable"] .configuration-summary h2,
+[data-theme="airtable"] .configuration-inline-title h3,
+[data-theme="airtable"] .connector-configuration-step__heading h3,
+[data-theme="airtable"] .repo-row strong,
+[data-theme="airtable"] .intent-row strong,
+[data-theme="airtable"] .duration-card strong,
+[data-theme="airtable"] .duration-section__heading strong,
+[data-theme="airtable"] .value-list__title,
+[data-theme="airtable"] .connector-watch__item strong,
+[data-theme="airtable"] .detail-section h3,
+[data-theme="airtable"] .admin-table .ant-table-thead > tr > th,
+[data-theme="airtable"] .audit-json > summary,
+[data-theme="airtable"] .login-page__brand strong,
+[data-theme="airtable"] .login-page__showcase-copy h2,
+[data-theme="airtable"] .login-page__card h1 { font-weight: 500; }
+
+/* ── eyebrow / kicker：muted + 大写宽字距小签（规格 article-card「uppercase category tag」语汇） ── */
+[data-theme="airtable"] .page-heading__eyebrow,
+[data-theme="airtable"] .panel-kicker,
+[data-theme="airtable"] .section-label { color: var(--mute); font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="airtable"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 表头：白底 + hairline 底线（规格表格 = 白面 + 1px 发丝分隔） ── */
+[data-theme="airtable"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、hairline、近方角（legal 2px 的克制几何） ── */
+[data-theme="airtable"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="airtable"] ::-webkit-scrollbar-thumb { border-radius: 0; background: var(--hairline); }
+[data-theme="airtable"] ::-webkit-scrollbar-thumb:hover { background: var(--hairline-strong); }
+[data-theme="airtable"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="airtable"] * { scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
+
+/* ── 登录 showcase：surface-dark hero 卡 —— 无网格底纹（规格「hero 无氛围装饰」），
+      标题 40px/400/1.2 = 规格 display-lg（40px h1 不加粗） ── */
+[data-theme="airtable"] .login-page__showcase::before { display: none; }
+[data-theme="airtable"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 400; line-height: 1.2; }
+[data-theme="airtable"] .login-page__showcase-copy > span,
+[data-theme="airtable"] .login-page__card-heading > span { font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── 登录 signal：同 brand-mark 的彩虹条纹缩影（peach/yellow/mint 三竖条） ── */
+[data-theme="airtable"] .login-page__signal span:nth-child(1) { background: #fcab79; }
+[data-theme="airtable"] .login-page__signal span:nth-child(2) { background: #f4d35e; }
+[data-theme="airtable"] .login-page__signal span:nth-child(3) { background: #a8d8c4; }
+
+/* ── 登录卡片：输入/主 CTA 44px 触达高（规格 text-input height 44） ── */
+[data-theme="airtable"] .login-page__card .ant-input,
+[data-theme="airtable"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; border-radius: 6px; }
+[data-theme="airtable"] .login-page__card .ant-btn-primary { height: 44px; border-radius: 12px; }

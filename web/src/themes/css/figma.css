@@ -1,0 +1,283 @@
+/* ============================================================
+   figma 主题令牌块 —— 规格驱动（figma 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Figma 设计语言（黑白编辑框架 + 粉彩便利贴色块）：
+   - 单色 chrome：canvas #ffffff / ink·primary #000000 / 提升面 surface-soft
+     #f7f7f5；json pre 与 tooltip = 反转面纯黑（marquee strip 同面）
+   - 文字阶梯坍缩：ink/body/mute 全黑（规格「无中灰正文，层级靠
+     figmaSans 字重 320–700」——字重分层见块后片段）；只有占位/禁用类
+     faint 角色让步为黑系透明度 rgba(0,0,0,.56)
+   - 粉彩 block 家族只落在叙事位：brand-mark = lime 便利贴（微旋转）、
+     登录 showcase = lime systems 面、登录 signal = lilac 便利贴、
+     info 软面 = lilac 薄纱；magenta #ff3d8b 单发（swatch accent）
+   - 发丝线双轨：#e6e6e6（输入/卡描边）/ #f1f1f1（表行分隔）
+   - 阴影极少：面板零阴影靠发丝线（pricing-card「stroked rather than
+     shadowed」）；Level 2 字面值 0 4px 16px rgba(0,0,0,.06) 只给登录壳/预览
+   - 圆角刻度 2/6/8/24/32/50：按钮药丸 50px 与便利贴旋转见片段
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     warning #b45309 / error #dc2626 = 标准语义克制化（规格 Known Gaps
+       明示表单错误态未提取）
+     hairline-strong #d9d9d9 = #e6e6e6 压深一档（虚线空态可见性）
+     primary-active #262626 = 黑不压深为灰的最小可见一档（规格按压同面）
+   骨架表达不了的形态（按钮药丸、brand-mark/signal 便利贴微旋转、
+   黑面白字当前导航、display 负字距、登录 showcase 平面色块）见块后片段。
+   ============================================================ */
+[data-theme="figma"] {
+  /* ── Typography ───────────────────────────── */
+  /* figmaSans/figmaMono 为 Figma 定制族（禁外部加载）→ 规格 明示
+     Inter 与 JetBrains Mono 为替身；display 的负字距由片段施加 */
+  --font-sans: Inter, "SF Pro Display", system-ui, Helvetica, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-display: Inter, "SF Pro Display", system-ui, Helvetica, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度：2/6/8/24/32/50，向超集九档归并） ── */
+  --radius-xs: 2px;     /* anchor / 链接装饰角 = rounded.xs */
+  --radius-soft: 6px;   /* 登录预览小色块 = rounded.sm */
+  --radius-sm: 6px;     /* 内嵌小块 / 小 chip = rounded.sm */
+  --radius-md: 8px;     /* 行卡 / 输入件 = rounded.md */
+  --radius-lg: 24px;    /* 指标卡 = rounded.lg（pricing 卡 / 内容瓦片同一档） */
+  --radius-xl: 24px;    /* 面板 = rounded.lg（pricing 卡 / 色块 section） */
+  --radius-brand: 6px;  /* brand-mark / 登录 signal = 便利贴小圆角（rounded.sm） */
+  --radius-pill: 50px;  /* 迷你徽标 / 药丸 = rounded.pill 字面值 */
+  --radius-panel: 24px; /* 登录外壳 = 色块 section 圆角 */
+
+  /* ── Canvas & surfaces（纯白画布 + off-white 嵌面 + 纯黑反转面） ── */
+  --canvas: #ffffff;          /* 纯白画布（规格 canvas） */
+  --canvas-soft: #f7f7f5;     /* surface-soft：off-white 嵌面卡/表头 */
+  --canvas-card: #ffffff;     /* 卡片 = 画布同底 + 发丝线（pricing-card 模式） */
+  --canvas-dark: #000000;     /* 反转面 = inverse-canvas（json pre / 暗徽标） */
+  --surface-sidebar: #ffffff; /* 侧栏 = 白（top-nav 同底） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 白磨砂顶栏（滚动后） */
+  --surface-inset: #f7f7f5;
+  --surface-matrix: #f7f7f5;
+  --surface-tint: #f7f7f5;    /* 表行 hover = off-white */
+  --surface-rail: #f7f7f5;
+  --surface-detail: #f7f7f5;
+  --surface-chip: #f7f7f5;    /* chip = surface-soft 瓦片 */
+  --surface-legacy: #f7f7f5;
+  --surface-draft: #f7f7f5;
+  --surface-empty: #f7f7f5;
+  --surface-json-bar: #f7f7f5; /* json 头条 = off-white 瓦片 */
+  --tooltip-bg: #000000;      /* 反转面 = inverse-canvas */
+
+  /* ── Ink & text ladder（坍缩为全黑；faint 角色让步黑系透明度） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #000000;
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #000000;
+  --ink-chip: #000000;
+  --body: #000000;      /* 正文即黑（规格「body copy is always black」） */
+  --body-alt: #000000;
+  --body-soft: #000000;
+  --mute: #000000;      /* 次级文字也黑：层级靠字重（片段 700/540 分层） */
+  --mute-deep: #000000;
+  --mute-inline: #000000;
+  --mute-caption: #000000;
+  --mute-intro: #000000;
+  --mute-terse: #000000;
+  --mute-quiet: #000000;
+  --mute-soft: #000000;
+  --mute-dim: #000000;
+  --mute-draft: #000000;
+  --mute-json: #000000;
+  --mute-matrix: #000000;
+  --faint: rgba(0, 0, 0, .56); /* 占位/禁用级 = 黑系透明度（不引入中灰角色） */
+  --faint-alt: rgba(0, 0, 0, .56);
+  --faint-soft: rgba(0, 0, 0, .56);
+  --faint-ghost: rgba(0, 0, 0, .56);
+  --faint-hint: rgba(0, 0, 0, .56);
+  --faint-meta: rgba(0, 0, 0, .56);
+  --faint-note: rgba(0, 0, 0, .56);
+  --faint-empty: rgba(0, 0, 0, .56);
+  --on-dark: #ffffff;            /* 反转面上的字 = 纯白（inverse-ink） */
+  --on-dark-soft: #ffffff;       /* json 深块文字（无中灰原则同样适用于反转面） */
+  --on-dark-faint: rgba(255, 255, 255, .72); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（纯黑主色；墨色链接；黑系焦点环） ── */
+  --primary: #000000;        /* 系统 primary：每个主 CTA / 选中面 */
+  --primary-active: #262626; /* 派生：黑压深最小可见一档（规格按压同面） */
+  --on-primary: #ffffff;
+  --link: #000000;           /* 链接 = 墨（规格 tertiary text-link；片段补 hover 下划线） */
+  --link-hover: #262626;
+  --focus-ring: rgba(0, 0, 0, .3); /* 规格「focus communicated via ring」→ 黑系环 */
+  --primary-veil: #000000;   /* 当前导航 = 黑面（白字/药丸见片段 = pricing-tab-selected） */
+
+  /* ── Semantic（success 原文；warning/error 派生；info 挂 navy） ── */
+  --success: #1ea64a;         /* semantic-success（比对表对勾） */
+  --success-halo: 0 0 0 4px rgba(30, 166, 74, .14);
+  --warning: #b45309;         /* 派生：规格无 warning，标准语义克制化 */
+  --warning-soft: rgba(180, 83, 9, .12);
+  --error: #dc2626;           /* 派生：规格无 error（Known Gaps），标准语义克制化 */
+  --error-deep: #b91c1c;
+  --info: #1f1d3d;            /* block-navy：调色板内唯一深色 */
+  --info-soft: rgba(197, 176, 244, .2); /* lilac 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（灰发丝线双轨；数据墨水全黑） ── */
+  --hairline: #e6e6e6;         /* 输入/卡描边（规格 hairline） */
+  --hairline-soft: #f1f1f1;    /* 表行分隔（规格 hairline-soft） */
+  --hairline-strong: #d9d9d9;  /* 派生：#e6e6e6 压深一档（虚线可见性） */
+  --hairline-card: #e6e6e6;
+  --hairline-inset: #e6e6e6;
+  --hairline-mid: #f1f1f1;
+  --hairline-rail: #e6e6e6;
+  --hairline-codex: #f1f1f1;
+  --hairline-detail: #e6e6e6;
+  --hairline-json: #e6e6e6;
+  --hairline-dashed: #d9d9d9;  /* 空态虚线 = 强线档 */
+  --hairline-legacy: #d9d9d9;
+  --hairline-row: #f1f1f1;
+  --hairline-draft: #d9d9d9;
+  --bar-value: #000000;    /* value-list 左色条 = 黑数据墨水（彩色只属于色块叙事） */
+  --bar-matrix: #000000;
+  --bar-summary: #000000;
+  --bar-usage: #000000;    /* codex 用量进度 = 黑（editorial 进度条） */
+
+  /* ── Overlays & shadows（黑系 alpha；面板零阴影） ── */
+  --overlay-faint: rgba(0, 0, 0, .04);
+  --overlay-soft: rgba(0, 0, 0, .05);   /* nav hover = 微沉 */
+  --overlay-line: rgba(0, 0, 0, .07);   /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .085);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影：发丝线描边分层（兼容多值拼接） */
+
+  /* ── brand-mark（lime 便利贴：微旋转 + 黑条，形态见片段） ── */
+  --brand-frame-bg: #dceeb1;      /* block-lime：签名 systems/FAQ 色块 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: 0 3px 10px rgba(0, 0, 0, .1); /* 浮起便利贴微影 */
+  --brand-bar-1: #000000;        /* 色块上的字 = ink（规格 color-block text） */
+  --brand-bar-2: #000000;
+  --brand-bar-3: #000000;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;       /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: transparent;   /* 当前导航 = 黑面药丸（片段），无左指示条 */
+
+  /* ── 登录页（白画布 + lime systems 色块 showcase） ── */
+  --login-bg: #ffffff;           /* 页面地板 = 纯白（色块之间的呼吸位） */
+  --login-shell-border: #e6e6e6;
+  --login-shell-shadow: 0 4px 16px rgba(0, 0, 0, .06); /* 规格 Level 2 字面值 */
+  --login-showcase-bg: #dceeb1;  /* showcase = block-lime（systems/FAQ/contact 面） */
+  --login-showcase-ink: #000000;
+  --login-grid-line: transparent; /* 色块是平面：无网格纹理（片段隐藏 ::before） */
+  --login-grid-mask: none;
+  --login-brand-ink: #000000;
+  --login-brand-mute: rgba(0, 0, 0, .56);
+  --login-signal-bg: #c5b0f4;    /* signal = lilac 便利贴（与 brand-mark 成对） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: 0 3px 10px rgba(0, 0, 0, .1);
+  --login-signal-bar: #000000;
+  --login-kicker: #000000;       /* kicker = figmaMono eyebrow：黑 + 正字距（片段） */
+  --login-heading: #000000;      /* display 340 + 负字距见片段 */
+  --login-copy: #000000;         /* 色块上正文 = ink（规格 color-block text） */
+  --login-preview-bg: rgba(255, 255, 255, .88); /* 白玻璃卡浮于 lime */
+  --login-preview-border: rgba(0, 0, 0, .12);
+  --login-preview-shadow: 0 4px 16px rgba(0, 0, 0, .06); /* 浮起模板瓦片 */
+  --login-preview-divider: rgba(0, 0, 0, .1);
+  --login-preview-dot: #1f1d3d;  /* 数据点 = block-navy */
+  --login-preview-dot-soft: rgba(0, 0, 0, .25);
+  --login-preview-label: rgba(0, 0, 0, .56);
+  --login-preview-row-line: rgba(0, 0, 0, .08);
+  --login-preview-row-ink: #000000;
+  --login-preview-chip-ink: #ffffff; /* chip = 黑面白字（pricing-tab-selected 语汇） */
+  --login-preview-chip-bg: #000000;
+  --login-preview-bar: #000000;  /* 进度条 = 黑 */
+  --login-foot: rgba(0, 0, 0, .56);
+  --login-card-kicker: #000000;
+  --login-card-heading: #000000;
+  --login-card-copy: rgba(0, 0, 0, .75); /* 长文让步半档（可读性，黑系透明度） */
+  --login-notice-border: rgba(197, 176, 244, .55); /* 通知条 = lilac 薄纱 */
+  --login-notice-bg: rgba(197, 176, 244, .18);
+  --login-notice-ink: #000000;
+  --login-label: #000000;
+  --login-input-border: #e6e6e6;
+  --login-input-border-hover: #000000; /* focus 走环：hover 边线提到墨 */
+  --login-primary: #000000;      /* 主 CTA = 黑药丸（50px 圆角见片段） */
+  --login-primary-active: #262626;
+}
+
+/* ============================================================
+   figma 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="figma"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：lime 选区（签名色块的功能性使用） ── */
+[data-theme="figma"] ::selection { background: rgba(220, 238, 177, .55); }
+
+/* ── 系统滚动条：细、hairline-strong、圆头 ── */
+[data-theme="figma"] * { scrollbar-width: thin; scrollbar-color: #d9d9d9 transparent; }
+[data-theme="figma"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="figma"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="figma"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #d9d9d9; background-clip: padding-box; }
+[data-theme="figma"] ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; background-clip: padding-box; }
+
+/* ── CTA 全药丸：按钮 50px 圆角（规格「No square buttons anywhere」；
+      输入件保持 token 8px = rounded.md） ── */
+[data-theme="figma"] .ant-btn { border-radius: 50px; }
+
+/* ── 墨色链接：hover 补下划线（规格 link = ink，20px/480 层级交给字重） ── */
+[data-theme="figma"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 字重分层（无中灰正文，层级靠 figmaSans 可变轴）：
+      标题 540（headline）/ 数值卡题 700（card-title） ── */
+[data-theme="figma"] .panel-heading h2,
+[data-theme="figma"] .detail-section h3 { font-weight: 540; letter-spacing: -.01em; }
+[data-theme="figma"] .business-outcomes__card > strong,
+[data-theme="figma"] .ratio-card > strong,
+[data-theme="figma"] .codex-metric > strong,
+[data-theme="figma"] .codex-token-ledger strong,
+[data-theme="figma"] .configuration-status-rail > div > strong,
+[data-theme="figma"] .configuration-summary-grid strong,
+[data-theme="figma"] .duration-card strong,
+[data-theme="figma"] .repo-row strong,
+[data-theme="figma"] .intent-row strong,
+[data-theme="figma"] .brand-block strong,
+[data-theme="figma"] .login-page__brand strong { font-weight: 700; }
+
+/* ── eyebrow / kicker：figmaMono 大写正字距（0.54px @18px ≈ .03em，取 .1em 强调） ── */
+[data-theme="figma"] .page-heading__eyebrow,
+[data-theme="figma"] .panel-kicker,
+[data-theme="figma"] .section-label { color: var(--ink); font-weight: 400; letter-spacing: .1em; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="figma"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-size: 15px; font-weight: 540; line-height: 1.2; letter-spacing: -.01em; text-transform: none; }
+
+/* ── 侧栏当前项 = 黑面白字药丸（规格 pricing-tab-selected「selected =
+      primary surface」；面值来自 --primary-veil） ── */
+[data-theme="figma"] .workspace-nav a { border-radius: 9999px; }
+[data-theme="figma"] .workspace-nav a[aria-current="page"] { color: #ffffff; font-weight: 480; }
+[data-theme="figma"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── brand-mark 重绘：lime 便利贴 —— 微旋转 -2° + 三根黑条 + 无角标
+      （规格「sticky-note thumbnails … read as collage」） ── */
+[data-theme="figma"] .brand-mark { border: none; transform: rotate(-2deg); }
+[data-theme="figma"] .brand-mark span { border-radius: 2px; box-shadow: none; }
+[data-theme="figma"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="figma"] .brand-mark::after { display: none; }
+
+/* ── 登录 showcase = 平面 lime 色块：去网格底纹；display 340 + 负字距
+      （规格 display-lg 64px/340/-0.96px 的管理台等比语汇） ── */
+[data-theme="figma"] .login-page__showcase::before { display: none; }
+[data-theme="figma"] .login-page__showcase-copy h2 { font-weight: 350; letter-spacing: -.02em; }
+[data-theme="figma"] .login-page__card h1 { font-weight: 540; letter-spacing: -.015em; }
+[data-theme="figma"] .login-page__showcase-copy > span,
+[data-theme="figma"] .login-page__card-heading > span { font-weight: 400; letter-spacing: .1em; }
+
+/* ── 登录 signal = lilac 便利贴（+2° 与 brand-mark 成对旋转） ── */
+[data-theme="figma"] .login-page__signal { border: none; transform: rotate(2deg); }
+[data-theme="figma"] .login-page__signal span { border-radius: 2px; }
+
+/* ── 登录预览 chip / 进度条 = 黑面（pricing-tab-selected 语汇，药丸圆角） ── */
+[data-theme="figma"] .login-page__preview-row em,
+[data-theme="figma"] .login-page__preview-row strong { border-radius: 9999px; }

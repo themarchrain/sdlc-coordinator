@@ -1,0 +1,285 @@
+/* ============================================================
+   tesla 主题令牌块 —— 自设计语言 派生。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取设计语言 正文同类角色的字面值；规格没给的从设计语言推导
+   （Tesla = 激进减法：白画布、近黑墨、唯一蓝交互色、无装饰）。
+   值来源速查（正文提取）：
+     #3E6AE1 Electric Blue（唯一交互色）→ --primary/--link/--info/--bar-usage
+     #FFFFFF Pure White（主导底）→ 画布/卡片/侧栏三面
+     #F4F4F4 Light Ash（交替面）→ inset/matrix/hover 等内嵌软面
+     #171A20 Carbon Dark（暗面 + 标题墨）→ ink 阶顶/tooltip/登录 showcase
+     #393C41 Graphite（正文）/ #5C5E62 Pewter（三级）/ #8E8E8E Silver Fog（占位）
+       → 文字阶梯坍缩为这四级
+     #EEEEEE Cloud Gray（分隔线）/ #D0D1D2 Pale Silver（控件边）→ 发丝线双阶
+     rgba(255,255,255,.75) Frosted Glass → --surface-bar（滚动后导航）
+     rgba(0,0,0,.05) Level 3 微暗示 → overlay 家族的墨系等价
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     语义三色 = 「浏览器默认语义的克制化」：#1F7A3D / #A16207 / #C8102E
+     蓝压深两阶 = 规格「hover: subtle darkening」：#3560C8 / #2C52AE
+     info-soft #F0F3FC = 蓝 8% 薄纱（与 antd colorInfoBg 同源）
+   骨架表达不了的部分（brand-mark 平条重绘、字重 400/500 法则、
+   0.33s 统一节奏、登录 Carbon hero 面等）见块后 [data-theme="tesla"] 专属片段。
+   ============================================================ */
+[data-theme="tesla"] {
+  /* ── Typography ───────────────────────────── */
+  /* Universal Sans（定制族，禁外部加载）→ 系统/web-safe 栈近似；
+     Display 与 Text 同族近形，共用 sans 栈 */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Arial, Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: system-ui, -apple-system, "Segoe UI", Arial, Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius ───────────────────────────────── */
+  /* 刻度：0 默认 / 4 交互件「barely-rounded」/ ~12 大面卡片，向超集九档归并 */
+  --radius-xs: 2px;      /* term-hint focus / 示意色块（近方角） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 4px;      /* 内嵌小块 */
+  --radius-md: 4px;      /* 行卡 */
+  --radius-lg: 4px;      /* 指标卡 */
+  --radius-xl: 12px;     /* 面板（大面 restrained rounding） */
+  --radius-brand: 4px;   /* brand-mark / 登录 signal */
+  --radius-pill: 4px;    /* 迷你徽标（无药丸，保持微圆角） */
+  --radius-panel: 12px;  /* 登录外壳 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Pure White：页面画布 */
+  --canvas-soft: #f4f4f4;        /* Light Ash：内嵌/交替面 */
+  --canvas-card: #ffffff;        /* 卡片白，靠发丝线 + 留白分隔 */
+  --canvas-dark: #171a20;        /* Carbon Dark 暗面 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 导航无可见底） */
+  --surface-bar: rgba(255, 255, 255, .75); /* Frosted Glass 字面值（滚动后导航） */
+  --surface-inset: #f4f4f4;
+  --surface-matrix: #f4f4f4;
+  --surface-tint: #f4f4f4;       /* 行 hover = Light Ash 微高亮 */
+  --surface-rail: #f4f4f4;
+  --surface-detail: #f4f4f4;
+  --surface-chip: #f4f4f4;
+  --surface-legacy: #f4f4f4;
+  --surface-draft: #eeeeee;      /* draft 更沉一档 = Cloud Gray */
+  --surface-empty: #f4f4f4;
+  --surface-json-bar: #f4f4f4;
+  --tooltip-bg: #171a20;         /* Carbon Dark 反转面 */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级墨） ── */
+  --ink: #171a20;
+  --ink-strong: #171a20;
+  --ink-display: #171a20;
+  --ink-heading: #171a20;
+  --ink-value: #171a20;
+  --ink-repo: #171a20;
+  --ink-step: #171a20;
+  --ink-label-strong: #171a20;
+  --ink-label: #171a20;
+  --ink-row: #171a20;
+  --ink-list: #393c41;   /* value-list li = Graphite 正文 */
+  --ink-data: #171a20;
+  --ink-field: #171a20;
+  --ink-rail: #171a20;
+  --ink-rail-value: #171a20;
+  --ink-secret: #393c41; /* secret-label = 正文级 */
+  --ink-chip: #393c41;   /* duration 数值 = 正文级 */
+  --body: #393c41;
+  --body-alt: #393c41;
+  --body-soft: #5c5e62;
+  --mute: #5c5e62;
+  --mute-deep: #393c41;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #5c5e62;
+  --mute-caption: #5c5e62;
+  --mute-intro: #393c41; /* 配置导语 = 正文级 */
+  --mute-terse: #5c5e62;
+  --mute-quiet: #5c5e62;
+  --mute-soft: #5c5e62;
+  --mute-dim: #5c5e62;
+  --mute-draft: #5c5e62;
+  --mute-json: #5c5e62;
+  --mute-matrix: #5c5e62;
+  --faint: #8e8e8e;      /* Silver Fog：占位/禁用级 */
+  --faint-alt: #8e8e8e;
+  --faint-soft: #8e8e8e;
+  --faint-ghost: #8e8e8e;
+  --faint-hint: #8e8e8e;
+  --faint-meta: #8e8e8e;
+  --faint-note: #8e8e8e;
+  --faint-empty: #8e8e8e;
+  --on-dark: #ffffff;    /* 暗面上的字 = 纯白（规格 hero 白字） */
+  --on-dark-soft: rgba(255, 255, 255, .72);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #3e6ae1;    /* Electric Blue：唯一交互色 */
+  --primary-active: #2c52ae; /* 派生：hover/active 微压深 */
+  --on-primary: #ffffff;
+  --link: #3e6ae1;       /* 链接 = 蓝（sole interactive color signal） */
+  --link-hover: #2c52ae;
+  --focus-ring: rgba(62, 106, 225, .28); /* 派生：蓝 28% 焦点环 */
+  --primary-veil: rgba(23, 26, 32, .05); /* 当前项 = 墨系微高亮而非蓝纱（规格「subtle background highlight」） */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* 语义态跟随浏览器默认 → 派生为标准语义的克制化 */
+  --success: #1f7a3d;    /* context-dot 唯一消费者 */
+  --success-halo: none;  /* 零阴影体系，dot 无光环 */
+  --warning: #a16207;
+  --warning-soft: rgba(161, 98, 7, .12);
+  --error: #c8102e;
+  --error-deep: #a00d24;
+  --info: #3e6ae1;       /* inferred-mark = 唯一交互蓝 */
+  --info-soft: #f0f3fc;  /* 蓝 8% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #eeeeee;         /* Cloud Gray 分隔线 */
+  --hairline-soft: #f4f4f4;
+  --hairline-strong: #d0d1d2;  /* Pale Silver 控件边 */
+  --hairline-card: #eeeeee;
+  --hairline-inset: #eeeeee;
+  --hairline-mid: #eeeeee;
+  --hairline-rail: #eeeeee;
+  --hairline-codex: #eeeeee;
+  --hairline-detail: #eeeeee;
+  --hairline-json: #eeeeee;
+  --hairline-dashed: #d0d1d2; /* 空态虚线 = 控件边一档 */
+  --hairline-legacy: #d0d1d2;
+  --hairline-row: #eeeeee;
+  --hairline-draft: #d0d1d2;
+  --bar-value: #d0d1d2;   /* value-list 左规线 = 发丝线（非彩色条） */
+  --bar-matrix: #d0d1d2;
+  --bar-summary: #d0d1d2;
+  --bar-usage: #3e6ae1;   /* 用量轨 = 唯一蓝（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（≈ 规格 Level 3 rgba(0,0,0,.05) 家族） */
+  --overlay-faint: rgba(23, 26, 32, .04);
+  --overlay-soft: rgba(23, 26, 32, .05);  /* nav hover = 微高亮 */
+  --overlay-line: rgba(23, 26, 32, .08);  /* nav 分组线 */
+  --overlay-medium: rgba(23, 26, 32, .08);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（无框无点无光影，三根 Carbon 平条，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #171a20;
+  --brand-bar-2: #171a20;
+  --brand-bar-3: #171a20;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #171a20;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: transparent; /* tesla 无指示条（当前项 = 微高亮，见片段） */
+
+  /* ── 登录页（白卡 + Carbon hero 面：规格 暗面白字的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #eeeeee;
+  --login-shell-shadow: none;   /* 零阴影 */
+  --login-showcase-bg: #171a20; /* showcase = Carbon Dark hero 面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* 无底纹，见片段隐藏 */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* signal 三平条 = 白（同 brand-mark） */
+  --login-kicker: rgba(255, 255, 255, .6);
+  --login-heading: #ffffff;     /* hero 标题白字（40px/500 见片段） */
+  --login-copy: rgba(255, 255, 255, .6);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #3e6ae1;      /* 数据点 = 唯一蓝 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .28);
+  --login-foot: rgba(255, 255, 255, .6);
+  --login-card-kicker: #5c5e62; /* 白卡侧 eyebrow = Pewter */
+  --login-card-heading: #171a20;
+  --login-card-copy: #5c5e62;
+  --login-notice-border: rgba(62, 106, 225, .28); /* info 通知 = 蓝薄纱 + 发丝线 */
+  --login-notice-bg: #f0f3fc;
+  --login-notice-ink: #393c41;
+  --login-label: #393c41;
+  --login-input-border: #d0d1d2;   /* Pale Silver 控件边 */
+  --login-input-border-hover: #5c5e62;
+  --login-primary: #3e6ae1;        /* 主 CTA = Electric Blue */
+  --login-primary-active: #2c52ae;
+
+  /* ── tesla 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --motion-duration: .33s;                   /* 全站唯一交互时长 */
+  --motion-bezier: cubic-bezier(.5, 0, 0, .75); /* Text Link 缓动 */
+}
+
+/* ============================================================
+   tesla 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="tesla"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：0.33s 统一节奏 / 蓝选区 / 焦点环 / 链接 hover 下划线 ── */
+[data-theme="tesla"] ::selection { background: rgba(62, 106, 225, .16); }
+[data-theme="tesla"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+[data-theme="tesla"] a { transition: color var(--motion-duration) var(--motion-bezier); }
+[data-theme="tesla"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+[data-theme="tesla"] .ant-btn { transition: border-color var(--motion-duration), background-color var(--motion-duration), color var(--motion-duration), box-shadow .25s; }
+
+/* ── 字重法则：全站只有 400/500，无 bold（「Weight restraint」） ── */
+[data-theme="tesla"] .panel-heading h2,
+[data-theme="tesla"] .detail-section h3 { font-weight: 500; }
+[data-theme="tesla"] .business-outcomes__card > strong,
+[data-theme="tesla"] .ratio-card > strong,
+[data-theme="tesla"] .codex-metric > strong,
+[data-theme="tesla"] .metric-matrix strong { font-weight: 500; }
+[data-theme="tesla"] .codex-token-ledger strong,
+[data-theme="tesla"] .configuration-status-rail > div > strong,
+[data-theme="tesla"] .configuration-summary-grid strong { font-weight: 500; }
+[data-theme="tesla"] .brand-block strong,
+[data-theme="tesla"] .login-page__brand strong { font-weight: 500; }
+[data-theme="tesla"] .login-page__card h1,
+[data-theme="tesla"] .login-page__card .ant-form-item-label > label { font-weight: 500; }
+
+/* ── eyebrow / kicker：Pewter + spaced-caps 小签（TESLA wordmark 的间隔大写回声） ── */
+[data-theme="tesla"] .page-heading__eyebrow,
+[data-theme="tesla"] .panel-kicker,
+[data-theme="tesla"] .section-label { color: var(--mute); font: 500 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：cursor.css 同名补正） */
+[data-theme="tesla"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 侧栏：当前项 = Light Ash 微高亮 + Carbon 墨，无彩色指示条 ── */
+[data-theme="tesla"] .workspace-nav a { border-radius: 4px; }
+[data-theme="tesla"] .workspace-nav a[aria-current="page"] { color: var(--ink); }
+[data-theme="tesla"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：radical subtraction —— 去框、去点、去光影，
+      基线三 span 收敛为三根 Carbon 平条（45/100/70 高度维持基线） ── */
+[data-theme="tesla"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="tesla"] .brand-mark span { border-radius: 1px; background: #171a20; box-shadow: none; }
+[data-theme="tesla"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="tesla"] .brand-mark::after { display: none; }
+
+/* ── 表头：白底 + Cloud Gray 发丝线 + 500 字重（无大写变换） ── */
+[data-theme="tesla"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、Pale Silver、方角 ── */
+[data-theme="tesla"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="tesla"] ::-webkit-scrollbar-thumb { border-radius: 0; background: var(--hairline-strong); }
+[data-theme="tesla"] ::-webkit-scrollbar-thumb:hover { background: #8e8e8e; }
+[data-theme="tesla"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="tesla"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：Carbon hero 面（无网格底纹）；标题 40px/500/1.2 = 规格 Hero 规格 ── */
+[data-theme="tesla"] .login-page__showcase::before { display: none; }
+[data-theme="tesla"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 500; line-height: 1.2; }
+[data-theme="tesla"] .login-page__showcase-copy > span,
+[data-theme="tesla"] .login-page__card-heading > span { font: 500 10px/1.4 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── 登录 signal：同 brand-mark 的三平条白重绘（无框光影） ── */
+[data-theme="tesla"] .login-page__signal { background: transparent; box-shadow: none; }
+[data-theme="tesla"] .login-page__signal span { border-radius: 1px; background: #ffffff; }
+
+/* ── 登录卡片：输入/主 CTA 对齐 40px 触达高（规格 Primary CTA minHeight） ── */
+[data-theme="tesla"] .login-page__card .ant-input,
+[data-theme="tesla"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+[data-theme="tesla"] .login-page__card .ant-btn-primary { height: 40px; }

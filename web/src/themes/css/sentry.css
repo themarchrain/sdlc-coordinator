@@ -1,0 +1,276 @@
+/* ============================================================
+   sentry 主题令牌块 —— 规格驱动（sentry 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Sentry 设计语言（ debugging console wearing a leather jacket ）：
+   - 表面阶梯：midnight 画布 #1f1633（surface-canvas-dark）→ night 卡
+     #150f23（surface-night：暗画布上的卡与 code block，带 hairline-violet
+     #362d59 边）→ 提亮嵌面 #2c2341（推导：night 卡内的交互/内嵌面，
+     规格 ghost 面 .18 白纱过重）→ 最深 #120d20（推导：json 凹陷与浮层，
+     保持「code 比宿面深一档」的规格语义）
+   - 主操作随极性反转：暗画布上 = 白底墨紫字（button-inverted），故
+     --primary #ffffff / --on-primary #1f1633；令牌表 primary #150f23
+     保留在表面阶梯（canvas-card / night 卡）继续当 brand voice
+   - 点缀纪律：electric lime #c2ef4e 只作高亮（选中态/进度/描线/选区），
+     绝不作按钮底；hot pink #fa7faa 只作标点（kicker/预览条）；
+     violet #6a5fc1 = info；warning #e8b93e 为唯一族外推导色
+   - 文字：白 / on-dark-muted #bdb8c0 两级 + 推导 #9a93ad / violet-mid #79628c
+   - 焦点环 = ring-focus #9dc1f5（系统里唯一的蓝）
+   - 圆角刻度：4/6/8/10/12/18（pill-neutral-dark 反讽地用 4px 方角）
+   - 海拔 = 无投影（规格 Don't），深度靠发丝线与星点纹理（见片段）
+   骨架表达不了的形态（lime 选区、大写 button-cap、chunky 展示字、
+   星点 showcase、三色 signal 条、滚动条）见块后片段。
+   ============================================================ */
+[data-theme="sentry"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Rubik, -apple-system, system-ui, 'Segoe UI', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 规格 UI 族 */
+  --font-mono: Monaco, Menlo, 'Ubuntu Mono', Consolas, monospace; /* 规格 code 族 + 回退 */
+  --font-display: 'Sentry Display', 'Space Grotesk', Rubik, -apple-system, system-ui, 'Segoe UI', sans-serif; /* 专有展示族 + 规格列明的开源替代 */
+
+  /* ── Radius（规格刻度：xs 4 / sm 6 / md 8 / lg 10 / xl 12 / xxl 18；28px 级留产品 mockup） ── */
+  --radius-xs: 4px;      /* 图标提示 focus 圆角 = rounded.xs */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块 = rounded.sm（text inputs） */
+  --radius-md: 8px;      /* 行卡 / json 卡 = rounded.md（code block） */
+  --radius-lg: 10px;     /* 指标卡 / 卡容器 = rounded.lg */
+  --radius-xl: 12px;     /* 面板 / 对话框 = rounded.xl（pricing/feature cards） */
+  --radius-brand: 8px;   /* brand-mark = 圆角方印（rounded.md） */
+  --radius-pill: 4px;    /* 迷你徽标 = pill-neutral-dark 的 rounded.xs 4px（规格原值） */
+  --radius-panel: 12px;  /* 登录外壳 = rounded.xl 卡刻度 */
+
+  /* ── Canvas & surfaces（midnight → night → 提亮嵌面 → 最深） ── */
+  --canvas: #1f1633;                 /* Dark Canvas：午夜紫画布（规格令牌） */
+  --canvas-soft: #2c2341;            /* 嵌面卡/表头 = 提亮紫嵌面（推导） */
+  --canvas-card: #150f23;            /* 面板/卡 = Surface Night（规格令牌） */
+  --canvas-dark: #120d20;            /* json pre 凹陷面 = night 再压深一档（推导） */
+  --surface-sidebar: #1f1633;        /* 规格：暗页 chrome 与画布同底 */
+  --surface-bar: rgba(31, 22, 51, .88);
+  --surface-inset: #2c2341;          /* 卡内交互/内嵌面 = 提亮紫嵌面（推导） */
+  --surface-matrix: #2c2341;
+  --surface-tint: rgba(255, 255, 255, .05); /* 表行 hover = 白薄纱提亮 */
+  --surface-rail: #150f23;           /* 配置状态轨 = night 面 + hairline-violet 分隔 */
+  --surface-detail: #2c2341;         /* 详情卡 = 面板内提亮嵌面 */
+  --surface-chip: #2c2341;
+  --surface-legacy: #2c2341;
+  --surface-draft: #2c2341;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担 */
+  --surface-json-bar: #1f1633;       /* json 头条 = 画布同阶，靠发丝线分隔 */
+  --tooltip-bg: #120d20;             /* 浮层提示 = 最深阶 */
+
+  /* ── Ink & text ladder（白 / 薰衣草灰 / 推导 / violet-mid 四档） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #ffffff;
+  --ink-data: #ffffff;
+  --ink-field: #ffffff;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #bdb8c0;             /* 密钥标签 = on-dark-muted */
+  --ink-chip: #ffffff;
+  --body: #ffffff;                   /* 规格：on-primary 白即暗面正文 */
+  --body-alt: #bdb8c0;               /* On-Dark Muted：次级正文（规格令牌） */
+  --body-soft: #bdb8c0;
+  --mute: #bdb8c0;                   /* On-Dark Muted：次级文字 */
+  --mute-deep: #d6d2de;              /* 暗底上「更深」= 更亮：标签比 mute 高半档（推导） */
+  --mute-inline: #bdb8c0;
+  --mute-caption: #bdb8c0;
+  --mute-intro: #bdb8c0;
+  --mute-terse: #bdb8c0;
+  --mute-quiet: #bdb8c0;
+  --mute-soft: #bdb8c0;
+  --mute-dim: #bdb8c0;
+  --mute-draft: #bdb8c0;
+  --mute-json: #bdb8c0;
+  --mute-matrix: #bdb8c0;
+  --faint: #9a93ad;                  /* metadata（推导：muted 与 violet-mid 之间） */
+  --faint-alt: #9a93ad;
+  --faint-soft: #9a93ad;
+  --faint-ghost: #9a93ad;
+  --faint-hint: #9a93ad;
+  --faint-meta: #9a93ad;
+  --faint-note: #9a93ad;
+  --faint-empty: #79628c;            /* 空态最弱一档 = violet-mid（规格令牌复用） */
+  --on-dark: #ffffff;
+  --on-dark-soft: #bdb8c0;           /* json 深块文字 */
+  --on-dark-faint: #9a93ad;          /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（暗极性主操作 = 白；lime 只作高亮） ── */
+  --primary: #ffffff;                /* button-inverted：暗画布上的 single primary CTA */
+  --primary-active: #efefef;         /* 按压 = surface-press-stronger（规格令牌） */
+  --on-primary: #1f1633;             /* ink-deep：白底上的文字（规格令牌） */
+  --link: #ffffff;                   /* link-on-dark：白 + 持续下划线 */
+  --link-hover: #ffffff;             /* 规格：「no color change」，下划线即全部可供性 */
+  --focus-ring: #9dc1f5;             /* ring-focus：系统里唯一的蓝（规格令牌） */
+  --primary-veil: rgba(255, 255, 255, .1); /* 激活导航 = 白薄纱（primary 同源） */
+
+  /* ── Semantic（规格语义节为空：lime/pink/violet 族内映射 + 一处琥珀推导） ── */
+  --success: #c2ef4e;                /* electric lime：正向高亮即成功 */
+  --success-halo: 0 0 0 4px rgba(194, 239, 78, .18);
+  --warning: #e8b93e;                /* 推导琥珀：lime 与 pink 之间的警示档 */
+  --warning-soft: rgba(232, 185, 62, .16);
+  --error: #fa7faa;                  /* accent-pink：最热 = 错误 */
+  --error-deep: #fb9cbb;             /* 暗底上「更深」= 提亮一档（推导：alert code 文字可读） */
+  --info: #6a5fc1;                   /* accent-violet：链接强调蓝紫 */
+  --info-soft: rgba(106, 95, 193, .2);
+
+  /* ── Hairlines & bars（hairline-violet 主线 / 提亮紫付线） ── */
+  --hairline: #362d59;               /* Hairline Violet（规格令牌）：暗卡 1px 边 */
+  --hairline-soft: #2c2447;          /* 内部分隔（推导：画布与 violet 边之间） */
+  --hairline-strong: #4d4379;        /* 强线 / 滚动条（推导：violet 边提亮一档） */
+  --hairline-card: #362d59;          /* 卡外线 = 规格「dark cards nest dark cards with subtle hairline」 */
+  --hairline-inset: #362d59;
+  --hairline-mid: #2c2447;
+  --hairline-rail: #362d59;
+  --hairline-codex: #2c2447;
+  --hairline-detail: #362d59;
+  --hairline-json: #362d59;
+  --hairline-dashed: #4d4379;        /* 空态虚线需要可见 */
+  --hairline-legacy: #4d4379;
+  --hairline-row: #2c2447;
+  --hairline-draft: #3a3159;
+  --bar-value: #79628c;              /* 左色条一律 violet-mid（规格「faint accent on dark」） */
+  --bar-matrix: #79628c;
+  --bar-summary: #6a5fc1;            /* 摘要左条 = accent-violet */
+  --bar-usage: #c2ef4e;              /* codex 用量进度条 = lime（功能性高亮） */
+
+  /* ── Overlays & shadows（海拔 = 无投影，纹理与发丝线承担） ── */
+  --overlay-faint: rgba(255, 255, 255, .04);
+  --overlay-soft: rgba(255, 255, 255, .06);  /* 导航 hover = 白薄纱 */
+  --overlay-line: rgba(255, 255, 255, .07);
+  --overlay-medium: rgba(255, 255, 255, .09);
+  --shadow-panel: none;              /* 规格 Don't：「no drop shadows on cards on dark canvas」 */
+
+  /* ── brand-mark（violet-deep 方印 + lime/pink/白 三色条 = 贴纸吉祥物能量） ── */
+  --brand-frame-bg: #422082;         /* accent-violet-deep：spotlight 面（规格令牌） */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #c2ef4e;            /* lime */
+  --brand-bar-2: #fa7faa;            /* pink（片段逐条上色） */
+  --brand-bar-3: #ffffff;            /* 白 */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #c2ef4e;              /* 角标 = lime 高亮点 */
+  --brand-dot-border: #1f1633;
+  --brand-dot-glow: 0 0 8px rgba(194, 239, 78, .6);
+  --nav-indicator: #c2ef4e;          /* 当前导航指示条 = lime（视口内唯一 lime 元素之一） */
+
+  /* ── 登录页（午夜紫画布 + night 外壳 + 白 CTA + 星点 showcase） ── */
+  --login-bg: #1f1633;
+  --login-shell-border: #362d59;     /* hairline-violet */
+  --login-shell-shadow: none;        /* 无投影语言（规格暗卡禁投影） */
+  --login-showcase-bg: #1f1633;      /* 展示板 = 画布同底 + 星点纹理（片段） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #bdb8c0;
+  --login-signal-bg: #422082;        /* signal = brand-mark 同款 violet-deep 方印 */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #c2ef4e;       /* lime 主条（片段给 2/3 号条上 pink/白） */
+  --login-kicker: #fa7faa;           /* kicker = pink 标点（大写宽字距见片段） */
+  --login-heading: #ffffff;
+  --login-copy: #bdb8c0;
+  --login-preview-bg: #2c2341;       /* 展示板内嵌预览卡 = 提亮紫嵌面 */
+  --login-preview-border: #362d59;
+  --login-preview-shadow: none;
+  --login-preview-divider: #362d59;
+  --login-preview-dot: #c2ef4e;      /* lime 状态点 */
+  --login-preview-dot-soft: #79628c;
+  --login-preview-label: #bdb8c0;
+  --login-preview-row-line: #2c2447;
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #c2ef4e; /* 在播 chip = lime 字 */
+  --login-preview-chip-bg: rgba(194, 239, 78, .14);
+  --login-preview-bar: #fa7faa;      /* 进度条 = pink（规格「chart points」语汇） */
+  --login-foot: #9a93ad;
+  --login-card-kicker: #fa7faa;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #bdb8c0;
+  --login-notice-border: rgba(106, 95, 193, .5); /* 公告条 = violet 淡染 */
+  --login-notice-bg: rgba(106, 95, 193, .16);
+  --login-notice-ink: #d6d2de;
+  --login-label: #ffffff;
+  --login-input-border: #4d4379;     /* 输入环 = 提亮紫发丝线 */
+  --login-input-border-hover: #79628c;
+  --login-primary: #ffffff;          /* 白底墨紫字 CTA（button-inverted） */
+  --login-primary-active: #f0f0f0;   /* hover/按压 = surface-press（规格令牌） */
+}
+
+/* ============================================================
+   sentry 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="sentry"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── lime 关键词 chip 选区：语法高亮落到 selection 上（chip 语汇 = lime 底 ink-deep 字） ── */
+[data-theme="sentry"] ::selection { background: #c2ef4e; color: #1f1633; }
+
+/* ── 系统滚动条：细、on-dark-faint #3f3849、圆头 ── */
+[data-theme="sentry"] * { scrollbar-width: thin; scrollbar-color: #3f3849 transparent; }
+[data-theme="sentry"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="sentry"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="sentry"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #3f3849; background-clip: padding-box; }
+[data-theme="sentry"] ::-webkit-scrollbar-thumb:hover { background: #565064; background-clip: padding-box; }
+
+/* ── button-cap 节奏：全部按钮大写 + 0.2px 字距（规格「the cadence is part of the brand」） ── */
+[data-theme="sentry"] .ant-btn { text-transform: uppercase; letter-spacing: .2px; }
+
+/* ── chunky 展示字：数字/标题一律 700（规格：展示族以重字重近似，Rubik 加粗承接） ── */
+[data-theme="sentry"] .brand-block strong,
+[data-theme="sentry"] .panel-heading h2,
+[data-theme="sentry"] .business-outcomes__card > span,
+[data-theme="sentry"] .business-outcomes__card > strong,
+[data-theme="sentry"] .ratio-card__title,
+[data-theme="sentry"] .ratio-card > strong,
+[data-theme="sentry"] .codex-metric > strong,
+[data-theme="sentry"] .codex-token-ledger strong,
+[data-theme="sentry"] .configuration-status-rail > div > strong,
+[data-theme="sentry"] .configuration-summary-grid strong,
+[data-theme="sentry"] .configuration-step-copy h2,
+[data-theme="sentry"] .configuration-summary h2,
+[data-theme="sentry"] .configuration-inline-title h3,
+[data-theme="sentry"] .connector-configuration-step__heading h3,
+[data-theme="sentry"] .repo-row strong,
+[data-theme="sentry"] .intent-row strong,
+[data-theme="sentry"] .duration-card strong,
+[data-theme="sentry"] .duration-section__heading strong,
+[data-theme="sentry"] .value-list__title,
+[data-theme="sentry"] .connector-watch__item strong,
+[data-theme="sentry"] .detail-section h3,
+[data-theme="sentry"] .audit-json > summary,
+[data-theme="sentry"] .login-page__brand strong,
+[data-theme="sentry"] .login-page__showcase-copy h2,
+[data-theme="sentry"] .login-page__card h1 { font-weight: 700; }
+
+/* ── 页头 eyebrow / 面板 kicker / 登录 kicker：Rubik 大写宽字距标签
+      （规格 eyebrow/micro-cap：mono 不属于本品牌字库；10px 位把 0.2px 字距
+      按比例放大到 .12em 保持 console 节奏可感） ── */
+[data-theme="sentry"] .page-heading__eyebrow,
+[data-theme="sentry"] .panel-kicker,
+[data-theme="sentry"] .section-label,
+[data-theme="sentry"] .login-page__showcase-copy > span,
+[data-theme="sentry"] .login-page__card-heading > span { font-family: var(--font-sans); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── 表头：大写 console 节奏（micro-cap 语汇） ── */
+[data-theme="sentry"] .admin-table .ant-table-thead > tr > th { text-transform: uppercase; letter-spacing: .08em; }
+
+/* ── 导航：未激活 = on-dark-muted，激活 = 白 600（lime 只留指示条与 veil 外的高亮） ── */
+[data-theme="sentry"] .workspace-nav a { color: #bdb8c0; }
+[data-theme="sentry"] .workspace-nav a[aria-current="page"] { color: #ffffff; font-weight: 600; }
+[data-theme="sentry"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── 星点纹理 showcase：白点低透明度洒在午夜紫上（规格 Starfield Hero Texture） ── */
+[data-theme="sentry"] .login-page__showcase { background-image: radial-gradient(rgba(255, 255, 255, .16) 1px, transparent 1.5px); background-size: 26px 26px; }
+
+/* ── 登录 signal：brand-mark 同款三色条（lime / pink / 白） ── */
+[data-theme="sentry"] .login-page__signal span:nth-child(2) { background: #fa7faa; }
+[data-theme="sentry"] .login-page__signal span:nth-child(3) { background: #ffffff; }

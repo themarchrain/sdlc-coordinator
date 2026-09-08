@@ -1,0 +1,296 @@
+/* ============================================================
+   miro 主题令牌块 —— 规格驱动（miro 设计语言），无参考实现。
+   Miro 设计语言（白亮轨 + Miro 黄品牌）：
+   - 纯白画布（Canvas White 双职：页面 + 卡面），靠 hairline 三轨分隔：
+     Strong #C7CAD5（控件边）/ Hairline #E0E2E8（1px 边）/ Soft #EEF0F3（行缝）
+   - 文字七级：Ink Deep #050038 / Ink #1C1C1E / Charcoal #2C2C34 / Slate #555A6A
+     / Steel #6B6F7E / Stone #8E91A0 / Muted #A5A8B5
+   - 交互双轨：黑药丸主 CTA（primary #1C1C1E，pressed 抬到 Charcoal）+
+     动作蓝 Brand Blue #4262FF（链接/聚焦/featured 边框，三阶含 450/pressed）
+   - Miro 黄 #FFD02F 只属 wordmark / promo / 黄标签三处 → brand-mark 便利贴、
+     nav 指示、--primary-veil 黄标签面；粉彩（coral/teal/rose）只进 brand-mark
+   - 语义：success #00B473（规格唯一记名）；warning 锚 yellow-dark #746019 +
+     surface-yellow #FFF8E0 软底；红系规格只给薄纱/边框档，文字级派生 #C92A2A
+   - info 软面 = lavender #F5F3FF（规格 badge-tag-purple 面 + 蓝字形态）
+   - 暗面 = footer-bg #1C1C1E（json 凹陷/tooltip/登录 showcase 的 cta-banner-dark）
+   - 海拔 = 白板 mockup 阴影族 rgba(5,0,56,x)，平面卡零投影
+   骨架表达不了的形态（brand-mark 三色便利贴、表头 micro-uppercase、
+   药丸导航、字重 400/500/600 法则、登录暗面 hero）见块后专属片段。
+   ============================================================ */
+[data-theme="miro"] {
+  /* ── Typography ───────────────────────────── */
+  /* Roobert PRO（定制族，禁外部加载）→ 规格 fallback Noto Sans/-apple-system/
+     BlinkMacSystemFont + CJK 安全栈；规格无 mono（Roobert 全覆盖），
+     json 代码井按工程惯例给系统 mono 栈 */
+  --font-sans: "Roobert PRO", "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Roobert PRO", "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度 4/6/8/12/16/20/28/32/9999 向超集九档归并；
+        药丸 = 品牌签名，徽标档全药丸） ── */
+  --radius-xs: 4px;      /* 小 chip / 微控件（rounded.xs） */
+  --radius-soft: 6px;    /* 登录预览小色块（rounded.sm） */
+  --radius-sm: 6px;      /* 内嵌小块 */
+  --radius-md: 8px;      /* 行卡 / 输入 / search-pill（rounded.md） */
+  --radius-lg: 12px;     /* 指标卡 / 标准卡（rounded.lg） */
+  --radius-xl: 16px;     /* 面板 / pricing 卡（rounded.xl） */
+  --radius-brand: 6px;   /* brand-mark 便利贴（贴纸微圆角，形态见片段） */
+  --radius-pill: 9999px; /* 迷你徽标 = Full Pill（规格徽章全药丸） */
+  --radius-panel: 16px;  /* 登录外壳（pricing 卡档） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Canvas White：页面画布 */
+  --canvas-soft: #f7f8fa;        /* Surface：内嵌/交替软面 */
+  --canvas-card: #ffffff;        /* 卡片白（Canvas White 双职） */
+  --canvas-dark: #1c1c1e;        /* 暗面 = primary/footer-bg（json 井/tooltip/showcase） */
+  --surface-sidebar: #ffffff;    /* 规格 Top Nav：sticky white bar */
+  --surface-bar: rgba(255, 255, 255, .95); /* 白 sticky 顶栏微融 */
+  --surface-inset: #f7f8fa;      /* Surface：卡内嵌面（search-pill rest） */
+  --surface-matrix: #f7f8fa;
+  --surface-tint: #f7f8fa;       /* 行 hover = Surface 微沉 */
+  --surface-rail: #f7f8fa;
+  --surface-detail: #ffffff;     /* 详情卡白（card-base） */
+  --surface-chip: #ffffff;       /* pill-tab rest = 白 */
+  --surface-legacy: #f7f8fa;
+  --surface-draft: #f7f8fa;
+  --surface-empty: #fafbfc;      /* Surface Soft：更安静的空态面 */
+  --surface-json-bar: #1c1c1e;   /* json 头条 = 暗面（与井同面，靠 on-dark 分层） */
+  --tooltip-bg: #1c1c1e;         /* 暗面反转（footer-bg） */
+
+  /* ── Ink & text ladder（规格七级：Ink Deep/Ink/Charcoal/Slate/Steel/Stone/Muted） ── */
+  --ink: #1c1c1e;
+  --ink-strong: #050038;   /* Ink Deep：最强标题（规格「headlines on lighter cards」） */
+  --ink-display: #050038;
+  --ink-heading: #1c1c1e;
+  --ink-value: #1c1c1e;
+  --ink-repo: #1c1c1e;
+  --ink-step: #1c1c1e;
+  --ink-label-strong: #1c1c1e;
+  --ink-label: #1c1c1e;
+  --ink-row: #1c1c1e;
+  --ink-list: #2c2c34;     /* value-list li = Charcoal 正文强调 */
+  --ink-data: #1c1c1e;
+  --ink-field: #1c1c1e;
+  --ink-rail: #1c1c1e;
+  --ink-rail-value: #1c1c1e;
+  --ink-secret: #555a6a;   /* secret-label = Slate 次级 */
+  --ink-chip: #2c2c34;     /* duration 数值 = Charcoal */
+  --body: #2c2c34;         /* Charcoal：正文强调（规格 body emphasis） */
+  --body-alt: #555a6a;     /* Slate：次级正文 */
+  --body-soft: #555a6a;
+  --mute: #555a6a;         /* Slate：secondary text / metadata */
+  --mute-deep: #2c2c34;    /* 指标卡标题抬回 Charcoal */
+  --mute-inline: #555a6a;
+  --mute-caption: #555a6a;
+  --mute-intro: #2c2c34;   /* 配置导语 = 正文级 */
+  --mute-terse: #555a6a;
+  --mute-quiet: #555a6a;
+  --mute-soft: #555a6a;
+  --mute-dim: #555a6a;
+  --mute-draft: #555a6a;
+  --mute-json: #a5a8b5;    /* json 井内 = on-dark-muted（暗面） */
+  --mute-matrix: #555a6a;
+  --faint: #8e91a0;        /* Stone：captions / muted labels */
+  --faint-alt: #8e91a0;
+  --faint-soft: #6b6f7e;   /* 需可读的三级提示抬回 Steel */
+  --faint-ghost: #8e91a0;
+  --faint-hint: #8e91a0;
+  --faint-meta: #8e91a0;
+  --faint-note: #6b6f7e;
+  --faint-empty: #a5a8b5;  /* 空态 = Muted（规格 disabled labels） */
+  --on-dark: #ffffff;      /* 规格 On Dark */
+  --on-dark-soft: rgba(255, 255, 255, .75); /* 派生：暗面次级 */
+  --on-dark-faint: #a5a8b5; /* 规格 On Dark Muted */
+
+  /* ── Primary / link / focus（黑药丸 CTA + 动作蓝双轨） ── */
+  --primary: #1c1c1e;      /* 黑药丸主 CTA（规格 primary） */
+  --primary-active: #2c2c34; /* 规格 pressed「lifts to Charcoal」 */
+  --on-primary: #ffffff;   /* 规格 on-primary */
+  --link: #4262ff;         /* Brand Blue：inline link 色（规格 button-link） */
+  --link-hover: #5b76fe;   /* 规格 blue-450 */
+  --focus-ring: rgba(66, 98, 255, .32); /* 派生：聚焦输入 = 2px Brand Blue 的环形态 */
+  --primary-veil: #fff8e0; /* 当前导航 = 黄标签 chip 面（黄的三处合法用法之一） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #00b473;      /* 规格 success-accent */
+  --success-halo: 0 0 0 4px rgba(0, 180, 115, .14);
+  --warning: #746019;      /* 锚定规格 yellow-dark（黄标签前景，深橄榄） */
+  --warning-soft: #fff8e0; /* 规格 surface-yellow */
+  --error: #c92a2a;        /* 派生：brand-red 薄纱系的文字级红（规格只给底/边档） */
+  --error-deep: #a02121;
+  --info: #4262ff;         /* inferred-mark = 动作蓝 */
+  --info-soft: #f5f3ff;    /* 规格 lavender（badge-tag-purple 面，蓝字形态） */
+
+  /* ── Hairlines & bars（三轨：Strong/ Hairline/ Soft） ── */
+  --hairline: #e0e2e8;         /* Hairline：1px 边 / 主分隔 */
+  --hairline-soft: #eef0f3;    /* Hairline Soft：行缝 / 卡内分隔 */
+  --hairline-strong: #c7cad5;  /* Hairline Strong：输入边 / 滚动条 */
+  --hairline-card: #eef0f3;    /* card-base 边 = Soft */
+  --hairline-inset: #e0e2e8;
+  --hairline-mid: #eef0f3;
+  --hairline-rail: #e0e2e8;
+  --hairline-codex: #eef0f3;
+  --hairline-detail: #e0e2e8;
+  --hairline-json: #e0e2e8;
+  --hairline-dashed: #c7cad5;  /* 空态虚线 = 控件边一档保可见 */
+  --hairline-legacy: #c7cad5;
+  --hairline-row: #eef0f3;     /* comparison-row 缝 = Soft */
+  --hairline-draft: #e0e2e8;
+  --bar-value: #c7cad5;   /* 左规线 = 无彩（黄不作数据条） */
+  --bar-matrix: #c7cad5;
+  --bar-summary: #8e91a0; /* 汇总条 = Stone 一档深 */
+  --bar-usage: #4262ff;   /* 用量轨 = 动作蓝（数据墨水） */
+
+  /* ── Overlays & shadows（Ink Deep 系 rgba(5,0,56,x) = 规格 mockup 阴影族） ── */
+  --overlay-faint: rgba(5, 0, 56, .04);  /* Level 1 subtle */
+  --overlay-soft: rgba(5, 0, 56, .05);   /* nav hover 微沉 */
+  --overlay-line: rgba(5, 0, 56, .07);
+  --overlay-medium: rgba(5, 0, 56, .08); /* Level 3 mockup 檐 */
+  --shadow-panel: rgba(5, 0, 56, .06) 0px 4px 12px 0px; /* Level 2 card */
+
+  /* ── brand-mark（白板贴纸：白框 hairline-soft + Level 1 影 + 黄/coral/teal 三便利贴，形态见片段） ── */
+  --brand-frame-bg: #ffffff;
+  --brand-frame-border: #eef0f3;   /* card-base 边 */
+  --brand-frame-shadow: rgba(5, 0, 56, 0.04) 0px 1px 2px 0px; /* Level 1 subtle */
+  --brand-bar-1: #ffd02f;          /* Miro 黄贴（wordmark 色） */
+  --brand-bar-2: #ffc6c6;          /* coral-light 粉彩贴 */
+  --brand-bar-3: #c3faf5;          /* teal-light 粉彩贴 */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ffd02f;            /* 角标 = Miro 黄（promo 徽记） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: 0 0 8px rgba(255, 208, 47, .7);
+  --nav-indicator: #ffd02f;        /* 当前导航指示 = Miro 黄（wordmark 级签名） */
+
+  /* ── 登录页（白卡 showroom + 暗面 cta-banner-dark showcase：黄 kicker/promo 徽记） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e0e2e8;
+  --login-shell-shadow: rgba(5, 0, 56, 0.08) 0px 12px 32px -4px; /* Level 3：白板 mockup 框 */
+  --login-showcase-bg: #1c1c1e;   /* cta-banner-dark 面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 208, 47, .08); /* 暗面白板网格 = 黄系微光 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #a5a8b5;    /* 规格 on-dark-muted */
+  --login-signal-bg: rgba(255, 255, 255, .06);
+  --login-signal-border: rgba(255, 255, 255, .16);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffd02f;    /* signal 三贴 = 黄（同 brand-mark） */
+  --login-kicker: #ffd02f;        /* promo banner 黄签语汇（黑底黄字） */
+  --login-heading: #ffffff;
+  --login-copy: #a5a8b5;
+  --login-preview-bg: rgba(255, 255, 255, .07);
+  --login-preview-border: rgba(255, 255, 255, .16);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #ffd02f;   /* 数据点 = 黄（暗面上的黄合法：promo 级） */
+  --login-preview-dot-soft: rgba(255, 255, 255, .35);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .9);
+  --login-preview-chip-ink: #1c1c1e; /* chip = badge-promo（黄底黑字） */
+  --login-preview-chip-bg: #ffd02f;
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: #6b6f7e;          /* Steel：footer 链接级 */
+  --login-card-kicker: #6b6f7e;
+  --login-card-heading: #1c1c1e;
+  --login-card-copy: #555a6a;
+  --login-notice-border: #c7cad5; /* info 通知 = lavender 面 + Strong 边 */
+  --login-notice-bg: #f5f3ff;
+  --login-notice-ink: #2c2c34;
+  --login-label: #2c2c34;
+  --login-input-border: #c7cad5;  /* 规格 text-input 边 = Hairline Strong */
+  --login-input-border-hover: #555a6a;
+  --login-primary: #1c1c1e;       /* 主 CTA = 黑药丸 */
+  --login-primary-active: #2c2c34;
+}
+
+/* ============================================================
+   miro 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="miro"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 黄色选区（Miro 黄的功能性使用：白板上高亮一笔） ── */
+[data-theme="miro"] ::selection { background: rgba(255, 208, 47, .4); color: var(--ink); }
+
+/* ── 系统滚动条：细、Strong、圆头（药丸签名延伸） ── */
+[data-theme="miro"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+[data-theme="miro"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="miro"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="miro"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: var(--hairline-strong); background-clip: padding-box; }
+[data-theme="miro"] ::-webkit-scrollbar-thumb:hover { background: var(--mute); background-clip: padding-box; }
+
+/* ── 字重法则：标题/强调 = 500，全站无 700（规格「Roobert PRO does not use 700」；
+      600 只给 micro-uppercase 标签族（见下）） ── */
+[data-theme="miro"] .brand-block strong,
+[data-theme="miro"] .panel-heading h2,
+[data-theme="miro"] .business-outcomes__card > span,
+[data-theme="miro"] .business-outcomes__card > strong,
+[data-theme="miro"] .ratio-card__title,
+[data-theme="miro"] .ratio-card > strong,
+[data-theme="miro"] .codex-metric > strong,
+[data-theme="miro"] .codex-token-ledger strong,
+[data-theme="miro"] .configuration-status-rail > div > strong,
+[data-theme="miro"] .configuration-summary-grid strong,
+[data-theme="miro"] .configuration-step-copy h2,
+[data-theme="miro"] .configuration-summary h2,
+[data-theme="miro"] .configuration-inline-title h3,
+[data-theme="miro"] .connector-configuration-step__heading h3,
+[data-theme="miro"] .repo-row strong,
+[data-theme="miro"] .intent-row strong,
+[data-theme="miro"] .duration-card strong,
+[data-theme="miro"] .duration-section__heading strong,
+[data-theme="miro"] .value-list__title,
+[data-theme="miro"] .connector-watch__item strong,
+[data-theme="miro"] .detail-section h3,
+[data-theme="miro"] .audit-json > summary,
+[data-theme="miro"] .login-page__brand strong,
+[data-theme="miro"] .login-page__showcase-copy h2,
+[data-theme="miro"] .login-page__card h1 { font-weight: 500; }
+
+/* ── eyebrow / kicker：micro-uppercase（规格 11px/600/.5px，「Section dividers
+      in tables」语汇；Steel 色） ── */
+[data-theme="miro"] .page-heading__eyebrow,
+[data-theme="miro"] .panel-kicker,
+[data-theme="miro"] .section-label { color: var(--mute); font-weight: 600; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="miro"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 表头 = micro-uppercase（规格原文用途：表内分节标签） ── */
+[data-theme="miro"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); color: var(--mute); font-weight: 600; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+
+/* ── 导航：药丸项（规格 pill-tab 语汇），当前项 = 黄标签面（--primary-veil） ── */
+[data-theme="miro"] .workspace-nav a { border-radius: 9999px; }
+[data-theme="miro"] .workspace-nav a[aria-current="page"] { color: var(--ink); font-weight: 500; }
+[data-theme="miro"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：白板贴纸组 —— 白框 + 三张微旋粉彩便利贴
+      （黄/coral/teal = 规格 sticky-note 色板回声，playful 品牌声线） ── */
+[data-theme="miro"] .brand-mark { padding: 5px 7px; gap: 4px; }
+[data-theme="miro"] .brand-mark span { width: 9px; border-radius: 3px; box-shadow: none; }
+[data-theme="miro"] .brand-mark span:nth-child(1) { height: 13px; opacity: 1; transform: rotate(-6deg); }
+[data-theme="miro"] .brand-mark span:nth-child(2) { height: 18px; transform: rotate(4deg); }
+[data-theme="miro"] .brand-mark span:nth-child(3) { height: 11px; transform: rotate(-3deg); }
+@media (max-width: 760px) {
+  [data-theme="miro"] .brand-mark span:nth-child(1) { height: 10px; }
+  [data-theme="miro"] .brand-mark span:nth-child(2) { height: 14px; }
+  [data-theme="miro"] .brand-mark span:nth-child(3) { height: 9px; }
+}
+
+/* ── 详情格：面板内嵌面回落 Surface 软面 ── */
+[data-theme="miro"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录 showcase：cta-banner-dark 面 + 黄网格；标题负字距
+      （规格 heading 负 tracking 法则） ── */
+[data-theme="miro"] .login-page__showcase-copy h2 { font-size: 34px; line-height: 1.2; letter-spacing: -.5px; }
+[data-theme="miro"] .login-page__showcase-copy > span,
+[data-theme="miro"] .login-page__card-heading > span { font-weight: 600; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+
+/* ── 登录 signal：黄三贴（同 brand-mark 语汇，暗面上的 promo 黄） ── */
+[data-theme="miro"] .login-page__signal { gap: 4px; }
+[data-theme="miro"] .login-page__signal span { width: 8px; border-radius: 3px; }
+
+/* ── 登录卡片：输入/主 CTA 钉 44px 触达高（规格 text-input height 44px） ── */
+[data-theme="miro"] .login-page__card .ant-input,
+[data-theme="miro"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="miro"] .login-page__card .ant-btn-primary { height: 44px; }

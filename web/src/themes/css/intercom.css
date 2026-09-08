@@ -1,0 +1,280 @@
+/* ============================================================
+   intercom 主题令牌块 —— 规格驱动（intercom 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Intercom 设计语言（暖奶油编辑感）：
+   - 海拔 = 白上奶油的明度差，零投影：canvas #f5f1ec → 卡/浮层 #ffffff
+     → 嵌面回落奶油 → 反转面 #000000/#111111（quote strip/tooltip）
+   - 文字一族炭墨（规格四级原文）：ink #111111 / muted #626260 /
+     subtle #7b7b78 / tertiary #9c9fa5
+   - 系统主色是炭墨 #111111（button-primary = 墨底白字、按压 #000）；
+     Fin Orange #ff5600 只给 Fin 徽标级强调（brand-dot / 登录 signal），
+     不作通用交互色；链接/数据蓝 = Brand Blue #0007cb
+   - 语义：error #c41c1c / success #0bdf50（规格字面）；warning 无规格 →
+     克制琥珀 #a16207（推导）
+   - 发丝线双轨：Hairline #d3cec6（卡外线）/ Hairline Soft #ebe7e1；
+     强线派生 #beb8ac
+   - 圆角刻度 4/6/8/12/16/24（rounded.* 字面），药丸只留 tab 切换
+   - Saans 500 展示 + 400 正文（Inter 替代栈）；eyebrow 句首大写、
+     禁全大写宽字距
+   骨架表达不了的形态（白 tile brand-mark、句首 eyebrow、500 字重法则、
+   登录黑 quote 面上的白 mockup 卡）见块后 [data-theme="intercom"] 专属片段。
+   ============================================================ */
+[data-theme="intercom"] {
+  /* ── Typography ───────────────────────────── */
+  /* Saans（定制族，禁外部加载）→ 规格「Font Substitutes」钦点 Inter 替代；
+     同一族贯穿展示与正文，共用 sans 栈 */
+  --font-sans: 'Saans', 'Saans Fallback', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SaansMono', 'SaansMono Fallback', 'JetBrains Mono', ui-monospace, Consolas, monospace; /* 规格：SaansMono ≈ JetBrains Mono 替代 */
+  --font-display: 'Saans', 'Saans Fallback', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（刻度：xs 4 / sm 6 / md 8 / lg 12 / xl 16 / pill 9999） ── */
+  --radius-xs: 4px;      /* 小徽章/chip = rounded.xs 字面 */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* inline tag = rounded.sm 字面 */
+  --radius-md: 8px;      /* 行卡/按钮/输入 = rounded.md 字面（All buttons, form inputs） */
+  --radius-lg: 12px;     /* 指标卡/pricing·feature 卡 = rounded.lg 字面 */
+  --radius-xl: 16px;     /* 面板/product mockup = rounded.xl 字面 */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal = md 级白 tile */
+  --radius-pill: 9999px; /* 迷你徽标/tab 切换 = rounded.pill（药丸仅此一处合法） */
+  --radius-panel: 16px;  /* 登录外壳 = mockup 级 16px */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f5f1ec;              /* Cream Canvas：页面画布（规格禁纯白） */
+  --canvas-soft: #ebe7e1;         /* Surface 2：深一档奶油（alt-row/discount 卡） */
+  --canvas-card: #ffffff;         /* Surface 1：浮上奶油的白卡 */
+  --canvas-dark: #000000;         /* Inverse Canvas：quote strip 级纯黑 */
+  --surface-sidebar: #f5f1ec;     /* top-nav/footer 同奶油底（规格 导航组件字面） */
+  --surface-bar: rgba(245, 241, 236, .92); /* 滚动后 sticky 奶油条 */
+  --surface-inset: #f5f1ec;       /* 嵌面回落奶油（customer-logo-tile 在白卡上同理） */
+  --surface-matrix: #ebe7e1;      /* 指标矩阵 = Surface 2 交替条纹 */
+  --surface-tint: #f5f1ec;        /* 行 hover = 奶油微染 */
+  --surface-rail: #f5f1ec;        /* 配置状态轨 = 奶油嵌面 */
+  --surface-detail: #f5f1ec;      /* 详情区 = 奶油嵌面 */
+  --surface-chip: #f5f1ec;        /* chip = customer-logo-tile 的奶油底 */
+  --surface-legacy: #f5f1ec;
+  --surface-draft: #ebe7e1;       /* draft 更沉一档 = Surface 2 */
+  --surface-empty: #f5f1ec;
+  --surface-json-bar: #ebe7e1;    /* json 头条 = Surface 2 提示阶 */
+  --tooltip-bg: #111111;          /* 反转提示面 = 炭墨 */
+
+  /* ── Ink & text ladder（规格文字四级：Ink/Muted/Subtle/Tertiary） ── */
+  --ink: #111111;
+  --ink-strong: #111111;
+  --ink-display: #111111;
+  --ink-heading: #111111;
+  --ink-value: #111111;
+  --ink-repo: #111111;
+  --ink-step: #111111;
+  --ink-label-strong: #111111;
+  --ink-label: #111111;
+  --ink-row: #111111;
+  --ink-list: #111111;   /* 正文即炭墨（规格「body type … all charcoal」） */
+  --ink-data: #111111;
+  --ink-field: #111111;
+  --ink-rail: #111111;
+  --ink-rail-value: #111111;
+  --ink-secret: #626260; /* secret-label = Ink Muted */
+  --ink-chip: #626260;   /* chip 文字 = Ink Muted（logo-tile textColor 同源） */
+  --body: #111111;       /* 规格：默认正文 = 炭墨 */
+  --body-alt: #626260;   /* Ink Muted：次级正文/meta */
+  --body-soft: #7b7b78;  /* Ink Subtle：helper text */
+  --mute: #7b7b78;
+  --mute-deep: #626260;  /* 暗底上「更深」= 抬回 Ink Muted */
+  --mute-inline: #7b7b78;
+  --mute-caption: #7b7b78;
+  --mute-intro: #626260; /* 导语 = Ink Muted */
+  --mute-terse: #7b7b78;
+  --mute-quiet: #7b7b78;
+  --mute-soft: #7b7b78;
+  --mute-dim: #7b7b78;
+  --mute-draft: #626260;
+  --mute-json: #7b7b78;
+  --mute-matrix: #7b7b78;
+  --faint: #9c9fa5;      /* Ink Tertiary：disabled/footnote */
+  --faint-alt: #9c9fa5;
+  --faint-soft: #9c9fa5;
+  --faint-ghost: #9c9fa5;
+  --faint-hint: #9c9fa5;
+  --faint-meta: #9c9fa5;
+  --faint-note: #9c9fa5;
+  --faint-empty: #b6b9be; /* 空态再淡半档（派生：Tertiary 之上的灰） */
+  --on-dark: #ffffff;     /* Inverse Ink */
+  --on-dark-soft: #9c9fa5; /* Inverse Ink Muted（规格 字面） */
+  --on-dark-faint: rgba(255, 255, 255, .55); /* 派生：黑面上最淡注脚 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #111111;    /* 系统主色 = 炭墨（规格：charcoal is the system primary） */
+  --primary-active: #000000; /* button-primary-pressed = Inverse Canvas 字面 */
+  --on-primary: #ffffff;
+  --link: #0007cb;       /* 链接 = Brand Blue（规格唯一链接级彩蓝） */
+  --link-hover: #0005a3; /* 派生：蓝压深一档 */
+  --focus-ring: rgba(0, 7, 203, .26); /* 派生：Brand Blue 26% 焦点环 */
+  --primary-veil: #ffffff; /* 当前项 = 「selected = lift onto white」（pricing-tab-selected 同构） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #0bdf50;    /* semantic-success / report-green 字面 */
+  --success-halo: 0 0 0 4px rgba(11, 223, 80, .15); /* 派生：绿 15% 光环 */
+  --warning: #a16207;    /* 派生：规格无警示色 → 克制琥珀 */
+  --warning-soft: rgba(161, 98, 7, .12);
+  --error: #c41c1c;      /* semantic-error 字面 */
+  --error-deep: #9e1414; /* 派生：红压深一档 */
+  --info: #0007cb;       /* Brand Blue */
+  --info-soft: rgba(0, 7, 203, .07); /* 派生：蓝薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（Hairline #d3cec6 / Soft #ebe7e1 字面；强线派生） ── */
+  --hairline: #d3cec6;         /* 卡 1px 外线（规格 Hairline 字面） */
+  --hairline-soft: #ebe7e1;    /* FAQ/页脚软分隔（Hairline Soft 字面） */
+  --hairline-strong: #beb8ac;  /* 派生：空态虚线/滚动条需要的可见强线 */
+  --hairline-card: #d3cec6;    /* 卡外线按规格保留（「1px Hairline borders」） */
+  --hairline-inset: #d3cec6;
+  --hairline-mid: #d3cec6;
+  --hairline-rail: #d3cec6;
+  --hairline-codex: #ebe7e1;
+  --hairline-detail: #ebe7e1;
+  --hairline-json: #d3cec6;
+  --hairline-dashed: #beb8ac;  /* 空态虚线 = 强线一档 */
+  --hairline-legacy: #beb8ac;
+  --hairline-row: #ebe7e1;     /* 行分隔 = Soft */
+  --hairline-draft: #beb8ac;
+  --bar-value: #d3cec6;        /* value-list 左规线 = 发丝线（非彩色条） */
+  --bar-matrix: #d3cec6;
+  --bar-summary: #b3ada2;      /* 派生：warm 中间档 */
+  --bar-usage: #0007cb;        /* 用量轨 = Brand Blue（数据墨水；Fin Orange 不作数据色） */
+
+  /* ── Overlays & shadows（零投影：海拔 = 表面切换） ── */
+  --overlay-faint: rgba(17, 17, 17, .04);
+  --overlay-soft: rgba(17, 17, 17, .05);
+  --overlay-line: rgba(17, 17, 17, .07);
+  --overlay-medium: rgba(17, 17, 17, .09);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（白 tile + 三根炭墨平条 + Fin 橙角标；形态见片段） ── */
+  --brand-frame-bg: #ffffff;        /* brand-mark = 浮上奶油的白 tile（lift onto white） */
+  --brand-frame-border: #d3cec6;    /* 卡同款 1px 发丝线 */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #111111;           /* 三根炭墨条（wordmark 墨感） */
+  --brand-bar-2: #111111;
+  --brand-bar-3: #111111;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ff5600;             /* 角标 = Fin 徽标（规格允许的 Fin Orange 落点） */
+  --brand-dot-border: #f5f1ec;      /* 奶油描边隔离 */
+  --brand-dot-glow: none;           /* 零投影体系，无辉光 */
+  --nav-indicator: #111111;         /* 当前导航指示条 = 炭墨 */
+
+  /* ── 登录页（奶油壳 + 黑 quote 面 showcase + 白 mockup 卡 + 墨底 CTA） ── */
+  --login-bg: #f5f1ec;
+  --login-shell-border: #d3cec6;
+  --login-shell-shadow: none;       /* 零投影 */
+  --login-showcase-bg: #000000;     /* showcase = Inverse Canvas 黑 quote 面 */
+  --login-showcase-ink: #ffffff;    /* Inverse Ink */
+  --login-grid-line: rgba(255, 255, 255, .07);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #9c9fa5;      /* Inverse Ink Muted */
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .32);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;      /* signal 三平条 = 白（黑面上对应炭墨条） */
+  --login-kicker: #9c9fa5;
+  --login-heading: #ffffff;
+  --login-copy: #9c9fa5;
+  --login-preview-bg: #ffffff;      /* 预览卡 = 白 mockup（黑面上最 Intercom 的一笔） */
+  --login-preview-border: #d3cec6;
+  --login-preview-shadow: none;
+  --login-preview-divider: #ebe7e1;
+  --login-preview-dot: #0bdf50;     /* 在线点 = semantic green */
+  --login-preview-dot-soft: #d3cec6;
+  --login-preview-label: #626260;
+  --login-preview-row-line: #ebe7e1;
+  --login-preview-row-ink: #111111;
+  --login-preview-chip-ink: #0007cb;  /* chip = Brand Blue 字染 */
+  --login-preview-chip-bg: rgba(0, 7, 203, .08);
+  --login-preview-bar: #0007cb;       /* 进度条 = Brand Blue */
+  --login-foot: #9c9fa5;
+  --login-card-kicker: #626260;     /* 白卡侧 eyebrow = Ink Muted */
+  --login-card-heading: #111111;
+  --login-card-copy: #7b7b78;
+  --login-notice-border: rgba(0, 7, 203, .28); /* info 通知 = 蓝薄纱 + 发丝线 */
+  --login-notice-bg: rgba(0, 7, 203, .06);
+  --login-notice-ink: #0005a3;
+  --login-label: #111111;
+  --login-input-border: #d3cec6;    /* 控件边 = Hairline（与 antd defaultBorderColor 同源） */
+  --login-input-border-hover: #9c9fa5;
+  --login-primary: #111111;         /* 主 CTA = 炭墨（button-primary 字面） */
+  --login-primary-active: #000000;  /* pressed = Inverse Canvas 字面 */
+}
+
+/* ============================================================
+   intercom 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="intercom"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：Brand Blue 选区 / 焦点环（炭墨 outline） ── */
+[data-theme="intercom"] ::selection { background: rgba(0, 7, 203, .14); }
+[data-theme="intercom"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 系统滚动条：细、发丝线暖灰、圆头 ── */
+[data-theme="intercom"] * { scrollbar-width: thin; scrollbar-color: #d3cec6 transparent; }
+[data-theme="intercom"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="intercom"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="intercom"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #d3cec6; }
+[data-theme="intercom"] ::-webkit-scrollbar-thumb:hover { background: #beb8ac; }
+
+/* ── 字重法则：500 承载展示/数值/表头，400 正文，无 bold（规格「without bold」） ── */
+[data-theme="intercom"] .ant-btn { font-weight: 500; }
+[data-theme="intercom"] .brand-block strong,
+[data-theme="intercom"] .panel-heading h2,
+[data-theme="intercom"] .business-outcomes__card > span,
+[data-theme="intercom"] .business-outcomes__card > strong,
+[data-theme="intercom"] .ratio-card__title,
+[data-theme="intercom"] .ratio-card > strong,
+[data-theme="intercom"] .codex-metric > strong,
+[data-theme="intercom"] .codex-token-ledger strong,
+[data-theme="intercom"] .configuration-status-rail > div > strong,
+[data-theme="intercom"] .configuration-summary-grid strong,
+[data-theme="intercom"] .configuration-step-copy h2,
+[data-theme="intercom"] .configuration-summary h2,
+[data-theme="intercom"] .configuration-inline-title h3,
+[data-theme="intercom"] .connector-configuration-step__heading h3,
+[data-theme="intercom"] .repo-row strong,
+[data-theme="intercom"] .intent-row strong,
+[data-theme="intercom"] .duration-card strong,
+[data-theme="intercom"] .duration-section__heading strong,
+[data-theme="intercom"] .value-list__title,
+[data-theme="intercom"] .connector-watch__item strong,
+[data-theme="intercom"] .detail-section h3,
+[data-theme="intercom"] .admin-table .ant-table-thead > tr > th,
+[data-theme="intercom"] .audit-json > summary,
+[data-theme="intercom"] .login-page__brand strong,
+[data-theme="intercom"] .login-page__showcase-copy h2,
+[data-theme="intercom"] .login-page__card h1 { font-weight: 500; }
+
+/* ── eyebrow / kicker：句首大写、零宽字距（规格 Do：禁 all-caps tracked eyebrows） ── */
+[data-theme="intercom"] .page-heading__eyebrow,
+[data-theme="intercom"] .panel-kicker,
+[data-theme="intercom"] .section-label { color: var(--mute); font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 表头：白底 + Ink Muted + 500，无大写变换（编辑感安静表头） ── */
+[data-theme="intercom"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid var(--hairline); letter-spacing: 0; text-transform: none; }
+
+/* ── brand-mark：白 tile 内三根炭墨平条 + Fin 橙角标（去光影） ── */
+[data-theme="intercom"] .brand-mark { box-shadow: none; }
+[data-theme="intercom"] .brand-mark span { border-radius: 2px; background: #111111; box-shadow: none; }
+[data-theme="intercom"] .brand-mark::after { box-shadow: none; }
+
+/* ── 登录 showcase：黑 quote 面上白 mockup 卡主角；
+      展示标题 = 500 + 负字距（规格 display 签名）；eyebrow 句首大写 ── */
+[data-theme="intercom"] .login-page__showcase-copy h2 { font-size: 40px; line-height: 1.15; letter-spacing: -.8px; } /* display-md 刻度 */
+[data-theme="intercom"] .login-page__card h1 { letter-spacing: -.3px; } /* card-title 刻度 */
+[data-theme="intercom"] .login-page__showcase-copy > span,
+[data-theme="intercom"] .login-page__card-heading > span { font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* ── 登录 signal：同 brand-mark 的三根白平条（无框无光影） ── */
+[data-theme="intercom"] .login-page__signal { background: transparent; box-shadow: none; }
+[data-theme="intercom"] .login-page__signal span { border-radius: 2px; background: #ffffff; box-shadow: none; }
+
+/* ── 登录卡片：输入/主 CTA 对齐 40px 触达高（规格 Touch Targets ≥40px） ── */
+[data-theme="intercom"] .login-page__card .ant-input,
+[data-theme="intercom"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+[data-theme="intercom"] .login-page__card .ant-btn-primary { height: 40px; }

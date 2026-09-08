@@ -1,0 +1,273 @@
+/* ============================================================
+   bmw 主题令牌块 —— 规格驱动（bmw 设计语言，无参考实现），
+   正文色值按角色映射进 162 令牌超集。亮轨勘误：canvas = #ffffff。
+   BMW corporate 设计语言（与 bmw-m 暗色主题刻意区分）：
+   - 画布阶：canvas #ffffff（页面）/ soft #f7f7f7（surface-soft，footer 级软带）/
+     card 白卡 + photo 软板 #fafafa（surface-card）/ strong #ebebeb（分区线面）/
+     dark #1a2129（surface-dark 暗军蓝 hero 带 → json 深面 / tooltip）/
+     dark-elevated #262e38（hero 内嵌卡 → json 头条 / 登录预览）
+   - 文字阶坍缩为规格五级：body-strong #1a1a1a / ink #262626 /
+     body #3c3c3c / muted #6b6b6b / muted-soft #9a9a9a
+   - 主操作 = BMW corporate blue #1c69d4（唯一品牌操作色），按压 #0653b6；
+     M 三色条纹（#0066b1/#1c69d4/#e22718）不进本主题（规格「never in the
+     corporate site's main language」→ 品牌记号归 bmw-m 承担）
+   - 语义四色规格原值：success #22c55e / warning #f59e0b / error #dc2626；
+     info = 蓝（唯一交互色兼信息色）
+   - 发丝线双阶：hairline #e6e6e6（输入/表格分隔）/ strong #cccccc（强调边）；
+     半步软线 #f0f0f0 为派生（规格未给介于 hairline 与白之间的档）
+   - 全站无投影：深度 = 色块对比（白画布 vs 暗军蓝 hero）
+   - 圆角一律 0（矩形即品牌），仅微章借规格 rounded.xs 2px
+   - 字体 BMW Type Next Latin → Inter 系统/web-safe 栈（规格 官方替身）
+   骨架表达不了的形态（brand-mark 方角三色条、大写机加工标签、
+   暗军蓝登录 showcase、48px 触达高的输入/CTA）见块后片段。
+   ============================================================ */
+[data-theme="bmw"] {
+  /* ── Typography ───────────────────────────── */
+  /* BMW Type Next Latin（licensed，禁外部加载）→ Inter 官方替身 + 系统/web-safe 栈；
+     display 与 UI 同族，共用 sans 栈（700 展示 / 300 正文签名见片段与 antd） */
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度：none 0 主导 / xs 2 / sm 4 / md 8 / lg 12 罕见；归并后几乎全 0） ── */
+  --radius-xs: 0px;      /* 图标提示 focus = 方角 */
+  --radius-soft: 0px;    /* 登录预览小色块 = 方角 */
+  --radius-sm: 0px;      /* 内嵌小块 */
+  --radius-md: 0px;      /* 行卡 */
+  --radius-lg: 0px;      /* 指标卡 */
+  --radius-xl: 0px;      /* 面板（modal 12px 属极罕例外，不为它放开） */
+  --radius-brand: 0px;   /* brand-mark / 登录 signal = 方角条座 */
+  --radius-pill: 2px;    /* 迷你徽标借规格 rounded.xs（合法微圆角） */
+  --radius-panel: 0px;   /* 登录外壳 = 方角矩形 */
+
+  /* ── Canvas & surfaces（规格 Surface 组按用途映射） ── */
+  --canvas: #ffffff;             /* 规格画布白（亮轨） */
+  --canvas-soft: #f7f7f7;        /* 规格 surface-soft：footer/子导航级软带 */
+  --canvas-card: #ffffff;        /* 规格卡片白（model-card bg = canvas） */
+  --canvas-dark: #1a2129;        /* json pre 深面 = surface-dark 暗军蓝 hero */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 top-nav bg canvas） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 顶栏 = 白半透 sticky */
+  --surface-inset: #fafafa;      /* 内嵌面 = surface-card 软板 */
+  --surface-matrix: #fafafa;
+  --surface-tint: #fafafa;       /* 表行 hover = 软板微高亮 */
+  --surface-rail: #fafafa;
+  --surface-detail: #fafafa;
+  --surface-chip: #fafafa;
+  --surface-legacy: #f7f7f7;     /* legacy 面板 = soft 带一级 */
+  --surface-draft: #ebebeb;      /* 草稿章 = surface-strong 更沉一档 */
+  --surface-empty: #fafafa;
+  --surface-json-bar: #262e38;   /* json 头条 = surface-dark-elevated（hero 内嵌卡） */
+  --tooltip-bg: #1a2129;         /* tooltip = 暗军蓝 hero 面 */
+
+  /* ── Ink & text ladder（坍缩为规格五级墨） ── */
+  --ink: #262626;
+  --ink-strong: #1a1a1a;   /* 规格 body-strong：汇总数值/行强调抬一档 */
+  --ink-display: #262626;
+  --ink-heading: #262626;
+  --ink-value: #1a1a1a;    /* 指标数值 = body-strong（display 数字用墨） */
+  --ink-repo: #262626;
+  --ink-step: #262626;
+  --ink-label-strong: #262626;
+  --ink-label: #262626;
+  --ink-row: #262626;
+  --ink-list: #3c3c3c;     /* value-list li = body */
+  --ink-data: #262626;
+  --ink-field: #3c3c3c;
+  --ink-rail: #3c3c3c;     /* 轨正文 = body */
+  --ink-rail-value: #262626;
+  --ink-secret: #6b6b6b;   /* secret-label = muted 级 */
+  --ink-chip: #3c3c3c;     /* duration chip = body 级 */
+  --body: #3c3c3c;         /* 规格 body：运行正文 */
+  --body-alt: #3c3c3c;
+  --body-soft: #6b6b6b;
+  --mute: #6b6b6b;         /* 规格 muted：页脚/面包屑/说明 */
+  --mute-deep: #3c3c3c;    /* 业务卡/占比卡标题抬回正文级 */
+  --mute-inline: #6b6b6b;
+  --mute-caption: #6b6b6b;
+  --mute-intro: #3c3c3c;   /* 配置导语 = 正文级 */
+  --mute-terse: #6b6b6b;
+  --mute-quiet: #6b6b6b;
+  --mute-soft: #6b6b6b;
+  --mute-dim: #6b6b6b;
+  --mute-draft: #6b6b6b;
+  --mute-json: #6b6b6b;
+  --mute-matrix: #6b6b6b;
+  --faint: #9a9a9a;        /* 规格 muted-soft：占位/禁用级 */
+  --faint-alt: #9a9a9a;
+  --faint-soft: #9a9a9a;
+  --faint-ghost: #9a9a9a;
+  --faint-hint: #9a9a9a;
+  --faint-meta: #9a9a9a;
+  --faint-note: #9a9a9a;
+  --faint-empty: #9a9a9a;
+  --on-dark: #ffffff;      /* 规格 on-dark：暗军蓝 hero 上的白字 */
+  --on-dark-soft: #bbbbbb; /* 规格 on-dark-soft：json 深面次级文字 */
+  --on-dark-faint: rgba(255, 255, 255, .45); /* 派生：深面第三阶 */
+
+  /* ── Primary / link / focus（BMW corporate blue 唯一主操作） ── */
+  --primary: #1c69d4;      /* 规格 primary */
+  --primary-active: #0653b6; /* 规格 primary-active（按压） */
+  --on-primary: #ffffff;   /* 规格 on-primary */
+  --link: #1c69d4;         /* 「Learn More」前缀蓝字 → 链接 = 蓝 */
+  --link-hover: #0653b6;   /* 按压方向 = 规格 primary-active（hover 未记录） */
+  --focus-ring: rgba(28, 105, 212, .28); /* 派生：蓝 28% 焦点环 */
+  --primary-veil: rgba(28, 105, 212, .08); /* 派生：蓝 8% 薄纱（configurator 选中 2px 蓝边的面等价） */
+
+  /* ── Semantic（success/warning/error 取规格 Semantic 组原值） ── */
+  --success: #22c55e;      /* 规格 success */
+  --success-halo: 0 0 0 4px rgba(34, 197, 94, .14);
+  --warning: #f59e0b;      /* 规格 warning */
+  --warning-soft: rgba(245, 158, 11, .14); /* 派生：琥珀薄纱 */
+  --error: #dc2626;        /* 规格 error */
+  --error-deep: #b21b1b;   /* 派生：红压深一阶（摘要 code 用） */
+  --info: #1c69d4;         /* info = 蓝（唯一交互色兼信息色） */
+  --info-soft: #e9f2fc;    /* 派生：蓝 6% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（hairline #e6e6e6 / strong #cccccc；无投影） ── */
+  --hairline: #e6e6e6;           /* 规格 hairline：输入/表格/卡描边 */
+  --hairline-soft: #f0f0f0;      /* 派生半步软线（介于 hairline 与白之间） */
+  --hairline-strong: #cccccc;    /* 规格 hairline-strong：强调边/禁用次级按钮 */
+  --hairline-card: #e6e6e6;
+  --hairline-inset: #e6e6e6;
+  --hairline-mid: #f0f0f0;       /* 区块顶分隔 = 软线 */
+  --hairline-rail: #e6e6e6;
+  --hairline-codex: #e6e6e6;
+  --hairline-detail: #e6e6e6;
+  --hairline-json: rgba(255, 255, 255, .14); /* json 深块内缘 = 白 alpha（暗军蓝面上） */
+  --hairline-dashed: #cccccc;    /* 空态虚线 = 强线档 */
+  --hairline-legacy: #cccccc;
+  --hairline-row: #f0f0f0;       /* 行分隔 = 软线（表格外框归 hairline） */
+  --hairline-draft: #cccccc;
+  --bar-value: #cccccc;   /* value-list 左规线 = 中性强线（非彩色条） */
+  --bar-matrix: #cccccc;
+  --bar-summary: #cccccc;
+  --bar-usage: #1c69d4;   /* codex 用量轨 = 蓝（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows（全站无投影；hover = 软板微高亮） ── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: #fafafa;       /* 导航 hover = surface-card 微高亮 */
+  --overlay-line: rgba(0, 0, 0, .07); /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .05);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 无投影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（白软板 + 发丝线框，三根方角平条：深蓝/蓝/墨；形态见片段） ── */
+  --brand-frame-bg: #fafafa;      /* surface-card 软板 */
+  --brand-frame-border: #e6e6e6;  /* 规格 hairline 框 */
+  --brand-frame-shadow: none;     /* 无投影 */
+  --brand-bar-1: #0653b6;         /* primary-active 深蓝（规格色，非 M 条纹） */
+  --brand-bar-2: #1c69d4;         /* BMW corporate blue */
+  --brand-bar-3: #262626;         /* ink 墨（蓝 + 墨 = corporate 二重唱） */
+  --brand-bar-inset: none;        /* 平涂色条，无光效 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;       /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #1c69d4;       /* 当前导航指示 = 蓝（规格 nav-link active 蓝） */
+
+  /* ── 登录页（白卡 + 暗军蓝 hero showcase：规格「dark navy hero band」的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e6e6e6;  /* 白外壳靠发丝线（无投影） */
+  --login-shell-shadow: none;
+  --login-showcase-bg: #1a2129;   /* showcase = surface-dark 暗军蓝 hero 带 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05); /* 极淡网格（车辆摄影底噪替身） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%); /* 均匀淡纹，不遮 hero 文案 */
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #bbbbbb;    /* 规格 on-dark-soft */
+  --login-signal-bg: #262e38;     /* signal = surface-dark-elevated（hero 内嵌卡） */
+  --login-signal-border: rgba(255, 255, 255, .12);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;    /* signal 三平条 = 白（同 brand-mark 形态） */
+  --login-kicker: #bbbbbb;        /* kicker = on-dark-soft 大写宽字距标签（见片段） */
+  --login-heading: #ffffff;       /* hero 标题白 700（见片段） */
+  --login-copy: #bbbbbb;
+  --login-preview-bg: #262e38;    /* 展示板内嵌预览卡 = elevated 阶 */
+  --login-preview-border: rgba(255, 255, 255, .12);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .1);
+  --login-preview-dot: #1c69d4;   /* 数据点 = BMW blue（hero 带上的蓝 CTA 等价） */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .28);
+  --login-foot: #bbbbbb;
+  --login-card-kicker: #6b6b6b;   /* 白卡侧 eyebrow = muted */
+  --login-card-heading: #262626;
+  --login-card-copy: #6b6b6b;
+  --login-notice-border: rgba(28, 105, 212, .28); /* info 通知 = 蓝薄纱 + 软线（与 antd colorInfoBg 同族） */
+  --login-notice-bg: #e9f2fc;
+  --login-notice-ink: #3c3c3c;
+  --login-label: #3c3c3c;
+  --login-input-border: #cccccc;  /* 规格 text-input：1px hairline 系描边 */
+  --login-input-border-hover: #262626; /* 规格：focus 边框转 ink */
+  --login-primary: #1c69d4;       /* 主 CTA = BMW blue 矩形 */
+  --login-primary-active: #0653b6;
+}
+
+/* ============================================================
+   bmw 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="bmw"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 蓝选区 / 蓝 2px 焦点环（「engineered precision」） ── */
+[data-theme="bmw"] ::selection { background: rgba(28, 105, 212, .18); }
+[data-theme="bmw"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 系统滚动条：细、hairline-strong 灰、方角 ── */
+[data-theme="bmw"] * { scrollbar-width: thin; scrollbar-color: #cccccc transparent; }
+[data-theme="bmw"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="bmw"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="bmw"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #cccccc; }
+[data-theme="bmw"] ::-webkit-scrollbar-thumb:hover { background: #9a9a9a; }
+
+/* ── 按钮标签：0.5px 追字（规格 typography.button 14/700/0.5px；字重 700 由 antd 承担） ── */
+[data-theme="bmw"] .ant-btn { letter-spacing: .5px; }
+
+/* ── 大写机加工标签（规格 label-uppercase：13/700/1.5px「LEARN MORE」语声） ── */
+[data-theme="bmw"] .page-heading__eyebrow,
+[data-theme="bmw"] .panel-kicker,
+[data-theme="bmw"] .section-label {
+  color: var(--mute);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* ── 表头：mute 大写机加工丝印（规格「between table rows」发丝线由令牌承担） ── */
+[data-theme="bmw"] .admin-table .ant-table-thead > tr > th {
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ── brand-mark 重绘：白软板 + 发丝线框内三根方角平条
+      （深蓝/蓝/墨 —— corporate 二重唱；M 三色条纹归 bmw-m，此处不出现） ── */
+[data-theme="bmw"] .brand-mark { background: var(--brand-frame-bg); border-color: var(--brand-frame-border); box-shadow: none; }
+[data-theme="bmw"] .brand-mark span { border-radius: 0; box-shadow: none; }
+[data-theme="bmw"] .brand-mark span:nth-child(1) { opacity: 1; background: var(--brand-bar-1); }
+[data-theme="bmw"] .brand-mark span:nth-child(2) { background: var(--brand-bar-2); }
+[data-theme="bmw"] .brand-mark span:nth-child(3) { background: var(--brand-bar-3); }
+[data-theme="bmw"] .brand-mark::after { display: none; }
+
+/* ── 登录 showcase：暗军蓝 hero 面大标题 = 白 700（规格 display 语声，副句 sentence case） ── */
+[data-theme="bmw"] .login-page__showcase-copy h2 { font-weight: 700; letter-spacing: 0; }
+[data-theme="bmw"] .login-page__showcase-copy > span,
+[data-theme="bmw"] .login-page__card-heading > span {
+  color: var(--login-kicker);
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* ── 登录 signal：brand-mark 同款方角白平条（elevated 军蓝条座由令牌承担） ── */
+[data-theme="bmw"] .login-page__signal { box-shadow: none; }
+[data-theme="bmw"] .login-page__signal span { border-radius: 0; background: #ffffff; }
+
+/* ── 登录卡片：输入/主 CTA 对齐规格 48px 触达高（规格 text-input height 48 / button height 48） ── */
+[data-theme="bmw"] .login-page__card .ant-input,
+[data-theme="bmw"] .login-page__card .ant-input-affix-wrapper { min-height: 48px; }
+[data-theme="bmw"] .login-page__card .ant-btn-primary { height: 48px; }

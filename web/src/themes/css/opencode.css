@@ -1,0 +1,300 @@
+/* ============================================================
+   opencode 主题令牌块 —— 规格驱动（opencode 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   OpenCode 设计语言（终端原生 manpage 美学；亮色勘误：画布 #fdfcfc）：
+   - 全站 100% Berkeley Mono（禁 sans）→ 规格替代栈 JetBrains → Plex → 系统等宽
+   - 暖奶油画布 #fdfcfc 即唯一正文底；卡面不分层（canvas-card 同面），
+     1px 暖调发丝线 rgba(15,0,0,.12) 分层，强线 hairline-strong #646262
+   - 表面三阶：soft #f8f7f7（输入/交替行）→ card #f1eeee（snippet/禁用/轨）
+     → dark #201d1d（hero TUI 暗面 = json 卡与 tooltip 的反转时刻）
+     + elevated #302c2c（tui-prompt-row = 登录 signal/预览面）
+   - 文字四阶坍缩：ink #201d1d / body #424245 / mute #646262（+stone #6e6e73）
+     / ash #9a9898；暗面 on-dark = 奶油 #fdfcfc、次级 = ash（TUI mockup 原文）
+   - 墨即品牌：--primary #201d1d（CTA 墨底奶油字）active #0f0000（ink-deep）；
+     链接 = 墨 + 下划线表意（蓝不作链接）
+   - 语义板 = Apple HIG ramp 照单（accent #007aff / danger #ff3b30 /
+     warning #ff9f0a / success #30d158），归 in-TUI 数据语境
+   - 圆角二值律：交互件 4px / 容器 0px；零阴影零渐零光晕（focus = 1px 墨边平信号）
+   骨架表达不了的形态（brand-mark 像素块字标、线钮 hairline-strong 边、
+   当前导航 2px ash 下划线、[+] 括号 kicker、登录 TUI showcase）见块后片段。
+   ============================================================ */
+[data-theme="opencode"] {
+  /* ── Typography ───────────────────────────── */
+  /* Berkeley Mono（商业字体禁外部加载）→ 规格替代栈；
+     sans/display 同栈 —— 规格「no sans-serif anywhere in the chrome」 */
+  --font-sans: "Berkeley Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "PingFang SC", "Microsoft YaHei", monospace;
+  --font-mono: "Berkeley Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "PingFang SC", "Microsoft YaHei", monospace;
+  --font-display: "Berkeley Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "PingFang SC", "Microsoft YaHei", monospace;
+
+  /* ── Radius（规格二值律：交互 4px / 容器 0px；full 只给头像） ── */
+  --radius-xs: 4px;    /* term-hint focus = 交互件档 */
+  --radius-soft: 4px;  /* 登录预览小色块 = badge 档 */
+  --radius-sm: 4px;    /* 内嵌小块 / sparkline 提示 = 交互件档 */
+  --radius-md: 0px;    /* 行卡 = list-row 容器直角 */
+  --radius-lg: 0px;    /* 指标卡 = chart-tile 容器直角 */
+  --radius-xl: 0px;    /* 面板 = section 容器直角 */
+  --radius-brand: 0px; /* brand-mark = 像素块字标直角 */
+  --radius-pill: 4px;  /* 迷你徽标 = badge-news 4px（无药丸） */
+  --radius-panel: 0px; /* 登录外壳 = hero TUI mockup 直角 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #fdfcfc;             /* 暖奶油：唯一正文底（亮色勘误定案） */
+  --canvas-soft: #f8f7f7;        /* Soft Surface：输入面/交替行染 */
+  --canvas-card: #fdfcfc;        /* 卡 = 画布同面（规格「every card」），发丝线分层 */
+  --canvas-dark: #201d1d;        /* hero TUI 暗面 = json pre 反转时刻（surface-dark 同值） */
+  --surface-sidebar: #fdfcfc;    /* 侧栏 = primary-nav 画布底 */
+  --surface-bar: rgba(253, 252, 252, .92); /* 顶栏 = 画布 + 暖发丝下缘 */
+  --surface-inset: #f8f7f7;      /* 卡内交互/内嵌面 = soft */
+  --surface-matrix: #f8f7f7;
+  --surface-tint: #f8f7f7;       /* 行 hover = 交替行染（规格「alternating row tint」） */
+  --surface-rail: #f1eeee;       /* 状态轨 = surface-card 深一档 */
+  --surface-detail: #f8f7f7;     /* 详情嵌面 = soft（画布同面卡需要可见内层） */
+  --surface-chip: #f1eeee;       /* chip = install-snippet 面 */
+  --surface-legacy: #f8f7f7;
+  --surface-draft: #f1eeee;
+  --surface-empty: #f8f7f7;
+  --surface-json-bar: #f1eeee;   /* json 头条 = install-snippet 面 */
+  --tooltip-bg: #201d1d;         /* 浮层 = TUI 暗面（终端时刻） */
+
+  /* ── Ink & text ladder（坍缩为 Ink/Charcoal-Body/Mute-Stone/Ash 四级） ── */
+  --ink: #201d1d;
+  --ink-strong: #201d1d;
+  --ink-display: #201d1d;
+  --ink-heading: #201d1d;
+  --ink-value: #201d1d;
+  --ink-repo: #201d1d;
+  --ink-step: #201d1d;
+  --ink-label-strong: #201d1d;
+  --ink-label: #201d1d;
+  --ink-row: #201d1d;
+  --ink-list: #302c2c;  /* value-list li = Charcoal（softer body，规格原文） */
+  --ink-data: #201d1d;
+  --ink-field: #201d1d;
+  --ink-rail: #201d1d;
+  --ink-rail-value: #201d1d;
+  --ink-secret: #424245; /* secret-label = Body 级 */
+  --ink-chip: #302c2c;   /* duration 数值 = Charcoal */
+  --body: #424245;       /* Body：默认正文（规格段落色） */
+  --body-alt: #302c2c;   /* 次级 = Charcoal */
+  --body-soft: #646262;  /* 占比卡小注 = Mute */
+  --mute: #646262;       /* Mute：标签/元数据/tab 默认态 */
+  --mute-deep: #424245;  /* 指标卡标题抬回 Body */
+  --mute-inline: #646262;
+  --mute-caption: #646262;
+  --mute-intro: #424245; /* 配置导语 = 正文级 */
+  --mute-terse: #646262;
+  --mute-quiet: #646262;
+  --mute-soft: #6e6e73;  /* Stone：最轻工具文字 */
+  --mute-dim: #646262;
+  --mute-draft: #646262;
+  --mute-json: #646262;
+  --mute-matrix: #646262;
+  --faint: #9a9898;      /* Ash：禁用/占位（规格三级文字） */
+  --faint-alt: #9a9898;
+  --faint-soft: #6e6e73; /* Stone：面包屑档 */
+  --faint-ghost: #9a9898;
+  --faint-hint: #9a9898;
+  --faint-meta: #6e6e73;
+  --faint-note: #9a9898;
+  --faint-empty: #9a9898;
+  --on-dark: #fdfcfc;    /* 暗面字 = 奶油（规格 on-primary/on-dark 同源） */
+  --on-dark-soft: rgba(253, 252, 252, .82); /* json 暗块文字 */
+  --on-dark-faint: #9a9898; /* 暗面次级 = Ash（TUI mockup 次级色，规格原文） */
+
+  /* ── Primary / link / focus ── */
+  --primary: #201d1d;        /* 墨即品牌（主 CTA 墨底奶油字） */
+  --primary-active: #0f0000; /* Ink Deep：规格按压态字面 */
+  --on-primary: #fdfcfc;     /* 奶油字（规格 on-primary） */
+  --link: #201d1d;           /* 链接 = 墨 + 下划线表意（蓝不作链接） */
+  --link-hover: #0f0000;
+  --focus-ring: rgba(32, 29, 29, .22); /* focus = 1px 墨边平信号（规格「no halo, no glow」） */
+  --primary-veil: rgba(32, 29, 29, .04); /* 当前项近无底（button-tab-active 透明底） */
+
+  /* ── Semantic（Apple HIG ramp 照单，归 in-TUI 数据语境） ── */
+  --success: #30d158;
+  --success-halo: none;  /* 平信号体系，dot 无光环 */
+  --warning: #ff9f0a;
+  --warning-soft: rgba(255, 159, 10, .14);
+  --error: #ff3b30;
+  --error-deep: #d70015; /* danger-hover 同值 */
+  --info: #007aff;       /* Apple Blue = 主信息信号 */
+  --info-soft: rgba(0, 122, 255, .09);
+
+  /* ── Hairlines & bars（暖调 1px 分层 + 强线 #646262；条 = 强线/蓝） ── */
+  --hairline: rgba(15, 0, 0, 0.12);      /* Hairline：唯一分层线（暖半透） */
+  --hairline-soft: rgba(15, 0, 0, 0.08); /* 派生：更浅一档（同 tint 家族） */
+  --hairline-strong: #646262;            /* Hairline Strong：tab 下缘/强线 */
+  --hairline-card: rgba(15, 0, 0, 0.12);
+  --hairline-inset: rgba(15, 0, 0, 0.12);
+  --hairline-mid: rgba(15, 0, 0, 0.12);
+  --hairline-rail: rgba(15, 0, 0, 0.12);
+  --hairline-codex: rgba(15, 0, 0, 0.12);
+  --hairline-detail: rgba(15, 0, 0, 0.12);
+  --hairline-json: rgba(15, 0, 0, 0.12);
+  --hairline-dashed: #646262; /* 空态虚线 = 强线档（需可见） */
+  --hairline-legacy: #646262;
+  --hairline-row: rgba(15, 0, 0, 0.12);
+  --hairline-draft: #646262;
+  --bar-value: #646262;  /* value-list 左规线 = 强线（数据墨） */
+  --bar-matrix: #646262;
+  --bar-summary: #646262;
+  --bar-usage: #007aff;  /* 用量轨 = Apple Blue（TUI 命令高亮的数据用法） */
+
+  /* ── Overlays & shadows（暖墨 alpha 家族；零阴影） ── */
+  --overlay-faint: rgba(15, 0, 0, 0.03);
+  --overlay-soft: rgba(15, 0, 0, 0.04); /* nav hover = 微染 */
+  --overlay-line: rgba(15, 0, 0, 0.08); /* nav 分组线 */
+  --overlay-medium: rgba(15, 0, 0, 0.07);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零值而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（像素块 ASCII 字标：三墨条直角重绘，形态见片段） ── */
+  --brand-frame-bg: transparent;  /* 无框：条块裸排如字符胞 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #201d1d;        /* 三根墨色像素条（block-pixel wordmark） */
+  --brand-bar-2: #201d1d;
+  --brand-bar-3: #201d1d;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;      /* 角标隐藏（片段 display none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #9a9898;      /* 当前导航指示 = 2px ash 下划线（button-tab-active） */
+
+  /* ── 登录页（奶油白卡 + surface-dark TUI showcase：hero mockup 唯一暗面时刻） ── */
+  --login-bg: #fdfcfc;
+  --login-shell-border: rgba(15, 0, 0, 0.12); /* 1px 暖发丝线 */
+  --login-shell-shadow: none;      /* 零阴影 */
+  --login-showcase-bg: #201d1d;    /* showcase = hero TUI mockup 暗面 */
+  --login-showcase-ink: #fdfcfc;
+  --login-grid-line: rgba(253, 252, 252, .05); /* 稀疏终端网格 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #fdfcfc;
+  --login-brand-mute: #9a9898;     /* ash = TUI 次级注记 */
+  --login-signal-bg: #302c2c;      /* signal = tui-prompt-row elevated 面 */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #fdfcfc;     /* signal 三条 = 奶油像素条 */
+  --login-kicker: #9a9898;         /* kicker = ash 小签（等宽自然字距） */
+  --login-heading: #fdfcfc;
+  --login-copy: rgba(253, 252, 252, .74); /* 暗面副文 = 奶油衰减 */
+  --login-preview-bg: #302c2c;     /* 预览卡 = TUI 内嵌 prompt 面 */
+  --login-preview-border: rgba(253, 252, 252, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(253, 252, 252, .1);
+  --login-preview-dot: #007aff;    /* 数据点 = TUI 高亮蓝 */
+  --login-preview-dot-soft: #9a9898;
+  --login-preview-label: #9a9898;
+  --login-preview-row-line: rgba(253, 252, 252, .08);
+  --login-preview-row-ink: rgba(253, 252, 252, .85);
+  --login-preview-chip-ink: #fdfcfc;
+  --login-preview-chip-bg: rgba(253, 252, 252, .12);
+  --login-preview-bar: rgba(253, 252, 252, .3);
+  --login-foot: #646262;
+  --login-card-kicker: #646262;
+  --login-card-heading: #201d1d;
+  --login-card-copy: #646262;
+  --login-notice-border: rgba(0, 122, 255, .3); /* 公告条 = 信息蓝染（accent 的信息用法） */
+  --login-notice-bg: rgba(0, 122, 255, .07);
+  --login-notice-ink: #424245;
+  --login-label: #424245;
+  --login-input-border: rgba(15, 0, 0, 0.12); /* 输入 = soft 面 + 暖发丝线 */
+  --login-input-border-hover: #646262;        /* hover = 强线 */
+  --login-primary: #201d1d;      /* 墨底奶油字 CTA（4px 方角） */
+  --login-primary-active: #0f0000;
+}
+
+/* ============================================================
+   opencode 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="opencode"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 选区 / 焦点：墨底奶油字极性反转；focus = 1px 墨边平信号（no halo, no glow） ── */
+[data-theme="opencode"] ::selection { background: #201d1d; color: #fdfcfc; }
+[data-theme="opencode"] :focus-visible { outline: 1px solid #201d1d; outline-offset: 1px; }
+
+/* ── 输入件：soft 面 + 暖发丝线；focus 翻回画布 + 1px 墨边（text-input-focused 规格
+      「background flips to canvas, border becomes ink」），全态无光晕 ── */
+[data-theme="opencode"] .ant-input,
+[data-theme="opencode"] .ant-input-affix-wrapper { background: #f8f7f7; }
+[data-theme="opencode"] .ant-input:focus,
+[data-theme="opencode"] .ant-input-affix-wrapper-focused,
+[data-theme="opencode"] .ant-input-affix-wrapper:focus-within { background: #fdfcfc; border-color: #201d1d; box-shadow: none; }
+
+/* ── 线钮：1px hairline-strong 边（button-secondary 规格；fill 钮无边） ── */
+[data-theme="opencode"] .ant-btn-default { border-color: #646262; }
+
+/* ── 粗字重排版：标题/数值一律 700（规格 display-xl 与 heading-md 同 700，靠字号分层） ── */
+[data-theme="opencode"] .brand-block strong,
+[data-theme="opencode"] .panel-heading h2,
+[data-theme="opencode"] .business-outcomes__card > span,
+[data-theme="opencode"] .business-outcomes__card > strong,
+[data-theme="opencode"] .ratio-card__title,
+[data-theme="opencode"] .ratio-card > strong,
+[data-theme="opencode"] .codex-metric > strong,
+[data-theme="opencode"] .codex-token-ledger strong,
+[data-theme="opencode"] .configuration-status-rail > div > strong,
+[data-theme="opencode"] .configuration-summary-grid strong,
+[data-theme="opencode"] .configuration-step-copy h2,
+[data-theme="opencode"] .configuration-summary h2,
+[data-theme="opencode"] .configuration-inline-title h3,
+[data-theme="opencode"] .connector-configuration-step__heading h3,
+[data-theme="opencode"] .repo-row strong,
+[data-theme="opencode"] .intent-row strong,
+[data-theme="opencode"] .duration-card strong,
+[data-theme="opencode"] .duration-section__heading strong,
+[data-theme="opencode"] .value-list__title,
+[data-theme="opencode"] .connector-watch__item strong,
+[data-theme="opencode"] .detail-section h3,
+[data-theme="opencode"] .admin-table .ant-table-thead > tr > th,
+[data-theme="opencode"] .audit-json > summary,
+[data-theme="opencode"] .login-page__brand strong,
+[data-theme="opencode"] .login-page__showcase-copy h2,
+[data-theme="opencode"] .login-page__card h1 { font-weight: 700; }
+
+/* ── eyebrow / kicker：等宽 700 小签，自然字距零变形（规格「zero letter-spacing」）；
+      panel-kicker 前缀 ASCII 括号标记 [+]（规格「the brackets are the icons」） ── */
+[data-theme="opencode"] .panel-kicker::before { content: "[+] "; color: #646262; }
+[data-theme="opencode"] .page-heading__eyebrow,
+[data-theme="opencode"] .panel-kicker,
+[data-theme="opencode"] .section-label { color: var(--mute); font-family: var(--font-mono); font-weight: 700; letter-spacing: 0; text-transform: none; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="opencode"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-mono); font-size: 15px; font-weight: 700; line-height: 1.5; letter-spacing: 0; }
+
+/* ── 导航：当前项 = 透明底 + 墨字 + 2px ash 下划线（button-tab-active 规格字面） ── */
+[data-theme="opencode"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: transparent; box-shadow: inset 0 -2px 0 #9a9898; }
+[data-theme="opencode"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark 重绘：像素块 ASCII 字标 —— 三根墨色像素条直角裸排
+      （block-pixel wordmark 母题），去框去点去光影 ── */
+[data-theme="opencode"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="opencode"] .brand-mark span { width: 7px; border-radius: 0; background: #201d1d; box-shadow: none; }
+[data-theme="opencode"] .brand-mark span:nth-child(1) { height: 42%; opacity: 1; }
+[data-theme="opencode"] .brand-mark::after { display: none; }
+
+/* ── 详情格：卡与画布同面（奶油 on 奶油）→ 嵌套面回落 soft #f8f7f7 保持可见 ── */
+[data-theme="opencode"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 系统滚动条：细、ash、方角（直角语汇） ── */
+[data-theme="opencode"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="opencode"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #9a9898; }
+[data-theme="opencode"] ::-webkit-scrollbar-thumb:hover { background: #646262; }
+[data-theme="opencode"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="opencode"] * { scrollbar-width: thin; scrollbar-color: #9a9898 transparent; }
+
+/* ── 登录 showcase：TUI mockup —— 标题前缀终端提示符 "$ "，规格 display-xl
+      38px/700/1.5；kicker = 等宽 12px 小签自然字距 ── */
+[data-theme="opencode"] .login-page__showcase-copy h2::before { content: "$ "; color: #9a9898; }
+[data-theme="opencode"] .login-page__showcase-copy h2 { font-size: 38px; font-weight: 700; line-height: 1.5; }
+[data-theme="opencode"] .login-page__showcase-copy > span,
+[data-theme="opencode"] .login-page__card-heading > span { font-family: var(--font-mono); font-weight: 700; font-size: 12px; line-height: 1.5; letter-spacing: 0; }
+
+/* ── 登录 signal：TUI prompt 行 —— elevated 面 4px 直角 + 奶油像素条 ── */
+[data-theme="opencode"] .login-page__signal { border: none; border-radius: 4px; }
+[data-theme="opencode"] .login-page__signal span { border-radius: 0; }
+
+/* ── 登录卡片：输入 40px / 主 CTA 36px 触达高（text-input height 40 / button-md
+      height 36 规格），输入继承上方 soft 面翻面 focus ── */
+[data-theme="opencode"] .login-page__card .ant-input,
+[data-theme="opencode"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+[data-theme="opencode"] .login-page__card .ant-btn-primary { height: 36px; }

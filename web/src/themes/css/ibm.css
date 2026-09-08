@@ -1,0 +1,270 @@
+/* ============================================================
+   ibm 主题令牌块 —— 规格驱动（ibm 设计语言），无参考实现。
+   IBM = Carbon Design System：白画布 + 炭墨 + 唯一强调色 IBM Blue。
+   映射规则：按 styles/index.css 中每条 var() 消费规则的角色，
+   取设计语言 正文同类角色的字面值；规格没给的从 Carbon 设计语言推导。
+   值来源速查（规格 frontmatter / 正文提取）：
+     #0F62FE IBM Blue（唯一品牌色）→ --primary/--link/--info/--bar-usage/--nav-indicator
+     #0050E6 blue-hover / #002D9C blue-80 / #0043CE blue-60 → 蓝三态
+     #FFFFFF canvas（主导底）→ 画布/卡/侧栏三面
+     #F4F4F4 surface-1（灰面提升、表头、行 hover）→ inset/matrix/tint 等内嵌灰面
+     #E0E0E0 surface-2 = hairline（卡/输入/分隔 1px 发丝线）→ 发丝线主档
+     #161616 ink / inverse-canvas（炭墨标题 + 唯一反转面）→ ink 阶顶/json 暗面/tooltip/登录 showcase
+     #525252 ink-muted / #8C8C8C ink-subtle → 文字阶梯坍缩为炭灰三级
+     #C6C6C6 inverse-ink-muted → 暗面上的次级文字
+     #24A148 / #F1C21B / #DA1E28 → Carbon green-50 / yellow-30 / red-60 语义三色
+   派生值（规格未给、按 Carbon 语言推导，均在行内注明）：
+     语义文字位 warning #96780E = yellow-30 压深（Carbon 只把黄当图形色）
+     hairline-soft #EAEAEA / hairline-strong #A8A8A8 = gray-20 与 gray-40 档位推导
+     登录暗面蓝薄纱（blue-40 #78A9FF 家族）= 规格「soft blue gradient backdrop」的暗面等价
+   骨架表达不了的形态（brand-mark 三 span 横条纹 IBM rebus、eyebrow 句Case 法则、
+   展示位 300 轻字重、输入灰面 + 2px 蓝下划线 focus、登录 showcase 蓝晕）见块后片段。
+   ============================================================ */
+[data-theme="ibm"] {
+  /* ── Typography ───────────────────────────── */
+  /* Plex 家族三角色分工：Sans 正文 / Mono 代码（规格：Mono 只在产品面，本仓即产品面）/
+     Serif 数值展示位（规格 hierarchy 全 Sans；数值位取 Plex Serif 作企业编辑气质） */
+  --font-sans: "IBM Plex Sans", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", Consolas, monospace;
+  --font-display: "IBM Plex Serif", "IBM Plex Sans", Georgia, serif;
+
+  /* ── Radius（0 默认；2 小徽章；9999 产品面状态药丸） ── */
+  --radius-xs: 2px;      /* term-hint focus = rounded.xs 小徽章 */
+  --radius-soft: 2px;    /* 登录预览小色块 */
+  --radius-sm: 2px;      /* 内嵌小块（近方角） */
+  --radius-md: 0px;      /* 行卡 = flat square */
+  --radius-lg: 0px;      /* 指标卡 = flat square */
+  --radius-xl: 0px;      /* 面板 = flat square */
+  --radius-brand: 0px;   /* brand-mark / 登录 signal */
+  --radius-pill: 9999px; /* 迷你徽标 = 产品面状态药丸（规格 rounded.pill） */
+  --radius-panel: 0px;   /* 登录外壳 = flat square */
+
+  /* ── Canvas & surfaces（白画布 + surface-1 灰面 + 炭墨反转面） ── */
+  --canvas: #ffffff;             /* canvas：默认页面底 */
+  --canvas-soft: #f4f4f4;        /* surface-1：表头/交替带/行 hover */
+  --canvas-card: #ffffff;        /* 卡片白，靠 1px 发丝线分层 */
+  --canvas-dark: #161616;        /* inverse-canvas：json pre 凹面 = 炭墨反转 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 top-nav 白底发丝线） */
+  --surface-bar: #ffffff;        /* 顶栏实心白 + 底缘发丝线（Carbon 无磨砂） */
+  --surface-inset: #f4f4f4;      /* 输入/内嵌面 = surface-1（Carbon 字段灰面） */
+  --surface-matrix: #f4f4f4;
+  --surface-tint: #f4f4f4;       /* 行 hover = surface lift */
+  --surface-rail: #f4f4f4;
+  --surface-detail: #f4f4f4;
+  --surface-chip: #f4f4f4;
+  --surface-legacy: #f4f4f4;
+  --surface-draft: #e0e0e0;      /* draft 更沉一档 = surface-2 */
+  --surface-empty: #f4f4f4;
+  --surface-json-bar: #f4f4f4;   /* json 头条 = surface-1 */
+  --tooltip-bg: #161616;         /* tooltip = 炭墨反转面白字 */
+
+  /* ── Ink & text ladder（坍缩为 规格 三级炭灰 + gray-80 插阶） ── */
+  --ink: #161616;
+  --ink-strong: #161616;
+  --ink-display: #161616;
+  --ink-heading: #161616;
+  --ink-value: #161616;
+  --ink-repo: #161616;
+  --ink-step: #161616;
+  --ink-label-strong: #161616;
+  --ink-label: #161616;
+  --ink-row: #161616;
+  --ink-list: #161616;
+  --ink-data: #161616;
+  --ink-field: #161616;
+  --ink-rail: #161616;
+  --ink-rail-value: #161616;
+  --ink-secret: #161616;
+  --ink-chip: #161616;
+  --body: #161616;       /* Carbon 正文 = gray-100 */
+  --body-alt: #161616;
+  --body-soft: #525252;  /* 次级正文 = ink-muted */
+  --mute: #525252;       /* ink-muted：meta/副标题级 */
+  --mute-deep: #393939;  /* 指标卡标题抬回 gray-80 档 */
+  --mute-inline: #525252;
+  --mute-caption: #525252;
+  --mute-intro: #393939; /* 配置导语 = gray-80 正文级 */
+  --mute-terse: #525252;
+  --mute-quiet: #525252;
+  --mute-soft: #525252;
+  --mute-dim: #525252;
+  --mute-draft: #525252;
+  --mute-json: #525252;
+  --mute-matrix: #525252;
+  --faint: #8c8c8c;      /* ink-subtle：占位/禁用级 */
+  --faint-alt: #8c8c8c;
+  --faint-soft: #8c8c8c;
+  --faint-ghost: #8c8c8c;
+  --faint-hint: #8c8c8c;
+  --faint-meta: #8c8c8c;
+  --faint-note: #8c8c8c;
+  --faint-empty: #8c8c8c;
+  --on-dark: #ffffff;    /* inverse-ink：反转面白字 */
+  --on-dark-soft: #c6c6c6; /* inverse-ink-muted：json 暗面正文 */
+  --on-dark-faint: #8c8c8c; /* sparkline 提示日期（gray-50 档） */
+
+  /* ── Primary / link / focus（IBM Blue 一族；蓝稀缺：链接/CTA/focus） ── */
+  --primary: #0f62fe;    /* IBM Blue：唯一品牌色 */
+  --primary-active: #002d9c; /* blue-80 按压态 */
+  --on-primary: #ffffff;
+  --link: #0f62fe;       /* 链接 = 蓝（规格：蓝承载全部链接） */
+  --link-hover: #0043ce; /* blue-60 hovered link */
+  --focus-ring: rgba(15, 98, 254, .32); /* 蓝 32% 焦点环（片段改 2px 实线） */
+  --primary-veil: rgba(15, 98, 254, .08); /* 当前导航 = 蓝 8% 薄纱 + 蓝指示条 */
+
+  /* ── Semantic（Carbon 语义原文；warning 文字位压深见 slots/antd 注） ── */
+  --success: #24a148;    /* green-50 */
+  --success-halo: 0 0 0 4px rgba(36, 161, 72, .12); /* context-dot 微光环 */
+  --warning: #96780e;    /* 派生：yellow-30 压深至文字可读档 */
+  --warning-soft: #fcf4d6; /* 派生：Carbon yellow-10 薄纱 */
+  --error: #da1e28;      /* red-60 */
+  --error-deep: #a51920; /* 派生：red-70 */
+  --info: #0f62fe;       /* info = primary（规格 原文） */
+  --info-soft: #edf5ff;  /* 派生：blue-10 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（gray-20 #E0E0E0 主档；强弱两档推导） ── */
+  --hairline: #e0e0e0;         /* 规格 hairline：卡/输入/分隔 */
+  --hairline-soft: #eaeaea;    /* 派生：gray-20 与白之间 */
+  --hairline-strong: #a8a8a8;  /* 派生：gray-40（滚动条/空态虚线） */
+  --hairline-card: #e0e0e0;
+  --hairline-inset: #e0e0e0;
+  --hairline-mid: #e0e0e0;
+  --hairline-rail: #e0e0e0;
+  --hairline-codex: #e0e0e0;
+  --hairline-detail: #e0e0e0;
+  --hairline-json: #e0e0e0;
+  --hairline-dashed: #a8a8a8;  /* 空态虚线需要可见 = gray-40 */
+  --hairline-legacy: #a8a8a8;
+  --hairline-row: #e0e0e0;
+  --hairline-draft: #a8a8a8;
+  --bar-value: #a8a8a8;   /* value-list 左规线 = 灰（非彩色条） */
+  --bar-matrix: #a8a8a8;
+  --bar-summary: #a8a8a8;
+  --bar-usage: #0f62fe;   /* 用量轨 = IBM Blue（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows（炭墨 alpha 家族；零阴影体系） ── */
+  --overlay-faint: rgba(22, 22, 22, .04);
+  --overlay-soft: #f4f4f4;  /* nav hover = surface lift 灰面（规格 Elevation 2） */
+  --overlay-line: #e0e0e0;  /* nav 分组线 = 发丝线 */
+  --overlay-medium: #e0e0e0; /* hover 加重一档 = surface-2 */
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（去框去点，三 span 横向炭墨条纹 = IBM rebus，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #161616;
+  --brand-bar-2: #161616;
+  --brand-bar-3: #161616;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;   /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #0f62fe;  /* 当前导航指示条 = IBM Blue（focus 同源色） */
+
+  /* ── 登录页（白卡 + 炭墨 showcase = 规格 footer 反转面的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e0e0e0;
+  --login-shell-shadow: none;  /* 零阴影 */
+  --login-showcase-bg: #161616; /* showcase = inverse-canvas 炭墨 hero 面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05); /* 极淡工程网格（geometric mesh 回声） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #c6c6c6;  /* inverse-ink-muted */
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .3);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* signal 三横条 = 白（同 brand-mark 形态） */
+  --login-kicker: #78a9ff;      /* 派生：blue-40，暗面上的 IBM 蓝 eyebrow */
+  --login-heading: #ffffff;     /* hero 标题白字（300 轻字重见片段） */
+  --login-copy: #c6c6c6;
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .16);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #78a9ff;      /* 数据点 = blue-40 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #78a9ff; /* chip = blue-40 蓝染 */
+  --login-preview-chip-bg: rgba(120, 169, 255, .16);
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: #8c8c8c;
+  --login-card-kicker: #0f62fe; /* 白卡侧 eyebrow = IBM Blue（蓝稀缺的合法位） */
+  --login-card-heading: #161616;
+  --login-card-copy: #525252;
+  --login-notice-border: rgba(15, 98, 254, .3); /* info 通知 = blue-10 薄纱 + 发丝线 */
+  --login-notice-bg: #edf5ff;
+  --login-notice-ink: #393939;
+  --login-label: #393939;
+  --login-input-border: #8d8d8d;   /* 派生：gray-50 输入边（Carbon 字段边） */
+  --login-input-border-hover: #161616; /* 规格 hairline-strong 炭墨 hover */
+  --login-primary: #0f62fe;        /* 主 CTA = IBM Blue */
+  --login-primary-active: #002d9c;
+}
+
+/* ============================================================
+   ibm 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="ibm"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：蓝薄纱选区 / Carbon focus（2px 实线蓝 + 偏移） ── */
+[data-theme="ibm"] ::selection { background: rgba(15, 98, 254, .16); }
+[data-theme="ibm"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── Carbon 精密细节：按钮/正文 0.16px 正字距（规格「Don't remove it」） ── */
+[data-theme="ibm"] .ant-btn { letter-spacing: .16px; }
+
+/* ── eyebrow / kicker：句Case 14px（规格「Carbon resists all-caps tracked eyebrows」） ── */
+[data-theme="ibm"] .page-heading__eyebrow,
+[data-theme="ibm"] .panel-kicker,
+[data-theme="ibm"] .section-label { color: #525252; font: 400 12px/1.3 var(--font-sans); letter-spacing: .16px; text-transform: none; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="ibm"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: 0; }
+
+/* ── brand-mark 重绘：IBM 8-bar rebus 的三横条近似 —— 去框去点去光影，
+      三 span 收敛为三根全宽炭墨横条纹（方角） ── */
+[data-theme="ibm"] .brand-mark { flex-direction: column; align-items: stretch; justify-content: center; gap: 3px; padding: 8px 7px; background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="ibm"] .brand-mark span { width: 100%; height: 3px; border-radius: 0; background: #161616; box-shadow: none; opacity: 1; }
+[data-theme="ibm"] .brand-mark::after { display: none; }
+
+/* ── Carbon 输入语汇：gray-10 字段灰面 + focus 2px 蓝下划线（签名 focus 处理） ── */
+[data-theme="ibm"] .ant-input,
+[data-theme="ibm"] .ant-input-affix-wrapper,
+[data-theme="ibm"] .ant-select-selector,
+[data-theme="ibm"] .ant-input-number { background-color: #f4f4f4; }
+[data-theme="ibm"] .ant-input:focus,
+[data-theme="ibm"] .ant-input-affix-wrapper-focused,
+[data-theme="ibm"] .ant-select-focused .ant-select-selector { border-color: #0f62fe; box-shadow: inset 0 -2px 0 0 #0f62fe; }
+
+/* ── 表头：surface-1 底 + 600 字重（Carbon data table 语汇，无大写变换） ── */
+[data-theme="ibm"] .admin-table .ant-table-thead > tr > th { font-weight: 600; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、gray-40、方角 ── */
+[data-theme="ibm"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="ibm"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #a8a8a8; }
+[data-theme="ibm"] ::-webkit-scrollbar-thumb:hover { background: #8c8c8c; }
+[data-theme="ibm"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="ibm"] * { scrollbar-width: thin; scrollbar-color: #a8a8a8 transparent; }
+
+/* ── 登录 showcase：炭墨 hero + 规格「soft blue gradient backdrop」暗面等价
+      （blue-40/blue-80 径向薄纱，唯一被文档化的装饰性渐变） ── */
+[data-theme="ibm"] .login-page__showcase {
+  background:
+    radial-gradient(130% 100% at 88% 0%, rgba(15, 98, 254, .3), transparent 55%),
+    radial-gradient(90% 70% at 0% 100%, rgba(0, 45, 156, .22), transparent 60%),
+    #161616;
+}
+/* 展示标题 = Plex Serif 300 轻 字重签名（display-lg 60px 缩至面板尺度 34px） */
+[data-theme="ibm"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-size: 34px; font-weight: 300; line-height: 1.17; letter-spacing: -0.4px; }
+[data-theme="ibm"] .login-page__card h1 { font-weight: 300; letter-spacing: 0; }
+/* kicker 同 eyebrow 法则：句Case 12px/400（kicker 颜色仍由两侧令牌分别供色） */
+[data-theme="ibm"] .login-page__showcase-copy > span,
+[data-theme="ibm"] .login-page__card-heading > span { font: 400 12px/1.3 var(--font-sans); letter-spacing: .16px; text-transform: none; }
+
+/* ── 登录 signal：同 brand-mark 的三横条白重绘（无框光影，方角） ── */
+[data-theme="ibm"] .login-page__signal { flex-direction: column; align-items: stretch; justify-content: center; gap: 3px; padding: 9px 8px; background: transparent; box-shadow: none; }
+[data-theme="ibm"] .login-page__signal span { width: 100%; height: 3px; border-radius: 0; background: #ffffff; }

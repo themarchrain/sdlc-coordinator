@@ -1,0 +1,278 @@
+/* ============================================================
+   dell-1996 主题令牌块 —— 规格驱动，无参考实现。按角色映射 162 超集令牌。
+
+   时代语言迁移（1996 目录式网页 → 现代 admin 骨架）：
+   - 帧内纯白画布 + 纯白卡片：层级一律 1px 纯黑发丝线（规格 elevation
+     Level 1 hairline = frame-ink）；软投影全关（--shadow-panel 归零）
+   - 顶栏 context-bar = 规格 top-banner 黑色横幅（--surface-bar 黑 +
+     片段文字翻白；live 圆点 = 贴纸黄、focus/电话式强调 = Dell red）
+   - 八色缎带卡色族按角色落位嵌面：表头/指标卡 = pale sage 洗
+     (#e4e8da ← tint-sage)、duration 芯片 = sky、metric 瓦片 = lime、
+     detail 节 = steel、配置导轨 = periwinkle 洗、JSON 面板 = 黑（DOS 面）
+   - 文字：--font-sans 承载正文角色 = Times New Roman（规格 body；
+     宋体 SimSun 兜底 CJK）；UI/导航标签 = Helvetica 片段钉住；
+     展示数字 = Arial Black（--font-display，SimHei 兜底 CJK）
+   - 主操作 = 规格 button-primary 黑底白字（--primary = 帧墨）；
+     Dell red 只给 error / 导航指示条 / 电话式强调（规格 Do：红仅最高注意级）
+   - 全场方角（rounded.none）；灰阶 = GIF 时代抖动灰（#333/#4d4d4d/#666/
+     #808080/#999/#b3b3b3/#ccc）
+   骨架令牌表达不了的形态（黑横幅、品牌贴纸、eyebrow 排版、链接下划线、
+   登录 page-frame 等）见块后专属片段。
+   ============================================================ */
+[data-theme="dell-1996"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: "Times New Roman", Times, SimSun, serif; /* 正文 = Times（规格 Do）*/
+  --font-mono: "Courier New", Courier, monospace;
+  --font-display: "Arial Black", Arial, SimHei, sans-serif; /* 展示层 900 */
+
+  /* ── Radius（rounded.none 全场方角；圆形只留装饰贴纸点） ── */
+  --radius-xs: 0px;      /* 图标提示 focus */
+  --radius-soft: 0px;    /* 登录预览小色块 = 方角贴纸 */
+  --radius-sm: 0px;      /* 内嵌小块 */
+  --radius-md: 0px;      /* 行卡 */
+  --radius-lg: 0px;      /* 指标卡 */
+  --radius-xl: 0px;      /* 面板 */
+  --radius-brand: 0px;   /* brand-mark / 登录 signal = 方角黑框贴纸 */
+  --radius-pill: 0px;    /* 迷你徽标 = 方角小贴纸 */
+  --radius-panel: 0px;   /* 登录外壳 = 方角文件框 */
+
+  /* ── Canvas & surfaces（帧内纯白 + 缎带嵌面色族） ── */
+  --canvas: #ffffff;
+  --canvas-soft: #e4e8da;        /* 表头/指标卡/run-summary = pale sage 洗（tint-sage）*/
+  --canvas-card: #ffffff;
+  --canvas-dark: #000000;        /* json-viewer pre = 黑 DOS 面（兼暗主题徽标底）*/
+  --surface-sidebar: #ffffff;    /* 侧栏 = icon-label-nav 白底 */
+  --surface-bar: #000000;        /* 顶栏 = top-banner 黑色横幅 */
+  --surface-inset: #9ab6c8;      /* duration 芯片 / audit summary = sky 缎带体 */
+  --surface-matrix: #c0d4a7;     /* metric 瓦片 = lime（OptiPlex G 系）*/
+  --surface-tint: rgba(230, 145, 93, 0.18); /* 表格行 hover = peach 洗 */
+  --surface-rail: #e2e5f7;       /* 配置状态导轨 = periwinkle 洗（PowerEdge）*/
+  --surface-detail: #a5b8c0;     /* detail 节 = steel 缎带体（Dimension XPS Pro）*/
+  --surface-chip: #ffffff;       /* people 行卡 = 白 */
+  --surface-legacy: #eff4e8;     /* legacy 值盒 = lime 洗 */
+  --surface-draft: #f2f2f2;      /* draft 徽标 = 抖动灰 */
+  --surface-empty: #ffffff;      /* sparkline 空态 = 白 + 银灰虚线 */
+  --surface-json-bar: #000000;   /* json 条 = 黑横幅 */
+  --tooltip-bg: #000000;         /* sparkline 提示 = 黑框白字 */
+
+  /* ── Ink & text ladder（纯黑墨 + 抖动灰阶） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #000000;
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #333333;
+  --ink-chip: #000000;           /* duration 芯片黑字压 sky 面 */
+  --body: #333333;
+  --body-alt: #4d4d4d;
+  --body-soft: #4d4d4d;
+  --mute: #666666;
+  --mute-deep: #4d4d4d;
+  --mute-inline: #666666;
+  --mute-caption: #666666;
+  --mute-intro: #333333;
+  --mute-terse: #4d4d4d;
+  --mute-quiet: #333333;         /* 表头/audit summary 黑字 */
+  --mute-soft: #666666;
+  --mute-dim: #666666;
+  --mute-draft: #666666;
+  --mute-json: #ffffff;          /* json 黑条白字 */
+  --mute-matrix: #000000;        /* lime 瓦片标签黑字 */
+  --faint: #808080;
+  --faint-alt: #808080;
+  --faint-soft: #666666;
+  --faint-ghost: #808080;
+  --faint-hint: #808080;
+  --faint-meta: #808080;
+  --faint-note: #666666;
+  --faint-empty: #999999;
+  --on-dark: #ffffff;            /* 黑 tooltip / json 面 / 暗徽标文字 */
+  --on-dark-soft: #ffffff;       /* json pre 白字压黑面 */
+  --on-dark-faint: #cccccc;      /* sparkline tip 附注 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #000000;            /* 主操作 = button-primary 黑底白字 */
+  --primary-active: #333333;     /* 抖动灰压深 */
+  --on-primary: #ffffff;
+  --link: #0000ee;               /* 经典 Mosaic/Netscape 蓝（规格 link）*/
+  --link-hover: #0000ee;         /* 时代无 hover 变色，恒色 + 下划线 */
+  --focus-ring: #000000;         /* 硬黑描边（片段钉 2px 实线）*/
+  --primary-veil: rgba(0, 0, 0, 0.06); /* 导航当前项 = 灰洗（文字墨色）*/
+
+  /* ── Semantic（success/warning 规格未给，按时代 HTML 基色推导） ── */
+  --success: #fcc20f;            /* context-dot = 黑横幅上的贴纸黄（phone 位）*/
+  --success-halo: none;          /* 无软光晕（规格 Don't）*/
+  --warning: #8a6a00;            /* yellow-sticker 压深至可读 */
+  --warning-soft: rgba(252, 194, 15, 0.35); /* 贴纸黄洗 */
+  --error: #e91d2a;              /* Dell red = 最高注意级 */
+  --error-deep: #a3121c;
+  --info: #0000ee;               /* inferred-mark = 链接蓝 */
+  --info-soft: #e8e8ff;          /* 经典蓝洗 */
+
+  /* ── Hairlines & bars（结构线纯黑；内部细分银灰） ── */
+  --hairline: #000000;           /* 顶栏底线/侧栏右线 = 帧线 */
+  --hairline-soft: #b3b3b3;      /* 分页顶线/内部细分 = 银灰 */
+  --hairline-strong: #808080;    /* 表格滚动条 = 中灰 */
+  --hairline-card: #000000;      /* 面板/卡片外框 = 黑框（page-frame 语言）*/
+  --hairline-inset: #000000;     /* 指标卡框 = 黑框 */
+  --hairline-mid: #000000;       /* 分区顶线 = 黑规则线 */
+  --hairline-rail: #000000;      /* 配置导轨右线 */
+  --hairline-codex: #000000;     /* codex 指标列间 = 目录表格竖线 */
+  --hairline-detail: #000000;    /* detail 节框 */
+  --hairline-json: #000000;      /* json 面板框 */
+  --hairline-dashed: #999999;    /* 空态虚线 = 中灰 */
+  --hairline-legacy: #999999;    /* legacy 虚线 */
+  --hairline-row: #000000;       /* people 行卡框 */
+  --hairline-draft: #999999;     /* draft 徽标边 */
+  --bar-value: #8e8a25;          /* value-list 左条 = olive（眉标系）*/
+  --bar-matrix: #6a26a4;         /* metric 瓦片左条 = purple-stripe 压 lime */
+  --bar-summary: #000000;        /* summary 卡左条 = 墨 */
+  --bar-usage: #e91d2a;          /* Token 进度 = Dell red 压黑轨 */
+
+  /* ── Overlays & shadows（无软投影；hover 黑 alpha 洗） ── */
+  --overlay-faint: rgba(0, 0, 0, 0.04);
+  --overlay-soft: rgba(0, 0, 0, 0.05);
+  --overlay-line: #000000;       /* 导航分组线 = 黑规则线 */
+  --overlay-medium: rgba(0, 0, 0, 0.08);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 无投影；零阴影而非 none，兼容多值拼接 */
+
+  /* ── brand-mark（黑框贴纸：红/黄/紫三色条 + 圆形黄点，形态见片段） ── */
+  --brand-frame-bg: #000000;     /* 黑贴纸底（page-frame 微缩）*/
+  --brand-frame-border: #000000;
+  --brand-frame-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(255, 255, 255, 0.08); /* GIF 手切斜面 */
+  --brand-bar-1: #e91d2a;        /* Dell red */
+  --brand-bar-2: #fcc20f;        /* 贴纸黄 */
+  --brand-bar-3: #6a26a4;        /* purple-stripe */
+  --brand-bar-inset: none;       /* 无光晕内衬 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: #fcc20f;          /* 右上圆点 = NEW! 贴纸黄 */
+  --brand-dot-border: #000000;
+  --brand-dot-glow: none;
+  --nav-indicator: #e91d2a;      /* 导航当前项 3px 红标（ex-app-shell-row 条款）*/
+
+  /* ── 登录页（黑色 page-frame + salmon 眉标块 + 黄贴纸提示条） ── */
+  --login-bg: #000000;           /* 视口黑底 = 8px 黑页框 */
+  --login-shell-border: #000000; /* 白壳黑框 = 框内文件 */
+  --login-shell-shadow: none;    /* 无软投影 */
+  --login-showcase-bg: #d77a7a;  /* showcase = salmon 眉标色块（OptiPlex）*/
+  --login-showcase-ink: #000000;
+  --login-grid-line: rgba(0, 0, 0, 0.06); /* 无网格（片段隐藏）*/
+  --login-grid-mask: none;
+  --login-brand-ink: #000000;
+  --login-brand-mute: #4d4d4d;
+  --login-signal-bg: #000000;    /* signal = brand-mark 同款黑框贴纸 */
+  --login-signal-border: #000000;
+  --login-signal-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
+  --login-signal-bar: #e91d2a;   /* 三色条 nth-1（黄/紫见片段）*/
+  --login-kicker: #000000;       /* salmon 块上黑眉标 */
+  --login-heading: #000000;
+  --login-copy: #000000;
+  --login-preview-bg: #ffffff;   /* 预览卡 = 白 */
+  --login-preview-border: #000000;
+  --login-preview-shadow: none;
+  --login-preview-divider: #000000; /* 行间黑规则线 */
+  --login-preview-dot: #e91d2a;  /* 圆点 = Dell red */
+  --login-preview-dot-soft: #fcc20f;
+  --login-preview-label: #4d4d4d;
+  --login-preview-row-line: #000000;
+  --login-preview-row-ink: #000000;
+  --login-preview-chip-ink: #000000; /* em 状态片 = 黄贴纸黑字 */
+  --login-preview-chip-bg: #fcc20f;
+  --login-preview-bar: #6a26a4;  /* 进度条 = purple-stripe */
+  --login-foot: #000000;
+  --login-card-kicker: #e91d2a;  /* 白卡侧眉标 = 电话红 */
+  --login-card-heading: #000000;
+  --login-card-copy: #333333;
+  --login-notice-border: #000000; /* 提示条 = BUY-a-DELL 黄贴纸 */
+  --login-notice-bg: #fcc20f;
+  --login-notice-ink: #000000;
+  --login-label: #000000;
+  --login-input-border: #000000; /* text-input：白底 1px 黑边 */
+  --login-input-border-hover: #e91d2a; /* hover = Dell red */
+  --login-primary: #000000;      /* 登录主按钮 = button-primary 黑底白字 */
+  --login-primary-active: #333333;
+}
+
+/* ============================================================
+   dell-1996 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="dell-1996"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 选区 / 焦点：贴纸黄选中洗；2px 硬黑描边（时代无光晕） ── */
+[data-theme="dell-1996"] ::selection { background: rgba(252, 194, 15, 0.55); color: #000000; }
+[data-theme="dell-1996"] :focus-visible { outline: 2px solid #000000; outline-offset: 2px; }
+
+/* ── 链接：经典 Mosaic 蓝下划线锚点（导航/按钮/分页除外，Netscape 语法） ── */
+[data-theme="dell-1996"] a { text-decoration: underline; }
+[data-theme="dell-1996"] .workspace-nav a,
+[data-theme="dell-1996"] .ant-btn,
+[data-theme="dell-1996"] .ant-pagination a { text-decoration: none; }
+
+/* ── 按钮：Helvetica Bold 全大写、零字距（规格 button 排版） ── */
+[data-theme="dell-1996"] .ant-btn { text-transform: uppercase; letter-spacing: 0; }
+
+/* ── 顶栏 = top-banner 黑色横幅：文字翻白、黑底选择器、无毛玻璃 ── */
+[data-theme="dell-1996"] .context-bar { color: #ffffff; backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-theme="dell-1996"] .context-bar .context-heading-slot .page-heading__eyebrow { color: #ffffff; font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+[data-theme="dell-1996"] .repository-switcher { color: #ffffff; }
+[data-theme="dell-1996"] .context-bar .ant-select-selector { background: #000000 !important; border-color: #808080 !important; }
+[data-theme="dell-1996"] .context-bar .ant-select-selection-item,
+[data-theme="dell-1996"] .context-bar .ant-select-selection-item-content,
+[data-theme="dell-1996"] .context-bar .ant-select-selection-placeholder,
+[data-theme="dell-1996"] .context-bar .ant-select-arrow { color: #ffffff !important; }
+
+/* ── 导航 = icon-label-nav：Helvetica Bold 全大写、零字距（规格「无字距」Do） ── */
+[data-theme="dell-1996"] .workspace-nav a { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+[data-theme="dell-1996"] .nav-caption,
+[data-theme="dell-1996"] .nav-group-title { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+[data-theme="dell-1996"] .brand-block strong { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-weight: 700; letter-spacing: 0; }
+[data-theme="dell-1996"] .brand-block span { letter-spacing: 0; }
+
+/* ── brand-mark：黑框贴纸（page-frame 微缩）——红/黄/紫三色平涂条 +
+      右上圆形黄点（NEW! 贴纸），方角、无光晕，GIF 手切斜面 ── */
+[data-theme="dell-1996"] .brand-mark span { border-radius: 0; }
+[data-theme="dell-1996"] .brand-mark::after { box-shadow: none; }
+
+/* ── eyebrow = 色块眉标（DIMENSION 系 olive）：Helvetica 700 全大写 ── */
+[data-theme="dell-1996"] .page-heading__eyebrow,
+[data-theme="dell-1996"] .panel-kicker,
+[data-theme="dell-1996"] .section-label { color: #8e8a25; font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-size: 11px; font-weight: 700; line-height: 1.2; letter-spacing: 0; text-transform: uppercase; }
+
+/* ── 面板标题 = heading-2 家族：Helvetica Bold ── */
+[data-theme="dell-1996"] .panel-heading h2 { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-weight: 700; }
+
+/* ── 展示数字一律 Arial Black 900（规格「展示字重绝不软于 900」Do） ── */
+[data-theme="dell-1996"] .business-outcomes__card > strong,
+[data-theme="dell-1996"] .ratio-card > strong,
+[data-theme="dell-1996"] .metric-matrix strong,
+[data-theme="dell-1996"] .codex-metric > strong,
+[data-theme="dell-1996"] .codex-token-ledger strong,
+[data-theme="dell-1996"] .configuration-summary-grid strong,
+[data-theme="dell-1996"] .configuration-status-rail > div > strong { font-weight: 900; }
+
+/* ── 表头：Helvetica Bold 全大写（pale sage 色块条 + 黑框线在 antd 层） ── */
+[data-theme="dell-1996"] .admin-table .ant-table-thead > tr > th { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+
+/* ── 登录页：黑 page-frame 视口 + salmon 眉标块；无网格底纹；
+      signal = 黑框三色贴纸；大标题 Arial Black 900；眉标 Helvetica 700 ── */
+[data-theme="dell-1996"] .login-page__showcase::before { display: none; }
+[data-theme="dell-1996"] .login-page__signal span { border-radius: 0; }
+[data-theme="dell-1996"] .login-page__signal span:nth-child(2) { background: #fcc20f; }
+[data-theme="dell-1996"] .login-page__signal span:nth-child(3) { background: #6a26a4; }
+[data-theme="dell-1996"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-weight: 900; }
+[data-theme="dell-1996"] .login-page__card h1 { font-family: var(--font-display); font-weight: 900; }
+[data-theme="dell-1996"] .login-page__showcase-copy > span,
+[data-theme="dell-1996"] .login-page__card-heading > span { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-size: 11px; font-weight: 700; line-height: 1.4; letter-spacing: 0; text-transform: uppercase; }
+[data-theme="dell-1996"] .login-page__brand strong { font-family: Helvetica, Arial, "Microsoft YaHei", sans-serif; font-weight: 700; }
+[data-theme="dell-1996"] .login-page__brand span { letter-spacing: 0; }
+[data-theme="dell-1996"] .login-page__preview-row strong { border-radius: 0; } /* 进度条方角 */

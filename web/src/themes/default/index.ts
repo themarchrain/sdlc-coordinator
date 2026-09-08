@@ -18,6 +18,7 @@ export const defaultSwatches: ThemeSwatches = {
 export const defaultTheme: ThemeDefinition = {
   id: 'default',
   label: '默认',
+  family: 'system',
   isDark: false,
   chromeColor: '#152033',
   swatches: defaultSwatches,

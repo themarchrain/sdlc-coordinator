@@ -1,0 +1,280 @@
+/* ============================================================
+   cal 主题令牌块 —— 规格驱动（cal 设计语言，slug cal = Cal.com），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Cal.com 设计语言（友好现代 SaaS · 单色动作层）：
+   - 白画布 #ffffff + 近黑主 CTA #111111（按压 #242424）；品牌蓝
+     #3b82f6 仅稀缺内联/徽章时刻（chip、链接 hover），绝不上 CTA
+   - 灰面三档：surface-soft #f8f9fa（侧栏 = nav-pill-group 软包裹、
+     表头）/ surface-card #f5f5f5（feature 卡、徽章、brand 圆盘）/
+     surface-strong #e5e7eb（禁用底）
+   - 深色面 #101010 + #1a1a1a 只作页脚/featured 逆转 —— 映射到
+     json 深块（--canvas-dark + 提升头条）与登录 signal（wordmark 深底）
+   - 文字四级坍缩：ink #111111 / body #374151 / muted #6b7280 /
+     muted-soft #898989；暗面字 = 白 + #a1a1aa
+   - 语义三色规格直书：#10b981 / #f59e0b / #ef4444
+   - 发丝线双轨：#e5e7eb 分隔 / #f3f4f6 浅分隔；控件强边派生 #d1d5db
+   - 双档微投影 0 1px 2px rgba(0,0,0,.05) + 0 4px 12px rgba(0,0,0,.08)
+     （小投影落在提升卡上，按钮/导航扁平）
+   - 圆角刻度：4/6/8/12/16 + 药丸 9999（导航组、徽章）+ 全圆（头像）；
+     按钮/输入 8（antd token）、内容卡 12、面板/hero 容器 16
+   - 展示字族 Cal Sans 600 负字距（Inter 替代）；--font-display 兼作
+     价格数字（规格 pricing 价格用 display-sm）
+   - badge pastel：橙 #fb923c 只落在 brand-mark 角点（评分星/头像
+     填充级的小彩时刻）
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     hover 墨 #1a1a1a = 按压 #242424 前的极轻提亮（规格只记录 Default/Active）
+     强边 #d1d5db / 墨线系 rgba(17,17,17,*) = 墨系 alpha 家族
+     error-deep #dc2626 = 语义红压深一档
+   骨架表达不了的形态（Cal Sans 负字距标题、药丸套药丸导航、
+   brand-mark 圆盘墨条）见块后片段。
+   ============================================================ */
+[data-theme="cal"] {
+  /* ── Typography ───────────────────────────── */
+  /* Cal Sans（授权族，禁外部加载）→ 规格文档替代 Inter 600 + 负字距；
+     正文/UI = Inter；代码 = JetBrains Mono（规格 code 直书） */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --font-display: "Cal Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; /* 展示字族兼作价格数字（规格 pricing 价格 = display-sm Cal Sans） */
+
+  /* ── Radius（规格刻度：4 徽章角 / 6 小件 / 8 按钮·输入 / 12 内容卡 / 16 hero 容器 + pill/full） ── */
+  --radius-xs: 4px;      /* 图标提示 focus（规格 xs 4 徽章角保留） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块 = 规格 sm 6「Small inline buttons」 */
+  --radius-md: 8px;      /* 行卡 = 紧凑行 8 */
+  --radius-lg: 12px;     /* 指标卡 = 规格 lg 12「Content cards」 */
+  --radius-xl: 16px;     /* 面板 = 规格 xl 16「Hero app-mockup card」 */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 全圆（Cal 圆标/头像） */
+  --radius-pill: 9999px; /* 迷你徽标 = badge-pill（rounded.pill） */
+  --radius-panel: 16px;  /* 登录外壳 = hero 容器 16 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Canvas：默认页面底 */
+  --canvas-soft: #f8f9fa;        /* Surface Soft：极软分隔带 / 表头 */
+  --canvas-card: #ffffff;        /* 卡白（product-mockup 白卡），靠发丝线 + 微投影分层 */
+  --canvas-dark: #101010;        /* Surface Dark：json pre 底（featured 逆转的深面时刻） */
+  --surface-sidebar: #f8f9fa;    /* 侧栏 = nav-pill-group 软包裹（白药丸浮其上，见片段） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 滚动后导航 = 白磨砂（派生：白底保持半透） */
+  --surface-inset: #f5f5f5;      /* Surface Card：feature 卡/徽章灰底 */
+  --surface-matrix: #f5f5f5;
+  --surface-tint: #f8f9fa;       /* 行 hover = 极软灰 */
+  --surface-rail: #f5f5f5;
+  --surface-detail: #f8f9fa;
+  --surface-chip: #f5f5f5;       /* chip = badge-pill 灰底 */
+  --surface-legacy: #f5f5f5;
+  --surface-draft: #e5e7eb;      /* draft 更沉一档 = Strong 灰 */
+  --surface-empty: #f8f9fa;
+  --surface-json-bar: #1a1a1a;   /* json 头条 = Surface Dark Elevated（深面内嵌卡） */
+  --tooltip-bg: #101010;         /* tooltip = 深 footer 面，白字 */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级） ── */
+  --ink: #111111;
+  --ink-strong: #111111;
+  --ink-display: #111111;
+  --ink-heading: #111111;
+  --ink-value: #111111;
+  --ink-repo: #111111;
+  --ink-step: #111111;
+  --ink-label-strong: #111111;
+  --ink-label: #111111;
+  --ink-row: #111111;
+  --ink-list: #111111;
+  --ink-data: #111111;
+  --ink-field: #111111;
+  --ink-rail: #111111;
+  --ink-rail-value: #111111;
+  --ink-secret: #374151; /* secret-label = body 级 */
+  --ink-chip: #111111;   /* duration 数值 = badge-pill 墨字 */
+  --body: #374151;       /* Body：默认正文 */
+  --body-alt: #374151;
+  --body-soft: #374151;
+  --mute: #6b7280;       /* Muted：副题/面包屑 */
+  --mute-deep: #374151;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #6b7280;
+  --mute-caption: #6b7280;
+  --mute-intro: #374151; /* 配置导语 = 正文级 */
+  --mute-terse: #6b7280;
+  --mute-quiet: #6b7280;
+  --mute-soft: #6b7280;
+  --mute-dim: #6b7280;
+  --mute-draft: #6b7280;
+  --mute-json: #a1a1aa;  /* json 头条字 = 深面上的 on-dark-soft */
+  --mute-matrix: #6b7280;
+  --faint: #898989;      /* Muted Soft：说明/版权行级 */
+  --faint-alt: #898989;
+  --faint-soft: #898989;
+  --faint-ghost: #898989;
+  --faint-hint: #898989;
+  --faint-meta: #898989;
+  --faint-note: #898989;
+  --faint-empty: #898989;
+  --on-dark: #ffffff;    /* On Dark：深 footer/featured 白字 */
+  --on-dark-soft: #a1a1aa;
+  --on-dark-faint: rgba(161, 161, 170, .8); /* sparkline 提示日期 = soft 再降半档 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #111111;    /* 近黑主 CTA：单色动作层 */
+  --primary-active: #242424; /* 规格 primary-active 原文（按压轻提亮） */
+  --on-primary: #ffffff;
+  --link: #111111;       /* 内联链接单色（规格 text-link = ink） */
+  --link-hover: #3b82f6; /* hover 才见蓝：稀缺 accent 的合法时刻（派生自 no-hover 政策） */
+  --focus-ring: rgba(17, 17, 17, .16); /* 输入 focus 转墨（规格 text-input-focused） */
+  --primary-veil: #f5f5f5; /* 当前导航 = surface-card 灰（白药丸底，见片段覆写） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #10b981;    /* 规格 colors 直书 */
+  --success-halo: 0 0 0 4px rgba(16, 185, 129, .14);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, .14);
+  --error: #ef4444;
+  --error-deep: #dc2626; /* 派生：语义红压深一档 */
+  --info: #3b82f6;       /* info = brand-accent 蓝 */
+  --info-soft: rgba(59, 130, 246, .1); /* 蓝 10% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e5e7eb;         /* Hairline：输入边/表分隔/卡外线 */
+  --hairline-soft: #f3f4f6;    /* Hairline Soft：同底浅分隔 */
+  --hairline-strong: #d1d5db;  /* 派生：hairline 压深一档（控件边/滚动条） */
+  --hairline-card: #e5e7eb;    /* 白卡 hairline outline（规格 product-mockup-card） */
+  --hairline-inset: #f3f4f6;
+  --hairline-mid: #f3f4f6;
+  --hairline-rail: #e5e7eb;
+  --hairline-codex: #f3f4f6;
+  --hairline-detail: #f3f4f6;
+  --hairline-json: #e5e7eb;    /* json 卡外线（深块的白色面衬边） */
+  --hairline-dashed: #d1d5db;  /* 空态虚线 = 强边一档 */
+  --hairline-legacy: #e5e7eb;
+  --hairline-row: #f3f4f6;     /* 行分隔 = 浅分隔 */
+  --hairline-draft: #e5e7eb;
+  --bar-value: #d1d5db;   /* value-list 左规线 = 强边（近单色纪律） */
+  --bar-matrix: #d1d5db;
+  --bar-summary: #898989; /* 汇总条 = muted-soft 中性 */
+  --bar-usage: #111111;   /* 用量轨 = 墨（黑色 Confirm 条同语汇，蓝不上数据轨） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(17, 17, 17, .03);
+  --overlay-soft: rgba(17, 17, 17, .04);  /* nav hover = 墨系微高亮 */
+  --overlay-line: rgba(17, 17, 17, .06);
+  --overlay-medium: rgba(17, 17, 17, .07);
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, .05), 0 4px 12px rgba(0, 0, 0, .08); /* 规格 双档微投影合一 */
+
+  /* ── brand-mark（全圆 surface-card 盘 + 三根墨条；形态见片段） ── */
+  --brand-frame-bg: #f5f5f5;    /* avatar-circle 灰盘 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;   /* 扁平（投影只在提升卡） */
+  --brand-bar-1: #111111;       /* 三条 = 墨（wordmark 单色） */
+  --brand-bar-2: #111111;
+  --brand-bar-3: #111111;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #fb923c;         /* 角点 = badge-orange（评分星/头像 pastel 的小彩时刻） */
+  --brand-dot-border: #f5f5f5;
+  --brand-dot-glow: none;
+  --nav-indicator: #111111;     /* 当前导航指示条 = 墨（单色动作层） */
+
+  /* ── 登录页（白 hero + 灰 showcase + 产品碎片白卡 + signal 深面 wordmark） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e5e7eb;
+  --login-shell-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 4px 12px rgba(0, 0, 0, .08); /* hero mockup 卡双档投影 */
+  --login-showcase-bg: #f8f9fa; /* showcase = Surface Soft hero 带（白页上的软分隔） */
+  --login-showcase-ink: #111111;
+  --login-grid-line: rgba(17, 17, 17, .05); /* 日历网格式底纹（产品 UI 语汇） */
+  --login-grid-mask: linear-gradient(140deg, #ffffff, rgba(255, 255, 255, 0) 78%); /* 亮面白蒙版（暗蒙版反转） */
+  --login-brand-ink: #111111;
+  --login-brand-mute: #6b7280;
+  --login-signal-bg: #101010;   /* signal = 深 footer 的 wordmark 时刻（全圆，见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* 三条 = 白（深面白字） */
+  --login-kicker: #6b7280;      /* kicker = 友好 sentence case 小签（无大写，见片段） */
+  --login-heading: #111111;     /* hero 标题（Cal Sans 600 负字距见片段） */
+  --login-copy: #374151;
+  --login-preview-bg: #ffffff;  /* 预览卡 = 产品碎片白卡 */
+  --login-preview-border: #e5e7eb; /* hairline 外线 */
+  --login-preview-shadow: 0 4px 12px rgba(0, 0, 0, .08); /* 提升卡投影 */
+  --login-preview-divider: #f3f4f6;
+  --login-preview-dot: #111111; /* 数据点 = 墨 */
+  --login-preview-dot-soft: #d1d5db;
+  --login-preview-label: #6b7280;
+  --login-preview-row-line: #f3f4f6;
+  --login-preview-row-ink: #111111;
+  --login-preview-chip-ink: #3b82f6; /* chip = 品牌蓝徽章高亮（稀缺时刻） */
+  --login-preview-chip-bg: rgba(59, 130, 246, .12);
+  --login-preview-bar: #111111; /* 预览进度 = 黑 Confirm 条 */
+  --login-foot: #898989;        /* 版权行 = muted-soft */
+  --login-card-kicker: #6b7280;
+  --login-card-heading: #111111;
+  --login-card-copy: #374151;
+  --login-notice-border: rgba(59, 130, 246, .3); /* info 通知 = 蓝薄纱 + 发丝线 */
+  --login-notice-bg: rgba(59, 130, 246, .08);
+  --login-notice-ink: #374151;
+  --login-label: #374151;
+  --login-input-border: #e5e7eb; /* hairline 输入边（focus 转墨，antd colorPrimary 黑） */
+  --login-input-border-hover: #6b7280;
+  --login-primary: #111111;     /* 主 CTA = 黑（40px 触达高见片段） */
+  --login-primary-active: #242424;
+}
+
+/* ============================================================
+   cal 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="cal"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：黑底白字选区（单色动作层的选区时刻）/ 墨 focus（输入 focus 转墨） ── */
+[data-theme="cal"] ::selection { background: #111111; color: #ffffff; }
+[data-theme="cal"] :focus-visible { outline: 2px solid #111111; outline-offset: 2px; }
+
+/* ── Cal Sans 展示字族：h1/h2/h3 一律 600 + 负字距（规格「negative letter-spacing
+      is part of the voice」；Inter 600 替代由 --font-display 承担） ── */
+[data-theme="cal"] .panel-heading h2,
+[data-theme="cal"] .detail-section h3,
+[data-theme="cal"] .configuration-step-copy h2,
+[data-theme="cal"] .configuration-summary h2,
+[data-theme="cal"] .configuration-inline-title h3,
+[data-theme="cal"] .connector-configuration-step__heading h3,
+[data-theme="cal"] .brand-block strong,
+[data-theme="cal"] .login-page__brand strong,
+[data-theme="cal"] .login-page__card h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.3px; }
+
+/* ── 数字：display-sm 语汇（价格/数值 = Cal Sans 600 微收字距；字族由 --font-display 承担） ── */
+[data-theme="cal"] .business-outcomes__card > strong,
+[data-theme="cal"] .ratio-card > strong,
+[data-theme="cal"] .metric-matrix strong,
+[data-theme="cal"] .codex-metric > strong,
+[data-theme="cal"] .codex-token-ledger strong,
+[data-theme="cal"] .configuration-status-rail > div > strong,
+[data-theme="cal"] .configuration-summary-grid strong { font-weight: 600; letter-spacing: -.3px; }
+
+/* ── eyebrow / kicker：友好 sentence case 小签（Inter 500，不做大写变换） ── */
+[data-theme="cal"] .page-heading__eyebrow,
+[data-theme="cal"] .panel-kicker,
+[data-theme="cal"] .section-label { color: var(--mute); font: 500 10px/1.4 var(--font-sans); letter-spacing: .06em; }
+
+/* ── 药丸套药丸导航：侧栏（surface-soft 软包裹）内导航项全药丸，
+      当前项 = 白药丸 + 微投影 + 墨字（规格 nav-pill-group 签名形态） ── */
+[data-theme="cal"] .workspace-nav a { border-radius: 9999px; font-weight: 500; }
+[data-theme="cal"] .workspace-nav a[aria-current="page"] { background: #ffffff; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+[data-theme="cal"] .workspace-nav a[aria-current="page"] .anticon { color: #111111; }
+
+/* ── brand-mark：全圆灰盘 + 三根墨条药丸端（令牌上色，这里只整形态） ── */
+[data-theme="cal"] .brand-mark span { border-radius: 9999px; background: #111111; box-shadow: none; }
+[data-theme="cal"] .brand-mark span:nth-child(1) { opacity: 1; }
+
+/* ── 表头：surface-soft 软带 + 600 字重（title-sm 语汇） ── */
+[data-theme="cal"] .admin-table .ant-table-thead > tr > th { font-weight: 600; }
+
+/* ── 系统滚动条：细、hairline 灰、药丸圆头 ── */
+[data-theme="cal"] * { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+[data-theme="cal"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="cal"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="cal"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #d1d5db; }
+[data-theme="cal"] ::-webkit-scrollbar-thumb:hover { background: #898989; }
+
+/* ── 登录 showcase：hero 标题 Cal Sans 600 收字距（display-md 语汇）；kicker 保持 sentence case ── */
+[data-theme="cal"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -.8px; }
+[data-theme="cal"] .login-page__showcase-copy > span,
+[data-theme="cal"] .login-page__card-heading > span { font: 500 10px/1.4 var(--font-sans); letter-spacing: .08em; }
+
+/* ── 登录卡片：输入/CTA 对齐 40px 触达高 ── */
+[data-theme="cal"] .login-page__card .ant-input,
+[data-theme="cal"] .login-page__card .ant-input-affix-wrapper { min-height: 40px; }
+[data-theme="cal"] .login-page__card .ant-btn-primary { height: 40px; }

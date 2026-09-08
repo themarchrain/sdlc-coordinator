@@ -1,0 +1,295 @@
+/* ============================================================
+   bmw-m 主题令牌块 —— 自设计语言
+   按角色映射到骨架 162 令牌超集（用途对用途，不按名字）。
+   BMW M 设计语言（暗色，纯黑画布）：
+   - 画布阶：canvas #000000（真黑）/ soft #0d0d0d（surface-soft，规格表 cell）/
+     card #1a1a1a（surface-card，卡片/输入）/ elevated #262626（surface-elevated，
+     同时承担 hairline-strong「一阶抬升边」角色）/ carbon #2b2b2b（技术面）
+   - 文字阶坍缩为四阶：ink #ffffff / body-strong #e6e6e6 / body #bbbbbb / mute #7e7e7e
+   - 发丝线双阶：#3c3c3c（分隔线）/ #262626（安静分隔 = 抬升同值）；无投影
+   - 主交互是白：--primary #ffffff + --on-primary #000000（规格 primary 角色）；
+     M 三色条纹（--m-blue-light/--m-blue-dark/--m-red）只作品牌记号，
+     绝不进 primary / 按钮填充（规格「exclusively a brand-identity marker」）
+   - 语义：success #0fa336 / warning #f4b400 原值；error 派生自 M 红 #e22718
+     （规格 禁止条纹蓝红之外引入新品牌色 → 系统红即 M 红）；
+     info = bmw-blue #1c69d4 提亮 #5e97e8（纯黑底小字可读性推导）
+   - 圆角一律 0（矩形轮廓即品牌），仅 pill 微章用规格 rounded.xs 2px
+   - 字体 BMW Type Next Latin → 'Helvetica Neue'/Helvetica/Arial 系统/web-safe 栈
+   骨架表达不了的形态（brand-mark / 登录 signal 的 M 三色斜条重绘、
+   登录展示板顶部 m-stripe-divider、大写机加工标签、方角滚动条等）见块后片段。
+   ============================================================ */
+[data-theme="bmw-m"] {
+  color-scheme: dark;
+  color: var(--body); /* 规格正文 = body #bbbbbb（骨架 :root 用 --ink，纯白偏亮） */
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: "Helvetica Neue", Helvetica, Arial, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Helvetica Neue", Helvetica, Arial, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; /* 展示字 = 品牌无衬线 700 大写，非等宽 */
+
+  /* ── Radius（规格刻度 none 0 / xs 2 / sm 4 / md 6 / full；向超集九档归并：几乎全 0） ── */
+  --radius-xs: 0px;      /* 外观示意色块 / term-hint focus = 方角 */
+  --radius-soft: 0px;    /* 登录预览小色块 = 方角 */
+  --radius-sm: 0px;      /* 内嵌小块 */
+  --radius-md: 0px;      /* 行卡 */
+  --radius-lg: 0px;      /* 指标卡 */
+  --radius-xl: 0px;      /* 面板 */
+  --radius-brand: 0px;   /* brand-mark / 登录 signal = 方角条纹座 */
+  --radius-pill: 2px;    /* 微章借用规格 rounded.xs（几乎无使用的合法微圆角） */
+  --radius-panel: 0px;   /* 登录外壳 = 方角矩形 */
+
+  /* ── Canvas & surfaces（规格 Surface 组按用途映射） ── */
+  --canvas: #000000;             /* 真黑页面 floor（规格 canvas） */
+  --canvas-soft: #0d0d0d;        /* 规格 surface-soft：规格表 cell / 表头 / 内嵌条 */
+  --canvas-card: #1a1a1a;        /* 规格 surface-card：卡片 / 次级按钮 / 输入 */
+  --canvas-dark: #000000;        /* json-viewer pre = 卡内纯黑内嵌面（黑面分层） */
+  --surface-sidebar: #000000;    /* 侧栏与画布同底（规格 top-nav/footer = canvas） */
+  --surface-bar: rgba(0, 0, 0, .88); /* 顶栏 = 纯黑半透 + blur */
+  --surface-inset: #0d0d0d;      /* duration-values chip = 规格 cell（surface-soft） */
+  --surface-matrix: #0d0d0d;     /* metric-matrix cell = surface-soft */
+  --surface-tint: #262626;       /* 表格行 hover = 一阶抬升（surface-elevated） */
+  --surface-rail: #0d0d0d;       /* 配置状态轨 = surface-soft */
+  --surface-detail: #1a1a1a;     /* 详情节 = surface-card */
+  --surface-chip: #1a1a1a;       /* 身份行卡 = surface-card */
+  --surface-legacy: #0d0d0d;     /* legacy 值面板 = surface-soft */
+  --surface-draft: rgba(255, 255, 255, .04); /* 草稿章 = 白 4% 薄纱 */
+  --surface-empty: #0d0d0d;      /* 空态 = surface-soft */
+  --surface-json-bar: #0d0d0d;   /* json 工具条 = surface-soft */
+  --tooltip-bg: #262626;         /* sparkline 提示 = surface-elevated */
+
+  /* ── Ink & text ladder（坍缩为 ink/body-strong/body/mute 四阶） ── */
+  --ink: #ffffff;                /* 规格 ink / on-dark */
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #e6e6e6;          /* 汇总数值 = 规格 body-strong */
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #e6e6e6;            /* intent-row strong = body-strong */
+  --ink-list: #bbbbbb;           /* value-list li = body */
+  --ink-data: #e6e6e6;           /* detail dd 数值 = body-strong */
+  --ink-field: #bbbbbb;
+  --ink-rail: #bbbbbb;           /* 轨正文 = body */
+  --ink-rail-value: #ffffff;     /* 轨数值 = ink */
+  --ink-secret: #bbbbbb;
+  --ink-chip: #bbbbbb;           /* duration chip = body */
+  --body: #bbbbbb;               /* 规格 body（运行正文） */
+  --body-alt: #bbbbbb;           /* 分类页签未激活 = 规格 category-tab 的 body */
+  --body-soft: #7e7e7e;          /* 占位采样行 = mute */
+  --mute: #7e7e7e;               /* 规格 muted（页脚/面包屑/说明） */
+  --mute-deep: #bbbbbb;          /* 业务卡/占比卡标题 = body（顶栏见片段改 mute） */
+  --mute-inline: #7e7e7e;
+  --mute-caption: #7e7e7e;
+  --mute-intro: #bbbbbb;         /* 配置步骤导语 = 运行正文 body */
+  --mute-terse: #7e7e7e;
+  --mute-quiet: #7e7e7e;         /* 表头标签 = mute（大写机加工见片段） */
+  --mute-soft: #7e7e7e;
+  --mute-dim: #7e7e7e;
+  --mute-draft: #7e7e7e;
+  --mute-json: #7e7e7e;
+  --mute-matrix: #7e7e7e;
+  --faint: #7e7e7e;
+  --faint-alt: #7e7e7e;
+  --faint-soft: #7e7e7e;
+  --faint-ghost: #7e7e7e;
+  --faint-hint: #7e7e7e;
+  --faint-meta: #7e7e7e;
+  --faint-note: #7e7e7e;
+  --faint-empty: #7e7e7e;
+  --on-dark: #ffffff;            /* 规格 on-dark */
+  --on-dark-soft: #e6e6e6;       /* json pre 正文 = body-strong */
+  --on-dark-faint: #7e7e7e;
+
+  /* ── Primary / link / focus（白主操作；规格 primary #ffffff） ── */
+  --primary: #ffffff;
+  --primary-active: #e6e6e6;     /* 白压暗一阶 = body-strong（CSS 侧无消费者，与 antd 同源） */
+  --on-primary: #000000;         /* 规格 on-primary */
+  --link: #ffffff;               /* 规格 text-link：白字无下划线 */
+  --link-hover: #e6e6e6;
+  --focus-ring: rgba(255, 255, 255, .45); /* 规格 text-input focus：边框转白 */
+  --primary-veil: #0d0d0d;       /* 当前导航项底 = surface-soft（白主色下 veil 落在软面） */
+
+  /* ── Semantic（success/warning 规格原值；error=M 红；info=bmw-blue 提亮） ── */
+  --success: #0fa336;            /* 规格 success */
+  --success-halo: 0 0 0 4px rgba(15, 163, 54, .16);
+  --warning: #f4b400;            /* 规格 warning */
+  --warning-soft: rgba(244, 180, 0, .14); /* 暗底软面（亮色 tint 的暗色等价物） */
+  --error: #e22718;              /* 规格 m-red 兼任系统红（品牌唯一红） */
+  --error-deep: #b51f13;         /* M 红压深一阶（摘要 code 用） */
+  --info: #5e97e8;               /* bmw-blue #1c69d4 提亮（黑底小字可读性） */
+  --info-soft: rgba(28, 105, 212, .16);
+
+  /* ── Hairlines & bars（分隔 #3c3c3c / 安静分隔 #262626；无投影） ── */
+  --hairline: #3c3c3c;           /* 规格 hairline：节/行/卡描边 */
+  --hairline-soft: #262626;      /* 规格 hairline-strong 同值 = 一阶抬升边作安静分隔 */
+  --hairline-strong: #3c3c3c;    /* 滚动条 thumb / 强分隔 = 主发丝线 */
+  --hairline-card: #3c3c3c;      /* 卡外框（规格：around card outlines） */
+  --hairline-inset: #3c3c3c;
+  --hairline-mid: #262626;       /* 区块顶分隔 = 安静阶 */
+  --hairline-rail: #3c3c3c;
+  --hairline-codex: #3c3c3c;     /* codex 事实格分隔（规格：between table rows） */
+  --hairline-detail: #3c3c3c;
+  --hairline-json: #3c3c3c;
+  --hairline-dashed: #3c3c3c;    /* 空态虚线框 */
+  --hairline-legacy: #3c3c3c;
+  --hairline-row: #3c3c3c;
+  --hairline-draft: #3c3c3c;
+  --bar-value: #3c3c3c;          /* value-list 左条 = 中性发丝线 */
+  --bar-matrix: #1c69d4;         /* metric-matrix 左条 = bmw-blue（克制的 M 强调） */
+  --bar-summary: #0066b1;        /* summary 卡左条 = m-blue-light */
+  --bar-usage: #1c69d4;          /* codex 用量轨 = bmw-blue 单色（条纹不作填充） */
+
+  /* ── Overlays & shadows（发丝线承担层级，投影一律关闭） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: #0d0d0d;       /* 导航 hover = surface-soft */
+  --overlay-line: rgba(255, 255, 255, .08); /* nav 分组线 */
+  --overlay-medium: #1a1a1a;     /* collapse hover = surface-card */
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 无投影；零阴影而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（形态见片段：去框去点，三 span 重绘为 M 三色斜条纹） ── */
+  --brand-frame-bg: transparent;   /* 条纹直接落在黑画布上 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #0066b1;          /* M 条纹第 1 停：m-blue-light */
+  --brand-bar-2: #1c69d4;          /* M 条纹第 2 停：m-blue-dark（= bmw-blue） */
+  --brand-bar-3: #e22718;          /* M 条纹第 3 停：m-red */
+  --brand-bar-inset: none;         /* 平涂色条，无光效 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: #e22718;            /* 惰性值：::after 已隐藏（片段） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #e22718;        /* 当前导航指示条 = M 红（motorsport chrome 记号） */
+
+  /* ── 登录页（黑画布 + 顶部 m-stripe 分隔 + 白 CTA） ── */
+  --login-bg: #000000;             /* 页面 floor 纯黑 */
+  --login-shell-border: #262626;   /* 一阶抬升边 */
+  --login-shell-shadow: none;
+  --login-showcase-bg: #000000;    /* 展示板 = 黑 photo-band 面（条纹见片段） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05); /* 极淡网格（摄影底噪替身） */
+  --login-grid-mask: none;         /* 条纹需整幅可见，遮罩关闭 */
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #7e7e7e;
+  --login-signal-bg: transparent;  /* signal = brand-mark 同款三色斜条（见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #0066b1;     /* 三色条 nth-1（深蓝/红见片段） */
+  --login-kicker: #7e7e7e;
+  --login-heading: #ffffff;        /* 展示板大字 = 白 700 大写（见片段） */
+  --login-copy: #bbbbbb;
+  --login-preview-bg: rgba(255, 255, 255, .03);
+  --login-preview-border: #262626;
+  --login-preview-shadow: none;
+  --login-preview-divider: #262626;
+  --login-preview-dot: #3c3c3c;
+  --login-preview-dot-soft: #262626;
+  --login-preview-label: #7e7e7e;
+  --login-preview-row-line: #262626;
+  --login-preview-row-ink: #bbbbbb;
+  --login-preview-chip-ink: #ffffff;   /* 白字 chip（方角） */
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: #3c3c3c;
+  --login-foot: #7e7e7e;
+  --login-card-kicker: #7e7e7e;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #bbbbbb;
+  --login-notice-border: #3c3c3c; /* 与 antd colorInfoBorder 同源（暗软面+发丝线） */
+  --login-notice-bg: #0d0d0d;
+  --login-notice-ink: #bbbbbb;
+  --login-label: #bbbbbb;
+  --login-input-border: #3c3c3c;  /* 规格 text-input：1px 发丝线 */
+  --login-input-border-hover: #ffffff; /* 规格：focus 边框转白 */
+  --login-primary: #ffffff;       /* 白矩形 CTA 黑字（规格 primary 角色） */
+  --login-primary-active: #e6e6e6;
+
+  /* ── BMW M 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --m-blue-light: #0066b1;        /* M 三色第 1 停 */
+  --m-blue-dark: #1c69d4;         /* M 三色第 2 停（= bmw-blue） */
+  --m-red: #e22718;               /* M 三色第 3 停 */
+  --carbon-gray: #2b2b2b;         /* 规格 carbon 面（保留备用） */
+  --m-stripe: linear-gradient(90deg, #0066b1 0 33.4%, #1c69d4 33.4% 66.7%, #e22718 66.7% 100%); /* 4px m-stripe-divider */
+}
+
+/* ============================================================
+   bmw-m 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="bmw-m"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区 / 焦点（M 红选区、白 45% 焦点环收细到 2px = 机加工精度） ── */
+[data-theme="bmw-m"] ::selection { background: rgba(226, 39, 24, .45); color: var(--ink); }
+[data-theme="bmw-m"] :focus-visible { outline-width: 2px; outline-color: rgba(255, 255, 255, .45); }
+
+/* ── 系统滚动条：细、发丝线灰、方角（锋利工业铬） ── */
+[data-theme="bmw-m"] * { scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
+[data-theme="bmw-m"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="bmw-m"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="bmw-m"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 0; background: var(--hairline); background-clip: padding-box; }
+[data-theme="bmw-m"] ::-webkit-scrollbar-thumb:hover { background: #4d4d4d; background-clip: padding-box; }
+
+/* ── 外壳补正：顶栏次级铭牌回落 mute（mute-deep 让给业务卡标题） ── */
+[data-theme="bmw-m"] .context-bar { color: var(--mute); }
+
+/* ── brand-mark：M 三色条纹重绘 —— 去框、去点、去光效，三 span 收敛为
+      等高平涂斜条（skewX 贴合 M 字标条纹的 // 倾角；先例：各主题 brand-mark 重绘） ── */
+[data-theme="bmw-m"] .brand-mark { align-items: center; padding: 0; gap: 3px; }
+[data-theme="bmw-m"] .brand-mark span { height: 62%; border-radius: 0; box-shadow: none; transform: skewX(-18deg); }
+[data-theme="bmw-m"] .brand-mark span:nth-child(1) { height: 62%; opacity: 1; background: var(--m-blue-light); }
+[data-theme="bmw-m"] .brand-mark span:nth-child(2) { height: 62%; background: var(--m-blue-dark); }
+[data-theme="bmw-m"] .brand-mark span:nth-child(3) { height: 62%; background: var(--m-red); box-shadow: none; }
+[data-theme="bmw-m"] .brand-mark::after { display: none; }
+
+/* ── 大写机加工标签（规格 label-uppercase：sans 700 + 1.5px 追字） ── */
+[data-theme="bmw-m"] .page-heading__eyebrow,
+[data-theme="bmw-m"] .panel-kicker,
+[data-theme="bmw-m"] .section-label {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* ── 按钮与状态标签：全大写 + 1.5px 追字（「machined」质感，规格 Do 非协商项） ── */
+[data-theme="bmw-m"] .ant-btn { text-transform: uppercase; letter-spacing: 1.5px; }
+[data-theme="bmw-m"] .status-tag { text-transform: uppercase; letter-spacing: .08em; }
+
+/* ── 表头：mute 大写机加工丝印（规格「between table rows」发丝线由令牌承担） ── */
+[data-theme="bmw-m"] .admin-table .ant-table-thead > tr > th {
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ── 登录展示板：顶部 4px m-stripe-divider（品牌唯一装饰母题）+ 极淡网格底噪 ── */
+[data-theme="bmw-m"] .login-page__showcase::before {
+  opacity: 1;
+  background-image:
+    var(--m-stripe),
+    linear-gradient(var(--login-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--login-grid-line) 1px, transparent 1px);
+  background-size: 100% 4px, 32px 32px, 32px 32px;
+  background-repeat: no-repeat, repeat, repeat;
+  background-position: 0 0, 0 0, 0 0;
+}
+
+/* ── 登录展示板大标题：白 700 大写（规格 display 语声；副句保持 sentence case） ── */
+[data-theme="bmw-m"] .login-page__showcase-copy h2 {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+/* ── 登录 signal：brand-mark 同款 M 三色斜条纹重绘（无框无光影） ── */
+[data-theme="bmw-m"] .login-page__signal { align-items: center; background: transparent; box-shadow: none; }
+[data-theme="bmw-m"] .login-page__signal span { height: 18px; border-radius: 0; transform: skewX(-18deg); }
+[data-theme="bmw-m"] .login-page__signal span:nth-child(1) { background: var(--m-blue-light); }
+[data-theme="bmw-m"] .login-page__signal span:nth-child(2) { background: var(--m-blue-dark); }
+[data-theme="bmw-m"] .login-page__signal span:nth-child(3) { background: var(--m-red); }
+
+/* ── 登录表单：输入面落在 surface-card（规格 text-input 底）；CTA 白矩形黑字 ── */
+[data-theme="bmw-m"] .login-page__card .ant-input,
+[data-theme="bmw-m"] .login-page__card .ant-input-affix-wrapper { background: var(--canvas-card); }
+[data-theme="bmw-m"] .login-page__card .ant-btn-primary { color: var(--on-primary); }

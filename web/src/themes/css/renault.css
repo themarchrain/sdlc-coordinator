@@ -1,0 +1,324 @@
+/* ============================================================
+   renault 主题令牌块 —— 规格驱动（renault 设计语言），
+   无参考实现；正文/色板色值按角色映射进 162 令牌超集。
+   Renault 设计语言（黑白 stark + Sunlight Yellow）：
+   - 双画布节奏：白 #ffffff 目录模式（默认亮轨）+ 黑 #000000 叙事面
+     （hero/footer 语汇 → 管理台内仅 json 卡、tooltip、登录 showcase
+     局部取材；「避免中灰作区块底」）+ 偶发黄 #ffed00 accent 时刻
+   - 黄 = 唯一品牌强调，只落主 CTA / yeni 徽标 / 导航指示点（规格
+     「configurator dot indicators」的合法黄），黄底永远配黑字
+   - 文字阶梯坍缩为规格四级：ink #000000 / body #222222 / mute #666666
+     / ash #8a8a8a（stone #c4c4c4 = 禁用级）
+   - 发丝线双轨：#f2f2f2 软分隔 + hairline-strong #000000 控件描边
+     （规格「card / button outlines」全强度黑）；暗面分隔 =
+     divider-dark rgba(255,255,255,.16)
+   - 语义四色为规格字面值；--warning 因骨架文字消费（sample-warning）
+     取同 hue 深化 #a8760d（推导，#f0ad4e 白底对比不足）
+   - 海拔 = 色块切换非阴影；仅 sticky 浮层 0 2px 4px rgba(0,0,0,.1)
+   - 方角几何：按钮 2px、卡/面板 0px、药丸 46px 只属迷你徽标
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     link-hover #222222（生产链接继承 ink，hover 只微沉 + 下划线片段）
+     focus-ring 墨系 45%（黄环白底不可见）
+     bar-usage #000000（黄守稀缺 → 用量轨走结构墨）
+   骨架表达不了的形态（brand-mark 2021 菱形标、display 700 排版、
+   「黄不作文字色」的交互位改墨、登录黑 hero 面 + 底线式输入、
+   黄底黑字 antd 派生控件修正）见块后 [data-theme="renault"] 专属片段。
+   ============================================================ */
+[data-theme="renault"] {
+  /* ── Typography ───────────────────────────── */
+  /* NouvelR（授权定制族，禁外部加载）→ 规格替代栈 Inter Tight / Manrope / HK Grotesk；
+     Display 与正文同族（规格「NouvelR everywhere」），共用替代栈 */
+  --font-sans: 'Inter Tight', Manrope, 'HK Grotesk', system-ui, -apple-system, 'Segoe UI', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Inter Tight', Manrope, 'HK Grotesk', system-ui, -apple-system, 'Segoe UI', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格刻度：none 0 / xs 2 / sm 3 / pill 46 / full 9999） ── */
+  --radius-xs: 2px;      /* term-hint focus = 按钮 rounded.xs */
+  --radius-soft: 3px;    /* 登录预览小色块 = rounded.sm 小 chip */
+  --radius-sm: 3px;      /* 内嵌小块 = rounded.sm */
+  --radius-md: 0px;      /* 行卡 = rounded.none 方角 */
+  --radius-lg: 0px;      /* 指标卡 = 方角 */
+  --radius-xl: 0px;      /* 面板 / json 卡 = 方角 */
+  --radius-brand: 0px;   /* brand-mark = 菱形（片段 rotate 45°，本体方角） */
+  --radius-pill: 46px;   /* 迷你徽标 = rounded.pill 字面值（高度 <92px 即满圆） */
+  --radius-panel: 0px;   /* 登录外壳 = hero 方角 */
+
+  /* ── Canvas & surfaces（白目录轨 + 黑色块局部取材） ── */
+  --canvas: #ffffff;             /* 白目录模式画布（Surface） */
+  --canvas-soft: #f7f7f7;        /* surface-soft：内嵌/分组行面 */
+  --canvas-card: #ffffff;        /* 卡片白，靠发丝线 + 留白分隔 */
+  --canvas-dark: #111111;        /* surface-deep：json pre 黑块（暗区内嵌阶） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = nav-bar 白 */
+  --surface-bar: rgba(255, 255, 255, .92); /* 顶栏白（无磨砂语汇，近实底） */
+  --surface-inset: #f7f7f7;
+  --surface-matrix: #f7f7f7;
+  --surface-tint: #f7f7f7;       /* 行 hover = surface-soft 微沉 */
+  --surface-rail: #f7f7f7;
+  --surface-detail: #f7f7f7;
+  --surface-chip: #f7f7f7;
+  --surface-legacy: #f7f7f7;
+  --surface-draft: #f2f2f2;      /* draft 再沉一档 = hairline 色 */
+  --surface-empty: #f7f7f7;
+  --surface-json-bar: #000000;   /* json 头条 = surface-dark 色块（黑叙事面） */
+  --tooltip-bg: #000000;         /* 黑色反转面（black is structural） */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级墨 + stone 禁用级） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #222222;  /* value-list li = body 正文级 */
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #333333; /* secret-label = charcoal 标签级 */
+  --ink-chip: #222222;   /* duration 数值 = body 正文级 */
+  --body: #222222;       /* body：长段落正文 */
+  --body-alt: #333333;   /* charcoal：次级正文/元数据 */
+  --body-soft: #333333;
+  --mute: #666666;       /* mute：辅助文字/未激活导航 */
+  --mute-deep: #333333;  /* 指标卡标题抬回 charcoal 级 */
+  --mute-inline: #666666;
+  --mute-caption: #666666;
+  --mute-intro: #333333; /* 配置导语 = 正文级 */
+  --mute-terse: #666666;
+  --mute-quiet: #666666;
+  --mute-soft: #666666;
+  --mute-dim: #666666;
+  --mute-draft: #666666;
+  --mute-json: rgba(255, 255, 255, .72); /* json 黑块头条文字 = on-dark-mute */
+  --mute-matrix: #666666;
+  --faint: #8a8a8a;      /* ash：占位/禁用级 */
+  --faint-alt: #8a8a8a;
+  --faint-soft: #8a8a8a;
+  --faint-ghost: #8a8a8a;
+  --faint-hint: #8a8a8a;
+  --faint-meta: #8a8a8a;
+  --faint-note: #8a8a8a;
+  --faint-empty: #c4c4c4; /* stone：空态最弱级（禁用前景） */
+  --on-dark: #ffffff;    /* 暗面文字 = 纯白（规格 hero 白字） */
+  --on-dark-soft: rgba(255, 255, 255, .72); /* on-dark-mute 字面值 */
+  --on-dark-faint: rgba(255, 255, 255, .55); /* 推导：mute 族再压一档 */
+
+  /* ── Primary / link / focus（黄一族 + 墨系链接） ── */
+  --primary: #ffed00;    /* Sunlight Yellow：唯一品牌强调（CTA/徽标/导航点） */
+  --primary-active: #e6d200; /* primary-deep pressed 字面值 */
+  --on-primary: #000000; /* 黄底黑字铁律（yellow never pairs white） */
+  --link: #000000;       /* 生产链接继承 ink（Link） */
+  --link-hover: #222222; /* 推导：hover 微沉 + 下划线（片段），不用 #0000ee 蓝闪 */
+  --focus-ring: rgba(0, 0, 0, .45); /* 推导：墨系焦点环（黄环白底不可见） */
+  --primary-veil: rgba(0, 0, 0, .05); /* 当前导航 = 墨系微高亮（黄纱留给指示点） */
+
+  /* ── Semantic（规格字面值；warning 文字级深化为推导） ── */
+  --success: #8dc572;    /* context-dot 填充 = 字面值 */
+  --success-halo: none;  /* 零阴影体系，dot 无光环 */
+  --warning: #a8760d;    /* sample-warning 文字消费 → 同 hue 深化（推导） */
+  --warning-soft: rgba(240, 173, 78, .2); /* #f0ad4e 20% 薄纱 */
+  --error: #be6464;      /* muted desaturated red 字面值 */
+  --error-deep: #a04a4a; /* 推导：error 压深一档（code 强调） */
+  --info: #337ab7;       /* desaturated mid-blue 字面值 */
+  --info-soft: rgba(51, 122, 183, .12); /* info 12% 薄纱 */
+
+  /* ── Hairlines & bars（#f2f2f2 软线 + #000000 控件描边双轨） ── */
+  --hairline: #f2f2f2;         /* 白面 1px 行分隔 */
+  --hairline-soft: #f7f7f7;
+  --hairline-strong: #000000;  /* hairline-strong 字面值：控件/卡描边全强度黑 */
+  --hairline-card: #f2f2f2;
+  --hairline-inset: #f2f2f2;
+  --hairline-mid: #f2f2f2;
+  --hairline-rail: #f2f2f2;
+  --hairline-codex: #f2f2f2;
+  --hairline-detail: #f2f2f2;
+  --hairline-json: rgba(255, 255, 255, .16); /* divider-dark：黑 json 块上的分隔 */
+  --hairline-dashed: #c4c4c4;  /* 空态虚线 = stone 降一档（全黑虚线过重，推导） */
+  --hairline-legacy: #c4c4c4;
+  --hairline-row: #f2f2f2;
+  --hairline-draft: #c4c4c4;
+  --bar-value: #c4c4c4;   /* value-list 左规线 = stone（无彩数据墨） */
+  --bar-matrix: #c4c4c4;
+  --bar-summary: #8a8a8a; /* 摘要左规线 = ash 沉一档 */
+  --bar-usage: #000000;   /* 用量轨 = 结构墨（黄守稀缺，黑即结构色） */
+
+  /* ── Overlays & shadows（色块切换代海拔；仅 sticky 微影） ── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: rgba(0, 0, 0, .04);  /* nav hover = 微沉 */
+  --overlay-line: rgba(0, 0, 0, .06);  /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .07);
+  --shadow-panel: 0 2px 4px rgba(0, 0, 0, .1); /* 规格「~10% opacity, 2–4px blur」字面值 */
+
+  /* ── brand-mark（2021 菱形标：白底墨描边方块旋转 45°；形态见片段） ── */
+  --brand-frame-bg: #ffffff;
+  --brand-frame-border: #000000; /* hairline-strong 描边 */
+  --brand-frame-shadow: none;
+  --brand-bar-1: #000000;   /* 三 span 片段隐藏，值兜底为墨 */
+  --brand-bar-2: #000000;
+  --brand-bar-3: #000000;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ffed00;     /* yeni 角点 = badge-new 黄 */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #ffed00; /* 当前导航指示 = 配置圆点语汇的合法黄 */
+
+  /* ── 登录页（白卡 + 黑 hero 叙事面 + 黄菱形 signal / 黄 CTA） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #f2f2f2;
+  --login-shell-shadow: 0 2px 4px rgba(0, 0, 0, .1); /* sticky 微影档 */
+  --login-showcase-bg: #000000; /* showcase = hero-banner 黑叙事面 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* 无底纹（片段隐藏网格） */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .72);
+  --login-signal-bg: #ffed00;  /* signal = 实心黄菱形（黑面上的 accent 时刻） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #000000; /* 三 span 片段隐藏，值兜底 */
+  --login-kicker: rgba(255, 255, 255, .72); /* on-dark-mute */
+  --login-heading: #ffffff;    /* hero 标题白字（700 @ 0.95 见片段） */
+  --login-copy: rgba(255, 255, 255, .72);
+  --login-preview-bg: #111111; /* surface-deep：暗区内嵌卡（规格字面用法） */
+  --login-preview-border: rgba(255, 255, 255, .16); /* divider-dark */
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .16);
+  --login-preview-dot: #ffed00;      /* 数据点 = 黄（黑面上可见，R5 语汇） */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .72);
+  --login-preview-row-line: rgba(255, 255, 255, .16);
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #ffed00; /* 状态 chip = 黑底黄字（hero 语汇） */
+  --login-preview-chip-bg: rgba(255, 237, 0, .12);
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: #666666;      /* 页脚在白画布上 = mute */
+  --login-card-kicker: #666666; /* 白卡侧 eyebrow = mute */
+  --login-card-heading: #000000;
+  --login-card-copy: #333333;
+  --login-notice-border: rgba(51, 122, 183, .35); /* info 通知 = 蓝薄纱 + 淡边 */
+  --login-notice-bg: rgba(51, 122, 183, .08);
+  --login-notice-ink: #333333;
+  --login-label: #222222;
+  --login-input-border: #000000; /* text-input：1px 墨底线（方角，形态见片段） */
+  --login-input-border-hover: #000000; /* hover/focus = 底线加粗（片段），色不变 */
+  --login-primary: #ffed00;    /* 主 CTA = Sunlight Yellow（黑字走 colorTextLightSolid） */
+  --login-primary-active: #e6d200;
+}
+
+/* ============================================================
+   renault 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="renault"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：黄底黑字选区 / 墨系焦点环 / 链接 hover 下划线 ── */
+[data-theme="renault"] ::selection { background: #ffed00; color: #000000; }
+[data-theme="renault"] :focus-visible { outline: 2px solid #000000; outline-offset: 2px; }
+[data-theme="renault"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 系统滚动条：细、stone #c4c4c4、方角 ── */
+[data-theme="renault"] * { scrollbar-width: thin; scrollbar-color: #c4c4c4 transparent; }
+[data-theme="renault"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="renault"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="renault"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #c4c4c4; }
+[data-theme="renault"] ::-webkit-scrollbar-thumb:hover { background: #8a8a8a; }
+
+/* ── 按钮标签 +0.144px 机械感字距（规格 button-md 字面值） ── */
+[data-theme="renault"] .ant-btn { letter-spacing: .144px; }
+
+/* ── display 700 排版：标题/数值一律 700（「display always 700」） ── */
+[data-theme="renault"] .brand-block strong,
+[data-theme="renault"] .panel-heading h2,
+[data-theme="renault"] .business-outcomes__card > span,
+[data-theme="renault"] .business-outcomes__card > strong,
+[data-theme="renault"] .ratio-card__title,
+[data-theme="renault"] .ratio-card > strong,
+[data-theme="renault"] .codex-metric > strong,
+[data-theme="renault"] .codex-token-ledger strong,
+[data-theme="renault"] .configuration-status-rail > div > strong,
+[data-theme="renault"] .configuration-summary-grid strong,
+[data-theme="renault"] .configuration-step-copy h2,
+[data-theme="renault"] .configuration-summary h2,
+[data-theme="renault"] .configuration-inline-title h3,
+[data-theme="renault"] .connector-configuration-step__heading h3,
+[data-theme="renault"] .repo-row strong,
+[data-theme="renault"] .intent-row strong,
+[data-theme="renault"] .duration-card strong,
+[data-theme="renault"] .duration-section__heading strong,
+[data-theme="renault"] .value-list__title,
+[data-theme="renault"] .connector-watch__item strong,
+[data-theme="renault"] .detail-section h3,
+[data-theme="renault"] .admin-table .ant-table-thead > tr > th,
+[data-theme="renault"] .audit-json > summary,
+[data-theme="renault"] .login-page__brand strong,
+[data-theme="renault"] .login-page__showcase-copy h2,
+[data-theme="renault"] .login-page__card h1 { font-weight: 700; }
+
+/* ── eyebrow / kicker = overline：10px/700/1.45、零字距大写（规格 overline 字面值） ── */
+[data-theme="renault"] .page-heading__eyebrow,
+[data-theme="renault"] .panel-kicker,
+[data-theme="renault"] .section-label { color: var(--mute); font: 700 10px/1.45 var(--font-sans); letter-spacing: 0; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="renault"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 黄不作文字色：骨架把 --primary 当文字色的交互位一律改墨
+      （规格 Don't「Don't apply primary to body text」；黄只留指示点/边线） ── */
+[data-theme="renault"] .workspace-nav a[aria-current="page"],
+[data-theme="renault"] .workspace-nav a[aria-current="page"] .anticon,
+[data-theme="renault"] .explorer-tab:hover,
+[data-theme="renault"] .explorer-tab.is-active,
+[data-theme="renault"] .explorer-more:hover,
+[data-theme="renault"] .term-hint:hover,
+[data-theme="renault"] .run-summary__duration,
+[data-theme="renault"] .collapse-toggle:hover,
+[data-theme="renault"] .theme-card__current,
+[data-theme="renault"] .appearance-chip:hover { color: var(--ink); }
+[data-theme="renault"] .explorer-tab.is-active { border-bottom-color: var(--ink); }
+
+/* ── 外观面板「开启」chip = badge-new 形态：黄底黑字（黄唯一合法的小面） ── */
+[data-theme="renault"] .appearance-chip--on,
+[data-theme="renault"] .appearance-chip--on:hover { color: var(--on-primary); background: var(--primary); border-color: var(--primary); }
+
+/* ── 黄底黑字法则延伸到 antd 派生控件（勾选/开关的白标改黑标） ── */
+[data-theme="renault"] .ant-checkbox-checked .ant-checkbox-inner::after { border-color: #000000; }
+[data-theme="renault"] .ant-switch-checked { background: #ffed00; }
+[data-theme="renault"] .ant-switch-checked .ant-switch-handle::before { background: #000000; }
+
+/* ── brand-mark 重绘：2021 菱形标 —— 白底 2px 墨描边方块旋转 45°，
+      三 span 隐藏；::after = 黄底白描边 yeni 角点 ── */
+[data-theme="renault"] .brand-mark { width: 26px; height: 26px; padding: 0; background: #ffffff; border: 2px solid #000000; border-radius: 0; box-shadow: none; transform: rotate(45deg); }
+[data-theme="renault"] .brand-mark span { display: none; }
+[data-theme="renault"] .brand-mark::after { top: -5px; right: -5px; width: 9px; height: 9px; background: #ffed00; border: 2px solid #ffffff; box-shadow: none; }
+@media (max-width: 760px) {
+  [data-theme="renault"] .brand-mark { width: 22px; height: 22px; }
+  [data-theme="renault"] .brand-mark::after { top: -4px; right: -4px; width: 8px; height: 8px; }
+}
+
+/* ── 表头：白底 + #f2f2f2 发丝线 + 700 标签（方角目录精度） ── */
+[data-theme="renault"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid #f2f2f2; letter-spacing: 0; text-transform: none; }
+
+/* ── 登录 showcase：黑 hero 面（无网格底纹）；标题 700 @ 0.95 紧行高（规格 display 铁律） ── */
+[data-theme="renault"] .login-page__showcase::before { display: none; }
+[data-theme="renault"] .login-page__showcase-copy h2 { line-height: .95; }
+[data-theme="renault"] .login-page__showcase-copy > span,
+[data-theme="renault"] .login-page__card-heading > span { font: 700 10px/1.45 var(--font-sans); letter-spacing: 0; text-transform: uppercase; }
+
+/* ── 登录 signal 重绘 = 实心黄菱形（黑 hero 面上的 accent 时刻，同 brand-mark 几何） ── */
+[data-theme="renault"] .login-page__signal { width: 26px; height: 26px; padding: 0; background: #ffed00; border: none; border-radius: 0; box-shadow: none; transform: rotate(45deg); }
+[data-theme="renault"] .login-page__signal span { display: none; }
+
+/* ── 登录卡：text-input 规格 —— 仅 1px 墨色底线、方角、48px 触达高；主 CTA 48px ── */
+[data-theme="renault"] .login-page__card .ant-input,
+[data-theme="renault"] .login-page__card .ant-input-affix-wrapper { min-height: 48px; border: 0; border-bottom: 1px solid #000000; border-radius: 0; }
+[data-theme="renault"] .login-page__card .ant-input:hover,
+[data-theme="renault"] .login-page__card .ant-input-affix-wrapper:hover,
+[data-theme="renault"] .login-page__card .ant-input:focus,
+[data-theme="renault"] .login-page__card .ant-input-affix-wrapper-focused { border-bottom: 2px solid #000000; box-shadow: none; }
+[data-theme="renault"] .login-page__card .ant-btn-primary { height: 48px; }
+
+/* ── 登录预览条：方角（方角几何纪律） ── */
+[data-theme="renault"] .login-page__preview-row strong { border-radius: 0; }

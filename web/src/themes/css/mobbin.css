@@ -1,0 +1,314 @@
+/* ============================================================
+   mobbin 主题令牌块 —— 规格驱动（mobbin 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Mobbin 设计语言（画廊白单色系）：
+   - 画布纯白 #ffffff；结构由中性染阶承担：soft #f3f3f3（6% 墨染，workhorse）
+     / field #f0f0f0（8% 墨染，输入面）/ hairline #e0e0e0（16% 控件边）
+   - 墨即品牌：--primary #141414（Ink Black，主 CTA = 墨底白字药丸），
+     active 压向纯黑；反转面（json 卡/tooltip/选区）= 同墨极性翻转
+   - 文字四阶坍缩：Ink #141414 / Ink-soft #262626 / Muted #707070 / Faint #adadad
+   - 唯一彩色 Electric Blue #0066ff：规格只给商业信号 → 迁移为
+     success/info/link 与用量轨（「蓝出现即决策时刻」）；链接常态走墨，
+     hover 才转蓝（推导注记：规格未记链接 hover）
+   - 语义板规格明言不设 → warning/error 为浏览器默认语义的克制化（先例 tesla）
+   - 零阴影：海拔 = 染阶差 + 发丝线；focus = 墨环（text-input-focused 2px ink）
+   - 圆角刻度 16/24/9999 + squircle 30%（brand-mark 母题）
+   骨架表达不了的形态（按钮/徽标药丸化、输入 field 无边框面、squircle
+   brand-mark、登录 44px 触达高、软展示带）见块后片段。
+   ============================================================ */
+[data-theme="mobbin"] {
+  /* ── Typography ───────────────────────────── */
+  /* Saans（商业字体禁外部加载）→ 规格 fallback 栈 + Inter 替代；
+     Display 与正文同族（单一 grotesque），共用 sans 栈 */
+  --font-sans: Saans, Inter, -apple-system, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Saans, Inter, -apple-system, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度：16 瓷砖·输入 / 24 内容卡 / 9999 药丸 / 30% squircle） ── */
+  --radius-xs: 9999px; /* term-hint focus = 药丸（badge 同语汇） */
+  --radius-soft: 16px; /* 登录预览小色块 = rounded.sm 瓷砖 */
+  --radius-sm: 16px;   /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 16px;   /* 行卡 = rounded.sm（输入/瓷砖/见证卡档） */
+  --radius-lg: 24px;   /* 指标卡 = rounded.md 内容卡 */
+  --radius-xl: 24px;   /* 面板 = rounded.md */
+  --radius-brand: 30%; /* brand-mark / 登录 signal = iOS squircle（app-icon-squircle 30%） */
+  --radius-pill: 9999px; /* 迷你徽标 = stadium 药丸 */
+  --radius-panel: 24px;  /* 登录外壳 = ex-auth-form-card rounded.md */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* 画廊白（Canvas） */
+  --canvas-soft: #f3f3f3;        /* Soft Canvas：workhorse 6% 墨染（nav pill/FAQ/featured） */
+  --canvas-card: #ffffff;        /* 白卡 + hairline-soft 最浅缘（pricing/testimonial 卡） */
+  --canvas-dark: #141414;        /* json pre / 反转面 = Ink footer 同墨（极性翻转收尾） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 画布同白（画廊墙面） */
+  --surface-bar: rgba(243, 243, 243, .92); /* 浮动 nav pill = soft 染阶（规格 nav-pill 字面） */
+  --surface-inset: #f3f3f3;      /* 卡内交互/内嵌面 = soft */
+  --surface-matrix: #f3f3f3;
+  --surface-tint: #f3f3f3;       /* 行 hover / 高亮列 = soft 染（compare-table highlight） */
+  --surface-rail: #f3f3f3;
+  --surface-detail: #f3f3f3;
+  --surface-chip: #f3f3f3;
+  --surface-legacy: #f3f3f3;
+  --surface-draft: #f0f0f0;      /* 深一档 = field 8% 墨染 */
+  --surface-empty: #f3f3f3;      /* 空态卡 = ex-empty-state-card soft 面 */
+  --surface-json-bar: #f0f0f0;   /* json 头条 = field 染阶（凹陷感） */
+  --tooltip-bg: #141414;         /* 反转面：墨底白字（规格 Inverse 层） */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级墨） ── */
+  --ink: #141414;
+  --ink-strong: #141414;
+  --ink-display: #141414;
+  --ink-heading: #141414;
+  --ink-value: #141414;
+  --ink-repo: #141414;
+  --ink-step: #141414;
+  --ink-label-strong: #141414;
+  --ink-label: #141414;
+  --ink-row: #141414;
+  --ink-list: #262626;  /* value-list li = Ink-soft 正文级 */
+  --ink-data: #141414;
+  --ink-field: #141414;
+  --ink-rail: #141414;
+  --ink-rail-value: #141414;
+  --ink-secret: #262626; /* secret-label = Ink-soft 正文级 */
+  --ink-chip: #262626;   /* duration 数值 = Ink-soft */
+  --body: #141414;       /* 正文 = Ink（规格：headings, body copy 同墨） */
+  --body-alt: #262626;   /* 次级锁定组 = Ink-soft */
+  --body-soft: #707070;  /* 占比卡小注 = Muted */
+  --mute: #707070;       /* Muted：次级文案（规格二级文字） */
+  --mute-deep: #262626;  /* 指标卡标题抬回 Ink-soft */
+  --mute-inline: #707070;
+  --mute-caption: #707070;
+  --mute-intro: #707070;
+  --mute-terse: #707070;
+  --mute-quiet: #707070;
+  --mute-soft: #707070;
+  --mute-dim: #707070;
+  --mute-draft: #707070;
+  --mute-json: #707070;
+  --mute-matrix: #707070;
+  --faint: #adadad;      /* Faint：占位/三级（规格三级文字） */
+  --faint-alt: #adadad;
+  --faint-soft: #adadad;
+  --faint-ghost: #adadad;
+  --faint-hint: #adadad;
+  --faint-meta: #adadad;
+  --faint-note: #adadad;
+  --faint-empty: #adadad;
+  --on-dark: #ffffff;    /* 墨面上的字 = 白（规格 on-primary） */
+  --on-dark-soft: #ffffff; /* json 墨块文字 = 白 */
+  --on-dark-faint: #adadad; /* 墨面三级 = Faint（规格 footer faint 链接同法） */
+
+  /* ── Primary / link / focus ── */
+  --primary: #141414;    /* Ink Black：品牌色即主 CTA 墨 */
+  --primary-active: #000000; /* 派生：按压压向纯黑 */
+  --on-primary: #ffffff;
+  --link: #141414;       /* 链接 = 墨 + 下划线表意（规格链接不着色） */
+  --link-hover: #0066ff; /* hover 转蓝：「蓝出现即决策时刻」（推导注记：规格未记链接 hover） */
+  --focus-ring: rgba(20, 20, 20, .2); /* focus = 墨环（text-input-focused 2px ink ring） */
+  --primary-veil: rgba(20, 20, 20, .06); /* 当前项 = 6% 墨染（与 canvas-soft 同阶，ex-app-shell-row） */
+
+  /* ── Semantic（规格不设语义板 → accent 承担正向 + 派生克制语义） ── */
+  --success: #0066ff;    /* context-dot / 正向 = accent（规格「sole positive-emphasis signal」） */
+  --success-halo: none;  /* 零阴影体系，dot 无光环 */
+  --warning: #a16207;    /* 派生克制琥珀（先例 tesla：浏览器默认语义的克制化） */
+  --warning-soft: rgba(161, 98, 7, .1);
+  --error: #c8102e;      /* 派生克制红 */
+  --error-deep: #a00d24;
+  --info: #0066ff;       /* info = accent 蓝 */
+  --info-soft: rgba(0, 102, 255, .07); /* 蓝 7% 薄纱（与 antd colorInfo 派生面同源） */
+
+  /* ── Hairlines & bars（两级发丝线 + 强档回落 Hairline；条 = 发丝线/墨阶） ── */
+  --hairline: #e0e0e0;        /* Hairline：16% 控件边 */
+  --hairline-soft: #f0f0f0;   /* Hairline-soft：白上白卡的最浅缘 */
+  --hairline-strong: #e0e0e0; /* 规格只有两级发丝线：强档即 Hairline */
+  --hairline-card: #f0f0f0;   /* 卡外线 = 最浅缘（pricing/testimonial 卡） */
+  --hairline-inset: #f0f0f0;
+  --hairline-mid: #f0f0f0;
+  --hairline-rail: #f0f0f0;
+  --hairline-codex: #f0f0f0;
+  --hairline-detail: #f0f0f0;
+  --hairline-json: #f0f0f0;
+  --hairline-dashed: #e0e0e0; /* 空态虚线 = 控件边一档（需可见） */
+  --hairline-legacy: #e0e0e0;
+  --hairline-row: #f3f3f3;    /* 行分隔 = compare-table rowBorder soft 染 */
+  --hairline-draft: #e0e0e0;
+  --bar-value: #e0e0e0;   /* value-list 左规线 = 发丝线（非彩色条） */
+  --bar-matrix: #e0e0e0;
+  --bar-summary: #707070; /* 汇总条数据墨 = Muted */
+  --bar-usage: #0066ff;   /* 用量轨 = 唯一蓝（决策信号的数据用法） */
+
+  /* ── Overlays & shadows（墨系 alpha 微染；零阴影） ── */
+  --overlay-faint: rgba(20, 20, 20, .03);
+  --overlay-soft: rgba(20, 20, 20, .04); /* nav hover = 微墨染 */
+  --overlay-line: rgba(20, 20, 20, .07); /* nav 分组线 */
+  --overlay-medium: rgba(20, 20, 20, .06);
+  --shadow-panel: 0 0 0 0 rgba(0, 0, 0, 0); /* 零阴影；零值而非 none，兼容多值 box-shadow 拼接 */
+
+  /* ── brand-mark（squircle 墨面 + 三根白色药丸条；形态见片段） ── */
+  --brand-frame-bg: #141414;   /* iOS squircle 墨面（Ink Black tile） */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;  /* 零阴影 */
+  --brand-bar-1: #ffffff;      /* 三根白药丸条（gallery 白） */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;    /* 角标隐藏（片段 display none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #141414;    /* 当前导航指示 = 墨（ex-app-shell-row activeIndicator = primary） */
+
+  /* ── 登录页（白卡 + soft 软展示带：浮动 nav-pill 的画廊时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #f0f0f0;  /* hairline-soft 最浅缘 */
+  --login-shell-shadow: none;      /* 零阴影 */
+  --login-showcase-bg: #f3f3f3;    /* showcase = soft 染带（nav-pill / featured 同面） */
+  --login-showcase-ink: #141414;
+  --login-grid-line: rgba(20, 20, 20, .04); /* 无底纹（片段隐藏网格） */
+  --login-grid-mask: none;
+  --login-brand-ink: #141414;
+  --login-brand-mute: #707070;
+  --login-signal-bg: #141414;   /* signal = brand-mark 同款 squircle 墨面 */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* signal 三条 = 白药丸 */
+  --login-kicker: #707070;      /* kicker = Muted 小签（禁大写宽字距，见片段） */
+  --login-heading: #141414;
+  --login-copy: #707070;        /* hero 副文 = Muted */
+  --login-preview-bg: rgba(255, 255, 255, .82); /* 白预览卡浮在 soft 带 */
+  --login-preview-border: rgba(20, 20, 20, .07);
+  --login-preview-shadow: none;
+  --login-preview-divider: #f0f0f0;
+  --login-preview-dot: #0066ff;     /* 数据点 = 唯一蓝 */
+  --login-preview-dot-soft: #adadad;
+  --login-preview-label: #707070;
+  --login-preview-row-line: #f0f0f0;
+  --login-preview-row-ink: #262626;
+  --login-preview-chip-ink: #141414;
+  --login-preview-chip-bg: #f0f0f0; /* chip = field 染阶药丸 */
+  --login-preview-bar: #adadad;
+  --login-foot: #707070;
+  --login-card-kicker: #707070;
+  --login-card-heading: #141414;
+  --login-card-copy: #707070;
+  --login-notice-border: rgba(0, 102, 255, .2); /* info 通知 = 蓝薄纱 + 微缘 */
+  --login-notice-bg: rgba(0, 102, 255, .06);
+  --login-notice-ink: #262626;
+  --login-label: #262626;
+  --login-input-border: transparent;      /* 输入 = field 染阶无边框（片段补面） */
+  --login-input-border-hover: rgba(20, 20, 20, .14); /* hover 微墨预提示（推导注记） */
+  --login-primary: #141414;   /* 墨药丸 CTA */
+  --login-primary-active: #000000;
+}
+
+/* ============================================================
+   mobbin 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="mobbin"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 选区 / 焦点：墨底白字极性反转 + 2px 墨环 focus（规格 text-input-focused） ── */
+[data-theme="mobbin"] ::selection { background: #141414; color: #ffffff; }
+[data-theme="mobbin"] :focus-visible { outline: 2px solid #141414; outline-offset: 2px; }
+
+/* ── Stadium 药丸：按钮 / 徽标 / 分段控件一律 9999px
+      （规格「a rectangular button does not exist in this system」） ── */
+[data-theme="mobbin"] .ant-btn { border-radius: 9999px; }
+[data-theme="mobbin"] .ant-tag { border-radius: 9999px; }
+[data-theme="mobbin"] .ant-segmented,
+[data-theme="mobbin"] .ant-segmented .ant-segmented-item,
+[data-theme="mobbin"] .ant-segmented .ant-segmented-thumb { border-radius: 9999px; }
+
+/* ── 输入件：field 8% 墨染无边框面 + focus 墨环（规格 text-input / focused；
+      「fields presence without borders」，边框只在 focus 出现） ── */
+[data-theme="mobbin"] .ant-input,
+[data-theme="mobbin"] .ant-input-affix-wrapper { background: #f0f0f0; border-color: transparent; }
+[data-theme="mobbin"] .ant-input:hover,
+[data-theme="mobbin"] .ant-input-affix-wrapper:hover { background: #ececec; border-color: transparent; }
+[data-theme="mobbin"] .ant-input:focus,
+[data-theme="mobbin"] .ant-input-affix-wrapper-focused,
+[data-theme="mobbin"] .ant-input-affix-wrapper:focus-within { background: #f0f0f0; border-color: #141414; }
+
+/* ── 字重法则：标题/数值一律 650（Saans 652 的替代映射，规格 字体替代注记） ── */
+[data-theme="mobbin"] .brand-block strong,
+[data-theme="mobbin"] .panel-heading h2,
+[data-theme="mobbin"] .business-outcomes__card > span,
+[data-theme="mobbin"] .business-outcomes__card > strong,
+[data-theme="mobbin"] .ratio-card__title,
+[data-theme="mobbin"] .ratio-card > strong,
+[data-theme="mobbin"] .codex-metric > strong,
+[data-theme="mobbin"] .codex-token-ledger strong,
+[data-theme="mobbin"] .configuration-status-rail > div > strong,
+[data-theme="mobbin"] .configuration-summary-grid strong,
+[data-theme="mobbin"] .configuration-step-copy h2,
+[data-theme="mobbin"] .configuration-summary h2,
+[data-theme="mobbin"] .configuration-inline-title h3,
+[data-theme="mobbin"] .connector-configuration-step__heading h3,
+[data-theme="mobbin"] .repo-row strong,
+[data-theme="mobbin"] .intent-row strong,
+[data-theme="mobbin"] .duration-card strong,
+[data-theme="mobbin"] .duration-section__heading strong,
+[data-theme="mobbin"] .value-list__title,
+[data-theme="mobbin"] .connector-watch__item strong,
+[data-theme="mobbin"] .detail-section h3,
+[data-theme="mobbin"] .admin-table .ant-table-thead > tr > th,
+[data-theme="mobbin"] .audit-json > summary,
+[data-theme="mobbin"] .login-page__brand strong,
+[data-theme="mobbin"] .login-page__showcase-copy h2,
+[data-theme="mobbin"] .login-page__card h1 { font-weight: 650; }
+
+/* ── eyebrow / kicker：12px/600 小签，零字距零大写
+      （「Zero letter-spacing everywhere」+ Don't「no all-caps」） ── */
+[data-theme="mobbin"] .page-heading__eyebrow,
+[data-theme="mobbin"] .panel-kicker,
+[data-theme="mobbin"] .section-label { color: var(--mute); font: 600 12px/1.33 var(--font-sans); letter-spacing: 0; text-transform: none; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="mobbin"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 650; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 侧栏：当前项 = 6% 墨染 + 墨字（--primary-veil / --ink），行圆角 16px
+      （ex-app-shell-row：activeIndicator = primary，rounded = sm） ── */
+[data-theme="mobbin"] .workspace-nav a { border-radius: 16px; }
+[data-theme="mobbin"] .workspace-nav a[aria-current="page"] { color: #141414; }
+[data-theme="mobbin"] .workspace-nav a[aria-current="page"] .anticon { color: #141414; }
+
+/* ── brand-mark 重绘：iOS squircle 墨面（30% 圆角母题）内三根白色药丸条，
+      去框线去光影去角标（零阴影体系） ── */
+[data-theme="mobbin"] .brand-mark { align-items: center; padding: 6px; gap: 2.5px; border: none; }
+[data-theme="mobbin"] .brand-mark span { width: 3px; border-radius: 9999px; box-shadow: none; }
+[data-theme="mobbin"] .brand-mark span:nth-child(1) { height: 11px; opacity: 1; }
+[data-theme="mobbin"] .brand-mark span:nth-child(2) { height: 18px; }
+[data-theme="mobbin"] .brand-mark span:nth-child(3) { height: 14px; }
+[data-theme="mobbin"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="mobbin"] .brand-mark { padding: 5px 4px; gap: 2px; }
+  [data-theme="mobbin"] .brand-mark span { width: 2.5px; }
+  [data-theme="mobbin"] .brand-mark span:nth-child(1) { height: 9px; }
+  [data-theme="mobbin"] .brand-mark span:nth-child(2) { height: 14px; }
+  [data-theme="mobbin"] .brand-mark span:nth-child(3) { height: 11px; }
+}
+
+/* ── 系统滚动条：细、Hairline 色、药丸圆头（stadium 语汇） ── */
+[data-theme="mobbin"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="mobbin"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #e0e0e0; }
+[data-theme="mobbin"] ::-webkit-scrollbar-thumb:hover { background: #adadad; }
+[data-theme="mobbin"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="mobbin"] * { scrollbar-width: thin; scrollbar-color: #e0e0e0 transparent; }
+
+/* ── 登录 showcase：soft 染带无网格底纹；标题 44px/650/1.13 = 规格 heading-2 规格 ── */
+[data-theme="mobbin"] .login-page__showcase::before { display: none; }
+[data-theme="mobbin"] .login-page__showcase-copy h2 { font-size: 44px; font-weight: 650; line-height: 1.13; }
+[data-theme="mobbin"] .login-page__showcase-copy > span,
+[data-theme="mobbin"] .login-page__card-heading > span { font: 600 12px/1.33 var(--font-sans); letter-spacing: 0; }
+
+/* ── 登录 signal：brand-mark 同款 squircle 墨面白药丸条 ── */
+[data-theme="mobbin"] .login-page__signal { align-items: center; padding: 7px; gap: 3px; border: none; }
+[data-theme="mobbin"] .login-page__signal span { border-radius: 9999px; }
+[data-theme="mobbin"] .login-page__signal span:nth-child(1) { height: 12px; }
+[data-theme="mobbin"] .login-page__signal span:nth-child(2) { height: 20px; }
+[data-theme="mobbin"] .login-page__signal span:nth-child(3) { height: 16px; }
+
+/* ── 登录卡片：输入 / 主 CTA 对齐 44px 触达高（规格「comfortably above the 44px minimum」），
+      CTA = 墨药丸；输入继承上方 field 无边框面 ── */
+[data-theme="mobbin"] .login-page__card .ant-input,
+[data-theme="mobbin"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="mobbin"] .login-page__card .ant-btn-primary { height: 44px; border-radius: 9999px; }

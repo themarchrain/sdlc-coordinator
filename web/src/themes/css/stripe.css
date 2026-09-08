@@ -1,0 +1,302 @@
+/* ============================================================
+   stripe 主题令牌块 —— 规格驱动（stripe 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Stripe 设计语言（金融基础设施品牌，亮画布）：
+   - 画布：canvas #ffffff / soft #f6f9fc（冷调 off-white 交替面）/
+     cream #f5e9d4（暖调间奏，仅作补充令牌）；卡片白面 + 发丝线
+     #e3e8ee，输入冷调线 #a8c3de（hairline-input）
+   - 品牌靛蓝一族：--primary #533afd（唯一填充 CTA，一屏一枚）/
+     hover #665efd（primary-soft）/ 按压 #2e2b8c（primary-press）/
+     深档 #4434d4（链接 hover）；淡靛 #b9b9f9 = 软标签激活底
+   - 深海军蓝双档：ink #0d253d（正文墨）/ brand-dark-900 #1c1e54
+     （json 深面、tooltip、featured 深卡的 dashboard 深色 chrome）
+   - 文字阶梯坍缩为规格四级：ink / ink-secondary #273951 /
+     ink-mute #64748d / ink-mute-2 #61718a
+   - 深度 = 蓝调投影 + 渐变 mesh：Level 1 `0 1px 3px rgba(0,55,112,.08)`、
+     Level 2 `0 8px 24px + 0 2px 6px`（shadow-blue #003770 家族）；
+     mesh = 奶油/薰衣草/magenta/ruby 横向洗过 hero 上三分之一（登录展示板承接）
+   - 排版签名：sohne 300 细字重 + 负字距 display、tnum 表格数字、
+     ss01 特征集（均见块后片段）
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     语义三色 success #0e7d4f / warning(=lemon) #9b6829 / error(=ruby) #ea2261
+     （规格明言营销系统无语义色盘，状态色按「停靠点之外不加新点缀」推导）
+     覆盖/蒙版 alpha 系、hairline-soft #eaeef4 半步、on-dark 白 alpha 阶
+   ============================================================ */
+[data-theme="stripe"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'sohne-var', 'SF Pro Display', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --font-display: 'sohne-var', 'SF Pro Display', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; /* display 与 UI 同族（sohne 细字重签名见片段） */
+
+  /* ── Radius（规格刻度：xs 4 / sm 6 / md 8 / lg 12 / xl 16 / pill 9999） ── */
+  --radius-xs: 4px;      /* hairline 标签 / 表格 chrome = 规格 rounded.xs */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块 / sparkline 提示 = 规格 rounded.sm（输入） */
+  --radius-md: 8px;      /* 行卡 = 规格 rounded.md（紧凑卡/alerts） */
+  --radius-lg: 12px;     /* 指标卡 / 卡容器 = 规格 rounded.lg（pricing/feature 卡） */
+  --radius-xl: 16px;     /* 面板 = 规格 rounded.xl（dashboard mockup chrome） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal = 紧凑卡一档 */
+  --radius-pill: 9999px; /* 迷你徽标 = 规格 rounded.pill */
+  --radius-panel: 16px;  /* 登录外壳 = dashboard mockup chrome（rounded.xl） */
+
+  /* ── Canvas & surfaces（白画布 + 冷调 soft 交替 + 海军蓝深面） ── */
+  --canvas: #ffffff;                 /* 规格画布白 */
+  --canvas-soft: #f6f9fc;            /* Cool-tinted off-white：嵌面/表头 */
+  --canvas-card: #ffffff;            /* 卡片白，靠发丝线 + 微投影分层 */
+  --canvas-dark: #1c1e54;            /* json pre 深面 = brand-dark-900（dashboard 深色 chrome） */
+  --surface-sidebar: #ffffff;        /* 规格 nav：白底（mesh 上浮白条的同族延续） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f6f9fc;
+  --surface-matrix: #f6f9fc;
+  --surface-tint: #f6f9fc;           /* 表行 hover = soft 面 */
+  --surface-rail: #f6f9fc;
+  --surface-detail: #f6f9fc;
+  --surface-chip: #f6f9fc;
+  --surface-legacy: #f6f9fc;
+  --surface-draft: #f6f9fc;
+  --surface-empty: #f6f9fc;
+  --surface-json-bar: #1c1e54;       /* json 头条与 pre 同为深海军蓝面板 */
+  --tooltip-bg: #1c1e54;             /* 深海军蓝 tooltip（brand-dark-900） */
+
+  /* ── Ink & text ladder（坍缩为规格四级墨） ── */
+  --ink: #0d253d;                    /* 规格墨色：deep navy，never pure black */
+  --ink-strong: #0d253d;
+  --ink-display: #0d253d;
+  --ink-heading: #0d253d;
+  --ink-value: #0d253d;
+  --ink-repo: #0d253d;
+  --ink-step: #0d253d;
+  --ink-label-strong: #0d253d;
+  --ink-label: #273951;              /* ink-secondary：白面次级文本 */
+  --ink-row: #0d253d;
+  --ink-list: #273951;               /* value-list li = ink-secondary */
+  --ink-data: #0d253d;
+  --ink-field: #273951;
+  --ink-rail: #273951;
+  --ink-rail-value: #0d253d;
+  --ink-secret: #64748d;             /* secret-label = ink-mute 级 */
+  --ink-chip: #273951;
+  --body: #273951;                   /* 段落 = ink-secondary（层级让位于标题墨） */
+  --body-alt: #273951;
+  --body-soft: #64748d;              /* 占比卡小注 = ink-mute */
+  --mute: #64748d;                   /* ink-mute：helper/表格标签 */
+  --mute-deep: #273951;              /* 指标卡标题抬回 ink-secondary */
+  --mute-inline: #64748d;
+  --mute-caption: #64748d;
+  --mute-intro: #273951;             /* 配置导语 = 正文级 */
+  --mute-terse: #64748d;
+  --mute-quiet: #64748d;
+  --mute-soft: #64748d;
+  --mute-dim: #64748d;
+  --mute-draft: #64748d;
+  --mute-json: rgba(255, 255, 255, .72); /* json 深头条上的字（条面即深海军蓝） */
+  --mute-matrix: #64748d;
+  --faint: #64748d;
+  --faint-alt: #61718a;              /* ink-mute-2：规格导航近等值档 */
+  --faint-soft: #64748d;
+  --faint-ghost: #61718a;
+  --faint-hint: #61718a;
+  --faint-meta: #61718a;
+  --faint-note: #64748d;
+  --faint-empty: #61718a;
+  --on-dark: #ffffff;                /* 靛蓝/深海军蓝面上的字（规格 on-primary） */
+  --on-dark-soft: rgba(255, 255, 255, .85); /* json 深块文字（白 alpha 阶，推导） */
+  --on-dark-faint: rgba(255, 255, 255, .62); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（品牌靛蓝一族） ── */
+  --primary: #533afd;                /* 规格靛蓝：唯一填充 CTA / 链接强调 */
+  --primary-active: #2e2b8c;         /* primary-press 按压 */
+  --on-primary: #ffffff;
+  --link: #533afd;                   /* link-on-light = primary */
+  --link-hover: #4434d4;             /* primary-deep（hover 暖深档） */
+  --focus-ring: rgba(83, 58, 253, .28); /* 派生：输入聚焦边换 primary（规格原文）的 28% 环 */
+  --primary-veil: #b9b9f9;           /* 当前项底 = 淡靛（pill-tag-soft 的 subdued 激活底） */
+
+  /* ── Semantic（推导三色 + 靛蓝 info；规格营销系统无语义色盘） ── */
+  --success: #0e7d4f;                /* 推导：与 ink 同明度带的克制绿 */
+  --success-halo: 0 0 0 4px rgba(14, 125, 79, .12);
+  --warning: #9b6829;                /* 规格 lemon 暖金 */
+  --warning-soft: #f5e9d4;           /* 规格 canvas-cream 暖底 */
+  --error: #ea2261;                  /* 规格 ruby（chart highlight 合法位） */
+  --error-deep: #ea2261;             /* 无更深变体，坍缩同值 */
+  --info: #533afd;                   /* 靛蓝即 info/品牌 */
+  --info-soft: rgba(83, 58, 253, .08);
+
+  /* ── Hairlines & bars（#e3e8ee 卡线 / #a8c3de 输入冷线；条形冷调） ── */
+  --hairline: #e3e8ee;               /* 规格 hairline：卡与表格 1px 线 */
+  --hairline-soft: #eaeef4;          /* 派生：hairline 半步减淡（内部分隔） */
+  --hairline-strong: #a8c3de;        /* hairline-input：冷调强线 */
+  --hairline-card: #e3e8ee;
+  --hairline-inset: #e3e8ee;
+  --hairline-mid: #e3e8ee;
+  --hairline-rail: #e3e8ee;
+  --hairline-codex: #e3e8ee;
+  --hairline-detail: #e3e8ee;
+  --hairline-json: #e3e8ee;
+  --hairline-dashed: #a8c3de;        /* 空态虚线需要可见 = 输入冷线 */
+  --hairline-legacy: #a8c3de;
+  --hairline-row: #e3e8ee;
+  --hairline-draft: #a8c3de;
+  --bar-value: #a8c3de;              /* 左色条冷调中性 */
+  --bar-matrix: #a8c3de;
+  --bar-summary: #665efd;            /* 摘要卡左条 = primary-soft（产品 UI 强调档） */
+  --bar-usage: #533afd;              /* 用量轨 = 品牌靛蓝 */
+
+  /* ── Overlays & shadows（shadow-blue #003770 alpha 家族 + Level 2 投影） ── */
+  --overlay-faint: rgba(0, 55, 112, .03);
+  --overlay-soft: rgba(0, 55, 112, .04);  /* nav hover */
+  --overlay-line: rgba(0, 55, 112, .06);  /* nav 分组线 */
+  --overlay-medium: rgba(0, 55, 112, .08);
+  --shadow-panel: 0 8px 24px rgba(0, 55, 112, .08), 0 2px 6px rgba(0, 55, 112, .04); /* 规格 Level 2 */
+
+  /* ── brand-mark（渐变 mesh 三停靠条：cream→magenta/ruby→indigo；形态见片段） ── */
+  --brand-frame-bg: linear-gradient(165deg, rgba(245, 233, 212, .9), rgba(185, 185, 249, .55) 55%, rgba(83, 58, 253, .35));
+  --brand-frame-border: rgba(83, 58, 253, .22);
+  --brand-frame-shadow: 0 1px 3px rgba(0, 55, 112, .08);
+  --brand-bar-1: linear-gradient(180deg, #f5e9d4, #9b6829);  /* cream → lemon */
+  --brand-bar-2: linear-gradient(180deg, #f96bee, #ea2261);  /* magenta → ruby */
+  --brand-bar-3: linear-gradient(180deg, #665efd, #533afd);  /* 靛蓝一族 */
+  --brand-bar-inset: inset 0 1px 0 rgba(255, 255, 255, .4);
+  --brand-bar-inset-strong: inset 0 1px 0 rgba(255, 255, 255, .45);
+  --brand-dot: #ea2261;              /* ruby 角标（渐变停靠点之一） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: 0 0 6px rgba(234, 34, 97, .45);
+  --nav-indicator: #533afd;          /* 当前导航指示条 = 品牌靛蓝 */
+
+  /* ── 登录页（白卡 + mesh 渐变展示板 + 靛蓝药丸 CTA） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e3e8ee;
+  --login-shell-shadow: 0 8px 24px rgba(0, 55, 112, .08), 0 2px 6px rgba(0, 55, 112, .04); /* 规格 Level 2 */
+  --login-showcase-bg: var(--grad-mesh); /* mesh 渐变 = 规格 hero 上三分之一氛围 */
+  --login-showcase-ink: #1c1e54;     /* mesh 上的深海军蓝 display 墨 */
+  --login-grid-line: rgba(28, 30, 84, .06);
+  --login-grid-mask: linear-gradient(140deg, rgba(28, 30, 84, .5), transparent 72%); /* 派生：深端压mesh */
+  --login-brand-ink: #1c1e54;
+  --login-brand-mute: #64748d;
+  --login-signal-bg: #ffffff;
+  --login-signal-border: #a8c3de;
+  --login-signal-shadow: 0 1px 3px rgba(0, 55, 112, .08); /* 规格 Level 1 */
+  --login-signal-bar: #533afd;       /* signal 三条 = 靛蓝小图表 */
+  --login-kicker: #4434d4;           /* kicker = primary-deep（靛蓝强调小签） */
+  --login-heading: #1c1e54;
+  --login-copy: #273951;
+  --login-preview-bg: #ffffff;       /* 展示板内嵌预览卡 = 白色 dashboard mockup */
+  --login-preview-border: #e3e8ee;
+  --login-preview-shadow: 0 8px 24px rgba(0, 55, 112, .08), 0 2px 6px rgba(0, 55, 112, .04);
+  --login-preview-divider: #e3e8ee;
+  --login-preview-dot: #ea2261;      /* ruby 点缀（规格：mockup 内 accent dots） */
+  --login-preview-dot-soft: #b9b9f9;
+  --login-preview-label: #64748d;
+  --login-preview-row-line: #e3e8ee;
+  --login-preview-row-ink: #0d253d;
+  --login-preview-chip-ink: #4434d4; /* pill-tag-soft：淡靛底 + primary-deep 字 */
+  --login-preview-chip-bg: #b9b9f9;
+  --login-preview-bar: #533afd;
+  --login-foot: #64748d;
+  --login-card-kicker: #64748d;
+  --login-card-heading: #0d253d;
+  --login-card-copy: #64748d;
+  --login-notice-border: rgba(83, 58, 253, .25); /* 公告条 = 靛蓝淡染 */
+  --login-notice-bg: rgba(83, 58, 253, .07);
+  --login-notice-ink: #273951;
+  --login-label: #273951;
+  --login-input-border: #a8c3de;     /* hairline-input（规格输入线） */
+  --login-input-border-hover: #533afd; /* 聚焦边换 primary（规格 text-input-focused） */
+  --login-primary: #533afd;          /* 靛蓝药丸 CTA（白字走 antd colorTextLightSolid） */
+  --login-primary-active: #2e2b8c;
+
+  /* ── stripe 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --grad-mesh: linear-gradient(118deg, #f5e9d4 0%, #b9b9f9 36%, #f96bee 60%, rgba(234, 34, 97, .92) 76%, rgba(83, 58, 253, .95) 100%); /* 签名 mesh（规格停靠点横向洗） */
+  --grad-brand-text: linear-gradient(90deg, #533afd, #ea2261 55%, #f96bee); /* 品牌化渐变文字（kicker 用） */
+}
+
+/* ============================================================
+   stripe 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="stripe"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── sohne ss01 特征集：品牌排版签名（规格 Do：站点级 font-feature-settings；
+      声明在作用域根上随继承全站生效） ── */
+[data-theme="stripe"] { font-feature-settings: "ss01"; }
+
+/* ── tnum 表格数字：金额/计数位一律 tabular figures
+      （规格 body-tabular：tnum + -0.42px@14px 收紧 → -.01em 近似） ── */
+[data-theme="stripe"] .admin-table .ant-table,
+[data-theme="stripe"] .business-outcomes__card > strong,
+[data-theme="stripe"] .ratio-card > strong,
+[data-theme="stripe"] .codex-metric > strong,
+[data-theme="stripe"] .metric-matrix strong,
+[data-theme="stripe"] .codex-token-ledger strong,
+[data-theme="stripe"] .configuration-status-rail > div > strong,
+[data-theme="stripe"] .configuration-summary-grid strong,
+[data-theme="stripe"] .duration-card strong,
+[data-theme="stripe"] .duration-values,
+[data-theme="stripe"] .sparkline__tip,
+[data-theme="stripe"] .run-summary__duration { font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/* ── 细字重排版：标题/数值/展示位一律 300 + 负字距
+      （规格「Thin weight is the brand」；骨架默认 600–700） ── */
+[data-theme="stripe"] .brand-block strong,
+[data-theme="stripe"] .panel-heading h2,
+[data-theme="stripe"] .business-outcomes__card > span,
+[data-theme="stripe"] .business-outcomes__card > strong,
+[data-theme="stripe"] .ratio-card__title,
+[data-theme="stripe"] .ratio-card > strong,
+[data-theme="stripe"] .codex-metric > strong,
+[data-theme="stripe"] .codex-token-ledger strong,
+[data-theme="stripe"] .configuration-status-rail > div > strong,
+[data-theme="stripe"] .configuration-summary-grid strong,
+[data-theme="stripe"] .configuration-step-copy h2,
+[data-theme="stripe"] .configuration-summary h2,
+[data-theme="stripe"] .configuration-inline-title h3,
+[data-theme="stripe"] .connector-configuration-step__heading h3,
+[data-theme="stripe"] .repo-row strong,
+[data-theme="stripe"] .intent-row strong,
+[data-theme="stripe"] .duration-card strong,
+[data-theme="stripe"] .duration-section__heading strong,
+[data-theme="stripe"] .value-list__title,
+[data-theme="stripe"] .connector-watch__item strong,
+[data-theme="stripe"] .detail-section h3,
+[data-theme="stripe"] .run-summary__duration,
+[data-theme="stripe"] .audit-json > summary,
+[data-theme="stripe"] .login-page__brand strong,
+[data-theme="stripe"] .login-page__showcase-copy h2,
+[data-theme="stripe"] .login-page__card h1 { font-weight: 300; letter-spacing: -.02em; }
+
+/* ── 表头 = caption 角色：400 常规字重（规格 caption 13px/400，无粗表头） ── */
+[data-theme="stripe"] .admin-table .ant-table-thead > tr > th { font-weight: 400; }
+
+/* ── antd 弹层标题：细字重 + 收紧字距（规格 display 层语汇） ── */
+[data-theme="stripe"] .ant-modal-title,
+[data-theme="stripe"] .ant-drawer-title { font-weight: 300; letter-spacing: -.01em; }
+
+/* ── 页头 eyebrow / 面板 kicker：ink-mute 大写宽字距小签（sans，非骨架默认 mono） ── */
+[data-theme="stripe"] .page-heading__eyebrow,
+[data-theme="stripe"] .panel-kicker,
+[data-theme="stripe"] .section-label { color: var(--mute); font-family: var(--font-sans); font-weight: 400; letter-spacing: .12em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="stripe"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 400; line-height: 1.2; letter-spacing: -.01em; text-transform: none; }
+
+/* ── 品牌化渐变：登录展示板/表单卡 kicker 走靛蓝→ruby→magenta 渐变文字
+      （规格「文档强调渐变」落在 hero/showcase 类装饰位） ── */
+[data-theme="stripe"] .login-page__showcase-copy > span,
+[data-theme="stripe"] .login-page__card-heading > span { background: var(--grad-brand-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* ── 系统滚动条：细、hairline-input 冷调、圆头 ── */
+[data-theme="stripe"] * { scrollbar-width: thin; scrollbar-color: #a8c3de transparent; }
+[data-theme="stripe"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="stripe"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="stripe"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #a8c3de; background-clip: padding-box; }
+[data-theme="stripe"] ::-webkit-scrollbar-thumb:hover { background: #7da6cc; background-clip: padding-box; }
+
+/* ── 靛蓝选区 ── */
+[data-theme="stripe"] ::selection { background: rgba(83, 58, 253, .16); }
+
+/* ── brand-mark：mesh 三停靠条收细收敛（2px 圆角，条形更利落） ── */
+[data-theme="stripe"] .brand-mark span { border-radius: 2px; }
+
+/* ── 登录 showcase：display 规格（display-lg 32px/300/1.1/-0.64px→-.02em） ── */
+[data-theme="stripe"] .login-page__showcase-copy h2 { font-size: 32px; line-height: 1.1; }
+/* ── 登录表单卡：display-md 26px/300（规格紧凑卡标题档） ── */
+[data-theme="stripe"] .login-page__card h1 { font-size: 26px; font-weight: 300; letter-spacing: -.01em; }
+

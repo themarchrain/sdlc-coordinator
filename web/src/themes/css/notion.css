@@ -1,0 +1,256 @@
+/* ============================================================
+   notion 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Notion 设计语言（纸上文档）：
+   - 暖纸画布 #f6f5f4（Warm Paper，签名页底）+ 纯白卡/字段（figure/ground 靠面差）
+   - 文字四级坍缩：Ink #000000（css 按「~95% alpha 软墨」原文呈 rgba(0,0,0,.95)）
+     / Warm Charcoal #31302e / Stone #615d59 / Ash #a39e98
+   - 唯一结构蓝 #0075de（CTA/链接/激活），按压 #005bab；hover 派生中点 #0068c4
+   - Deep Indigo #213183 = 唯一暗面（登录 showcase 夜带 + json/tooltip 暗岛）
+   - 贴纸彩盘（天蓝 #62aef0/粉 #ff64c8/青 #2a9d99/绿 #1aae39/橙 #dd5b00 等）
+     只做装饰：brand-mark 贴纸条 + 登录 signal 星座；语义绿 = 贴纸绿（规格指定）
+   - 发丝线 #e6e6e6（规格字面值）；控件边 #dddddd（text-input 规格 rgb(221,221,221)）
+   - 海拔 = 多层近透明微叠（Level 1 字面值），圆角 4/5/8/12/16/药丸
+   骨架表达不了的形态（药丸 CTA、负字距展示位、eyebrow 12/600 sans、
+   brand-mark 贴纸条、登录夜带 + heading-1 40/700/-1px、signal 星座三色）见块后片段。
+   ============================================================ */
+[data-theme="notion"] {
+  /* ── Typography ───────────────────────────── */
+  /* NotionInter → Inter 直接替代（规格「Note on Font Substitutes」）；
+     单族承担全部层级，无衬线/等宽展示位（原文） */
+  --font-sans: Inter, -apple-system, "Segoe UI", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Inter, -apple-system, "Segoe UI", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格 刻度：xs 4 输入 / sm 5 行·药丸签 / md 8 utility / lg 12 工作卡 / xl 16 大容器 / full 药丸） ── */
+  --radius-xs: 4px;      /* term-hint focus（输入框规格 4px） */
+  --radius-soft: 9999px; /* 登录预览小色块 = badge-pill 全药丸（规格组件） */
+  --radius-sm: 5px;      /* 内嵌小块 = menu items/list rows 5px */
+  --radius-md: 8px;      /* 行卡 = utility 按钮 8px */
+  --radius-lg: 12px;     /* 指标卡 = feature-card 12px */
+  --radius-xl: 12px;     /* 面板 = feature-card 工作卡 12px */
+  --radius-brand: 12px;  /* brand-mark / 登录 signal = 贴纸磁贴 12px */
+  --radius-pill: 9999px; /* 迷你徽标 = badge pill 全药丸 */
+  --radius-panel: 16px;  /* 登录外壳 = ex-auth-form-card rounded.xl 16px */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f6f5f4;             /* Warm Paper：签名页画布（规格 Do「Keep the page on the warm canvas」） */
+  --canvas-soft: #f6f5f4;        /* 表头/结果卡软带 = 同纸面（ex-data-table headerBackground = canvas-soft） */
+  --canvas-card: #ffffff;        /* 白卡/字段：靠发丝线 + 面差分层 */
+  --canvas-dark: #213183;        /* json 凹面 = Deep Indigo「夜带」暗岛（规格唯一暗面授权复用） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = nav-bar 规格白面 */
+  --surface-bar: rgba(255, 255, 255, .92); /* 白导航 + 微透（规格 nav 无底色，滚动条带模糊） */
+  --surface-inset: #f6f5f4;      /* 白卡内嵌面回落暖纸 */
+  --surface-matrix: #f6f5f4;
+  --surface-tint: #f6f5f4;       /* 表行 hover = 暖纸微高亮 */
+  --surface-rail: #f6f5f4;
+  --surface-detail: #f6f5f4;     /* 详情节 = canvas-soft featured 卡（规格 pricing-plan-card-featured 手法） */
+  --surface-chip: #f6f5f4;
+  --surface-legacy: #f6f5f4;
+  --surface-draft: #f6f5f4;
+  --surface-empty: #ffffff;      /* 空态卡 = 白卡 + 虚线 */
+  --surface-json-bar: #1a2868;   /* json 头条 = 夜带压深一档（派生自 Deep Indigo） */
+  --tooltip-bg: #213183;         /* 浮层提示 = 夜带倒置面（与 antd colorBgSpotlight 同源） */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级墨；Ink 按原文以 95% 软黑呈现） ── */
+  --ink: rgba(0, 0, 0, .95);
+  --ink-strong: rgba(0, 0, 0, .95);
+  --ink-display: rgba(0, 0, 0, .95);
+  --ink-heading: rgba(0, 0, 0, .95);
+  --ink-value: rgba(0, 0, 0, .95);
+  --ink-repo: rgba(0, 0, 0, .95);
+  --ink-step: rgba(0, 0, 0, .95);
+  --ink-label-strong: rgba(0, 0, 0, .95);
+  --ink-label: rgba(0, 0, 0, .95);
+  --ink-row: rgba(0, 0, 0, .95);
+  --ink-list: #31302e;   /* value-list li = Warm Charcoal 正文 */
+  --ink-data: rgba(0, 0, 0, .95);
+  --ink-field: rgba(0, 0, 0, .95);
+  --ink-rail: rgba(0, 0, 0, .95);
+  --ink-rail-value: rgba(0, 0, 0, .95);
+  --ink-secret: #31302e; /* secret-label = 正文级 */
+  --ink-chip: #31302e;   /* duration 数值 = 正文级 */
+  --body: #31302e;       /* Warm Charcoal：次级正文/页脚文字 */
+  --body-alt: #31302e;
+  --body-soft: #615d59;  /* Stone：占比卡小注 */
+  --mute: #615d59;       /* Stone：支持/弱化文案 */
+  --mute-deep: #31302e;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #615d59;
+  --mute-caption: #615d59;
+  --mute-intro: #31302e; /* 配置导语 = 正文级（文档式长读） */
+  --mute-terse: #615d59;
+  --mute-quiet: #615d59;
+  --mute-soft: #615d59;
+  --mute-dim: #615d59;
+  --mute-draft: #615d59;
+  --mute-json: rgba(255, 255, 255, .82); /* json 头条字 = 夜带上的近白 */
+  --mute-matrix: #615d59;
+  --faint: #a39e98;      /* Ash：占位/元数据级（规格 文字第四级） */
+  --faint-alt: #a39e98;
+  --faint-soft: #a39e98;
+  --faint-ghost: #a39e98;
+  --faint-hint: #a39e98;
+  --faint-meta: #a39e98;
+  --faint-note: #a39e98;
+  --faint-empty: #a39e98;
+  --on-dark: #ffffff;    /* 夜带上的字 = 纯白（规格 hero 白字） */
+  --on-dark-soft: rgba(255, 255, 255, .92); /* json 夜带正文 */
+  --on-dark-faint: rgba(255, 255, 255, .6); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #0075de;    /* Notion Blue：唯一结构交互色 */
+  --primary-active: #005bab; /* Pressed Blue（规格字面值）；hover 用派生中点 #0068c4 */
+  --on-primary: #ffffff;
+  --link: #0075de;       /* 行内链接 = 蓝（规格「inline link colour」） */
+  --link-hover: #0068c4;
+  --focus-ring: rgba(0, 117, 222, .28); /* 蓝 28% 焦点信号（active/focus = 蓝的授权用途） */
+  --primary-veil: rgba(0, 117, 222, .08); /* 当前导航 = 蓝 8% 薄纱（badge/激活信号蓝） */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* 规格：无专用语义色板，状态由贴纸盘承担 → 绿=贴纸绿（指定），
+     橙=贴纸橙（派生），红=产品内危险红 #e03e3a（派生，贴纸级饱和） */
+  --success: #1aae39;
+  --success-halo: 0 0 0 4px rgba(26, 174, 57, .14);
+  --warning: #dd5b00;
+  --warning-soft: rgba(221, 91, 0, .1);
+  --error: #e03e3a;
+  --error-deep: #c53430;
+  --info: #0075de;       /* inferred-mark = 唯一结构蓝 */
+  --info-soft: #eaf5fc;  /* 蓝 8% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #e6e6e6;         /* 规格发丝线（black-at-10% 实色化） */
+  --hairline-soft: #ededec;    /* 派生：暖调更轻分隔 */
+  --hairline-strong: #d2d0cd;  /* 派生：暖灰控件强线/滚动条（Ash 向下一档） */
+  --hairline-card: #e6e6e6;
+  --hairline-inset: #e6e6e6;
+  --hairline-mid: #e6e6e6;
+  --hairline-rail: #e6e6e6;
+  --hairline-codex: #e6e6e6;
+  --hairline-detail: #e6e6e6;
+  --hairline-json: #1a2868;    /* json 夜岛描边 = 靛压深一档 */
+  --hairline-dashed: #d2d0cd;  /* 空态虚线 = 控件强线一档 */
+  --hairline-legacy: #d2d0cd;
+  --hairline-row: #ededec;
+  --hairline-draft: #d2d0cd;
+  --bar-value: #d2d0cd;   /* value-list 左规线 = 暖灰发丝（贴纸色不刷结构） */
+  --bar-matrix: #d2d0cd;
+  --bar-summary: #d2d0cd;
+  --bar-usage: #0075de;   /* 用量轨 = 唯一蓝（数据墨水） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（规格 button-icon-circular rgba(0,0,0,.05) 家族） */
+  --overlay-faint: rgba(0, 0, 0, .035);
+  --overlay-soft: rgba(0, 0, 0, .05);  /* nav hover = 规格字面值 */
+  --overlay-line: rgba(0, 0, 0, .07);  /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .08);
+  --shadow-panel: rgba(0, 0, 0, 0.01) 0 0.175px 1.041px, rgba(0, 0, 0, 0.02) 0 0.8px 2.925px, rgba(0, 0, 0, 0.027) 0 2.025px 7.847px, rgba(0, 0, 0, 0.04) 0 4px 18px; /* Level 1 微叠字面值 */
+
+  /* ── brand-mark（白磁贴 + 发丝线 + 贴纸三色条 + 绿贴纸点；形态见片段） ── */
+  --brand-frame-bg: #ffffff;
+  --brand-frame-border: #e6e6e6;
+  --brand-frame-shadow: rgba(0, 0, 0, 0.01) 0 0.175px 1.041px, rgba(0, 0, 0, 0.02) 0 0.8px 2.925px, rgba(0, 0, 0, 0.027) 0 2.025px 7.847px, rgba(0, 0, 0, 0.04) 0 4px 18px;
+  --brand-bar-1: #62aef0;  /* Sticker Sky */
+  --brand-bar-2: #ff64c8;  /* Sticker Pink */
+  --brand-bar-3: #2a9d99;  /* Sticker Teal */
+  --brand-bar-inset: none;       /* 扁平贴纸，无光泽 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: #1aae39;   /* 角点 = 贴纸绿（category dot 授权装饰位） */
+  --brand-dot-border: #f6f5f4;
+  --brand-dot-glow: none;
+  --nav-indicator: #0075de; /* 当前导航指示 = 蓝（规格「active-tab signal」） */
+
+  /* ── 登录页（showcase = Deep Indigo 夜带 hero：规格唯一的倒置 showroom 时刻） ── */
+  --login-bg: #f6f5f4;         /* 页底 = 暖纸 */
+  --login-shell-border: #e6e6e6;
+  --login-shell-shadow: rgba(0, 0, 0, 0.027) 0 2px 8px, rgba(0, 0, 0, 0.05) 0 23px 52px; /* Level 2 末档字面值 */
+  --login-showcase-bg: #213183; /* hero-band = Deep Indigo 夜带 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .07); /* 星座网格 = 夜带微光 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;   /* 夜带上的贴纸星座条（无框无光影） */
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #62aef0;      /* 基色 = Sticker Sky；粉/青由片段补第 2/3 根 */
+  --login-kicker: rgba(255, 255, 255, .65); /* eyebrow 12/600 见片段 */
+  --login-heading: #ffffff;         /* hero 标题 = heading-1 40px/700/-1px（见片段） */
+  --login-copy: rgba(255, 255, 255, .66);
+  --login-preview-bg: rgba(255, 255, 255, .08); /* 夜带上的玻璃卡（elevated white pill 回声） */
+  --login-preview-border: rgba(255, 255, 255, .16);
+  --login-preview-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #62aef0;          /* 数据点 = Sticker Sky */
+  --login-preview-dot-soft: rgba(255, 255, 255, .35);
+  --login-preview-label: rgba(255, 255, 255, .6);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .88);
+  --login-preview-chip-ink: #62aef0;     /* chip = 天蓝贴纸 */
+  --login-preview-chip-bg: rgba(98, 174, 240, .22);
+  --login-preview-bar: rgba(255, 255, 255, .4);
+  --login-foot: rgba(255, 255, 255, .55);
+  --login-card-kicker: #0075de;  /* 白卡侧 eyebrow = badge-pill（白底蓝字） */
+  --login-card-heading: rgba(0, 0, 0, .95);
+  --login-card-copy: #615d59;
+  --login-notice-border: rgba(0, 117, 222, .25); /* 公告条 = 蓝薄纱 */
+  --login-notice-bg: #eaf5fc;
+  --login-notice-ink: #31302e;
+  --login-label: #31302e;
+  --login-input-border: #dddddd;   /* text-input 规格 rgb(221,221,221) 字面值 */
+  --login-input-border-hover: #615d59;
+  --login-primary: #0075de;        /* 药丸主 CTA = Notion Blue */
+  --login-primary-active: #0068c4; /* hover = 派生中点（active 见 --primary-active） */
+}
+
+/* ============================================================
+   notion 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="notion"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：蓝选区 / 蓝焦点环（active/focus = 蓝的授权用途） ── */
+[data-theme="notion"] ::selection { background: rgba(0, 117, 222, .16); }
+[data-theme="notion"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 展示位负字距（规格：越大越负；display-1 -2.125px@64 ≈ -.03em） ── */
+[data-theme="notion"] .business-outcomes__card > strong,
+[data-theme="notion"] .ratio-card > strong { letter-spacing: -.02em; }
+[data-theme="notion"] .panel-heading h2,
+[data-theme="notion"] .detail-section h3 { letter-spacing: -.01em; }
+[data-theme="notion"] .login-page__card h1 { font-weight: 700; letter-spacing: -.5px; } /* ≈ heading-2 26px/-0.625px */
+
+/* ── eyebrow / kicker：NotionInter 12px/600 sans（badge-pill 白底蓝字语汇，替骨架 mono） ── */
+[data-theme="notion"] .page-heading__eyebrow,
+[data-theme="notion"] .panel-kicker,
+[data-theme="notion"] .section-label { font: 600 12px/1.33 var(--font-sans); letter-spacing: .01em; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="notion"] .context-heading-slot .page-heading__eyebrow { font-family: inherit; font-size: 15px; font-weight: 650; line-height: 1.2; letter-spacing: -.01em; }
+
+/* ── 表头：Warm Paper 软带 + Stone 标签 + 600 字重（ex-data-table eyebrow 表头） ── */
+[data-theme="notion"] .admin-table .ant-table-thead > tr > th { font-weight: 600; }
+
+/* ── 侧栏：行项圆角 = rounded.sm 5px（menu items/list rows 规格） ── */
+[data-theme="notion"] .workspace-nav a { border-radius: 5px; }
+
+/* ── 药丸 CTA：主按钮全药丸（button-primary rounded.full 签名；utility 8px 留给 antd 默认件） ── */
+[data-theme="notion"] .ant-btn-primary { border-radius: 9999px; }
+
+/* ── brand-mark：白磁贴 + 发丝线内三根贴纸平条（扁平无光泽，颜色走令牌） ── */
+[data-theme="notion"] .brand-mark span { border-radius: 3px 3px 2px 2px; box-shadow: none; }
+
+/* ── 系统滚动条：细、暖灰、圆头 ── */
+[data-theme="notion"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="notion"] ::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--hairline-strong); }
+[data-theme="notion"] ::-webkit-scrollbar-thumb:hover { background: #a39e98; }
+[data-theme="notion"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="notion"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：夜带 hero 标题 = heading-1 40px/700/1.1/-1px（规格字面值） ── */
+[data-theme="notion"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 700; line-height: 1.1; letter-spacing: -1px; }
+/* kicker / 卡片 eyebrow = 12px/600 sans（eyebrow 规格） */
+[data-theme="notion"] .login-page__showcase-copy > span,
+[data-theme="notion"] .login-page__card-heading > span { font: 600 12px/1.33 var(--font-sans); letter-spacing: .01em; }
+
+/* ── 登录 signal：夜带上的贴纸星座（Sky/Pink/Teal 三色条，呼应 hero 星座贴纸） ── */
+[data-theme="notion"] .login-page__signal span:nth-child(2) { background: var(--brand-bar-2); }
+[data-theme="notion"] .login-page__signal span:nth-child(3) { background: var(--brand-bar-3); }

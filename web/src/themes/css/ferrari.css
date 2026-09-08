@@ -1,0 +1,282 @@
+/* ============================================================
+   ferrari 主题令牌块 —— 规格驱动（ferrari 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Ferrari 设计语言（cinematic editorial，暗色）：
+   - 画布阶梯：canvas #181818（近黑微暖，永不纯黑）→ 卡/面板
+     #303030（canvas-elevated）→ 卡内交互/内嵌 #3c3c3c（规格暗灰
+     渐变起点）→ 悬停半阶 #1f1f1f → json 凹陷 #030303（渐变终点）
+   - 文字四级：ink #ffffff / body #969696 / muted-soft #8f8f8f /
+     muted #666666（规格 Text 原文）；display 恒 500 不加粗
+   - 唯一品牌电压 Rosso Corsa #da291c：只落主 CTA、brand-mark
+     （Cavallino）、导航指示条（F1 race-position highlight）、
+     用量/进度计数；UI chrome 其余一律无彩
+   - 焦点环 = Hypersail Yellow #fff200（规格「global focus-ring
+     color」，黄色唯二合法场景之一）
+   - 语义：info #4c98b9 / success #03904a / validation red #f13a2c；
+     规格未分 error/warning → #f13a2c 直译为 error，warning 推导
+     琥珀 #e8a13c（避免与 error 撞色，暖调贴合微暖画布）
+   - 发丝线 #303030 与提升面同值（规格原文）；卡内分隔推导
+     #3c3c3c（#303030 线在 #303030 卡上不可见）；强线推导 #4a4a4a
+   - 锐角哲学：rounded.none 0px 主导 CTA/卡/面板；药丸只归 badge
+   - 海拔 = 亮度阶梯 + 单一 soft 阴影 0 4px 8px rgba(0,0,0,.1)
+     （规格唯一 documented 阴影层）
+   骨架表达不了的形态（brand-mark 三 span 锐角红条、大写宽字距
+   CTA/导航/eyebrow、display 500 负字距、组件标题 700、锐角进度条）
+   见块后片段。
+   ============================================================ */
+[data-theme="ferrari"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: 'FerrariSans', Inter, -apple-system, system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; /* FerrariSans 授权字体，Inter 500 为规格书面替代 */
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 规格无 mono 字族，json 位回落系统等宽（推导） */
+  --font-display: 'FerrariSans', Inter, -apple-system, system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 单一字体族，display/body 不分家（规格原文） */
+
+  /* ── Radius（规格刻度：none 0 主导 / xs 2 / sm·输入 4 / full 9999 只归徽章） ── */
+  --radius-xs: 2px;      /* 紧徽章（规格 rounded.xs「rare」） */
+  --radius-soft: 4px;    /* 登录预览小色块 = 输入同级 */
+  --radius-sm: 4px;      /* 表单输入（规格 text-input rounded.sm） */
+  --radius-md: 0px;      /* 行卡锐角（规格 rounded.none 卡） */
+  --radius-lg: 0px;      /* 指标卡锐角 */
+  --radius-xl: 0px;      /* 面板锐角（规格 xl 12 仅限 rare modal，不进面板） */
+  --radius-brand: 0px;   /* brand-mark 锐角铭牌 */
+  --radius-pill: 9999px; /* badge-pill = 唯一药丸几何（规格原文） */
+  --radius-panel: 0px;   /* 登录外壳锐角 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #181818;            /* 近黑微暖画布（规格：永不纯黑） */
+  --canvas-soft: #181818;       /* 嵌面卡/表头 = 扁平画布 + 发丝线（race-calendar-row 式） */
+  --canvas-card: #303030;       /* 卡/面板 = canvas-elevated（规格 driver-card / newsletter band） */
+  --canvas-dark: #030303;       /* json pre 凹陷 = 规格暗灰渐变终点（atmospheric darken） */
+  --surface-sidebar: #181818;   /* 侧栏与画布同底（规格 top-nav-on-dark bg = canvas） */
+  --surface-bar: rgba(24, 24, 24, .92);
+  --surface-inset: #3c3c3c;     /* 卡内交互/内嵌面 = 规格暗灰渐变起点 */
+  --surface-matrix: #3c3c3c;    /* 矩阵单元 = 卡内嵌面（同 inset） */
+  --surface-tint: #1f1f1f;      /* 表行 hover = 半阶提亮（推导：画布与卡之间的中点） */
+  --surface-rail: #3c3c3c;      /* 配置状态轨 = 卡内嵌面 */
+  --surface-detail: #303030;    /* 详情卡 = 卡阶 */
+  --surface-chip: #303030;      /* chip = badge-pill 底（规格 canvas-elevated） */
+  --surface-legacy: #303030;
+  --surface-draft: #303030;
+  --surface-empty: transparent; /* 空态不叠面，发丝虚线承担 */
+  --surface-json-bar: #3c3c3c;  /* json 头条 = 卡内提升一阶 */
+  --tooltip-bg: #3c3c3c;        /* 浮层提示 = 提升阶（与 antd colorBgSpotlight 同源） */
+
+  /* ── Ink & text ladder（白 #ffffff / #969696 / #8f8f8f / #666666 四级） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #ffffff;
+  --ink-data: #ffffff;
+  --ink-field: #ffffff;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #969696;  /* 掩码值回落 body 灰（推导：弱化非重点数据） */
+  --ink-chip: #ffffff;    /* badge-pill 文字 = ink（规格原文） */
+  --body: #969696;         /* 规格 body：暗底默认正文（Default running-text） */
+  --body-alt: #969696;     /* body-strong 同为白但由 ink 族承担，次级正文维持 body 灰 */
+  --body-soft: #8f8f8f;    /* muted-soft：占比卡小注 */
+  --mute: #8f8f8f;         /* muted-soft 为暗底常规次级（规格 muted #666666 过深，下放 faint 层） */
+  --mute-deep: #969696;    /* 暗底「更深」= 更亮：标签比 mute 高半档（照 spotify 反转先例） */
+  --mute-inline: #8f8f8f;
+  --mute-caption: #8f8f8f;
+  --mute-intro: #8f8f8f;
+  --mute-terse: #8f8f8f;
+  --mute-quiet: #8f8f8f;
+  --mute-soft: #8f8f8f;
+  --mute-dim: #8f8f8f;
+  --mute-draft: #8f8f8f;
+  --mute-json: #8f8f8f;
+  --mute-matrix: #8f8f8f;
+  --faint: #666666;        /* 规格 muted：最深说明文字（站点实证的编辑级暗调） */
+  --faint-alt: #666666;
+  --faint-soft: #666666;
+  --faint-ghost: #666666;
+  --faint-hint: #666666;
+  --faint-meta: #666666;
+  --faint-note: #666666;
+  --faint-empty: #8f8f8f;  /* 空态文字提亮半档保可读（推导） */
+  --on-dark: #ffffff;
+  --on-dark-soft: #969696; /* json 深块文字 */
+  --on-dark-faint: #666666;
+
+  /* ── Primary / link / focus（Rosso 稀缺：红只在 CTA/焦点计数/交互瞬间） ── */
+  --primary: #da291c;                  /* Rosso Corsa：唯一品牌电压（规格 primary） */
+  --primary-active: #b01e0a;           /* 按压态（规格 primary-active） */
+  --on-primary: #ffffff;               /* 红底白字（规格 on-primary） */
+  --link: #ffffff;                     /* 链接 = 白（规格 tertiary link 即 ink 色；红不常驻） */
+  --link-hover: #da291c;               /* hover 才放出红（规格 Decorative Depth：CTA hover 用红） */
+  --focus-ring: rgba(255, 242, 0, .38); /* Hypersail Yellow = 全局焦点环（规格原文） */
+  --primary-veil: rgba(218, 41, 28, .12); /* 选中纱 = 红（race-position 高亮的行选中版） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #03904a;             /* 规格 semantic-success */
+  --success-halo: 0 0 0 4px rgba(3, 144, 74, .18);
+  --warning: #e8a13c;             /* 推导琥珀：规格 warning #f13a2c 为红、与 error 撞色（见 antd.ts 注） */
+  --warning-soft: rgba(232, 161, 60, .14);
+  --error: #f13a2c;               /* 规格 semantic-warning 红 → 直译为 error（站点唯一 validation red） */
+  --error-deep: #da291c;          /* 深阶回落 Rosso（同族红，推导） */
+  --info: #4c98b9;                /* 规格 semantic-info */
+  --info-soft: rgba(76, 152, 185, .14);
+
+  /* ── Hairlines & bars（发丝线 #303030 与提升面同值；卡内线推导 #3c3c3c；强线推导 #4a4a4a） ── */
+  --hairline: #303030;       /* 规格发丝线（画布上的分隔/卡描边） */
+  --hairline-soft: #242424;  /* 更柔分隔 = 画布与卡之间半阶（推导） */
+  --hairline-strong: #4a4a4a; /* 强线/滚动条 = #303030 与 #666 的中点（推导） */
+  --hairline-card: #303030;  /* 卡外线 = 规格卡描边（#303030 在 #181818 画布上可见） */
+  --hairline-inset: #3c3c3c; /* 卡内分隔 = 渐变起点（同值线在卡上不可见，推导） */
+  --hairline-mid: #3c3c3c;
+  --hairline-rail: #3c3c3c;
+  --hairline-codex: #303030;
+  --hairline-detail: #3c3c3c;
+  --hairline-json: #3c3c3c;
+  --hairline-dashed: #4a4a4a; /* 空态虚线需可见 = 强线 */
+  --hairline-legacy: #303030;
+  --hairline-row: #3c3c3c;   /* 行分隔 = 卡内线（与 antd Table borderColor 同源） */
+  --hairline-draft: #4a4a4a;
+  --bar-value: #4a4a4a;      /* 左色条一律无彩（Rosso 稀缺原则） */
+  --bar-matrix: #4a4a4a;
+  --bar-summary: #666666;    /* 汇总条 = muted 级灰 */
+  --bar-usage: #da291c;      /* codex 用量进度 = 红（race-position 计数语义） */
+
+  /* ── Overlays & shadows（海拔 = 亮度阶梯 + 单一 soft 阴影层） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: #1f1f1f;            /* 导航 hover = 半阶提亮 */
+  --overlay-line: rgba(255, 255, 255, .05);
+  --overlay-medium: rgba(255, 255, 255, .07);
+  --shadow-panel: 0 4px 8px rgba(0, 0, 0, .1); /* 规格唯一 soft-small 阴影层（hovered cards） */
+
+  /* ── brand-mark（#303030 锐角铭牌 + 三根 Rosso 系方头条；Cavallino 红的合法场景） ── */
+  --brand-frame-bg: #303030;
+  --brand-frame-border: rgba(255, 255, 255, .1);
+  --brand-frame-shadow: none;   /* 无阴影层（规格） */
+  --brand-bar-1: #da291c;      /* Rosso 基色 */
+  --brand-bar-2: #f13a2c;      /* 语义红同族（规格 hex） */
+  --brand-bar-3: #b01e0a;      /* 按压红（规格 hex） */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none; /* 无内发光层（锐利平面哲学） */
+  --brand-dot: #da291c;        /* 角标红点（Cavallino 回声） */
+  --brand-dot-border: #181818;
+  --brand-dot-glow: none;      /* 规格禁多层阴影/发光 */
+  --nav-indicator: #da291c;    /* 当前导航指示条 = F1 race-position highlight（规格点名的红场景） */
+
+  /* ── 登录页（近黑画布 + 暗灰氛围渐变展示板 + Rosso CTA） ── */
+  --login-bg: #181818;
+  --login-shell-border: #303030;
+  --login-shell-shadow: 0 4px 8px rgba(0, 0, 0, .1); /* 单一 soft 层 */
+  --login-showcase-bg: linear-gradient(180deg, #3c3c3c, #030303 64%); /* 规格暗灰氛围渐变原文 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #969696;
+  --login-signal-bg: #303030;        /* signal = badge-pill 铭牌（锐角见片段） */
+  --login-signal-border: rgba(255, 255, 255, .1);
+  --login-signal-shadow: none;
+  --login-signal-bar: #da291c;       /* 红 = Cavallino 回声 */
+  --login-kicker: #8f8f8f;           /* kicker = caption-uppercase 语气（片段钉大写宽字距） */
+  --login-heading: #ffffff;
+  --login-copy: #969696;
+  --login-preview-bg: #181818;       /* feature-card-photo 式：氛围带上的画布面卡 */
+  --login-preview-border: rgba(255, 255, 255, .1);
+  --login-preview-shadow: 0 4px 8px rgba(0, 0, 0, .1);
+  --login-preview-divider: #303030;
+  --login-preview-dot: #da291c;      /* 在播/状态点 = race-position 红 */
+  --login-preview-dot-soft: #666666;
+  --login-preview-label: #8f8f8f;
+  --login-preview-row-line: #303030;
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #ffffff; /* badge-pill：#303030 底白字 */
+  --login-preview-chip-bg: #303030;
+  --login-preview-bar: #da291c;      /* 进度条 = 红位计数（锐角见片段） */
+  --login-foot: #666666;
+  --login-card-kicker: #8f8f8f;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #969696;
+  --login-notice-border: rgba(76, 152, 185, .35); /* 公告条 = semantic-info 淡染 */
+  --login-notice-bg: rgba(76, 152, 185, .12);
+  --login-notice-ink: #969696;
+  --login-label: #ffffff;
+  --login-input-border: #303030;     /* 规格 text-input 1px hairline */
+  --login-input-border-hover: #666666; /* 推导：规格无 hover 文档，取 muted 级灰 */
+  --login-primary: #da291c;          /* Rosso CTA（锐角 + 大写宽字距见片段/antd） */
+  --login-primary-active: #b01e0a;
+}
+
+/* ============================================================
+   ferrari 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="ferrari"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── Rosso 选区：红底白字（race-position highlight 的文本版） ── */
+[data-theme="ferrari"] ::selection { background: #da291c; color: #ffffff; }
+
+/* ── 系统滚动条：细、#303030 强线、方头（锐角哲学） ── */
+[data-theme="ferrari"] * { scrollbar-width: thin; scrollbar-color: #303030 transparent; }
+[data-theme="ferrari"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="ferrari"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="ferrari"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 0; background: #303030; background-clip: padding-box; }
+[data-theme="ferrari"] ::-webkit-scrollbar-thumb:hover { background: #4a4a4a; background-clip: padding-box; }
+
+/* ── CTA 标签：uppercase + 1.4px 宽字距（规格 typography.button；字重 700 由 antd Button 承担） ── */
+[data-theme="ferrari"] .ant-btn { text-transform: uppercase; letter-spacing: 1.4px; }
+
+/* ── display 恒 500 不加粗 + 负字距（规格「Display weight stays at 500」；负字距仅限 display） ── */
+[data-theme="ferrari"] .panel-heading h2,
+[data-theme="ferrari"] .configuration-step-copy h2,
+[data-theme="ferrari"] .configuration-summary h2,
+[data-theme="ferrari"] .login-page__brand strong,
+[data-theme="ferrari"] .login-page__showcase-copy h2,
+[data-theme="ferrari"] .login-page__card h1 { font-weight: 500; letter-spacing: -0.3px; }
+
+/* ── 组件标题 700（规格 title-md 18px/700；骨架默认 600–650 需抬一档） ── */
+[data-theme="ferrari"] .brand-block strong,
+[data-theme="ferrari"] .business-outcomes__card > strong,
+[data-theme="ferrari"] .ratio-card__title,
+[data-theme="ferrari"] .ratio-card > strong,
+[data-theme="ferrari"] .codex-metric > strong,
+[data-theme="ferrari"] .codex-token-ledger strong,
+[data-theme="ferrari"] .configuration-status-rail > div > strong,
+[data-theme="ferrari"] .configuration-summary-grid strong,
+[data-theme="ferrari"] .configuration-inline-title h3,
+[data-theme="ferrari"] .connector-configuration-step__heading h3,
+[data-theme="ferrari"] .repo-row strong,
+[data-theme="ferrari"] .intent-row strong,
+[data-theme="ferrari"] .duration-card strong,
+[data-theme="ferrari"] .duration-section__heading strong,
+[data-theme="ferrari"] .value-list__title,
+[data-theme="ferrari"] .connector-watch__item strong,
+[data-theme="ferrari"] .detail-section h3,
+[data-theme="ferrari"] .admin-table .ant-table-thead > tr > th,
+[data-theme="ferrari"] .audit-json > summary { font-weight: 700; }
+
+/* ── eyebrow / kicker：caption-uppercase 11px/600/1.1px 大写宽字距（规格语汇） ── */
+[data-theme="ferrari"] .page-heading__eyebrow,
+[data-theme="ferrari"] .panel-kicker,
+[data-theme="ferrari"] .section-label { color: var(--mute); font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; }
+
+/* ── 导航：nav-link 大写 0.65px 字距 600；激活 = 白字无底色，红只留指示条 ── */
+[data-theme="ferrari"] .workspace-nav a { color: var(--mute); font-weight: 600; letter-spacing: .65px; text-transform: uppercase; }
+[data-theme="ferrari"] .workspace-nav a[aria-current="page"] { color: #ffffff; background: transparent; }
+[data-theme="ferrari"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── brand-mark：锐角铭牌 + 三根 Rosso 系方头条（Cavallino 红的合法场景） ── */
+[data-theme="ferrari"] .brand-mark { border-radius: 0; }
+[data-theme="ferrari"] .brand-mark span { border-radius: 0; box-shadow: none; }
+
+/* ── 详情格：卡内嵌面 = 渐变起点 #3c3c3c（亮度阶梯） ── */
+[data-theme="ferrari"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录页：signal = 锐角红条铭牌；预览进度条锐角；kicker 大写宽字距 ── */
+[data-theme="ferrari"] .login-page__signal { border-radius: 0; }
+[data-theme="ferrari"] .login-page__signal span { border-radius: 0; }
+[data-theme="ferrari"] .login-page__preview-row strong { border-radius: 0; }
+[data-theme="ferrari"] .login-page__showcase-copy > span,
+[data-theme="ferrari"] .login-page__card-heading > span { font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; }

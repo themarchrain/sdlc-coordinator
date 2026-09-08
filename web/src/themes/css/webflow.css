@@ -1,0 +1,274 @@
+/* ============================================================
+   webflow 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Webflow 设计语言（白画布 + 近黑转换色 + 五色类别系统）：
+   - 两色转换层级：#080808 Ink Black 是唯一主 CTA / 标题 / wordmark
+     （「Near-black is the conversion colour」）→ --primary/--ink 阶顶/--bar-usage
+   - 五停 chromatic 类别色只作整面填充不作按钮底：紫 #7A3DFF / 粉 #ED52CB /
+     蓝 #3B89FF / 橙 #FF6B00 / 绿 #00D722 → brand-mark 三条（紫/粉/蓝）+
+     图表墨水（slots）；蓝族交互位 = badge-info #146EF5 / emphasis link #006ACC
+   - 文字六级坍缩：Ink #080808 / Ink-Strong #222222 / Body #363636 /
+     Body-Mid #5A5A5A / Mute #898989 / Mute-Soft #ABABAB
+   - 发丝线单值 #D8D8D8（输入边/卡 chrome/分隔同值）→ 双阶由 ±推导补齐
+   - 圆角：按钮 4px「tight engineered」/ 卡 8px，无药丸（full 只给圆形图标容器）
+   - 海拔 = 五停分层投影（Level 2/4 原文）→ --shadow-panel/--login-shell-shadow
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     墨阶 hover/active #333333/#1F1F1F（近黑无法压深的微亮两档）
+     语义绿/黄文字位 #00A31A/#B37500（#00D722/#FFAE13 为整面填充值）
+     内嵌灰面族 #F5F5F5/#FAFAFA（白与 hairline 之间的中性推导）
+   骨架表达不了的形态（brand-mark 去框去点、表头 mono-caps、
+   字重 500/600 纪律、display 负字距、登录近黑 showcase 等）见块后专属片段。
+   ============================================================ */
+[data-theme="webflow"] {
+  /* ── Typography ───────────────────────────── */
+  /* WF Visual Sans（定制族，禁外部加载）→ 开源替身首选 Inter（规格替身说明）；
+     Mono = WFVisualSans-Mono 的 Inconsolata/ui-monospace 近似 */
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Inconsolata", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-display: Inter, system-ui, -apple-system, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius ───────────────────────────────── */
+  /* 2 紧内联 / 4 按钮·徽章·小件 / 8 卡 chrome；
+     品牌不用药丸 CTA → pill 归并到 4（full 只给圆形图标容器，骨架无此件） */
+  --radius-xs: 2px;      /* term-hint focus（紧内联位） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 4px;      /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 8px;      /* 行卡 = 卡 chrome */
+  --radius-lg: 8px;      /* 指标卡 */
+  --radius-xl: 8px;      /* 面板 / 对话框 */
+  --radius-brand: 4px;   /* brand-mark / 登录 signal（小件位） */
+  --radius-pill: 4px;    /* 迷你徽标 = badge 4px（无药丸） */
+  --radius-panel: 8px;   /* 登录外壳 = 卡 chrome */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* 白画布（规格 canvas） */
+  --canvas-soft: #f5f5f5;        /* 内嵌/交替面（白↔hairline 中性推导） */
+  --canvas-card: #ffffff;        /* 卡白，靠发丝线 + 分层投影分隔 */
+  --canvas-dark: #080808;        /* Ink Black：json 凹陷 / 暗片 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 nav-bar 底 canvas） */
+  --surface-bar: rgba(255, 255, 255, .94);
+  --surface-inset: #f5f5f5;
+  --surface-matrix: #f5f5f5;
+  --surface-tint: #f5f5f5;       /* 行 hover = 灰面微高亮 */
+  --surface-rail: #f5f5f5;
+  --surface-detail: #fafafa;     /* 详情卡 = 更浅一档 */
+  --surface-chip: #f5f5f5;
+  --surface-legacy: #f5f5f5;
+  --surface-draft: #eeeeee;      /* draft 更沉一档 */
+  --surface-empty: #fafafa;
+  --surface-json-bar: #f0f0f0;
+  --tooltip-bg: #080808;         /* Ink Black 反转面 */
+
+  /* ── Ink & text ladder（坍缩为规格 Text 六级） ── */
+  --ink: #080808;
+  --ink-strong: #080808;
+  --ink-display: #080808;
+  --ink-heading: #080808;
+  --ink-value: #080808;
+  --ink-repo: #080808;
+  --ink-step: #080808;
+  --ink-label-strong: #080808;
+  --ink-label: #080808;
+  --ink-row: #080808;
+  --ink-list: #222222;   /* value-list li = Ink-Strong 正文级 */
+  --ink-data: #080808;
+  --ink-field: #080808;
+  --ink-rail: #080808;
+  --ink-rail-value: #080808;
+  --ink-secret: #222222; /* secret-label = 正文级 */
+  --ink-chip: #222222;   /* duration 数值 = 正文级 */
+  --body: #363636;
+  --body-alt: #363636;
+  --body-soft: #5a5a5a;
+  --mute: #5a5a5a;       /* Body-Mid：次级文字 */
+  --mute-deep: #363636;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #5a5a5a;
+  --mute-caption: #5a5a5a;
+  --mute-intro: #363636; /* 配置导语 = 正文级 */
+  --mute-terse: #5a5a5a;
+  --mute-quiet: #5a5a5a;
+  --mute-soft: #5a5a5a;
+  --mute-dim: #5a5a5a;
+  --mute-draft: #5a5a5a;
+  --mute-json: #5a5a5a;
+  --mute-matrix: #5a5a5a;
+  --faint: #898989;      /* Mute：占位/禁用级 */
+  --faint-alt: #898989;
+  --faint-soft: #898989;
+  --faint-ghost: #898989;
+  --faint-hint: #898989;
+  --faint-meta: #898989;
+  --faint-note: #898989;
+  --faint-empty: #ababab; /* Mute-Soft：空态/最轻字 */
+  --on-dark: #ffffff;     /* 暗面上的字 = 纯白（规格 on-primary） */
+  --on-dark-soft: rgba(255, 255, 255, .72);
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #080808;    /* Ink Black：唯一转换色（导航当前项/强调文字/卡环） */
+  --primary-active: #1f1f1f; /* 墨阶按压（近黑无法压深的微亮推导） */
+  --on-primary: #ffffff;
+  --link: #006acc;       /* 链接 = accent-blue-deep「emphasis links」 */
+  --link-hover: #0057a6;
+  --focus-ring: rgba(8, 8, 8, .4); /* 墨系焦点环（规格 focus 未定义，转换色纪律推导） */
+  --primary-veil: rgba(8, 8, 8, .05); /* 当前项 = 墨系微高亮（ex-app-shell-row） */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* 整面填充位用规格全饱和值；文字/细线位与 antd 同源压深 */
+  --success: #00d722;    /* context-dot = Accent Green 规格字面（填充位） */
+  --success-halo: 0 0 0 4px rgba(0, 215, 34, .16);
+  --warning: #ffae13;    /* sample-warning 图标位 = Accent Yellow 规格字面（配压深字重可读） */
+  --warning-soft: rgba(255, 174, 19, .16);
+  --error: #ee1d36;      /* Error Red 规格字面 */
+  --error-deep: #c70f26; /* 按压加深一档（推导） */
+  --info: #146ef5;       /* badge-info 蓝（accent-blue-info） */
+  --info-soft: #eef4fe;  /* 蓝 8% 薄纱铺白（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #d8d8d8;         /* 规格 hairline：输入边/卡 chrome/分隔 */
+  --hairline-soft: #ebebeb;
+  --hairline-strong: #b8b8b8;  /* 滚动条/强线（hairline 压深一档推导） */
+  --hairline-card: #d8d8d8;
+  --hairline-inset: #ebebeb;
+  --hairline-mid: #ebebeb;
+  --hairline-rail: #d8d8d8;
+  --hairline-codex: #ebebeb;
+  --hairline-detail: #ebebeb;
+  --hairline-json: #d8d8d8;
+  --hairline-dashed: #b8b8b8; /* 空态虚线需要可见 = 强线一档 */
+  --hairline-legacy: #b8b8b8;
+  --hairline-row: #ebebeb;
+  --hairline-draft: #b8b8b8;
+  --bar-value: #d8d8d8;   /* value-list 左规线 = 发丝线（两色层级：数据边线无彩） */
+  --bar-matrix: #d8d8d8;
+  --bar-summary: #898989; /* summary 规线 = Mute 灰 */
+  --bar-usage: #146ef5;   /* 用量轨 = badge-info 蓝（数据墨水，蓝族交互位） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  /* 墨系 alpha（白画布上的微暗示） */
+  --overlay-faint: rgba(8, 8, 8, .04);
+  --overlay-soft: rgba(8, 8, 8, .05);
+  --overlay-line: rgba(8, 8, 8, .07);
+  --overlay-medium: rgba(8, 8, 8, .08);
+  --shadow-panel: 0 30px 18px rgba(0, 0, 0, .04), 0 13px 13px rgba(0, 0, 0, .08), 0 3px 7px rgba(0, 0, 0, .09); /* Level 2 五停分层投影（去掉首停 0 alpha） */
+
+  /* ── brand-mark（无框无点：三根类别色平条 紫/粉/蓝，形态见片段） ── */
+  --brand-frame-bg: transparent;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #7a3dff;  /* 类别紫：design/build（管理台本职域） */
+  --brand-bar-2: #ed52cb;  /* 类别粉：interactions */
+  --brand-bar-3: #3b89ff;  /* 类别蓝：SEO/analytics */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #080808; /* 当前导航指示 = primary 近黑（ex-app-shell-row） */
+
+  /* ── 登录页（白画布 + 近黑 hero 面：规格 hero-band-dark 的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e6e6e6;
+  --login-shell-shadow: 0 30px 18px rgba(0, 0, 0, .04), 0 13px 13px rgba(0, 0, 0, .08), 0 3px 7px rgba(0, 0, 0, .09); /* Level 2 分层投影（featured 卡提升） */
+  --login-showcase-bg: #080808; /* showcase = Ink Black hero 面（polarity-flipped band） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04); /* 干净色带，见片段隐藏底纹 */
+  --login-grid-mask: none;
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .6);
+  --login-signal-bg: transparent;
+  --login-signal-border: rgba(255, 255, 255, .28);
+  --login-signal-shadow: none;
+  --login-signal-bar: #7a3dff;  /* signal 三条 = 类别紫/粉/蓝（片段逐条覆写） */
+  --login-kicker: rgba(255, 255, 255, .6);
+  --login-heading: #ffffff;     /* hero 标题白字（40px/600/负字距见片段） */
+  --login-copy: rgba(255, 255, 255, .6);
+  --login-preview-bg: rgba(255, 255, 255, .06);
+  --login-preview-border: rgba(255, 255, 255, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #3b89ff;      /* 数据点 = 类别蓝 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .3);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .09);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #7a3dff; /* 预览 chip = badge-info-soft 语汇（白底彩字反转） */
+  --login-preview-chip-bg: rgba(122, 61, 255, .18);
+  --login-preview-bar: rgba(255, 255, 255, .28);
+  --login-foot: rgba(255, 255, 255, .6);
+  --login-card-kicker: #5a5a5a; /* 白卡侧 eyebrow = Body-Mid */
+  --login-card-heading: #080808;
+  --login-card-copy: #5a5a5a;
+  --login-notice-border: rgba(20, 110, 245, .28); /* info 通知 = badge 蓝薄纱 + 发丝线 */
+  --login-notice-bg: #eef4fe;
+  --login-notice-ink: #363636;
+  --login-label: #363636;
+  --login-input-border: #d8d8d8;   /* 规格 hairline 控件边 */
+  --login-input-border-hover: #898989;
+  --login-primary: #080808;        /* 主 CTA = Ink Black（近黑转换色） */
+  --login-primary-active: #1f1f1f;
+}
+
+/* ============================================================
+   webflow 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="webflow"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：墨底选区 / 2px 墨焦点环 / 链接 hover 下划线（text-arrow 语汇） ── */
+[data-theme="webflow"] ::selection { background: #080808; color: #ffffff; }
+[data-theme="webflow"] :focus-visible { outline: 2px solid #080808; outline-offset: 2px; }
+[data-theme="webflow"] a:hover:not(.ant-btn) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── 字重纪律：标题 600、强调 500，全站无 700（规格「weight ceiling at 600」）；
+      display 位加负字距（hero 负 tracking 的桌面档缩放） ── */
+[data-theme="webflow"] .brand-block strong { font-weight: 500; }
+[data-theme="webflow"] .panel-heading h2,
+[data-theme="webflow"] .detail-section h3 { font-weight: 600; letter-spacing: -0.01em; }
+[data-theme="webflow"] .business-outcomes__card > strong,
+[data-theme="webflow"] .ratio-card > strong,
+[data-theme="webflow"] .codex-metric > strong,
+[data-theme="webflow"] .metric-matrix strong { font-weight: 500; }
+[data-theme="webflow"] .codex-token-ledger strong,
+[data-theme="webflow"] .configuration-status-rail > div > strong,
+[data-theme="webflow"] .configuration-summary-grid strong { font-weight: 500; }
+[data-theme="webflow"] .login-page__brand strong { font-weight: 500; }
+[data-theme="webflow"] .login-page__card h1 { font-weight: 600; letter-spacing: -0.01em; }
+[data-theme="webflow"] .login-page__card .ant-form-item-label > label { font-weight: 500; }
+
+/* ── eyebrow / kicker：sans 500 大写宽字距（规格「uppercase eyebrows mark every section」
+      15px/500/1.5px 的桌面小签档） ── */
+[data-theme="webflow"] .page-heading__eyebrow,
+[data-theme="webflow"] .panel-kicker,
+[data-theme="webflow"] .section-label { color: var(--primary); font: 500 10px/1.4 var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：cursor.css 同名补正） */
+[data-theme="webflow"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 表头：白底 + hairline 缝 + mono-caps 小签（ex-data-table-cell
+      「Header uses mono-caps eyebrow typography」） ── */
+[data-theme="webflow"] .admin-table .ant-table-thead > tr > th { background: transparent; border-bottom: 1px solid #d8d8d8; color: #5a5a5a; font: 500 11px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+
+/* ── brand-mark 重绘：去框、去点、去光影，基线三 span = 三根类别色平条
+      （紫/粉/蓝，五停系统只作整面填充的合法位） ── */
+[data-theme="webflow"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+[data-theme="webflow"] .brand-mark span { border-radius: 2px; box-shadow: none; }
+[data-theme="webflow"] .brand-mark::after { display: none; }
+
+/* ── 系统滚动条：细、hairline、方角（tight engineered） ── */
+[data-theme="webflow"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="webflow"] ::-webkit-scrollbar-thumb { border-radius: 0; background: #d8d8d8; }
+[data-theme="webflow"] ::-webkit-scrollbar-thumb:hover { background: #ababab; }
+[data-theme="webflow"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="webflow"] * { scrollbar-width: thin; scrollbar-color: #d8d8d8 transparent; }
+
+/* ── 登录 showcase：Ink Black 干净色带（无网格底纹）；标题 40px/600/负字距
+      = 规格 display 档缩放 ── */
+[data-theme="webflow"] .login-page__showcase::before { display: none; }
+[data-theme="webflow"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; }
+[data-theme="webflow"] .login-page__showcase-copy > span,
+[data-theme="webflow"] .login-page__card-heading > span { font: 500 10px/1.4 var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
+
+/* ── 登录 signal：同 brand-mark 的三条类别色（紫/粉/蓝）重绘 ── */
+[data-theme="webflow"] .login-page__signal { background: transparent; box-shadow: none; }
+[data-theme="webflow"] .login-page__signal span { border-radius: 2px; }
+[data-theme="webflow"] .login-page__signal span:nth-child(2) { background: #ed52cb; }
+[data-theme="webflow"] .login-page__signal span:nth-child(3) { background: #3b89ff; }

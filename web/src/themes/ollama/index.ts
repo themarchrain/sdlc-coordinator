@@ -21,6 +21,7 @@ export const ollamaSwatches: ThemeSwatches = {
 export const ollamaTheme: ThemeDefinition = {
   id: 'ollama',
   label: 'Ollama',
+  family: 'minimal',
   isDark: false,
   chromeColor: '#ffffff',
   swatches: ollamaSwatches,

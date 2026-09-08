@@ -1,0 +1,329 @@
+/* ============================================================
+   mastercard 主题令牌块 —— 规格驱动（mastercard 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Mastercard 设计语言（暖石报纸 + 轨道母题 / warm putty editorial）：
+   - 画布 = putty-cream #F3F0EE（「muted putty-cream (#F3F0EE) — not white,
+     not gray」）；三层暖面：canvas cream → lifted cream #FCFBFA（「nested
+     raised sections…paper laid on paper」）→ white #FFFFFF（浮层/嵌面，
+     「floating navigation pill, modal cards…satellite circles」）
+   - 暖黑 Ink #141413 兼任主 CTA / 标题 / 暗面（「Ink Black: primary CTAs,
+     headline text, footer surface」）；暗面上文字 = 奶油 #F3F0EE 而非纯白
+     （「Text: Canvas Cream (#F3F0EE) — not pure white」）
+   - 文字阶梯：Ink #141413（正文即 Ink）/ Charcoal #262627 / Granite #555555 /
+     Slate Gray #696969 / Dust Taupe #D1CDC7（Neutrals 原文）
+   - 信号橙族：Signal Orange #CF4500（「must be used sparingly」）+
+     Light Signal Orange #F37338（attention cue / 轨道弧线）+ Clay Brown
+     #9A3A0A（深锈）；Link Blue #3860BE（内链/信息色）；品牌红 #EB001B /
+     黄 #F79E1B「never as a UI color」—— 只进 brand-mark logo 位
+   - 边线 = Dust Taupe #D1CDC7 暖灰 + Ink 50% 交互轨（搜索框「1px solid
+     Ink Black at ~50% opacity」字面）
+   - 圆角刻度（表格）：微件 3–6 / 按钮 20 / 同意 24 / hero 40 / 全药丸
+     999+；8–12 中段刻意缺席
+   - 阴影 = 大弥散呼吸垫：L1 rgba(0,0,0,.04) 0 4px 24 / L2 rgba(0,0,0,.08)
+     0 24px 48（字面）
+   骨架表达不了的形态（brand-mark 红黄双圆 mark 重绘、登录展示板信号橙
+   轨道弧线、眉题橙点 +4% 大写、行卡全药丸、500/-2% 标题与 450 正文、
+   40px json 框）见块后 [data-theme="mastercard"] 专属片段。
+   ============================================================ */
+[data-theme="mastercard"] {
+  /* ── Typography ───────────────────────────── */
+  /* MarkForMC（专有授权族，禁外部加载）+ 规格声明回退栈
+     「Fallback stack: SofiaSans, Arial, sans-serif」；单族系统不换展示族 */
+  --font-sans: "MarkForMC", "MarkOffcForMC", SofiaSans, Arial, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "MarkForMC", "MarkOffcForMC", SofiaSans, Arial, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; /* 展示级 = 同族（500 + -2% 字距见片段） */
+
+  /* ── Radius（刻度：3–6 微件 / 20 按钮 / 24 同意·浮层 / 40 hero / 999+ 全药丸） ── */
+  --radius-xs: 4px;      /* 图标提示 focus = 微件档 */
+  --radius-soft: 4px;    /* 登录预览小色块 = 微件档 */
+  --radius-sm: 6px;      /* 内嵌小块 = 微件档上沿 */
+  --radius-md: 9999px;   /* 行卡 = 全药丸（「cards go fully pill-shaped」） */
+  --radius-lg: 20px;     /* 指标卡 = 按钮 20 签名档 */
+  --radius-xl: 40px;     /* 面板 / json 框 = hero 40（「the most iconic gesture」） */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 正圆（轨道母题） */
+  --radius-pill: 9999px; /* 迷你徽标 = 全药丸 */
+  --radius-panel: 40px;  /* 登录外壳 = hero 媒体框 40 */
+
+  /* ── Canvas & surfaces（三层暖面：canvas → lifted → white） ── */
+  --canvas: #f3f0ee;                 /* Canvas Cream：页面画布（原文） */
+  --canvas-soft: #fcfbfa;            /* 内嵌卡/表头 = Lifted Cream（纸叠纸） */
+  --canvas-card: #fcfbfa;            /* 卡片 = Lifted Cream */
+  --canvas-dark: #141413;            /* 暗面 = Ink（json pre 凹陷 / footer 同面） */
+  --surface-sidebar: #f3f0ee;        /* 侧栏 = 画布同底（导航浮在其上） */
+  --surface-bar: rgba(243, 240, 238, .9); /* 滚动后导航 = 奶油磨砂 */
+  --surface-inset: #ffffff;          /* 卡内嵌面 = white（浮面语汇下沉到嵌面） */
+  --surface-matrix: #ffffff;
+  --surface-tint: rgba(20, 20, 19, .04); /* 行 hover = 暖墨微染（推导 4%） */
+  --surface-rail: #fcfbfa;
+  --surface-detail: #fcfbfa;
+  --surface-chip: #ffffff;           /* 身份行 = white 纸上纸 */
+  --surface-legacy: #fcfbfa;
+  --surface-draft: #f4f4f4;          /* Soft Bone：冷灰备选面（draft 沉一档） */
+  --surface-empty: transparent;      /* 空态不叠面：虚线 Dust Taupe 承担 */
+  --surface-json-bar: #fcfbfa;       /* json 头条 = Lifted Cream */
+  --tooltip-bg: #141413;             /* 浮层提示 = Ink 反转面 */
+
+  /* ── Ink & text ladder（Neutrals 原文五级；正文即 Ink） ── */
+  --ink: #141413;                    /* Ink Black：标题/数值/行墨 */
+  --ink-strong: #141413;
+  --ink-display: #141413;
+  --ink-heading: #141413;
+  --ink-value: #141413;
+  --ink-repo: #141413;
+  --ink-step: #141413;
+  --ink-label-strong: #141413;
+  --ink-label: #141413;
+  --ink-row: #141413;
+  --ink-list: #141413;               /* 列表行 = 正文级（正文即 Ink，450 字重见片段） */
+  --ink-data: #141413;
+  --ink-field: #141413;
+  --ink-rail: #141413;
+  --ink-rail-value: #141413;
+  --ink-secret: #696969;             /* secret 标签 = Slate Gray 说明级 */
+  --ink-chip: #141413;               /* duration 数值 = 数据墨水 */
+  --body: #141413;                   /* 「Body text: Ink Black (#141413)」字面 */
+  --body-alt: #262627;               /* Charcoal：文字备选档 */
+  --body-soft: #696969;              /* Slate Gray */
+  --mute: #696969;                   /* Slate Gray：静音/说明（原文） */
+  --mute-deep: #555555;              /* Granite：比 mute 深半档 */
+  --mute-inline: #696969;
+  --mute-caption: #696969;
+  --mute-intro: #262627;             /* 配置导语 = Charcoal 正文级 */
+  --mute-terse: #696969;
+  --mute-quiet: #696969;
+  --mute-soft: #696969;
+  --mute-dim: #696969;
+  --mute-draft: #696969;
+  --mute-json: #696969;
+  --mute-matrix: #696969;
+  --faint: #696969;                  /* Slate Gray：占位/提示 */
+  --faint-alt: #696969;
+  --faint-soft: #696969;
+  --faint-ghost: #696969;
+  --faint-hint: #696969;
+  --faint-meta: #696969;
+  --faint-note: #696969;
+  --faint-empty: #d1cdc7;            /* 空态 whisper = Dust Taupe（「placeholder-like empty state labels」字面） */
+  --on-dark: #ffffff;                /* 暗面文字 = 白（footer「Text: White」） */
+  --on-dark-soft: #f3f0ee;           /* json 深块正文 = 奶油（CTA 文字同源「not pure white」） */
+  --on-dark-faint: rgba(255, 255, 255, .6); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（Ink 药丸 CTA；链接 = Link Blue） ── */
+  --primary: #141413;                /* Ink Pill：主 CTA（原文） */
+  --primary-active: #262627;         /* 按压 = Charcoal 下一档 */
+  --on-primary: #f3f0ee;             /* CTA 文字 = Canvas Cream 非纯白（字面） */
+  --link: #3860be;                   /* Link Blue：内链（原文） */
+  --link-hover: #2f5199;             /* 派生：压深一档 */
+  --focus-ring: rgba(56, 96, 190, .4); /* 派生：Link Blue 40% 焦点环 */
+  --primary-veil: rgba(20, 20, 19, .05); /* 当前导航 = 暖墨微染（无彩高亮） */
+
+  /* ── Semantic（Signal Orange 克制功能位；红禁用品牌红 → 推导暖红） ── */
+  --success: #3a7d50;    /* 推导：规格无绿（支付品牌回避）→ 低饱和暖绿文字级 */
+  --success-halo: 0 0 0 4px rgba(58, 125, 80, .14);
+  --warning: #cf4500;    /* Signal Orange：单一进攻色给 warning 功能位（「sparingly」） */
+  --warning-soft: rgba(243, 115, 56, .12); /* Light Signal Orange 薄染 */
+  --error: #c03a2a;      /* 推导暖红（品牌红 「never as a UI color」禁用） */
+  --error-deep: #9c2b1f;
+  --info: #3860be;       /* Link Blue：信息色（原文） */
+  --info-soft: rgba(56, 96, 190, .08);
+
+  /* ── Hairlines & bars（Dust Taupe 暖灰 + Ink 50% 交互轨） ── */
+  --hairline: #d1cdc7;              /* Dust Taupe：暖灰分隔线（原文） */
+  --hairline-soft: #e4e0da;         /* 更轻一档（推导：taupe 与画布之间） */
+  --hairline-strong: rgba(20, 20, 19, .5); /* 交互轨 = Ink 50%（搜索框字面） */
+  --hairline-card: #d1cdc7;         /* 卡外线（边线承担功能分隔，末段） */
+  --hairline-inset: #e4e0da;
+  --hairline-mid: #e4e0da;
+  --hairline-rail: #e4e0da;
+  --hairline-codex: #e4e0da;
+  --hairline-detail: #e4e0da;
+  --hairline-json: #d1cdc7;
+  --hairline-dashed: #d1cdc7;       /* 空态虚线 */
+  --hairline-legacy: #d1cdc7;
+  --hairline-row: #e4e0da;
+  --hairline-draft: #d1cdc7;
+  --bar-value: #141413;             /* value-list 左规线 = Ink 数据墨水 */
+  --bar-matrix: #696969;            /* Slate Gray */
+  --bar-summary: #696969;
+  --bar-usage: #f37338;             /* 用量轨 = Light Signal Orange（attention cue） */
+
+  /* ── Overlays & shadows（暖墨微染 + 呼吸垫） ── */
+  --overlay-faint: rgba(20, 20, 19, .03);
+  --overlay-soft: rgba(20, 20, 19, .04);  /* nav hover */
+  --overlay-line: #e4e0da;                /* 分组线 = 暖灰线 */
+  --overlay-medium: rgba(20, 20, 19, .08);
+  --shadow-panel: 0 24px 48px rgba(0, 0, 0, .08); /* Level 2 字面：48px 弥散 @8% 呼吸垫 */
+
+  /* ── brand-mark（白圆浮面 + 红 #EB001B / 黄 #F79E1B 双圆交叠 mark ——
+        品牌色唯一合法位置（「used only in the brand logo」）；形态见片段） ── */
+  --brand-frame-bg: #ffffff;        /* 白圆 = 浮面/satellite 白（White 用途） */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: 0 4px 24px rgba(0, 0, 0, .04); /* Level 1 字面（浮导航药丸的微提升） */
+  --brand-bar-1: #eb001b;           /* Mastercard Red：mark 左圆 */
+  --brand-bar-2: #f79e1b;           /* Mastercard Yellow：mark 右圆 */
+  --brand-bar-3: #f79e1b;           /* 未用（片段隐藏第三柱） */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;         /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #f37338;         /* 当前导航指示 = Light Signal Orange（attention cue） */
+
+  /* ── 登录页（奶油画布 + Ink footer showroom 展示板 + 信号橙轨道弧线） ── */
+  --login-bg: #f3f0ee;
+  --login-shell-border: #d1cdc7;
+  --login-shell-shadow: 0 24px 48px rgba(0, 0, 0, .08); /* Level 2 呼吸垫 */
+  --login-showcase-bg: #141413;     /* showcase = Ink footer 面（「three surface tones」的暗档） */
+  --login-showcase-ink: #f3f0ee;
+  --login-grid-line: rgba(243, 240, 238, .06); /* 网格让位于轨道弧线（片段重绘 ::before） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(243, 240, 238, .6);
+  --login-signal-bg: #ffffff;       /* signal = 白圆 satellite（Satellite CTA 面） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: 0 4px 24px rgba(0, 0, 0, .04); /* Level 1 */
+  --login-signal-bar: #cf4500;      /* 三橙点 = 眉题小橙点语汇（「tiny accent dot」） */
+  --login-kicker: #f37338;          /* kicker = Light Signal Orange（暗面上的 attention cue） */
+  --login-heading: #ffffff;         /* hero 标题白（500/-2% 见片段） */
+  --login-copy: rgba(243, 240, 238, .72);
+  --login-preview-bg: rgba(243, 240, 238, .07);  /* Ink 面上的奶油微浮预览卡 */
+  --login-preview-border: rgba(243, 240, 238, .14);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(243, 240, 238, .12);
+  --login-preview-dot: #f37338;     /* 数据点 = Light Signal Orange */
+  --login-preview-dot-soft: rgba(243, 240, 238, .3);
+  --login-preview-label: rgba(243, 240, 238, .55);
+  --login-preview-row-line: rgba(243, 240, 238, .08);
+  --login-preview-row-ink: rgba(243, 240, 238, .85);
+  --login-preview-chip-ink: #141413; /* 白药丸 chip + Ink 文字（Pill Carousel Card「White pill, Ink Black text」字面） */
+  --login-preview-chip-bg: #f3f0ee;
+  --login-preview-bar: #f37338;     /* 进度条 = 信号橙 */
+  --login-foot: rgba(243, 240, 238, .5);
+  --login-card-kicker: #cf4500;     /* 白卡侧 kicker = Signal Orange 小点语汇 */
+  --login-card-heading: #141413;
+  --login-card-copy: #696969;
+  --login-notice-border: rgba(56, 96, 190, .35); /* 公告条 = Link Blue 信息薄纱 */
+  --login-notice-bg: rgba(56, 96, 190, .08);
+  --login-notice-ink: #262627;
+  --login-label: #262627;
+  --login-input-border: rgba(20, 20, 19, .5); /* Ink 50%（搜索框字面） */
+  --login-input-border-hover: #141413;
+  --login-primary: #141413;         /* 主 CTA = Ink Pill */
+  --login-primary-active: #262627;
+}
+
+/* ============================================================
+   mastercard 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="mastercard"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 选区：Light Signal Orange 薄染（attention cue 的选区投影） ── */
+[data-theme="mastercard"] ::selection { background: rgba(243, 115, 56, .25); }
+
+/* ── 正文 450 半档字重：MarkForMC 签名（「Weight 450 is load-bearing」；
+      变量族可用 450，回退 Arial 自动落 400） ── */
+[data-theme="mastercard"] p { font-weight: 450; }
+
+/* ── 标题法则：500 + -2% 紧字距（「medium weight (500) with tight negative
+      letter-spacing (-2%)」字面；统计大数同走 500，700 只给眉题） ── */
+[data-theme="mastercard"] .brand-block strong,
+[data-theme="mastercard"] .panel-heading h2,
+[data-theme="mastercard"] .business-outcomes__card > strong,
+[data-theme="mastercard"] .ratio-card > strong,
+[data-theme="mastercard"] .codex-metric > strong,
+[data-theme="mastercard"] .codex-token-ledger strong,
+[data-theme="mastercard"] .configuration-status-rail > div > strong,
+[data-theme="mastercard"] .configuration-summary-grid strong,
+[data-theme="mastercard"] .configuration-step-copy h2,
+[data-theme="mastercard"] .configuration-summary h2,
+[data-theme="mastercard"] .configuration-inline-title h3,
+[data-theme="mastercard"] .connector-configuration-step__heading h3,
+[data-theme="mastercard"] .repo-row strong,
+[data-theme="mastercard"] .intent-row strong,
+[data-theme="mastercard"] .duration-card strong,
+[data-theme="mastercard"] .duration-section__heading strong,
+[data-theme="mastercard"] .value-list__title,
+[data-theme="mastercard"] .connector-watch__item strong,
+[data-theme="mastercard"] .detail-section h3,
+[data-theme="mastercard"] .audit-json > summary,
+[data-theme="mastercard"] .login-page__brand strong,
+[data-theme="mastercard"] .login-page__card h1 { font-weight: 500; letter-spacing: -.02em; }
+
+/* ── 眉题：Slate Gray 700 大写 +4% 字距 + 前置 Signal Orange 小圆点
+      （「Eyebrow labels with a tiny accent dot + uppercase bold tracking」
+      与 「Eyebrow below: accent dot + uppercase label」字面；Don't
+      「omit the tiny accent dot — it's the identity」） ── */
+[data-theme="mastercard"] .page-heading__eyebrow,
+[data-theme="mastercard"] .panel-kicker,
+[data-theme="mastercard"] .section-label { color: var(--mute); font: 700 10px/1.2 var(--font-sans); letter-spacing: .04em; text-transform: uppercase; }
+[data-theme="mastercard"] .page-heading__eyebrow::before,
+[data-theme="mastercard"] .panel-kicker::before,
+[data-theme="mastercard"] .section-label::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: #cf4500; }
+/* context-bar 页标题不受眉题化影响：还原为标题形态且无橙点（先例：tesla.css 同名补正） */
+[data-theme="mastercard"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 500; line-height: 1.2; letter-spacing: -.02em; text-transform: none; }
+[data-theme="mastercard"] .context-heading-slot .page-heading__eyebrow::before { display: none; }
+
+/* ── 按钮标签：500 + 紧字距（「Nav link / Button label: 16px weight 500 -3%」；
+      圆角 20 由 antd borderRadius 承担） ── */
+[data-theme="mastercard"] .ant-btn { font-weight: 500; letter-spacing: -.01em; }
+
+/* ── 侧栏导航项：全药丸（Floating Nav Pill 的圆角语汇下放） ── */
+[data-theme="mastercard"] .workspace-nav a { border-radius: 9999px; }
+
+/* ── brand-mark 重绘：白圆浮面（Level 1 微提升）内交叠红黄双圆 =
+      Mastercard mark（品牌色唯一合法位 「used only in the brand logo」）；
+      第三柱与角标隐藏 ── */
+[data-theme="mastercard"] .brand-mark { padding: 0; align-items: center; justify-content: center; border-radius: 9999px; }
+[data-theme="mastercard"] .brand-mark span { width: 12px; height: 12px; border-radius: 50%; box-shadow: none; opacity: 1; }
+[data-theme="mastercard"] .brand-mark span:nth-child(2) { margin-left: -4px; } /* 双圆交叠 */
+[data-theme="mastercard"] .brand-mark span:nth-child(3) { display: none; }
+[data-theme="mastercard"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="mastercard"] .brand-mark span { width: 10px; height: 10px; }
+  [data-theme="mastercard"] .brand-mark span:nth-child(2) { margin-left: -3px; }
+}
+
+/* ── 表头：Slate Gray 700 大写 +4%（「Footer column header 14px 700 +4%
+      tracking, uppercase」的列头语汇；≤14px 才允许大写） ── */
+[data-theme="mastercard"] .admin-table .ant-table-thead > tr > th { font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+
+/* ── json 框 / 审计折叠 / 登录预览卡：hero 40 与浮层 24 档圆角
+      （Hero Media Frame「do not round less」；行卡药丸由 --radius-md 承担） ── */
+[data-theme="mastercard"] .json-viewer { border-radius: 40px; }
+[data-theme="mastercard"] .audit-json { border-radius: 20px; }
+[data-theme="mastercard"] .login-page__preview { border-radius: 24px; }
+
+/* ── 系统滚动条：细、Dust Taupe、药丸圆头 ── */
+[data-theme="mastercard"] * { scrollbar-width: thin; scrollbar-color: #d1cdc7 transparent; }
+[data-theme="mastercard"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="mastercard"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="mastercard"] ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 9999px; background: #d1cdc7; background-clip: padding-box; }
+[data-theme="mastercard"] ::-webkit-scrollbar-thumb:hover { background: #696969; background-clip: padding-box; }
+
+/* ── 登录 showcase：Ink 面上的信号橙轨道弧线（Decorative Orbital Lines
+      「thin ~1px Light Signal Orange curved line spanning…implying connection」
+      字面重绘骨架网格 ::before / ::after 为两道大圆弧） ── */
+[data-theme="mastercard"] .login-page__showcase::before {
+  inset: auto; top: -240px; right: -200px; width: 620px; height: 620px;
+  border: 1.5px solid rgba(243, 115, 56, .5); border-radius: 50%;
+  background-image: none; opacity: .6; mask-image: none;
+}
+[data-theme="mastercard"] .login-page__showcase::after {
+  content: ""; position: absolute; left: -160px; bottom: -120px; width: 380px; height: 380px;
+  border: 1.5px solid rgba(243, 115, 56, .35); border-radius: 50%; opacity: .5;
+}
+
+/* ── 登录 showcase 标题：H2 规格 36px/500/-0.72px、行高 1.1（H1 1:1 的紧档） ── */
+[data-theme="mastercard"] .login-page__showcase-copy h2 { font-size: 36px; font-weight: 500; line-height: 1.1; letter-spacing: -.02em; }
+
+/* ── 登录 kicker：暗面板用 Light Signal Orange、白卡侧用 Signal Orange，
+      700 大写 +4%（眉题语汇） ── */
+[data-theme="mastercard"] .login-page__showcase-copy > span { color: var(--login-kicker); font: 700 10px/1.4 var(--font-sans); letter-spacing: .04em; text-transform: uppercase; }
+[data-theme="mastercard"] .login-page__card-heading > span { color: var(--login-card-kicker); font: 700 10px/1.4 var(--font-sans); letter-spacing: .04em; text-transform: uppercase; }
+
+/* ── 登录 signal：白圆 satellite + 三个 Signal Orange 轨道小点（眉题橙点语汇） ── */
+[data-theme="mastercard"] .login-page__signal { align-items: center; padding: 0; gap: 5px; border-radius: 9999px; }
+[data-theme="mastercard"] .login-page__signal span { border-radius: 50%; }
+[data-theme="mastercard"] .login-page__signal span:nth-child(1) { height: 4px; }
+[data-theme="mastercard"] .login-page__signal span:nth-child(2) { height: 6px; }
+[data-theme="mastercard"] .login-page__signal span:nth-child(3) { height: 5px; }

@@ -1,0 +1,266 @@
+/* ============================================================
+   coinbase 主题令牌块 —— 规格驱动（coinbase 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Coinbase 设计语言（机构级金融品牌 · 编辑级冷静）：
+   - 白画布 #ffffff + 软灰交替带 #f7f7f7 + 唯一品牌电压 Coinbase Blue
+     #0052ff（稀缺：每 band 一两个蓝色时刻），按压 #003ecc
+   - 文字四级坍缩：ink #0a0b0d / body #5b616e / muted #7c828a /
+     muted-soft #a8acb3；暗面字 = 白 + #a8acb3
+   - 暗 editorial 面：surface-dark #0a0b0d + 浮卡 #16181c —— 映射到
+     json 深块（--canvas-dark + 提升头条）与登录 showcase hero
+   - 交易语义：up #05b169 / down #cf202f（仅文字色）；accent-yellow
+     #f4b000 仅插画（brand-mark 角点 = Bitcoin 图形时刻）
+   - 发丝线双轨：#dee1e6 分隔 / #eef0f3 浅分隔；控件强边派生 #c6ccd4
+   - 单一阴影层 0 4px 12px rgba(0,0,0,.04)（规格唯一阴影档）
+   - 圆角刻度：4/8/12/16/24 + 药丸 9999（CTA/徽章）+ 全圆（资产图标盘）；
+     行卡 8、指标卡 16、面板 24
+   - 数字一律 CoinbaseMono（--font-display 的消费者 = 指标数值）
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     hover 蓝 #0045e5 = primary→active 中点（规格只记录 Default/Active）
+     warning #9a6f00 = accent-yellow 深化为文字级琥珀
+     强边 #c6ccd4 / 暗线系 rgba(10,11,13,*) = 墨系 alpha 家族
+   骨架表达不了的形态（药丸 CTA、展示字重 400 + 负字距、数字 500、
+   uppercase 徽章式 kicker、brand-mark 全圆蓝条）见块后片段。
+   ============================================================ */
+[data-theme="coinbase"] {
+  /* ── Typography ───────────────────────────── */
+  /* CoinbaseSans/Display（授权族，禁外部加载）→ 规格文档替代 Inter；
+     数字 = CoinbaseMono（替代 JetBrains Mono）→ --font-display 消费者即指标数值 */
+  --font-sans: "Coinbase Sans", Inter, -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Coinbase Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-display: "Coinbase Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace; /* 数字展示位 = CoinbaseMono（规格「CoinbaseMono on every number」） */
+
+  /* ── Radius（规格刻度：4 标签 / 8 紧凑行 / 12 输入 / 16 中卡 / 24 大卡 + pill/full） ── */
+  --radius-xs: 4px;      /* 图标提示 focus（规格 xs 4） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 8px;      /* 内嵌小块 = 规格 sm 8「Compact rows」 */
+  --radius-md: 8px;      /* 行卡 = 紧凑行 8 */
+  --radius-lg: 16px;     /* 指标卡 = 规格 lg 16「Mid-size cards」 */
+  --radius-xl: 24px;     /* 面板 = 规格 xl 24「Feature cards / product-UI mockups」 */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 全圆资产图标盘 */
+  --radius-pill: 9999px; /* 迷你徽标 = badge-pill（rounded.pill） */
+  --radius-panel: 24px;  /* 登录外壳 = 大卡 24 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Canvas：默认页面底 */
+  --canvas-soft: #f7f7f7;        /* Surface Soft：软灰交替带 / 表头 */
+  --canvas-card: #ffffff;        /* 卡白，靠发丝线 + 单一阴影分层 */
+  --canvas-dark: #0a0b0d;        /* Surface Dark：暗 editorial 面（json pre 底） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（top-nav-light 同底） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 滚动后导航 = 白磨砂（派生：白底保持半透） */
+  --surface-inset: #eef0f3;      /* Surface Strong：次级按钮/搜索药丸的灰底 */
+  --surface-matrix: #f7f7f7;
+  --surface-tint: #f7f7f7;       /* 行 hover = 软灰带微高亮 */
+  --surface-rail: #f7f7f7;
+  --surface-detail: #f7f7f7;
+  --surface-chip: #eef0f3;       /* chip = badge-pill 灰底 */
+  --surface-legacy: #f7f7f7;
+  --surface-draft: #eef0f3;      /* draft 更沉一档 = Strong 灰 */
+  --surface-empty: #f7f7f7;
+  --surface-json-bar: #16181c;   /* json 头条 = Surface Dark Elevated 浮卡（暗 hero 分层） */
+  --tooltip-bg: #0a0b0d;         /* tooltip = 暗 editorial 面，白字 */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级） ── */
+  --ink: #0a0b0d;
+  --ink-strong: #0a0b0d;
+  --ink-display: #0a0b0d;
+  --ink-heading: #0a0b0d;
+  --ink-value: #0a0b0d;
+  --ink-repo: #0a0b0d;
+  --ink-step: #0a0b0d;
+  --ink-label-strong: #0a0b0d;
+  --ink-label: #0a0b0d;
+  --ink-row: #0a0b0d;
+  --ink-list: #0a0b0d;
+  --ink-data: #0a0b0d;
+  --ink-field: #0a0b0d;
+  --ink-rail: #0a0b0d;
+  --ink-rail-value: #0a0b0d;
+  --ink-secret: #5b616e; /* secret-label = body 级 */
+  --ink-chip: #0a0b0d;   /* duration 数值 = badge-pill 墨字 */
+  --body: #5b616e;       /* Body：默认正文（微冷灰） */
+  --body-alt: #5b616e;
+  --body-soft: #5b616e;
+  --mute: #7c828a;       /* Muted：副题/面包屑 */
+  --mute-deep: #5b616e;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #7c828a;
+  --mute-caption: #7c828a;
+  --mute-intro: #5b616e; /* 配置导语 = 正文级 */
+  --mute-terse: #7c828a;
+  --mute-quiet: #7c828a;
+  --mute-soft: #7c828a;
+  --mute-dim: #7c828a;
+  --mute-draft: #7c828a;
+  --mute-json: #a8acb3;  /* json 头条字 = 暗浮卡上的 on-dark-soft */
+  --mute-matrix: #7c828a;
+  --faint: #a8acb3;      /* Muted Soft：禁用链接/占位级 */
+  --faint-alt: #a8acb3;
+  --faint-soft: #a8acb3;
+  --faint-ghost: #a8acb3;
+  --faint-hint: #a8acb3;
+  --faint-meta: #a8acb3;
+  --faint-note: #a8acb3;
+  --faint-empty: #a8acb3;
+  --on-dark: #ffffff;    /* On Dark：暗 hero 白字 */
+  --on-dark-soft: #a8acb3;
+  --on-dark-faint: rgba(168, 172, 179, .78); /* sparkline 提示日期 = soft 再降半档 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #0052ff;    /* Coinbase Blue：唯一品牌电压 */
+  --primary-active: #003ecc; /* 规格 primary-active 原文 */
+  --on-primary: #ffffff;
+  --link: #0052ff;       /* 内联强调链接 = 蓝（inline accent moments） */
+  --link-hover: #0045e5; /* 派生：primary→active 中点（规格未记录 hover） */
+  --focus-ring: rgba(0, 82, 255, .3); /* 输入 focus 加粗为 2px 蓝（规格 text-input） */
+  --primary-veil: rgba(0, 82, 255, .08); /* 当前导航 = 蓝薄纱极淡（蓝稀缺纪律） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #05b169;    /* Semantic Up（仅文字色） */
+  --success-halo: 0 0 0 4px rgba(5, 177, 105, .12);
+  --warning: #9a6f00;    /* 派生：accent-yellow #f4b000 深化为文字级琥珀（规格无 warning） */
+  --warning-soft: rgba(244, 176, 0, .14); /* 黄的浅染面（原色系） */
+  --error: #cf202f;      /* Semantic Down（仅文字色） */
+  --error-deep: #a71522; /* 派生：down 压深一档 */
+  --info: #0052ff;       /* info = 唯一动作蓝 */
+  --info-soft: #edf2ff;  /* 蓝 5% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #dee1e6;         /* Hairline：白面上的默认 1px 分隔 */
+  --hairline-soft: #eef0f3;    /* Hairline Soft：浅分隔 */
+  --hairline-strong: #c6ccd4;  /* 派生：hairline 压深一档（控件边/滚动条） */
+  --hairline-card: #dee1e6;    /* 卡外线 = feature-card hairline outline */
+  --hairline-inset: #eef0f3;
+  --hairline-mid: #eef0f3;
+  --hairline-rail: #dee1e6;
+  --hairline-codex: #eef0f3;
+  --hairline-detail: #eef0f3;
+  --hairline-json: #dee1e6;    /* json 卡外线（暗浮卡的白色面衬边） */
+  --hairline-dashed: #c6ccd4;  /* 空态虚线 = 强边一档 */
+  --hairline-legacy: #dee1e6;
+  --hairline-row: #dee1e6;     /* 行分隔 = asset-row 1px hairline */
+  --hairline-draft: #dee1e6;
+  --bar-value: #dee1e6;   /* value-list 左规线 = 发丝线（近单色纪律） */
+  --bar-matrix: #dee1e6;
+  --bar-summary: #a8acb3; /* 汇总条 = muted-soft 中性（数据墨水非彩色） */
+  --bar-usage: #0052ff;   /* 用量轨 = 唯一蓝（数据墨水的合法蓝色时刻） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(10, 11, 13, .03);
+  --overlay-soft: rgba(10, 11, 13, .04);  /* nav hover = 墨系微高亮 */
+  --overlay-line: rgba(10, 11, 13, .07);
+  --overlay-medium: rgba(10, 11, 13, .08);
+  --shadow-panel: 0 4px 12px rgba(0, 0, 0, .04); /* 规格 唯一阴影档（hovered cards） */
+
+  /* ── brand-mark（全圆资产图标盘 + 三根蓝条；形态见片段） ── */
+  --brand-frame-bg: #ffffff;    /* 白盘 + hairline（白画布上的圆板） */
+  --brand-frame-border: #dee1e6;
+  --brand-frame-shadow: none;   /* 深度来自 card-on-card 分层，不靠装饰影 */
+  --brand-bar-1: #0052ff;       /* 三条 = 品牌电压蓝（signature glyph 时刻） */
+  --brand-bar-2: #0052ff;
+  --brand-bar-3: #0052ff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #f4b000;         /* 角点 = Accent Yellow（Bitcoin 图形插画时刻，非动作色） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #0052ff;     /* 当前导航指示条 = 蓝（每 band 一两个蓝色时刻之一） */
+
+  /* ── 登录页（白卡 + 暗 editorial hero：规格 暗面浮卡的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #dee1e6;
+  --login-shell-shadow: 0 4px 12px rgba(0, 0, 0, .04); /* 单一阴影层 */
+  --login-showcase-bg: #0a0b0d; /* showcase = 全幅暗 hero band */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05); /* 暗面细网格（克制的版式底纹） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #a8acb3;  /* On Dark Soft */
+  --login-signal-bg: #16181c;   /* signal = Surface Dark Elevated 浮卡（同 brand-mark 圆） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;  /* 分层靠明度差不靠影 */
+  --login-signal-bar: #0052ff;  /* 三条 = 蓝 */
+  --login-kicker: #a8acb3;      /* kicker = 暗面 muted 大写小签（形态见片段） */
+  --login-heading: #ffffff;     /* hero 标题白字（display 400 见片段） */
+  --login-copy: #a8acb3;
+  --login-preview-bg: #16181c;  /* 预览卡 = 暗 hero 内的浮卡 */
+  --login-preview-border: rgba(255, 255, 255, .08);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .1);
+  --login-preview-dot: #0052ff; /* 数据点 = 蓝 */
+  --login-preview-dot-soft: #a8acb3;
+  --login-preview-label: #a8acb3;
+  --login-preview-row-line: rgba(255, 255, 255, .08);
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #05b169; /* 涨跌 chip = 交易语义绿（仅文字色） */
+  --login-preview-chip-bg: rgba(5, 177, 105, .14);
+  --login-preview-bar: #0052ff; /* 预览进度 = 蓝 */
+  --login-foot: #a8acb3;
+  --login-card-kicker: #7c828a; /* 白卡侧 eyebrow = muted */
+  --login-card-heading: #0a0b0d;
+  --login-card-copy: #5b616e;
+  --login-notice-border: rgba(0, 82, 255, .25); /* info 通知 = 蓝薄纱 + 发丝线 */
+  --login-notice-bg: #edf2ff;
+  --login-notice-ink: #5b616e;
+  --login-label: #0a0b0d;       /* title-sm 600 标签 */
+  --login-input-border: #dee1e6; /* hairline 输入边（focus 2px 蓝见 antd/片段） */
+  --login-input-border-hover: #7c828a;
+  --login-primary: #0052ff;     /* 主 CTA = 蓝药丸（44px 触达高见片段） */
+  --login-primary-active: #003ecc;
+}
+
+/* ============================================================
+   coinbase 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="coinbase"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：蓝薄纱选区 / 2px 蓝 focus（规格 text-input「border thickens to 2px」） ── */
+[data-theme="coinbase"] ::selection { background: rgba(0, 82, 255, .16); }
+[data-theme="coinbase"] :focus-visible { outline: 2px solid #0052ff; outline-offset: 2px; }
+
+/* ── 药丸 CTA：every CTA is rounded.pill（「sharp corners absent」） ── */
+[data-theme="coinbase"] .ant-btn { border-radius: 9999px; }
+
+/* ── 展示字重 400 + 负字距：display sits at weight 400（
+      组件级标题仍 600，由 antd fontWeightStrong 承担） ── */
+[data-theme="coinbase"] .login-page__showcase-copy h2 { font-size: 36px; font-weight: 400; line-height: 1.11; letter-spacing: -.5px; }
+[data-theme="coinbase"] .login-page__card h1 { font-weight: 400; letter-spacing: -.4px; }
+
+/* ── 数字法则：CoinbaseMono on every number，weight 500（number-display 18px/500）；
+      font-family 由 --font-display（mono 栈）承担，这里只压字重 ── */
+[data-theme="coinbase"] .business-outcomes__card > strong,
+[data-theme="coinbase"] .ratio-card > strong,
+[data-theme="coinbase"] .metric-matrix strong,
+[data-theme="coinbase"] .codex-metric > strong,
+[data-theme="coinbase"] .codex-token-ledger strong,
+[data-theme="coinbase"] .configuration-status-rail > div > strong,
+[data-theme="coinbase"] .configuration-summary-grid strong { font-weight: 500; }
+
+/* ── eyebrow / kicker：badge-pill 语汇（caption-strong 600 大写宽字距，灰不抢蓝） ── */
+[data-theme="coinbase"] .page-heading__eyebrow,
+[data-theme="coinbase"] .panel-kicker,
+[data-theme="coinbase"] .section-label { color: var(--mute); font: 600 10px/1.4 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="coinbase"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 导航：nav-link 14/500 + 药丸圆角（搜索药丸同几何；当前项 = 蓝字 + 蓝薄纱，令牌承担） ── */
+[data-theme="coinbase"] .workspace-nav a { border-radius: 9999px; font-weight: 500; }
+
+/* ── brand-mark：全圆盘（--radius-brand）+ 三根蓝条药丸端（令牌上色，这里只整形态） ── */
+[data-theme="coinbase"] .brand-mark span { border-radius: 9999px; box-shadow: none; }
+[data-theme="coinbase"] .brand-mark span:nth-child(1) { opacity: 1; }
+
+/* ── 系统滚动条：细、hairline 灰、药丸圆头 ── */
+[data-theme="coinbase"] * { scrollbar-width: thin; scrollbar-color: #dee1e6 transparent; }
+[data-theme="coinbase"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="coinbase"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="coinbase"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #dee1e6; }
+[data-theme="coinbase"] ::-webkit-scrollbar-thumb:hover { background: #a8acb3; }
+
+/* ── 登录 showcase kicker：暗面 muted 大写小签（同 eyebrow 语汇，白卡侧由 --login-card-kicker 上色） ── */
+[data-theme="coinbase"] .login-page__showcase-copy > span,
+[data-theme="coinbase"] .login-page__card-heading > span { font: 600 10px/1.4 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── 登录卡片：输入 48px / CTA 44px 触达高，输入 12px 圆角 ── */
+[data-theme="coinbase"] .login-page__card .ant-input,
+[data-theme="coinbase"] .login-page__card .ant-input-affix-wrapper { min-height: 48px; border-radius: 12px; }
+[data-theme="coinbase"] .login-page__card .ant-btn-primary { height: 44px; }

@@ -1,0 +1,266 @@
+/* ============================================================
+   linear 主题令牌块 —— 规格驱动（linear 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Linear 设计语言（近黑软件工艺文档）：
+   - 画布 #010102：全场最深暗面（近纯黑 + 一丝蓝调，锚定色），
+     其上四级表面阶梯 surface-1 #0f1011 → surface-2 #141516
+     → surface-3 #18191a → surface-4 #191a1b 承担层级
+   - 文字阶梯：ink #f7f8f8 / ink-muted #d0d6e0 / ink-subtle #8a8f98
+     / ink-tertiary #62666d（浅灰墨系，非纯白）
+   - 签名 Linear 淡薰衣草蓝 #5e6ad2 = 唯一彩色：只落在 brand-mark、
+     主 CTA、focus ring、链接强调（hover 提亮 #828fff、按压 #5e69d1）；
+     不做区块底色、不做卡片填充、无第二彩色
+   - 语义：营销画布唯一语义色 success #27a644；error/warning/info
+     按 Known Gaps 取 Linear 产品 UI 色标签（红 #eb5757 / 橙 #f2994a
+     / 蓝 #4ea7fc）——本台为产品面而非营销面
+   - 发丝线三级：#23252a（卡/分隔）→ #34343a（强线/输入环）→ #3e3e44（嵌套）
+   - 海拔 = 表面阶梯 + 发丝线 + 顶部白色边缘高光（替代投影，
+     规格「resists drop shadows on dark」+「subtle white edge highlight」）
+   骨架表达不了的形态（负字距显示排版、eyebrow 正字距、
+   brand-mark 方角条、激活导航 surface 提升、暗色滚动条/selection）
+   见块后片段。
+   ============================================================ */
+[data-theme="linear"] {
+  color-scheme: dark;
+
+  /* ── Typography（Linear Display/Text/mono 为私有族：文档 fallback SF Pro Display + 推荐替代 Inter） ── */
+  --font-sans: 'Inter', 'SF Pro Display', -apple-system, system-ui, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace; /* Linear Mono 的推荐替代 JetBrains Mono */
+  --font-display: 'Inter', 'SF Pro Display', -apple-system, system-ui, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; /* Display 与 Text 同声（规格「one continuous voice」） */
+
+  /* ── Radius（规格刻度：xs 4 / sm 6 / md 8·按钮输入 / lg 12·卡 / xl 16·产品面板 / pill 9999） ── */
+  --radius-xs: 4px;      /* 规格 rounded.xs：小件/徽章 */
+  --radius-soft: 4px;    /* 登录预览小色块 = 最小刻度 */
+  --radius-sm: 6px;      /* 规格 rounded.sm：内嵌小块 */
+  --radius-md: 8px;      /* 规格 rounded.md：行卡（= 按钮/输入同刻度） */
+  --radius-lg: 12px;     /* 规格 rounded.lg：指标卡/卡容器 */
+  --radius-xl: 16px;     /* 规格 rounded.xl：面板 = 产品截图面板刻度 */
+  --radius-brand: 8px;   /* brand-mark = rounded.md 几何 */
+  --radius-pill: 9999px; /* 迷你徽标 = status-badge 规格 pill */
+  --radius-panel: 16px;  /* 登录外壳 = 产品面板级（规格最大常用面） */
+
+  /* ── Canvas & surfaces（四级表面阶梯 + 近黑画布锚点） ── */
+  --canvas: #010102;                 /* 规格 canvas：全场最深暗面，锚定色 */
+  --canvas-soft: #0f1011;            /* 表头/嵌面 = surface-1（Level 1 charcoal lift） */
+  --canvas-card: #0f1011;            /* 卡/面板 = surface-1 */
+  --canvas-dark: #010102;            /* json pre 凹陷 = 回落画布锚点（卡内 recessed 一阶） */
+  --surface-sidebar: #010102;        /* 规格 top-nav/侧栏与画布同底：暗色画框 */
+  --surface-bar: rgba(1, 1, 2, .86);
+  --surface-inset: #141516;          /* 卡内交互/内嵌面 = surface-2 */
+  --surface-matrix: #141516;
+  --surface-tint: #141516;           /* 表行 hover = surface-2（规格「hovered cards」） */
+  --surface-rail: #141516;           /* 配置状态轨 = surface-2 */
+  --surface-detail: #0f1011;         /* 详情卡 = surface-1 */
+  --surface-chip: #141516;           /* 规格 status-badge 底 = surface-2 */
+  --surface-legacy: #141516;
+  --surface-draft: #141516;
+  --surface-empty: #0f1011;          /* 空态 = surface-1 面板 + 强发丝虚线 */
+  --surface-json-bar: #141516;       /* json 头条 = surface-2 提升 */
+  --tooltip-bg: #191a1b;             /* 浮层提示 = surface-4（最深提升面） */
+
+  /* ── Ink & text ladder（浅灰墨四级：#f7f8f8 / #d0d6e0 / #8a8f98 / #62666d） ── */
+  --ink: #f7f8f8;
+  --ink-strong: #f7f8f8;
+  --ink-display: #f7f8f8;
+  --ink-heading: #f7f8f8;
+  --ink-value: #f7f8f8;
+  --ink-repo: #f7f8f8;
+  --ink-step: #f7f8f8;
+  --ink-label-strong: #f7f8f8;
+  --ink-label: #f7f8f8;
+  --ink-row: #f7f8f8;
+  --ink-list: #f7f8f8;
+  --ink-data: #f7f8f8;
+  --ink-field: #f7f8f8;
+  --ink-rail: #f7f8f8;
+  --ink-rail-value: #f7f8f8;
+  --ink-secret: #d0d6e0;             /* 脱敏值 = ink-muted */
+  --ink-chip: #d0d6e0;               /* 规格 status-badge 文字 = ink-muted */
+  --body: #f7f8f8;                   /* 规格：正文与标题同走浅灰墨 */
+  --body-alt: #d0d6e0;               /* ink-muted：次级正文/meta */
+  --body-soft: #d0d6e0;              /* 占比卡小注 */
+  --mute: #8a8f98;                   /* ink-subtle：三级文字 */
+  --mute-deep: #d0d6e0;              /* 暗底上「更深」= 更亮半档（照 spotify 暗色推导） */
+  --mute-inline: #8a8f98;
+  --mute-caption: #8a8f98;
+  --mute-intro: #8a8f98;
+  --mute-terse: #8a8f98;
+  --mute-quiet: #8a8f98;
+  --mute-soft: #8a8f98;
+  --mute-dim: #8a8f98;
+  --mute-draft: #8a8f98;
+  --mute-json: #8a8f98;
+  --mute-matrix: #8a8f98;
+  --faint: #62666d;                  /* ink-tertiary：禁用/脚注（规格定位） */
+  --faint-alt: #62666d;
+  --faint-soft: #62666d;
+  --faint-ghost: #62666d;
+  --faint-hint: #62666d;
+  --faint-meta: #62666d;
+  --faint-note: #62666d;
+  --faint-empty: #8a8f98;            /* 空态文字需可读 = 提一级到 ink-subtle */
+  --on-dark: #f7f8f8;                /* 深块文字（tooltip = surface-4） */
+  --on-dark-soft: #d0d6e0;
+  --on-dark-faint: #8a8f98;          /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（淡薰衣草蓝一族：唯一彩色，稀用） ── */
+  --primary: #5e6ad2;                /* 规格主色：主 CTA / brand-mark / 链接强调 */
+  --primary-active: #5e69d1;         /* 按压 = 规格 primary-focus（button-primary-pressed） */
+  --on-primary: #ffffff;             /* 规格 on-primary：薰衣草底白字 */
+  --link: #5e6ad2;                   /* 链接强调 = 薰衣草（规格 Do 用法之一） */
+  --link-hover: #828fff;             /* hover 提亮淡薰衣草 */
+  --focus-ring: rgba(94, 105, 209, .5); /* 规格：2px primary-focus #5e69d1 @50% */
+  --primary-veil: #141516;           /* 激活导航 = surface-2 提升（规格 Don't：薰衣草不做底色） */
+
+  /* ── Semantic（success 为规格唯一直给；其余取 Linear 产品色标签，见块首注） ── */
+  --success: #27a644;                /* 规格 semantic-success：状态/成功指示 */
+  --success-halo: 0 0 0 4px rgba(39, 166, 68, .16);
+  --warning: #f2994a;                /* 推导：Linear 产品橙（营销面无 warning） */
+  --warning-soft: rgba(242, 153, 74, .14);
+  --error: #eb5757;                  /* 推导：Linear 产品红 */
+  --error-deep: #eb5757;             /* 暗底不压深（照 spotify 暗色推导） */
+  --info: #4ea7fc;                   /* 推导：Linear 产品蓝 */
+  --info-soft: rgba(78, 167, 252, .14);
+
+  /* ── Hairlines & bars（规格三级：#23252a / #34343a / #3e3e44） ── */
+  --hairline: #23252a;               /* 规格 hairline：卡/分隔 1px */
+  --hairline-soft: #191b1e;          /* 推导：surface-1 与 hairline 的半步（近隐内缝） */
+  --hairline-strong: #34343a;        /* 规格 hairline-strong：强线/滚动条/虚线 */
+  --hairline-card: #23252a;          /* 卡外线 = 规格 Level 1「surface-1 + 1px hairline」 */
+  --hairline-inset: #23252a;
+  --hairline-mid: #23252a;
+  --hairline-rail: #23252a;
+  --hairline-codex: #23252a;
+  --hairline-detail: #23252a;
+  --hairline-json: #23252a;
+  --hairline-dashed: #34343a;        /* 空态虚线需可见 = 强线 */
+  --hairline-legacy: #34343a;
+  --hairline-row: #23252a;
+  --hairline-draft: #23252a;
+  --bar-value: #3e3e44;              /* 左色条一律无彩 = hairline-tertiary 灰 */
+  --bar-matrix: #3e3e44;
+  --bar-summary: #7a7fad;            /* 汇总条 = brand-secure 薰衣草灰（安静的品牌呼应） */
+  --bar-usage: #5e6ad2;              /* codex 用量进度 = 功能性薰衣草（同 spotify 用法） */
+
+  /* ── Overlays & shadows（海拔 = 顶部白缘高光，不用投影） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: #141516;           /* 导航 hover = surface-2 提升 */
+  --overlay-line: rgba(255, 255, 255, .05);
+  --overlay-medium: rgba(255, 255, 255, .07);
+  --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, .04); /* 规格「subtle white edge highlight」替代投影 */
+
+  /* ── brand-mark（surface-1 炭框 + 三根薰衣草家族条；形态见片段） ── */
+  --brand-frame-bg: #0f1011;
+  --brand-frame-border: #23252a;
+  --brand-frame-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); /* 顶缘白高光 */
+  --brand-bar-1: #5e6ad2;            /* 薰衣草三阶家族：基色 */
+  --brand-bar-2: #828fff;            /* hover 提亮 */
+  --brand-bar-3: #7a7fad;            /* brand-secure 薰衣草灰 */
+  --brand-bar-inset: none;           /* 扁平无光泽（规格抗装饰） */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #5e6ad2;          /* 当前导航指示条 = 薰衣草（激活态合法用色） */
+
+  /* ── 登录页（近黑画布 + surface-1 展示板 + 薰衣草 CTA） ── */
+  --login-bg: #010102;
+  --login-shell-border: #23252a;
+  --login-shell-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); /* 顶缘白高光替代投影 */
+  --login-showcase-bg: #0f1011;      /* 展示板 = surface-1 产品面板 */
+  --login-showcase-ink: #f7f8f8;
+  --login-grid-line: rgba(255, 255, 255, .04);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #f7f8f8;
+  --login-brand-mute: #8a8f98;
+  --login-signal-bg: #0f1011;        /* signal = brand-mark 同款炭框薰衣草条 */
+  --login-signal-border: #23252a;
+  --login-signal-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  --login-signal-bar: #5e6ad2;
+  --login-kicker: #7a7fad;           /* kicker = brand-secure 薰衣草灰（正字距见片段） */
+  --login-heading: #f7f8f8;
+  --login-copy: #d0d6e0;             /* hero 副文 = ink-muted */
+  --login-preview-bg: #141516;       /* 展示板内嵌预览卡 = surface-2 */
+  --login-preview-border: #23252a;
+  --login-preview-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  --login-preview-divider: #23252a;
+  --login-preview-dot: #27a644;      /* 状态点 = 规格 success */
+  --login-preview-dot-soft: #8a8f98;
+  --login-preview-label: #8a8f98;
+  --login-preview-row-line: #23252a;
+  --login-preview-row-ink: #f7f8f8;
+  --login-preview-chip-ink: #27a644; /* 状态 chip = success 绿字 */
+  --login-preview-chip-bg: rgba(39, 166, 68, .12);
+  --login-preview-bar: #5e6ad2;      /* 进度条 = 功能性薰衣草 */
+  --login-foot: #8a8f98;             /* 规格 footer = ink-subtle */
+  --login-card-kicker: #7a7fad;
+  --login-card-heading: #f7f8f8;
+  --login-card-copy: #d0d6e0;
+  --login-notice-border: #34343a;    /* 公告条 = 中性强线 + surface-2 底（无第二彩色） */
+  --login-notice-bg: #141516;
+  --login-notice-ink: #d0d6e0;
+  --login-label: #d0d6e0;
+  --login-input-border: #34343a;     /* 输入静止边 = hairline-strong */
+  --login-input-border-hover: #3e3e44; /* hover 升 hairline-tertiary */
+  --login-primary: #5e6ad2;          /* 薰衣草 CTA（白字走 on-primary 同源） */
+  --login-primary-active: #828fff;   /* 骨架此令牌落在 hover：提亮淡薰衣草（规格 button-primary-hover） */
+}
+
+/* ============================================================
+   linear 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="linear"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区：薰衣草功能性选区（链接强调族用法） ── */
+[data-theme="linear"] ::selection { background: rgba(94, 106, 210, .45); color: var(--ink); }
+
+/* ── 系统滚动条：细、hairline-tertiary #3e3e44、圆头（暗色可用性） ── */
+[data-theme="linear"] * { scrollbar-width: thin; scrollbar-color: #3e3e44 transparent; }
+[data-theme="linear"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="linear"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="linear"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #3e3e44; background-clip: padding-box; }
+[data-theme="linear"] ::-webkit-scrollbar-thumb:hover { background: #62666d; background-clip: padding-box; }
+
+/* ── 显示排版：标题/数值一律 600 + 负字距（规格「display 600 + negative tracking」，抗 700+） ── */
+[data-theme="linear"] .brand-block strong,
+[data-theme="linear"] .panel-heading h2,
+[data-theme="linear"] .configuration-step-copy h2,
+[data-theme="linear"] .configuration-summary h2,
+[data-theme="linear"] .detail-section h3,
+[data-theme="linear"] .connector-configuration-step__heading h3,
+[data-theme="linear"] .configuration-inline-title h3 { font-weight: 600; letter-spacing: -0.01em; }
+
+/* ── 大号数值/展示位：20–25px 档，负字距加深一档（规格 card-title -0.4px@22px ≈ -0.02em） ── */
+[data-theme="linear"] .business-outcomes__card > strong,
+[data-theme="linear"] .codex-metric > strong,
+[data-theme="linear"] .codex-token-ledger strong,
+[data-theme="linear"] .configuration-status-rail > div > strong { font-weight: 600; letter-spacing: -0.02em; }
+
+/* ── 登录页 display（27–30px）：600 + -0.025em（规格 headline -0.6px@28px ≈ -0.02em、display-md -1px@40px = -2.5%） ── */
+[data-theme="linear"] .login-page__showcase-copy h2,
+[data-theme="linear"] .login-page__card h1 { font-weight: 600; letter-spacing: -0.025em; }
+
+/* ── eyebrow / 面板 kicker：Linear Text 500 + 微正字距（规格 eyebrow 13px/500/+0.4px ≈ +0.03em），
+      色 = brand-secure 薰衣草灰 #7a7fad（taxonomy 标签用安静品牌呼应，不用亮薰衣草） ── */
+[data-theme="linear"] .page-heading__eyebrow,
+[data-theme="linear"] .panel-kicker,
+[data-theme="linear"] .section-label { color: #7a7fad; font-family: var(--font-sans); font-weight: 500; letter-spacing: .04em; }
+
+/* ── 登录 kicker 同语汇：sans 500 + 微正字距（色走 --login-kicker / --login-card-kicker 令牌） ── */
+[data-theme="linear"] .login-page__showcase-copy > span,
+[data-theme="linear"] .login-page__card-heading > span { font-family: var(--font-sans); font-weight: 500; letter-spacing: .04em; }
+
+/* ── 导航：激活 = surface-2 提升 + 浅灰墨（规格 pricing-tab-selected「selected = surface lift」，
+      薰衣草只留 3px 指示条 --nav-indicator；底色已由 --primary-veil 给出） ── */
+[data-theme="linear"] .workspace-nav a[aria-current="page"] { color: #f7f8f8; }
+[data-theme="linear"] .workspace-nav a[aria-current="page"] .anticon { color: #f7f8f8; }
+
+/* ── brand-mark：三根薰衣草家族条改方角（1px，几何技术感），角标点隐藏（极简 chrome） ── */
+[data-theme="linear"] .brand-mark span { border-radius: 1px; }
+[data-theme="linear"] .brand-mark::after { display: none; }
+
+/* ── 详情格：面板内嵌套面提升到 surface-2（阶梯不跳级、不与卡面同色） ── */
+[data-theme="linear"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录页：signal 条与 brand-mark 同款方角薰衣草 ── */
+[data-theme="linear"] .login-page__signal span { border-radius: 1px; }

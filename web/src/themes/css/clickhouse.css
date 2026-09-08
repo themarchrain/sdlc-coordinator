@@ -1,0 +1,281 @@
+/* ============================================================
+   clickhouse 主题令牌块 —— 规格驱动（clickhouse 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   ClickHouse 设计语言（近纯黑 + 电光黄；文档实证为暗色系统：
+   「The system has no light-mode marketing surface」，站内目录的
+   亮色描述与规格相反，按规格取暗）：
+   - 提升阶梯：canvas #0a0a0a → 软带 #121212 → 卡 #1a1a1a → 嵌套卡 #242424
+     （卡仅比画布微亮 ——「engineering-grade dim panel」而非浮起卡）
+   - 品牌电压：电光黄 #faff69（CTA 基）/ 按压·悬停加深 #e6eb52 / 禁用 #3a3a1f；
+     签名：黄底黑字（--on-primary #0a0a0a）；黄的纪律 = 元素级稀缺
+     （主 CTA、统计数值、用量轨、brand-mark）+ 色带级慷慨（黄卡带不在骨架内）
+   - 文字阶梯：标题白 #ffffff / 强调 #e6e6e6 / 正文 #cccccc / mute #888888 /
+     细则 #5a5a5a；统计数值一律黄（--ink-strong/--ink-value/--ink-rail-value，
+     规格 stat-callout「ALWAYS yellow」，黄字黑底的数字级可信度时刻）
+   - 语义/强调三色独立于黄：emerald #22c55e / rose #ef4444 / blue #3b82f6
+   - 发丝线双轨：#2a2a2a（卡 1px 边）/ #3a3a3a（输入下划线·强调线·滚动条）
+   - 海拔 = 无投影（规格 Elevation：系统不用阴影），深度全靠明度分层
+   骨架表达不了的形态（brand-mark 三 span 圆形黄条均衡器、Inter 700 负字距
+   排版、muted 大写 kicker、分类页签式导航激活态、暗色滚动条/selection）
+   见块后片段。
+   ============================================================ */
+[data-theme="clickhouse"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --font-display: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; /* 展示位 = 同族 Inter 700（规格：无衬线副声部，一族承担全部层级） */
+
+  /* ── Radius（规格刻度：徽章 4 / 小件 6 / 按钮·输入 8 / 内容卡 12 / 药丸仅限徽章） ── */
+  --radius-xs: 4px;      /* 徽章最小圆角（规格 rounded.xs） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块 / sparkline 提示（规格 rounded.sm 小按钮档） */
+  --radius-md: 8px;      /* 行卡（规格 rounded.md 标准档） */
+  --radius-lg: 12px;     /* 指标卡 / 卡容器（规格 rounded.lg 内容卡档） */
+  --radius-xl: 12px;     /* 面板 = 内容卡刻度上限 */
+  --radius-brand: 9999px; /* brand-mark = 圆形图标钮（规格 rounded.full） */
+  --radius-pill: 9999px; /* 迷你徽标 = badge pill */
+  --radius-panel: 12px;  /* 登录外壳 = 内容卡刻度 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #0a0a0a;                 /* 近纯黑画布（规格 canvas） */
+  --canvas-soft: #121212;            /* 软带 / 分节微染（规格 surface-soft） */
+  --canvas-card: #1a1a1a;            /* 卡 / 面板（规格 surface-card） */
+  --canvas-dark: #0a0a0a;            /* json 凹陷 = 回落画布黑（规格无更深阶，卡内凹陷借画布色） */
+  --surface-sidebar: #0a0a0a;        /* 规格 top-nav：黑导航与画布同底 */
+  --surface-bar: rgba(10, 10, 10, .86);
+  --surface-inset: #242424;          /* 卡内交互/内嵌面 = 嵌套卡（规格 surface-elevated） */
+  --surface-matrix: #242424;
+  --surface-tint: #242424;           /* 表行 hover = 提亮到嵌套卡阶 */
+  --surface-rail: #242424;           /* 配置状态轨 = 面板内嵌面 */
+  --surface-detail: #1a1a1a;         /* 详情卡 = surface-card */
+  --surface-chip: #1a1a1a;           /* badge-pill = surface-card 底 */
+  --surface-legacy: #1a1a1a;
+  --surface-draft: #1a1a1a;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担（规格 Flat 档） */
+  --surface-json-bar: #242424;       /* json 头条 = 嵌套提升阶 */
+  --tooltip-bg: #242424;             /* 浮层提示面 = 嵌套卡阶 */
+
+  /* ── Ink & text ladder（白 #ffffff / #e6e6e6 / #cccccc / #888888 / #5a5a5a 五级坍缩） ── */
+  --ink: #ffffff;
+  --ink-strong: #faff69;             /* 大号 KPI 数值 = 黄（规格 stat-callout「ALWAYS yellow」） */
+  --ink-display: #ffffff;            /* display 标题保持白（黄只落数字与 CTA） */
+  --ink-heading: #ffffff;
+  --ink-value: #faff69;              /* 配置汇总数值 = 黄（统计数字签名） */
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #e6e6e6;                /* 行主文 = body-strong */
+  --ink-list: #cccccc;
+  --ink-data: #ffffff;
+  --ink-field: #cccccc;
+  --ink-rail: #cccccc;
+  --ink-rail-value: #faff69;         /* 状态轨数值 = 黄 */
+  --ink-secret: #888888;
+  --ink-chip: #ffffff;
+  --body: #cccccc;                   /* 规格 body：默认正文 */
+  --body-alt: #888888;               /* 次级正文回落 muted */
+  --body-soft: #888888;              /* 占比卡小注 = muted */
+  --mute: #888888;                   /* 规格 muted：页脚/面包屑/说明 */
+  --mute-deep: #cccccc;              /* 暗底上「更深」= 更亮：标签比 mute 高一档 */
+  --mute-inline: #888888;
+  --mute-caption: #888888;
+  --mute-intro: #888888;
+  --mute-terse: #888888;
+  --mute-quiet: #888888;
+  --mute-soft: #5a5a5a;              /* 规格 muted-soft：细则 */
+  --mute-dim: #5a5a5a;
+  --mute-draft: #888888;
+  --mute-json: #888888;
+  --mute-matrix: #888888;
+  --faint: #888888;
+  --faint-alt: #888888;
+  --faint-soft: #5a5a5a;
+  --faint-ghost: #888888;
+  --faint-hint: #888888;
+  --faint-meta: #888888;
+  --faint-note: #888888;
+  --faint-empty: #888888;            /* 空态文案 = muted */
+  --on-dark: #ffffff;
+  --on-dark-soft: #cccccc;           /* json 深块文字 = 正文色 */
+  --on-dark-faint: #888888;          /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（电光黄一族；黄只落 CTA / 数值 / 用量轨） ── */
+  --primary: #faff69;                /* 电光黄 = 唯一品牌电压（规格 primary） */
+  --primary-active: #e6eb52;         /* 按压/悬停加深（规格 primary-active，唯一 darker 变体） */
+  --on-primary: #0a0a0a;             /* 签名：黄底黑字（规格 on-primary） */
+  --link: #faff69;                   /* 行内链 = 黄（规格 text-link：yellow on dark） */
+  --link-hover: #e6eb52;
+  --focus-ring: rgba(250, 255, 105, .4); /* 输入聚焦 = 黄加粗边（规格 text-input-focused） */
+  --primary-veil: #1a1a1a;           /* 激活导航 = 分类页签激活态（surface-card 底 + 白字，见片段） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #22c55e;                /* accent emerald = 成功态 */
+  --success-halo: 0 0 0 4px rgba(34, 197, 94, .16);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, .14);
+  --error: #ef4444;                  /* accent rose = 错误/不可用 */
+  --error-deep: #ef4444;
+  --info: #3b82f6;                   /* accent blue = 信息态/语法高亮蓝 */
+  --info-soft: rgba(59, 130, 246, .14);
+
+  /* ── Hairlines & bars（内部 #2a2a2a 近隐 / 强调 #3a3a3a） ── */
+  --hairline: #2a2a2a;               /* 侧栏右缘 / 顶栏下缘 */
+  --hairline-soft: #2a2a2a;          /* 面板底部分隔 */
+  --hairline-strong: #3a3a3a;        /* 输入下划线 / 强分隔（规格 hairline-strong） */
+  --hairline-card: #2a2a2a;          /* 卡外 1px 发丝线（规格 Soft hairline 档） */
+  --hairline-inset: #2a2a2a;
+  --hairline-mid: #2a2a2a;
+  --hairline-rail: #2a2a2a;
+  --hairline-codex: #2a2a2a;
+  --hairline-detail: #2a2a2a;
+  --hairline-json: #2a2a2a;
+  --hairline-dashed: #3a3a3a;        /* 空态虚线需要可见 = strong 档 */
+  --hairline-legacy: #3a3a3a;
+  --hairline-row: #2a2a2a;
+  --hairline-draft: #3a3a3a;
+  --bar-value: #3a3a3a;              /* 左色条一律无彩（黄不装饰，保持稀缺） */
+  --bar-matrix: #3a3a3a;
+  --bar-summary: #3a3a3a;
+  --bar-usage: #faff69;              /* codex 用量进度 = 黄（数字级可信度信号，同 stat-callout） */
+
+  /* ── Overlays & shadows（海拔 = 无投影） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: #1a1a1a;           /* 导航 hover = 提亮到卡阶（分类页签语汇） */
+  --overlay-line: rgba(255, 255, 255, .05);
+  --overlay-medium: rgba(255, 255, 255, .07);
+  --shadow-panel: none;              /* 规格 Elevation：系统不用阴影 */
+
+  /* ── brand-mark（#1a1a1a 圆形图标钮 + 三根电光黄条；形态见片段） ── */
+  --brand-frame-bg: #1a1a1a;
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #faff69;            /* 三根全黄：品牌电压只此一处常驻 */
+  --brand-bar-2: #faff69;
+  --brand-bar-3: #faff69;
+  --brand-bar-inset: none;           /* 扁平色块，无高光内描（规格无投影） */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #faff69;          /* 当前导航指示条 = 黄（激活态的合法黄色场景） */
+
+  /* ── 登录页（近纯黑画布 + #1a1a1a 展示板 + 黄色统计语汇） ── */
+  --login-bg: #0a0a0a;
+  --login-shell-border: #2a2a2a;     /* 发丝线承担外壳（无投影） */
+  --login-shell-shadow: none;
+  --login-showcase-bg: #121212;      /* 软带底展示板 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .04);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #888888;
+  --login-signal-bg: #1a1a1a;        /* signal = brand-mark 同款均衡器（见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #faff69;
+  --login-kicker: #888888;           /* kicker = muted 大写标签（规格 caption-uppercase，黄色不装饰） */
+  --login-heading: #ffffff;
+  --login-copy: #cccccc;
+  --login-preview-bg: #1a1a1a;       /* 展示板内嵌预览卡 = surface-card */
+  --login-preview-border: #2a2a2a;
+  --login-preview-shadow: none;
+  --login-preview-divider: #2a2a2a;
+  --login-preview-dot: #22c55e;      /* 产品状态点 = emerald「active」指示 */
+  --login-preview-dot-soft: #888888;
+  --login-preview-label: #888888;
+  --login-preview-row-line: #2a2a2a;
+  --login-preview-row-ink: #e6e6e6;
+  --login-preview-chip-ink: #faff69; /* 预览 chip = 黄字黄染（badge-yellow 的暗底轻量版） */
+  --login-preview-chip-bg: rgba(250, 255, 105, .12);
+  --login-preview-bar: #faff69;      /* 进度条 = 黄（数字级可信度信号） */
+  --login-foot: #888888;
+  --login-card-kicker: #888888;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #888888;
+  --login-notice-border: rgba(59, 130, 246, .35); /* 公告条 = accent blue 淡染 */
+  --login-notice-bg: rgba(59, 130, 246, .12);
+  --login-notice-ink: #cccccc;
+  --login-label: #ffffff;
+  --login-input-border: #3a3a3a;     /* 输入下缘 = hairline-strong（规格输入强调线档） */
+  --login-input-border-hover: #5a5a5a; /* hover 提亮到细则灰（黄留给聚焦态） */
+  --login-primary: #faff69;          /* 黄色 CTA（黑字走 antd colorTextLightSolid） */
+  --login-primary-active: #e6eb52;   /* 按压加深 */
+}
+
+/* ============================================================
+   clickhouse 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="clickhouse"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区：黄底黑字（品牌动作信号的文本级延伸） ── */
+[data-theme="clickhouse"] ::selection { background: rgba(250, 255, 105, .45); color: #0a0a0a; }
+
+/* ── 系统滚动条：细、hairline-strong #3a3a3a、圆头 ── */
+[data-theme="clickhouse"] * { scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+[data-theme="clickhouse"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="clickhouse"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="clickhouse"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #3a3a3a; background-clip: padding-box; }
+[data-theme="clickhouse"] ::-webkit-scrollbar-thumb:hover { background: #5a5a5a; background-clip: padding-box; }
+
+/* ── Inter 700「confident weight」：标题/数值/表头一律 700（骨架默认 600–650） ── */
+[data-theme="clickhouse"] .brand-block strong,
+[data-theme="clickhouse"] .panel-heading h2,
+[data-theme="clickhouse"] .business-outcomes__card > strong,
+[data-theme="clickhouse"] .ratio-card > strong,
+[data-theme="clickhouse"] .codex-metric > strong,
+[data-theme="clickhouse"] .codex-token-ledger strong,
+[data-theme="clickhouse"] .configuration-status-rail > div > strong,
+[data-theme="clickhouse"] .configuration-summary-grid strong,
+[data-theme="clickhouse"] .configuration-step-copy h2,
+[data-theme="clickhouse"] .configuration-summary h2,
+[data-theme="clickhouse"] .configuration-inline-title h3,
+[data-theme="clickhouse"] .connector-configuration-step__heading h3,
+[data-theme="clickhouse"] .repo-row strong,
+[data-theme="clickhouse"] .intent-row strong,
+[data-theme="clickhouse"] .duration-card strong,
+[data-theme="clickhouse"] .duration-section__heading strong,
+[data-theme="clickhouse"] .value-list__title,
+[data-theme="clickhouse"] .connector-watch__item strong,
+[data-theme="clickhouse"] .detail-section h3,
+[data-theme="clickhouse"] .admin-table .ant-table-thead > tr > th,
+[data-theme="clickhouse"] .audit-json > summary,
+[data-theme="clickhouse"] .login-page__brand strong,
+[data-theme="clickhouse"] .login-page__showcase-copy h2,
+[data-theme="clickhouse"] .login-page__card h1 { font-weight: 700; }
+
+/* ── display 负字距：大号标题 -1 ~ -2.5px（规格「negative tracking 是必需」） ── */
+[data-theme="clickhouse"] .login-page__showcase-copy h2,
+[data-theme="clickhouse"] .login-page__card h1 { letter-spacing: -.02em; }
+
+/* ── 页头 eyebrow / 面板 kicker：muted 大写宽字距标签（规格 caption-uppercase 语汇） ── */
+[data-theme="clickhouse"] .page-heading__eyebrow,
+[data-theme="clickhouse"] .panel-kicker,
+[data-theme="clickhouse"] .section-label { color: var(--mute); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── 导航：未激活 = muted 500（规格 category-tab），激活 = surface-card 底 + 白字；黄只留指示条 ── */
+[data-theme="clickhouse"] .workspace-nav a { color: #888888; font-weight: 500; }
+[data-theme="clickhouse"] .workspace-nav a[aria-current="page"] { color: #ffffff; }
+[data-theme="clickhouse"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── brand-mark：#1a1a1a 圆形图标钮内三根电光黄条（三 span 重绘；底色/圆角走令牌） ── */
+[data-theme="clickhouse"] .brand-mark { align-items: center; padding: 0; gap: 3px; border: none; }
+[data-theme="clickhouse"] .brand-mark span { width: 4px; border-radius: 2px; box-shadow: none; }
+[data-theme="clickhouse"] .brand-mark span:nth-child(1) { height: 12px; opacity: 1; }
+[data-theme="clickhouse"] .brand-mark span:nth-child(2) { height: 20px; }
+[data-theme="clickhouse"] .brand-mark span:nth-child(3) { height: 15px; }
+[data-theme="clickhouse"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="clickhouse"] .brand-mark span:nth-child(1) { height: 10px; }
+  [data-theme="clickhouse"] .brand-mark span:nth-child(2) { height: 16px; }
+  [data-theme="clickhouse"] .brand-mark span:nth-child(3) { height: 12px; }
+}
+
+/* ── 详情格：面板内的嵌套面回落嵌套卡 #242424（规格 surface-elevated 明度分层） ── */
+[data-theme="clickhouse"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录页：signal = brand-mark 同款圆形均衡器（底色/圆角走令牌） ── */
+[data-theme="clickhouse"] .login-page__signal { align-items: center; padding: 0; gap: 3px; border: none; }
+[data-theme="clickhouse"] .login-page__signal span { width: 4px; border-radius: 2px; }

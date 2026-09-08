@@ -18,6 +18,7 @@ export const minimaxSwatches: ThemeSwatches = {
 export const minimaxTheme: ThemeDefinition = {
   id: 'minimax',
   label: 'MiniMax',
+  family: 'brand',
   isDark: false,
   chromeColor: '#ffffff',
   swatches: minimaxSwatches,

@@ -1,0 +1,286 @@
+/* ============================================================
+   pinterest 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Pinterest 设计语言（摄影优先的发现系统）：
+   - 纯白画布 #ffffff；暖奶油中性 chrome：surface-card #f6f6f3（卡/内嵌/表头）、
+     surface-soft #fbfbf9（页身 wash/hover）；secondary #e5e5e0 更深一档；
+     卡面全平（全系统唯一阴影 = 模态 16px ambient）
+   - Pinterest Red #e60023 单一饱和电压：只给主 CTA/激活 tab/品牌字（从不装饰），
+     按压 #cc001f（primary-pressed 字面值）
+   - 文字四级坍缩：Ink #000000（标题/按钮/导航）/ Body #33332e / Mute #62625b /
+     Ash #91918c（占位/禁用）；ink-soft #211922 只给行内链接（规格 Don't）
+   - 双圆角语汇：16（rounded.md 按钮/输入/卡）+ 32（rounded.lg 大卡/模态）+ 药丸，
+     永无硬角、md 与 lg 之间无第三值
+   - 发丝线双轨 #dadad3 / #e5e5e0 + 强线 = stone #c8c8c1（禁用边/滚动条）；
+     surface-dark #262622 暖近黑 → json 凹面/tooltip/登录 showcase（hero-cta-strip）
+   - 语义：success-deep #103c25 / error #9e0a0a（规格字面值）；warning 未给 →
+     派生暖金 #8c651a；info = focus-outer #435ee5（规格唯一 chrome 蓝）
+   骨架表达不了的形态（红圆盘 brand-mark、编辑紫 accent、双层焦点环、
+   700 字重法则、登录 dark CTA 条、44px 触达高表单）见块后片段。
+   ============================================================ */
+[data-theme="pinterest"] {
+  /* ── Typography ───────────────────────────── */
+  /* Pin Sans（专有族，禁外部加载）→ Inter 规格钦定替代（几何/字高匹配 ~3%）；
+     无第二族，层级全靠字重与字号（规格「hierarchy from font weight and size」） */
+  --font-sans: Inter, -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Inter, -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; /* 数字展示位同 sans；70px 级负字距见片段 */
+
+  /* ── Radius（规格 双圆角语汇：md 16 支配 / lg 32 大卡 / full 药丸；无硬角无中间值） ── */
+  --radius-xs: 8px;      /* term-hint focus（规格 sm 8 罕用档） */
+  --radius-soft: 9999px; /* 登录预览小色块 = pin-overlay-pill 药丸语汇 */
+  --radius-sm: 8px;      /* 内嵌小块 = 规格 sm 8（editorial tooltip） */
+  --radius-md: 16px;     /* 行卡 = rounded.md（pin-card 支配圆角） */
+  --radius-lg: 16px;     /* 指标卡 = rounded.md（category/feature 卡） */
+  --radius-xl: 32px;     /* 面板 / 对话框 = rounded.lg（modal-card 大面） */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 红圆盘（P-logo 50% 几何） */
+  --radius-pill: 9999px; /* 迷你徽标 = filter-chip 药丸 */
+  --radius-panel: 32px;  /* 登录外壳 = modal-card rounded.lg */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Canvas：纯白页底（primary-nav/modals/正文） */
+  --canvas-soft: #fbfbf9;        /* Surface Soft：奶油 wash（hero 页身/行 hover） */
+  --canvas-card: #ffffff;        /* 白卡：feature-card 标准面 */
+  --canvas-dark: #262622;        /* Surface Dark：json 凹面 = 暖近黑（hero-cta-strip） */
+  --surface-sidebar: #ffffff;    /* primary-nav = 画布白 */
+  --surface-bar: rgba(255, 255, 255, .94);
+  --surface-inset: #f6f6f3;      /* 内嵌面 = Surface Card 奶油 */
+  --surface-matrix: #f6f6f3;
+  --surface-tint: #fbfbf9;       /* 行 hover = Surface Soft（与 antd rowHoverBg 同源） */
+  --surface-rail: #f6f6f3;
+  --surface-detail: #f6f6f3;
+  --surface-chip: #f6f6f3;
+  --surface-legacy: #f6f6f3;
+  --surface-draft: #e5e5e0;      /* draft = Secondary BG 更深一档（secondary-pressed 同阶） */
+  --surface-empty: #fbfbf9;
+  --surface-json-bar: #f6f6f3;   /* json 头条 = 奶油软带 */
+  --tooltip-bg: #262622;         /* 浮层提示 = 暖近黑反白面（比纯黑暖一档） */
+
+  /* ── Ink & text ladder（坍缩为规格四级：Ink/Body/Mute/Ash） ── */
+  --ink: #000000;
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #33332e;   /* value-list li = Body 正文 */
+  --ink-data: #000000;
+  --ink-field: #000000;
+  --ink-rail: #000000;
+  --ink-rail-value: #000000;
+  --ink-secret: #33332e; /* secret-label = 正文级 */
+  --ink-chip: #33332e;   /* duration 数值 = 正文级 */
+  --body: #33332e;       /* Body：默认段落（暖近黑） */
+  --body-alt: #33332e;
+  --body-soft: #62625b;  /* Mute：占比卡小注 */
+  --mute: #62625b;       /* Mute：元数据/页脚链接 */
+  --mute-deep: #33332e;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #62625b;
+  --mute-caption: #62625b;
+  --mute-intro: #33332e; /* 配置导语 = 正文级 */
+  --mute-terse: #62625b;
+  --mute-quiet: #62625b;
+  --mute-soft: #62625b;
+  --mute-dim: #62625b;
+  --mute-draft: #62625b;
+  --mute-json: #62625b;
+  --mute-matrix: #62625b;
+  --faint: #91918c;      /* Ash：占位/禁用文字（规格「placeholder, disabled」） */
+  --faint-alt: #91918c;
+  --faint-soft: #91918c;
+  --faint-ghost: #91918c;
+  --faint-hint: #91918c;
+  --faint-meta: #91918c;
+  --faint-note: #91918c;
+  --faint-empty: #91918c;
+  --on-dark: #ffffff;    /* 暗条上的字 = 纯白（hero-cta-strip） */
+  --on-dark-soft: rgba(255, 255, 255, .7); /* on-dark-mute 规格字面值 */
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus（Pinterest Red 单一电压；红从不装饰） ── */
+  --primary: #e60023;    /* Pinterest Red：主 CTA/激活 tab/品牌（规格「precise」） */
+  --primary-active: #cc001f; /* primary-pressed 规格字面值 */
+  --on-primary: #ffffff;
+  --link: #211922;       /* 行内链接 = ink-soft 暖近黑（link-inline 原文，规格 Don't 外借） */
+  --link-hover: #000000; /* hover 转 ink（比色染更重的字重语汇） */
+  --focus-ring: rgba(67, 94, 229, .35); /* focus-outer 蓝外环（双层焦点信号） */
+  --primary-veil: rgba(230, 0, 35, .08); /* 当前导航 = 红 8% 淡染 + 红字（激活 tab） */
+
+  /* ── Semantic（success/error 规格字面值；warning 派生暖金） ── */
+  --success: #103c25;    /* success-deep：in-product 成功消息色 */
+  --success-halo: 0 0 0 4px rgba(16, 60, 37, .14); /* 成功点淡光环（success-pale 同调） */
+  --warning: #8c651a;    /* 派生：规格无警示色 → 与奶油中性同调的暖金 */
+  --warning-soft: rgba(140, 101, 26, .12);
+  --error: #9e0a0a;      /* Error：校验/破坏性文案（规格字面值） */
+  --error-deep: #cc001f; /* error-deep 规格字面值（= primary-pressed，语义语境） */
+  --info: #435ee5;       /* focus-outer：规格唯一 chrome 蓝 */
+  --info-soft: #eef1fd;  /* 焦点蓝 8% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（hairline #dadad3 / soft #e5e5e0 / 强线 = stone #c8c8c1） ── */
+  --hairline: #dadad3;         /* hairline：行分隔/列规（规格字面值） */
+  --hairline-soft: #e5e5e0;    /* hairline-soft：轻分隔（规格字面值） */
+  --hairline-strong: #c8c8c1;  /* stone：禁用边/滚动条（规格「disabled-state borders」） */
+  --hairline-card: #e5e5e0;
+  --hairline-inset: #e5e5e0;
+  --hairline-mid: #e5e5e0;
+  --hairline-rail: #dadad3;
+  --hairline-codex: #e5e5e0;
+  --hairline-detail: #e5e5e0;
+  --hairline-json: #dadad3;    /* json 头条下缘 = 强一档行规 */
+  --hairline-dashed: #c8c8c1;  /* 空态虚线 = stone 一档 */
+  --hairline-legacy: #c8c8c1;
+  --hairline-row: #e5e5e0;
+  --hairline-draft: #c8c8c1;
+  --bar-value: #c8c8c1;   /* value-list 左规线 = stone（无彩结构） */
+  --bar-matrix: #c8c8c1;
+  --bar-summary: #91918c; /* 汇总条 = ash 一阶（比 value 深一档可辨） */
+  --bar-usage: #e60023;   /* 用量轨 = Pinterest Red（数据墨水是红的功能性使用） */
+
+  /* ── Overlays & shadows（卡面全平；唯一阴影 = 模态 16px ambient） ── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: rgba(0, 0, 0, .04);   /* nav hover ≈ Surface Soft */
+  --overlay-line: rgba(0, 0, 0, .06);   /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .08);
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.14); /* 模态 ambient（全系统唯一阴影档） */
+
+  /* ── brand-mark（红圆盘 + 三根白条 = P-logo 语汇；形态见片段） ── */
+  --brand-frame-bg: #e60023;  /* 红圆盘 = P-logo 底 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none; /* 卡面全平 */
+  --brand-bar-1: #ffffff;     /* 盘内三根白条 */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;   /* 角标隐藏（红不做装饰点；片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #e60023;   /* 当前导航指示 = 红（active-tab indicator 合法场景） */
+
+  /* ── 登录页（showcase = surface-dark 暖近黑 CTA 条 + 红盘 signal；白卡侧 = 纯白市场面） ── */
+  --login-bg: #fbfbf9;         /* 页身 = Surface Soft 奶油 wash */
+  --login-shell-border: #e5e5e0;
+  --login-shell-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); /* 模态 ambient 借给登录外壳 */
+  --login-showcase-bg: #262622; /* showcase = hero-cta-strip 暖近黑 */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: none;      /* 暗条走纯色，无网格底纹 */
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .7); /* on-dark-mute 规格字面值 */
+  --login-signal-bg: #e60023;   /* signal = 红圆盘（brand-mark 同款，见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* 盘内三根白条 */
+  --login-kicker: rgba(255, 255, 255, .7);
+  --login-heading: #ffffff;     /* display-lg 44px/700/-0.8px（片段缩放 40px） */
+  --login-copy: rgba(255, 255, 255, .65);
+  --login-preview-bg: rgba(255, 255, 255, .94); /* 暗条上的白 pin 卡（photo-first 白卡） */
+  --login-preview-border: rgba(38, 38, 34, .08);
+  --login-preview-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); /* 浮卡 ambient */
+  --login-preview-divider: #e5e5e0;
+  --login-preview-dot: #e60023;      /* 数据点 = 品牌红 */
+  --login-preview-dot-soft: #91918c;
+  --login-preview-label: #62625b;
+  --login-preview-row-line: #e5e5e0;
+  --login-preview-row-ink: #211922;  /* 行文字 = ink-soft（暗面白卡的行内语汇） */
+  --login-preview-chip-ink: #cc001f; /* chip = pressed 红字（白底对比优于纯红） */
+  --login-preview-chip-bg: rgba(230, 0, 35, .08);
+  --login-preview-bar: #c8c8c1;      /* 占位元数据条 = stone */
+  --login-foot: rgba(255, 255, 255, .5);
+  --login-card-kicker: #62625b;  /* 白卡侧 eyebrow = Mute */
+  --login-card-heading: #000000;
+  --login-card-copy: #62625b;
+  --login-notice-border: rgba(67, 94, 229, .28); /* 公告条 = 焦点蓝淡染 */
+  --login-notice-bg: #eef1fd;
+  --login-notice-ink: #33332e;
+  --login-label: #211922;       /* 表单 label = 暖近黑（body-strong 600） */
+  --login-input-border: #91918c; /* text-input：1px solid ash（规格字面值） */
+  --login-input-border-hover: #000000; /* focused：2px ink 内边（规格字面值） */
+  --login-primary: #e60023;     /* 主 CTA = Pinterest Red */
+  --login-primary-active: #cc001f;
+}
+
+/* ============================================================
+   pinterest 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="pinterest"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：红淡染选区 / 双层焦点环（2px focus-outer 外环 + 白内隙 = 规格签名信号） ── */
+[data-theme="pinterest"] ::selection { background: rgba(230, 0, 35, .18); }
+[data-theme="pinterest"] :focus-visible { outline: 2px solid #435ee5; outline-offset: 2px; }
+
+/* ── 字重法则：标题/面板 600，数值/强调 700（层级靠字重不靠色染，）；
+      大数字附 -0.02em 负字距（display 级 -1.2px/70px 的等比近似） ── */
+[data-theme="pinterest"] .panel-heading h2,
+[data-theme="pinterest"] .detail-section h3,
+[data-theme="pinterest"] .configuration-step-copy h2,
+[data-theme="pinterest"] .configuration-summary h2,
+[data-theme="pinterest"] .configuration-inline-title h3,
+[data-theme="pinterest"] .connector-configuration-step__heading h3,
+[data-theme="pinterest"] .value-list__title { font-weight: 600; }
+[data-theme="pinterest"] .brand-block strong,
+[data-theme="pinterest"] .business-outcomes__card > strong,
+[data-theme="pinterest"] .ratio-card > strong,
+[data-theme="pinterest"] .codex-metric > strong,
+[data-theme="pinterest"] .metric-matrix strong,
+[data-theme="pinterest"] .codex-token-ledger strong,
+[data-theme="pinterest"] .configuration-status-rail > div > strong,
+[data-theme="pinterest"] .configuration-summary-grid strong,
+[data-theme="pinterest"] .repo-row strong,
+[data-theme="pinterest"] .intent-row strong,
+[data-theme="pinterest"] .duration-card strong,
+[data-theme="pinterest"] .duration-section__heading strong,
+[data-theme="pinterest"] .connector-watch__item strong,
+[data-theme="pinterest"] .login-page__brand strong,
+[data-theme="pinterest"] .login-page__card h1 { font-weight: 700; letter-spacing: -0.01em; }
+
+/* ── eyebrow / kicker：caption 级小签（500/紧凑字距；无编辑系宽字距） ── */
+[data-theme="pinterest"] .page-heading__eyebrow,
+[data-theme="pinterest"] .panel-kicker,
+[data-theme="pinterest"] .section-label { color: var(--mute); font: 500 10px/1.5 var(--font-sans); letter-spacing: .02em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="pinterest"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 650; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 导航：当前项 = 红字 600 + 红 8% 淡染（active-tab indicator 是红的合法场景） ── */
+[data-theme="pinterest"] .workspace-nav a[aria-current="page"] { color: #e60023; background: var(--primary-veil); font-weight: 600; }
+[data-theme="pinterest"] .workspace-nav a[aria-current="page"] .anticon { color: #e60023; }
+
+/* ── brand-mark：红圆盘内三根白圆条（P-logo 语汇；圆角走 --radius-brand 9999px） ── */
+[data-theme="pinterest"] .brand-mark { align-items: center; padding: 0; gap: 2px; border: none; }
+[data-theme="pinterest"] .brand-mark span { width: 3px; border-radius: 9999px; box-shadow: none; }
+[data-theme="pinterest"] .brand-mark span:nth-child(1) { height: 12px; opacity: 1; }
+[data-theme="pinterest"] .brand-mark span:nth-child(2) { height: 20px; }
+[data-theme="pinterest"] .brand-mark span:nth-child(3) { height: 15px; }
+[data-theme="pinterest"] .brand-mark::after { display: none; }
+
+/* ── 表头：奶油面 + 700 字重（body-sm-strong「table-header text」规格原文；底色由 antd 承担） ── */
+[data-theme="pinterest"] .admin-table .ant-table-thead > tr > th { font-weight: 700; letter-spacing: 0; text-transform: none; }
+
+/* ── 系统滚动条：细、stone #c8c8c1、全圆头（药丸语汇） ── */
+[data-theme="pinterest"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="pinterest"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: var(--hairline-strong); }
+[data-theme="pinterest"] ::-webkit-scrollbar-thumb:hover { background: #91918c; }
+[data-theme="pinterest"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="pinterest"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：暖近黑 CTA 条（无网格底纹）；标题 = display 级 40px/700/1.15 +
+      -0.02em 负字距（display-lg 44px/700/-0.8px 的 admin 缩放） ── */
+[data-theme="pinterest"] .login-page__showcase::before { display: none; }
+[data-theme="pinterest"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+[data-theme="pinterest"] .login-page__showcase-copy > span,
+[data-theme="pinterest"] .login-page__card-heading > span { font: 500 10px/1.5 var(--font-sans); letter-spacing: .02em; text-transform: uppercase; }
+
+/* ── 登录 signal：红圆盘 + 三根白圆条（brand-mark 同款）；
+      预览占位条药丸圆角（pin-overlay-pill 语汇） ── */
+[data-theme="pinterest"] .login-page__signal { align-items: center; padding: 0; gap: 3px; border: none; border-radius: 50%; }
+[data-theme="pinterest"] .login-page__signal span { width: 4px; border-radius: 9999px; }
+[data-theme="pinterest"] .login-page__preview-row strong { border-radius: 9999px; }
+
+/* ── 登录卡片：输入 44px / 主 CTA 40px（规格 text-input 44 / button 40 触达高） ── */
+[data-theme="pinterest"] .login-page__card .ant-input,
+[data-theme="pinterest"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="pinterest"] .login-page__card .ant-btn-primary { height: 40px; }

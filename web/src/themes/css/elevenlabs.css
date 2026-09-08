@@ -1,0 +1,289 @@
+/* ============================================================
+   elevenlabs 主题令牌块 —— 规格驱动（elevenlabs 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   ElevenLabs 设计语言（暖纸编辑杂志）：
+   - 表面阶梯：canvas #f5f5f5（离白画布）/ 亮带 #fafafa / 白卡 #ffffff
+     / 强表面 #f0efed（badge/内嵌面）/ 墨面 #0c0a09（json/featured）/ 墨浮起 #1c1917
+   - 文字阶梯：ink #0c0a09 / body-strong #292524 / body #4e4e4e
+     / muted #777169 / muted-soft #a8a29e（stone 暖灰族，Text 原文）
+   - 主 CTA = 近黑墨药丸 #292524 底白字，按压 #0c0a09；
+     链接 = 墨 tertiary-text（无饱和链接蓝）
+   - 语义：success #16a34a / error #dc2626（规格）；warning #b45309
+     暖琥珀、info #44403c 墨族中性（推导：规格无对应物，编辑感不引入饱和彩相）
+   - 发丝线三轨：hairline #e7e5e4 / soft #f0efed / strong #d6d3d1（规格原文）
+   - 海拔 = 发丝线 + 单层软投影 0 4px 16px rgba(0,0,0,.04)（规格 Soft drop）
+   - 柔和渐变球（mint/peach/lavender/sky/rose）只做氛围装饰，
+     落在登录 showcase（渐变球瓦语汇），不做任何组件底色
+   骨架表达不了的形态（Waldenburg 300 负字距 display、微正字距 body、
+   brand-mark 墨瓦白三柱、登录渐变球氛围、墨浮层）见块后片段。
+   ============================================================ */
+[data-theme="elevenlabs"] {
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* Inter 即规格正文族 */
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Waldenburg', 'EB Garamond', Georgia, 'Times New Roman', serif; /* Waldenburg 授权衬线 → 规格 documented 替代（EB Garamond）+ 规格 fallback（Times），weight-300 见片段 */
+
+  /* ── Radius（规格刻度：标签 4 / 紧凑行 6 / 输入 8 / 紧凑卡 12 / 特性卡 16 / 渐变球瓦 24 / 药丸·圆 9999） ── */
+  --radius-xs: 4px;      /* 图标提示 focus 圆角（规格 rounded.xs） */
+  --radius-soft: 4px;    /* 登录预览小色块（规格 rounded.xs 内联标签） */
+  --radius-sm: 6px;      /* 内嵌小块 / sparkline 提示（规格 rounded.sm） */
+  --radius-md: 8px;      /* 行卡 / 表单输入（规格 rounded.md） */
+  --radius-lg: 12px;     /* 指标卡（规格 rounded.lg 紧凑卡） */
+  --radius-xl: 16px;     /* 面板 / json 卡（规格 rounded.xl 特性卡） */
+  --radius-brand: 12px;  /* brand-mark / 登录 signal（规格 rounded.lg 瓦档） */
+  --radius-pill: 9999px; /* 迷你徽标 = 规格 rounded.pill */
+  --radius-panel: 24px;  /* 登录外壳 = 规格 rounded.xxl 渐变球瓦（extra-soft） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #f5f5f5;                 /* 规格离白画布（body/footer 同底） */
+  --canvas-soft: #fafafa;            /* 规格 canvas-soft 亮带（交替段） */
+  --canvas-card: #ffffff;            /* 规格 surface-card 纯白卡 */
+  --canvas-dark: #0c0a09;            /* json pre 凹陷面 = 规格 canvas-deep/surface-dark */
+  --surface-sidebar: #fafafa;        /* 侧栏 = 亮带（规格交替段语汇） */
+  --surface-bar: rgba(245, 245, 245, .92);
+  --surface-inset: #f0efed;          /* 卡内交互/内嵌面 = 规格 surface-strong（badge/voice 盘） */
+  --surface-matrix: #fafafa;
+  --surface-tint: #f0efed;           /* 表行 hover = 强表面提升 */
+  --surface-rail: #f0efed;
+  --surface-detail: #fafafa;
+  --surface-chip: #f0efed;           /* chip = 规格 badge-pill 底（surface-strong） */
+  --surface-legacy: #fafafa;
+  --surface-draft: #f0efed;
+  --surface-empty: #fafafa;          /* 空态 = 亮带 */
+  --surface-json-bar: #1c1917;       /* json 头条 = 规格 surface-dark-elevated */
+  --tooltip-bg: #292524;             /* 浮层提示 = 墨药丸同构（白字走 --on-dark） */
+
+  /* ── Ink & text ladder（stone 暖灰族：#0c0a09/#292524/#4e4e4e/#777169/#a8a29e） ── */
+  --ink: #292524;                    /* 正文强位 = 规格 body-strong（与 primary 同源） */
+  --ink-strong: #0c0a09;             /* 规格 ink：display/强调 */
+  --ink-display: #0c0a09;
+  --ink-heading: #0c0a09;
+  --ink-value: #0c0a09;
+  --ink-repo: #292524;
+  --ink-step: #0c0a09;
+  --ink-label-strong: #292524;
+  --ink-label: #292524;
+  --ink-row: #292524;
+  --ink-list: #292524;
+  --ink-data: #0c0a09;
+  --ink-field: #292524;
+  --ink-rail: #292524;
+  --ink-rail-value: #0c0a09;
+  --ink-secret: #777169;
+  --ink-chip: #292524;
+  --body: #4e4e4e;                   /* 规格 body：running text 400 */
+  --body-alt: #777169;               /* muted：次级正文 */
+  --body-soft: #777169;              /* 占比卡小注 */
+  --mute: #777169;                   /* 规格 muted：sub-titles */
+  --mute-deep: #57534e;              /* 推导：mute 与 body-strong 之间的暖灰（stone 家族） */
+  --mute-inline: #777169;
+  --mute-caption: #777169;
+  --mute-intro: #777169;
+  --mute-terse: #777169;
+  --mute-quiet: #777169;
+  --mute-soft: #777169;
+  --mute-dim: #777169;
+  --mute-draft: #777169;
+  --mute-json: #a8a29e;              /* json 深块注释 = 规格 on-dark-soft */
+  --mute-matrix: #777169;
+  --faint: #a8a29e;                  /* 规格 muted-soft：disabled 文字 */
+  --faint-alt: #a8a29e;
+  --faint-soft: #777169;
+  --faint-ghost: #a8a29e;
+  --faint-hint: #a8a29e;
+  --faint-meta: #777169;
+  --faint-note: #777169;
+  --faint-empty: #a8a29e;
+  --on-dark: #ffffff;                /* 墨面上白字（tooltip / json） */
+  --on-dark-soft: #ffffff;           /* json 正文 = 全亮白 */
+  --on-dark-faint: #a8a29e;          /* 规格 on-dark-soft：sparkline 提示日期 */
+
+  /* ── Primary / link / focus（墨药丸；链接即墨 tertiary-text） ── */
+  --primary: #292524;                /* 主 CTA = 近黑墨药丸（规格 button-primary） */
+  --primary-active: #0c0a09;         /* 规格按压 primary-active */
+  --on-primary: #ffffff;             /* 规格：墨底白字 */
+  --link: #292524;                   /* 链接 = 墨（规格 button-tertiary-text） */
+  --link-hover: #0c0a09;             /* hover 压深到 canvas-deep */
+  --focus-ring: rgba(41, 37, 36, .28); /* 推导：规格 input focus 转浓墨的环色 */
+  --primary-veil: #f0efed;           /* 激活导航 = surface-strong 亮托（badge 语汇） */
+
+  /* ── Semantic（success/error 规格；warning/info 推导） ── */
+  --success: #16a34a;                /* 规格确认绿 */
+  --success-halo: 0 0 0 4px rgba(22, 163, 74, .13);
+  --warning: #b45309;                /* 推导：暖琥珀（规格无 warning，不引入饱和彩相） */
+  --warning-soft: rgba(180, 83, 9, .12);
+  --error: #dc2626;                  /* 规格 error 红 */
+  --error-deep: #b91c1c;             /* 推导：按压深红一档 */
+  --info: #44403c;                   /* 推导：墨族中性 info（编辑感无彩 info） */
+  --info-soft: rgba(68, 64, 60, .09);
+
+  /* ── Hairlines & bars（规格三轨：#e7e5e4 / #f0efed / #d6d3d1） ── */
+  --hairline: #e7e5e4;               /* 规格默认 1px 分隔 */
+  --hairline-soft: #f0efed;          /* 规格浅分隔 */
+  --hairline-strong: #d6d3d1;        /* 规格面板/input 描边 */
+  --hairline-card: #e7e5e4;          /* 卡 1px 发丝线（规格 feature-card） */
+  --hairline-inset: #e7e5e4;
+  --hairline-mid: #f0efed;
+  --hairline-rail: #e7e5e4;
+  --hairline-codex: #f0efed;
+  --hairline-detail: #e7e5e4;
+  --hairline-json: #e7e5e4;          /* json 深块边（瓦外发丝线） */
+  --hairline-dashed: #d6d3d1;        /* 空态虚线 = 强线 */
+  --hairline-legacy: #d6d3d1;
+  --hairline-row: #f0efed;           /* voice-row 1px 浅分隔（规格原文） */
+  --hairline-draft: #e7e5e4;
+  --bar-value: #d6d3d1;              /* 左色条一律暖灰（无饱和彩相） */
+  --bar-matrix: #d6d3d1;
+  --bar-summary: #a8a29e;            /* 汇总条 = muted-soft（重一档灰） */
+  --bar-usage: #292524;              /* 用量进度 = 墨（CTA 色的功能性使用） */
+
+  /* ── Overlays & shadows（海拔 = 发丝线 + 单层软投影） ── */
+  --overlay-faint: rgba(28, 25, 23, .035);
+  --overlay-soft: rgba(28, 25, 23, .05);
+  --overlay-line: rgba(28, 25, 23, .06);
+  --overlay-medium: rgba(28, 25, 23, .08);
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, .04); /* 规格 Soft drop 唯一投影档 */
+
+  /* ── brand-mark（墨瓦 + 白三柱；角标隐藏，形态见片段） ── */
+  --brand-frame-bg: #292524;         /* 墨药丸同构 */
+  --brand-frame-border: #0c0a09;
+  --brand-frame-shadow: 0 4px 16px rgba(0, 0, 0, .04);
+  --brand-bar-1: #ffffff;            /* 白三柱：安静单色（渐变球不进组件） */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none，编辑感减装饰） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #292524;          /* 当前导航指示 = 墨（无彩原则） */
+
+  /* ── 登录页（暖纸画布 + #fafafa 渐变球瓦 showcase + 墨药丸 CTA） ── */
+  --login-bg: #f5f5f5;
+  --login-shell-border: #e7e5e4;
+  --login-shell-shadow: 0 22px 55px rgba(28, 25, 23, .08); /* 推导：单层软投影放大到外壳 */
+  --login-showcase-bg: #fafafa;      /* 规格 gradient-orb-card 底 = canvas-soft（渐变球见片段） */
+  --login-showcase-ink: #0c0a09;
+  --login-grid-line: rgba(12, 10, 9, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #0c0a09;
+  --login-brand-mute: #777169;
+  --login-signal-bg: #292524;        /* signal 与 brand-mark 同为墨瓦 */
+  --login-signal-border: #0c0a09;
+  --login-signal-shadow: 0 4px 16px rgba(0, 0, 0, .04);
+  --login-signal-bar: #ffffff;
+  --login-kicker: #777169;           /* kicker = muted caption-uppercase 语汇 */
+  --login-heading: #0c0a09;
+  --login-copy: #4e4e4e;
+  --login-preview-bg: rgba(255, 255, 255, .72); /* 展示板内白卡（半透亮托） */
+  --login-preview-border: rgba(214, 211, 209, .8); /* hairline-strong */
+  --login-preview-shadow: 0 4px 16px rgba(0, 0, 0, .04);
+  --login-preview-divider: #f0efed;
+  --login-preview-dot: #a7e5d3;      /* 预览圆点 = 薄荷球（氛围装饰合法场景） */
+  --login-preview-dot-soft: #a8c8e8; /* 天空球 */
+  --login-preview-label: #777169;
+  --login-preview-row-line: #f0efed;
+  --login-preview-row-ink: #292524;
+  --login-preview-chip-ink: #292524; /* chip = 墨字 + 强表面底（badge 语汇） */
+  --login-preview-chip-bg: #f0efed;
+  --login-preview-bar: #292524;      /* 进度条 = 墨（CTA 色功能使用） */
+  --login-foot: #777169;
+  --login-card-kicker: #777169;
+  --login-card-heading: #0c0a09;
+  --login-card-copy: #777169;
+  --login-notice-border: #e7e5e4;    /* 公告条 = 中性发丝线（不引入彩相） */
+  --login-notice-bg: #fafafa;
+  --login-notice-ink: #4e4e4e;
+  --login-label: #292524;
+  --login-input-border: #d6d3d1;     /* 规格 text-input 1px hairline-strong 边 */
+  --login-input-border-hover: #777169; /* 推导：focus 转浓墨的过渡 */
+  --login-primary: #292524;          /* 墨药丸 CTA */
+  --login-primary-active: #0c0a09;
+
+  /* ── elevenlabs 特有令牌（超集无对应槽，供作用域片段使用） ── */
+  --orb-mint: #a7e5d3;               /* 规格 gradient-mint 氛围球 */
+  --orb-peach: #f4c5a8;              /* 规格 gradient-peach */
+  --orb-lavender: #c8b8e0;           /* 规格 gradient-lavender */
+  --orb-sky: #a8c8e8;                /* 规格 gradient-sky */
+  --orb-rose: #e8b8c4;               /* 规格 gradient-rose */
+}
+
+/* ============================================================
+   elevenlabs 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="elevenlabs"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暖墨选区（规格 ink 薄染；无彩相） ── */
+[data-theme="elevenlabs"] ::selection { background: rgba(41, 37, 36, .14); }
+
+/* ── 系统滚动条：细、暖发丝线、圆头 ── */
+[data-theme="elevenlabs"] * { scrollbar-width: thin; scrollbar-color: #d6d3d1 transparent; }
+[data-theme="elevenlabs"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="elevenlabs"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="elevenlabs"] ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 9999px; background: #d6d3d1; background-clip: padding-box; }
+[data-theme="elevenlabs"] ::-webkit-scrollbar-thumb:hover { background: #a8a29e; background-clip: padding-box; }
+
+/* ── 展示级衬线 display：Waldenburg Light weight-300 + 负字距
+      （display 恒 300，永不 bold） ── */
+[data-theme="elevenlabs"] .brand-block strong { color: var(--ink-strong); font-family: var(--font-display); font-size: 17px; font-weight: 300; letter-spacing: -.17px; }
+[data-theme="elevenlabs"] .context-heading-slot .page-heading__eyebrow { color: var(--ink-strong); font-family: var(--font-display); font-size: 19px; font-weight: 300; line-height: 1.2; letter-spacing: -.19px; text-transform: none; }
+[data-theme="elevenlabs"] .business-outcomes__card > strong { color: var(--ink-strong); font: 300 26px/1.05 var(--font-display); letter-spacing: -.26px; }
+[data-theme="elevenlabs"] .ratio-card > strong { color: var(--ink-strong); font: 300 28px/1.05 var(--font-display); letter-spacing: -.28px; }
+[data-theme="elevenlabs"] .duration-card strong { color: var(--ink-strong); font: 300 22px/1.1 var(--font-display); letter-spacing: -.22px; }
+[data-theme="elevenlabs"] .codex-metric > strong { color: var(--ink-strong); font: 300 20px/1.2 var(--font-display); letter-spacing: -.2px; }
+[data-theme="elevenlabs"] .configuration-step-copy h2,
+[data-theme="elevenlabs"] .configuration-summary h2 { color: var(--ink-strong); font-family: var(--font-display); font-size: 22px; font-weight: 300; line-height: 1.25; letter-spacing: -.22px; }
+[data-theme="elevenlabs"] .login-page__brand strong { color: var(--login-brand-ink); font-family: var(--font-display); font-size: 16px; font-weight: 300; }
+[data-theme="elevenlabs"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-weight: 300; line-height: 1.15; letter-spacing: -.3px; }
+[data-theme="elevenlabs"] .login-page__card h1 { font-family: var(--font-display); font-size: 28px; font-weight: 300; line-height: 1.15; letter-spacing: -.28px; }
+
+/* ── 小号数据数字：衬线只用于展示级，数据位回落 Inter 500 + 表格数字 ── */
+[data-theme="elevenlabs"] .metric-matrix strong { color: var(--ink-strong); font: 500 13px/1.3 var(--font-sans); font-feature-settings: 'tnum' 1; }
+[data-theme="elevenlabs"] .configuration-status-rail > div > strong { font: 500 12px/1.4 var(--font-sans); font-feature-settings: 'tnum' 1; }
+[data-theme="elevenlabs"] .configuration-summary-grid strong { font: 500 12px/1.5 var(--font-sans); font-feature-settings: 'tnum' 1; }
+[data-theme="elevenlabs"] .codex-token-ledger strong { color: var(--ink-heading); font: 500 12px/1.4 var(--font-sans); font-feature-settings: 'tnum' 1; }
+
+/* ── 标题字重：全线 500，永不 bold（规格 Don't：bolding shifts the voice） ── */
+[data-theme="elevenlabs"] .panel-heading h2 { font-weight: 500; }
+[data-theme="elevenlabs"] .detail-section h3 { color: var(--ink-strong); font-weight: 500; }
+[data-theme="elevenlabs"] .configuration-inline-title h3 { font-weight: 500; }
+[data-theme="elevenlabs"] .connector-configuration-step__heading h3 { font-weight: 500; }
+[data-theme="elevenlabs"] .business-outcomes__card > span,
+[data-theme="elevenlabs"] .ratio-card__title,
+[data-theme="elevenlabs"] .repo-row strong,
+[data-theme="elevenlabs"] .intent-row strong,
+[data-theme="elevenlabs"] .value-list__title,
+[data-theme="elevenlabs"] .connector-watch__item strong,
+[data-theme="elevenlabs"] .duration-section__heading strong,
+[data-theme="elevenlabs"] .admin-table .ant-table-thead > tr > th,
+[data-theme="elevenlabs"] .audit-json > summary,
+[data-theme="elevenlabs"] .login-page__brand strong { font-weight: 500; }
+
+/* ── 页头 eyebrow / 面板 kicker：caption-uppercase 语汇（12/600/.96px 上标宽字距） ── */
+[data-theme="elevenlabs"] .page-heading__eyebrow,
+[data-theme="elevenlabs"] .panel-kicker,
+[data-theme="elevenlabs"] .section-label { color: var(--mute); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-family: var(--font-sans); }
+[data-theme="elevenlabs"] .login-page__showcase-copy > span,
+[data-theme="elevenlabs"] .login-page__card-heading > span { color: var(--login-kicker); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-family: var(--font-sans); }
+
+/* ── 编辑感正字距：Inter body +0.15–0.18px ── */
+[data-theme="elevenlabs"] .login-page__showcase-copy p,
+[data-theme="elevenlabs"] .login-page__card-copy,
+[data-theme="elevenlabs"] .business-outcomes__card > p,
+[data-theme="elevenlabs"] .detail-grid dd { letter-spacing: .15px; }
+
+/* ── 导航：链接 = 墨 500（规格 nav-link），激活 = 墨 + surface-strong 亮托（--primary-veil） ── */
+[data-theme="elevenlabs"] .workspace-nav a { color: var(--body); }
+[data-theme="elevenlabs"] .workspace-nav a:hover { color: var(--ink-strong); }
+[data-theme="elevenlabs"] .workspace-nav a[aria-current="page"] { color: var(--ink-strong); font-weight: 500; }
+[data-theme="elevenlabs"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink-strong); }
+
+/* ── brand-mark：墨瓦白三柱（形态回到骨架默认三柱几何）；角标隐藏 ── */
+[data-theme="elevenlabs"] .brand-mark::after { display: none; }
+
+/* ── json 卡：rounded.md 8px（规格表单/紧凑行圆角档） ── */
+[data-theme="elevenlabs"] .json-viewer { border-radius: 8px; }
+
+/* ── 登录 showcase = 渐变球瓦：#fafafa 底上漂四颗柔和氛围球
+      （mint/peach/lavender/sky，radial 薄染；规格：纯氛围，不承载内容） ── */
+[data-theme="elevenlabs"] .login-page__showcase::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(440px 340px at 10% 90%, var(--orb-mint), transparent 70%), radial-gradient(380px 320px at 88% 12%, var(--orb-lavender), transparent 70%), radial-gradient(320px 280px at 78% 88%, var(--orb-peach), transparent 70%), radial-gradient(240px 220px at 22% 14%, var(--orb-sky), transparent 70%); opacity: .55; }

@@ -19,6 +19,7 @@ export const xaiSwatches: ThemeSwatches = {
 export const xaiTheme: ThemeDefinition = {
   id: 'xai',
   label: 'xAI',
+  family: 'dark',
   isDark: true,
   chromeColor: '#0a0a0a',
   swatches: xaiSwatches,

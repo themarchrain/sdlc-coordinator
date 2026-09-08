@@ -1,0 +1,267 @@
+/* ============================================================
+   superhuman 主题令牌块 —— 规格驱动（superhuman 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Superhuman 设计语言（三画布系统的亮色应用投影）：
+   - 画布阶梯：白 #ffffff 正文 / canvas-soft #fafaf8 交替带 / 暖灰发丝线 #e8e4dd；
+     json 凹面与 tooltip 取靛蓝 #1b1938（hero/nav 的暗 register 等价）
+   - 文字阶梯坍缩为暖墨三级：ink #292827 / ink-mute #73706d / ink-faint #9a9794
+     （never pure black）；暗面文字 on-dark-mute #bcbac9
+   - 靛蓝一族：--primary #1b1938（主 CTA / 用量轨 / 导航指示）/ 按压 #0e0c1f；
+     正文交互与数据面保持黑白 stark，彩色不进正文
+   - 紫光晕签名：violet-soft #c9b4fa 只落展示板类装饰位 —— brand-mark 光晕框
+     + 发光角标、登录 hero 的 violet-sky 大气渐变（见块后片段）
+   - 深青一族：#155555 作 info/成功族音（三画布的收尾 voice）
+   - 海拔 = 规格 Elevation 1/2 的 box-shadow 原文（卡片 0 1px 3px / 浮层 0 8px 24px）
+   骨架表达不了的形态（展示位子默认字重 540 + 负字距、紧凑行高、
+   紫晕 brand-mark 圆形重绘、登录 hero 大气渐变、药丸 signal）见块后片段。
+   ============================================================ */
+[data-theme="superhuman"] {
+  /* ── Typography ───────────────────────────── */
+  /* Super Sans VF（专有）→ 规格钦定替代 Inter Variable；display 与 UI 同族
+     单族分层（规格：层级靠字重/字号，不换族） */
+  --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; /* 数字展示位 = 同族可变字重（540 见片段） */
+
+  /* ── Radius（规格刻度：4 小签 / 6 输入 / 8 按钮签名 / 12 卡 / 16 大面·登录外壳 / 9999 药丸） ── */
+  --radius-xs: 4px;      /* term-hint focus / 示意色块 = rounded.xs */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块 = rounded.sm 输入档 */
+  --radius-md: 8px;      /* 行卡 = rounded.md 按钮 8px */
+  --radius-lg: 12px;     /* 指标卡 = rounded.lg 卡 12px */
+  --radius-xl: 16px;     /* 面板 = rounded.xl 大面卡/对话框 */
+  --radius-brand: 9999px; /* brand-mark = 圆形（紫光晕标，形态见片段） */
+  --radius-pill: 9999px; /* 迷你徽标 = Full Pill（规格 pill-tab） */
+  --radius-panel: 16px;  /* 登录外壳 = rounded.xl */
+
+  /* ── Canvas & surfaces（白正文 / 暖白交替带 / 靛蓝暗 register） ── */
+  --canvas: #ffffff;             /* canvas：正文画布（规格「body flips to white」） */
+  --canvas-soft: #fafaf8;        /* canvas-soft：交替带/表头/行 hover */
+  --canvas-card: #ffffff;        /* 卡片白 + 暖灰发丝线 */
+  --canvas-dark: #1b1938;        /* json pre 凹面 = 靛蓝 hero 同源暗面 */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（nav-bar-light） */
+  --surface-bar: rgba(255, 255, 255, .9);
+  --surface-inset: #fafaf8;      /* 内嵌面 = 暖白 */
+  --surface-matrix: #fafaf8;
+  --surface-tint: #fafaf8;       /* 行 hover = 暖白微染 */
+  --surface-rail: #fafaf8;
+  --surface-detail: #fafaf8;
+  --surface-chip: #fafaf8;
+  --surface-legacy: #fafaf8;
+  --surface-draft: #f4f2ec;      /* draft 更沉一档 = 暖白加深（派生） */
+  --surface-empty: #fafaf8;
+  --surface-json-bar: #f5f3ef;   /* json 头条 = 暖白（派生） */
+  --tooltip-bg: #1b1938;         /* tooltip = 靛蓝暗面白字 */
+
+  /* ── Ink & text ladder（坍缩为 规格 暖墨三级 + 插阶） ── */
+  --ink: #292827;
+  --ink-strong: #292827;
+  --ink-display: #292827;
+  --ink-heading: #292827;
+  --ink-value: #292827;
+  --ink-repo: #292827;
+  --ink-step: #292827;
+  --ink-label-strong: #292827;
+  --ink-label: #292827;
+  --ink-row: #292827;
+  --ink-list: #292827;
+  --ink-data: #292827;
+  --ink-field: #292827;
+  --ink-rail: #292827;
+  --ink-rail-value: #292827;
+  --ink-secret: #292827;
+  --ink-chip: #292827;
+  --body: #292827;       /* Carbon 式全墨正文，暖墨 never pure black */
+  --body-alt: #292827;
+  --body-soft: #73706d;  /* 次级正文 = ink-mute */
+  --mute: #73706d;       /* ink-mute：meta/caption 级 */
+  --mute-deep: #514f4c;  /* 指标卡标题抬回插阶档（ink 与 mute 之间，派生） */
+  --mute-inline: #73706d;
+  --mute-caption: #73706d;
+  --mute-intro: #514f4c; /* 配置导语 = 正文级 */
+  --mute-terse: #73706d;
+  --mute-quiet: #73706d;
+  --mute-soft: #73706d;
+  --mute-dim: #73706d;
+  --mute-draft: #73706d;
+  --mute-json: #73706d;
+  --mute-matrix: #73706d;
+  --faint: #9a9794;      /* ink-faint：占位/禁用级 */
+  --faint-alt: #9a9794;
+  --faint-soft: #9a9794;
+  --faint-ghost: #9a9794;
+  --faint-hint: #9a9794;
+  --faint-meta: #9a9794;
+  --faint-note: #9a9794;
+  --faint-empty: #9a9794;
+  --on-dark: #ffffff;    /* 靛蓝暗面白字 */
+  --on-dark-soft: #bcbac9; /* on-dark-mute：json 暗面正文（规格 原文） */
+  --on-dark-faint: #8b89a6; /* 派生：规格 on-dark-faint #5a5772 在靛蓝上对比不足，提亮一档 */
+
+  /* ── Primary / link / focus（靛蓝一族；正文黑白 stark） ── */
+  --primary: #1b1938;    /* 靛蓝近黑：主 CTA / 唯一交互色 */
+  --primary-active: #0e0c1f; /* primary-deep 按压态 */
+  --on-primary: #ffffff;
+  --link: #1b1938;       /* 链接 = 靛蓝（规格 link-on-light 墨+下划线，应用面取靛蓝保可供性） */
+  --link-hover: #322e56; /* 派生：靛蓝提亮一阶 */
+  --focus-ring: rgba(27, 25, 56, .3); /* 靛蓝 30% 焦点环 */
+  --primary-veil: rgba(27, 25, 56, .06); /* 当前导航 = 靛蓝 6% 微染（stark 纪律） */
+
+  /* ── Semantic（派生：规格无语义段；深青/暖赭/暖红校准到暖墨画布） ── */
+  --success: #0f7660;    /* 深青家族提亮档（context-dot 唯一消费者） */
+  --success-halo: 0 0 0 4px rgba(15, 118, 96, .12);
+  --warning: #a16207;    /* 暖赭 */
+  --warning-soft: #f7efdc; /* 派生：暖赭薄纱 */
+  --error: #b23e3e;      /* 暖红 */
+  --error-deep: #8f2f2f; /* 派生：暖红压深 */
+  --info: #155555;       /* 品牌深青 surface-teal-mid（三画布第三 voice） */
+  --info-soft: #e8f1ef;  /* 派生：teal 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（暖灰 #e8e4dd 主档；强弱两档推导） ── */
+  --hairline: #e8e4dd;         /* 规格 hairline：卡/输入/分隔 */
+  --hairline-soft: #f0ede6;    /* 派生：更浅暖 */
+  --hairline-strong: #c9c3b6;  /* 派生：更深暖（滚动条/空态虚线） */
+  --hairline-card: #e8e4dd;
+  --hairline-inset: #e8e4dd;
+  --hairline-mid: #ece8e1;     /* 派生：hairline 与 soft 之间 */
+  --hairline-rail: #e8e4dd;
+  --hairline-codex: #ece8e1;
+  --hairline-detail: #e8e4dd;
+  --hairline-json: #e8e4dd;
+  --hairline-dashed: #c9c3b6;  /* 空态虚线需要可见 */
+  --hairline-legacy: #c9c3b6;
+  --hairline-row: #ece8e1;
+  --hairline-draft: #c9c3b6;
+  --bar-value: #c9c3b6;   /* value-list 左规线 = 暖灰（非彩色条） */
+  --bar-matrix: #c9c3b6;
+  --bar-summary: #c9c3b6;
+  --bar-usage: #1b1938;   /* 用量轨 = 靛蓝（数据墨水，非装饰） */
+
+  /* ── Overlays & shadows（暖墨 alpha 家族；海拔 = 规格 shadow 原文） ── */
+  --overlay-faint: rgba(41, 40, 39, .04);
+  --overlay-soft: rgba(41, 40, 39, .05);  /* nav hover = 微染 */
+  --overlay-line: rgba(41, 40, 39, .08);  /* nav 分组线 */
+  --overlay-medium: rgba(41, 40, 39, .08);
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, .08); /* 规格 Elevation 1 subtle card lift 原文 */
+
+  /* ── brand-mark（白圆框 + 紫光晕 + 靛蓝三棒 + 紫发光角标，形态见片段） ── */
+  --brand-frame-bg: #ffffff;
+  --brand-frame-border: rgba(201, 180, 250, .85); /* violet-soft 描边 */
+  --brand-frame-shadow: 0 0 16px rgba(201, 180, 250, .5), inset 0 1px 0 rgba(255, 255, 255, .6); /* 紫光晕签名 */
+  --brand-bar-1: #1b1938;
+  --brand-bar-2: #1b1938;
+  --brand-bar-3: #1b1938;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #c9b4fa;  /* 角标 = violet-soft 紫点 */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: 0 0 8px rgba(201, 180, 250, .9); /* 紫晕 */
+  --nav-indicator: #1b1938; /* 当前导航指示条 = 靛蓝（正文 stark 纪律） */
+
+  /* ── 登录页（白卡 + 靛蓝 hero + violet-sky 大气渐变 = 品牌签名场景） ── */
+  --login-bg: #fafaf8;           /* 页面底 = canvas-soft 暖白 */
+  --login-shell-border: #e8e4dd;
+  --login-shell-shadow: 0 8px 24px rgba(0, 0, 0, .12); /* 规格 Elevation 2 浮层阴影原文 */
+  --login-showcase-bg: #1b1938;  /* showcase = 靛蓝 hero（大气渐变见片段） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(201, 180, 250, .12); /* 紫调网格 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #bcbac9;   /* on-dark-mute */
+  --login-signal-bg: rgba(201, 180, 250, .16); /* signal = 紫染药丸（brand-mark 同族） */
+  --login-signal-border: rgba(201, 180, 250, .38);
+  --login-signal-shadow: 0 0 14px rgba(201, 180, 250, .28);
+  --login-signal-bar: #c9b4fa;   /* signal 三棒 = 紫 */
+  --login-kicker: #c9b4fa;       /* kicker = violet-soft（紫只在 hero 装饰位） */
+  --login-heading: #ffffff;      /* hero 标题白字（460/紧凑行高见片段） */
+  --login-copy: #bcbac9;
+  --login-preview-bg: rgba(255, 255, 255, .07);
+  --login-preview-border: rgba(201, 180, 250, .28);
+  --login-preview-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  --login-preview-divider: rgba(188, 186, 201, .2);
+  --login-preview-dot: #c9b4fa;      /* 数据点 = 紫 */
+  --login-preview-dot-soft: rgba(201, 180, 250, .5);
+  --login-preview-label: #bcbac9;
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .88);
+  --login-preview-chip-ink: #c9b4fa; /* chip = 紫字紫染 */
+  --login-preview-chip-bg: rgba(201, 180, 250, .18);
+  --login-preview-bar: rgba(201, 180, 250, .55);
+  --login-foot: #8b89a6;        /* 派生：on-dark-faint 同源提亮档 */
+  --login-card-kicker: #73706d; /* 白卡侧 eyebrow = 暖墨 mute（紫不进正文） */
+  --login-card-heading: #292827;
+  --login-card-copy: #73706d;
+  --login-notice-border: #c3dcd7; /* 公告条 = teal 薄纱 + 同族描边 */
+  --login-notice-bg: #eef5f3;
+  --login-notice-ink: #40605b;
+  --login-label: #514f4c;
+  --login-input-border: #d8d2c6;   /* 派生：hairline-strong 浅一档的输入边 */
+  --login-input-border-hover: #73706d;
+  --login-primary: #1b1938;        /* 主 CTA = 靛蓝圆角矩形 */
+  --login-primary-active: #0e0c1f; /* hover/按压 = primary-deep */
+}
+
+/* ============================================================
+   superhuman 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="superhuman"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 紫光晕签名（正文侧唯一露紫处）：紫染文本选区 ── */
+[data-theme="superhuman"] ::selection { background: rgba(201, 180, 250, .4); color: var(--ink); }
+
+/* ── 数值展示位：子默认字重 540 + 负字距（编辑密度；可变字体按轴渲染，
+      定字重回退就近取整） ── */
+[data-theme="superhuman"] .business-outcomes__card > strong,
+[data-theme="superhuman"] .ratio-card > strong,
+[data-theme="superhuman"] .metric-matrix strong,
+[data-theme="superhuman"] .codex-metric > strong,
+[data-theme="superhuman"] .codex-token-ledger strong,
+[data-theme="superhuman"] .configuration-status-rail > div > strong,
+[data-theme="superhuman"] .configuration-summary-grid strong { font-weight: 540; letter-spacing: -0.02em; }
+
+/* ── 标题层：540（规格 display-lg 28px/540 的应用面等价） ── */
+[data-theme="superhuman"] .panel-heading h2,
+[data-theme="superhuman"] .detail-section h3,
+[data-theme="superhuman"] .configuration-step-copy h2,
+[data-theme="superhuman"] .configuration-summary h2,
+[data-theme="superhuman"] .configuration-inline-title h3,
+[data-theme="superhuman"] .connector-configuration-step__heading h3,
+[data-theme="superhuman"] .admin-table .ant-table-thead > tr > th,
+[data-theme="superhuman"] .audit-json > summary,
+[data-theme="superhuman"] .login-page__brand strong,
+[data-theme="superhuman"] .login-page__card h1 { font-weight: 540; }
+
+/* ── eyebrow / kicker：暖墨小签（mono 改 sans，呼应单族分层语言） ── */
+[data-theme="superhuman"] .page-heading__eyebrow,
+[data-theme="superhuman"] .panel-kicker,
+[data-theme="superhuman"] .section-label { color: var(--mute); font: 540 10px/1.4 var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="superhuman"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 540; line-height: 1.2; letter-spacing: -.01em; }
+
+/* ── brand-mark：圆形白框紫晕内三根靛蓝药丸棒（骨架 span 圆角重绘） ── */
+[data-theme="superhuman"] .brand-mark span { border-radius: 9999px; }
+
+/* ── 登录 showcase：violet-sky 大气渐变（规格 hero 的深度介质原文）——
+      紫罗兰 + 黄昏靛的双径向 wash 覆于 #1b1938 ── */
+[data-theme="superhuman"] .login-page__showcase {
+  background:
+    radial-gradient(95% 75% at 80% 12%, rgba(201, 180, 250, .38), transparent 62%),
+    radial-gradient(80% 65% at 8% 92%, rgba(90, 87, 114, .5), transparent 66%),
+    #1b1938;
+}
+/* 展示标题 = 460 + 负字距 + 0.96 紧凑行高（display-xl 语汇缩至面板尺度） */
+[data-theme="superhuman"] .login-page__showcase-copy h2 { font-weight: 460; line-height: 1.05; letter-spacing: -0.8px; }
+[data-theme="superhuman"] .login-page__card h1 { letter-spacing: -0.5px; }
+[data-theme="superhuman"] .login-page__showcase-copy > span,
+[data-theme="superhuman"] .login-page__card-heading > span { font: 540 10px/1.4 var(--font-sans); letter-spacing: .1em; }
+
+/* ── 登录 signal：紫染药丸框 + 三根紫药丸棒（brand-mark 同族） ── */
+[data-theme="superhuman"] .login-page__signal { border-radius: 9999px; }
+[data-theme="superhuman"] .login-page__signal span { border-radius: 9999px; }
+
+/* ── 系统滚动条：细、暖灰 #c9c3b6、圆头 ── */
+[data-theme="superhuman"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="superhuman"] ::-webkit-scrollbar-thumb { border-radius: 8px; background: #c9c3b6; }
+[data-theme="superhuman"] ::-webkit-scrollbar-thumb:hover { background: #9a9794; }
+[data-theme="superhuman"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="superhuman"] * { scrollbar-width: thin; scrollbar-color: #c9c3b6 transparent; }

@@ -1,0 +1,274 @@
+/* ============================================================
+   revolut 主题令牌块 —— 规格驱动（revolut 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Revolut 设计语言（纯黑叙事画布）：
+   - 暗面阶梯只有两级（规格 Don't「surface ladder has only two dark
+     steps」）：canvas #000000 真黑 → 内嵌面 #0a0a0a（surface-deep，
+     json/嵌卡/输入 = recessed well）→ 提亮卡 #16181a（surface-elevated，
+     面板/计划卡）；海拔 = 明度切换，全站无投影
+   - 文字：on-dark #ffffff / on-dark-mute rgba(255,255,255,.72) 两级坍缩，
+     faint #c9c9cd 与 stone #8d969e 补最暗两档（规格中性阶复用）
+   - 品牌色 cobalt-violet #494fdf 只作 deliberate stamp：主操作、特色面、
+     品牌图形、激活导航；hover #4f55f1（primary-bright）、按压 #3a40c4
+   - 白药丸 = 黑画布上最响的 CTA（规格 button-primary），保留给登录页
+     （--login-primary #ffffff + 片段压黑按钮文字）
+   - 语义/宽色盘（teal/light-blue/orange/danger red）按规格只进
+     「产品图形」→ 图表描线与状态；成功色取 teal（规格 green 系为白底用色，
+     暗面推导）
+   - 发丝线：hairline-dark rgba(255,255,255,.12) / divider-soft .06，
+     强线 = charcoal #3a3d40 一档
+   骨架表达不了的形态（白药丸登录 CTA、Aeonik 500 展示字、黑底白字
+   selection、粗细节流滚动条、隐藏 brand-dot）见块后片段。
+   ============================================================ */
+[data-theme="revolut"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; /* 规格：Inter 承担全部 UI 角色 */
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 规格无 mono 定义，沿用骨架默认（推导） */
+  --font-display: 'Aeonik Pro', 'Inter Display', 'General Sans', 'Sohne', Inter, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif; /* Aeonik Pro + 规格列明的替代族 */
+
+  /* ── Radius（规格刻度：sm 8 / md 12 / lg 20 / full 9999；xl 28 留给产品 mockup，管理台面板取卡刻度 20） ── */
+  --radius-xs: 8px;      /* 图标提示 focus 圆角 = rounded.sm */
+  --radius-soft: 8px;    /* 登录预览小色块 */
+  --radius-sm: 8px;      /* 内嵌小块 / 小 chip = rounded.sm（inline tags, small chips） */
+  --radius-md: 12px;     /* 行卡 / json 卡 = rounded.md（form inputs, download tiles） */
+  --radius-lg: 20px;     /* 指标卡 / 卡容器 = rounded.lg（feature & plan cards） */
+  --radius-xl: 20px;     /* 面板 / 对话框 = 卡刻度（规格 28px 属产品 mockup 容器） */
+  --radius-brand: 8px;   /* brand-mark = 圆角方形 app 图标语汇 */
+  --radius-pill: 9999px; /* 迷你徽标 = Full Pill（badge-tag/badge-feature） */
+  --radius-panel: 20px;  /* 登录外壳 = 卡刻度 rounded.lg */
+
+  /* ── Canvas & surfaces（两级暗阶梯 + recessed well） ── */
+  --canvas: #000000;                 /* Canvas Dark：真黑画布（规格「never near-black」） */
+  --canvas-soft: #0a0a0a;            /* 嵌面卡/表头 = Surface Deep recessed well */
+  --canvas-card: #16181a;            /* 面板/卡 = Surface Elevated（slightly luminous） */
+  --canvas-dark: #0a0a0a;            /* json pre 凹陷面 = Surface Deep（比卡再深一档） */
+  --surface-sidebar: #000000;        /* 规格 nav-bar/footer：chrome 与画布同底真黑 */
+  --surface-bar: rgba(0, 0, 0, .86);
+  --surface-inset: #0a0a0a;          /* 卡内交互/内嵌面 = well */
+  --surface-matrix: #0a0a0a;
+  --surface-tint: rgba(255, 255, 255, .05); /* 表行 hover = 白薄纱提亮（推导：阶梯外 hover 语汇） */
+  --surface-rail: #0a0a0a;           /* 配置状态轨 = recessed well */
+  --surface-detail: #0a0a0a;         /* 详情卡 = 面板内 well */
+  --surface-chip: #0a0a0a;
+  --surface-legacy: #0a0a0a;
+  --surface-draft: #0a0a0a;
+  --surface-empty: #0a0a0a;          /* 空态 = 虚线 well */
+  --surface-json-bar: #16181a;       /* json 头条 = 与宿主面板同阶，靠发丝线分隔 */
+  --tooltip-bg: #0a0a0a;             /* 浮层提示 = 深一档的 well（画布/卡上均可读） */
+
+  /* ── Ink & text ladder（坍缩为 白 / 白 .72 / faint / stone 四档） ── */
+  --ink: #ffffff;
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #ffffff;
+  --ink-list: #ffffff;
+  --ink-data: #ffffff;
+  --ink-field: #ffffff;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: rgba(255, 255, 255, .72); /* 密钥标签 = 次级白 */
+  --ink-chip: #ffffff;
+  --body: #ffffff;                   /* 规格：on-dark 即暗面正文 */
+  --body-alt: rgba(255, 255, 255, .72); /* On-Dark Mute */
+  --body-soft: rgba(255, 255, 255, .72);
+  --mute: rgba(255, 255, 255, .72);  /* On-Dark Mute：次级文字 */
+  --mute-deep: rgba(255, 255, 255, .85); /* 暗底上「更深」= 更亮：标签比 mute 高半档（推导） */
+  --mute-inline: rgba(255, 255, 255, .72);
+  --mute-caption: rgba(255, 255, 255, .72);
+  --mute-intro: rgba(255, 255, 255, .72);
+  --mute-terse: rgba(255, 255, 255, .72);
+  --mute-quiet: rgba(255, 255, 255, .72);
+  --mute-soft: rgba(255, 255, 255, .72);
+  --mute-dim: rgba(255, 255, 255, .72);
+  --mute-draft: rgba(255, 255, 255, .72);
+  --mute-json: rgba(255, 255, 255, .72);
+  --mute-matrix: rgba(255, 255, 255, .72);
+  --faint: rgba(255, 255, 255, .55); /* metadata（推导：stone 的暗面对应档） */
+  --faint-alt: rgba(255, 255, 255, .55);
+  --faint-soft: rgba(255, 255, 255, .55);
+  --faint-ghost: rgba(255, 255, 255, .55);
+  --faint-hint: rgba(255, 255, 255, .55);
+  --faint-meta: rgba(255, 255, 255, .55);
+  --faint-note: rgba(255, 255, 255, .55);
+  --faint-empty: rgba(255, 255, 255, .45); /* 空态最弱一档 */
+  --on-dark: #ffffff;
+  --on-dark-soft: #c9c9cd;           /* json 深块文字 = faint（规格令牌复用） */
+  --on-dark-faint: #8d969e;          /* sparkline 提示日期 = stone */
+
+  /* ── Primary / link / focus（cobalt-violet 一族，scarce stamp） ── */
+  --primary: #494fdf;                /* Cobalt Violet：品牌 stamp（规格令牌 primary） */
+  --primary-active: #3a40c4;         /* Cobalt Deep：active/pressed（规格令牌） */
+  --on-primary: #ffffff;             /* 规格 on-primary */
+  --link: #ffffff;                   /* 链接 = 白（规格：暗域链接靠 700 字重持对比，不用 cobalt） */
+  --link-hover: #4f55f1;             /* hover 转 Cobalt Bright（规格：「inline link colour」变体） */
+  --focus-ring: rgba(73, 79, 223, .5);
+  --primary-veil: rgba(73, 79, 223, .2); /* 激活导航 = cobalt 薄纱 */
+
+  /* ── Semantic（宽色盘只在「产品图形」= 图表/状态里出现） ── */
+  --success: #00a87e;                /* Accent Teal（推导：规格 green 系为白底用色，暗面成功取 teal） */
+  --success-halo: 0 0 0 4px rgba(0, 168, 126, .18);
+  --warning: #ec7e00;                /* Accent Warning：全饱和橙 */
+  --warning-soft: rgba(236, 126, 0, .16);
+  --error: #e23b4a;                  /* Accent Danger */
+  --error-deep: #f2555f;             /* 暗底上「更深」= 提亮一档（推导：alert code 文字可读） */
+  --info: #007bc2;                   /* Accent Light Blue（规格：暗面内联信号蓝） */
+  --info-soft: rgba(0, 123, 194, .16);
+
+  /* ── Hairlines & bars（hairline-dark / divider-soft / charcoal 三档） ── */
+  --hairline: rgba(255, 255, 255, .12);    /* Hairline Dark（规格令牌） */
+  --hairline-soft: rgba(255, 255, 255, .06); /* Divider Soft（规格令牌） */
+  --hairline-strong: #3a3d40;              /* 强线 = charcoal 一档（推导：亮面 hairline-strong 的暗面对应） */
+  --hairline-card: rgba(255, 255, 255, .12); /* 卡外线 = hairline-dark，海拔主力仍是明度阶 */
+  --hairline-inset: rgba(255, 255, 255, .08);
+  --hairline-mid: rgba(255, 255, 255, .06);
+  --hairline-rail: rgba(255, 255, 255, .08);
+  --hairline-codex: rgba(255, 255, 255, .08);
+  --hairline-detail: rgba(255, 255, 255, .08);
+  --hairline-json: rgba(255, 255, 255, .08);
+  --hairline-dashed: rgba(255, 255, 255, .24); /* 空态虚线需要可见 */
+  --hairline-legacy: rgba(255, 255, 255, .24);
+  --hairline-row: rgba(255, 255, 255, .06);
+  --hairline-draft: rgba(255, 255, 255, .2);
+  --bar-value: #3a3d40;              /* 左色条一律无彩 charcoal（cobalt scarce 纪律） */
+  --bar-matrix: #3a3d40;
+  --bar-summary: #494fdf;            /* 摘要左条 = 单处 cobalt stamp */
+  --bar-usage: #00a87e;              /* codex 用量进度条 = teal（功能性正向） */
+
+  /* ── Overlays & shadows（海拔 = 无投影，明度阶承担） ── */
+  --overlay-faint: rgba(255, 255, 255, .04);
+  --overlay-soft: rgba(255, 255, 255, .06);  /* 导航 hover = 白薄纱 */
+  --overlay-line: rgba(255, 255, 255, .06);
+  --overlay-medium: rgba(255, 255, 255, .09);
+  --shadow-panel: none;              /* 规格：「no traditional drop-shadow language」 */
+
+  /* ── brand-mark（cobalt 圆角方印 + 三根白条 = 品牌图形；形态见片段） ── */
+  --brand-frame-bg: #494fdf;         /* 规格：cobalt 留给「the brand glyph itself」 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ffffff;            /* 三根纯白条（stark，无渐变） */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #494fdf;          /* 当前导航指示条 = cobalt stamp */
+
+  /* ── 登录页（真黑画布 + #16181a 展示板 + 白药丸 CTA） ── */
+  --login-bg: #000000;
+  --login-shell-border: rgba(255, 255, 255, .12);
+  --login-shell-shadow: none;        /* 无投影语言，靠发丝线与明度阶 */
+  --login-showcase-bg: #16181a;      /* 展示板 = surface-elevated */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .72);
+  --login-signal-bg: #494fdf;        /* signal = brand-mark 同款 cobalt 方印 */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;
+  --login-kicker: #c9c9cd;           /* kicker = faint 白（片段改 Inter 600） */
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .72);
+  --login-preview-bg: #0a0a0a;       /* 展示板内嵌预览卡 = recessed well */
+  --login-preview-border: rgba(255, 255, 255, .1);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .12);
+  --login-preview-dot: #00a87e;      /* teal 状态点 */
+  --login-preview-dot-soft: rgba(255, 255, 255, .4);
+  --login-preview-label: rgba(255, 255, 255, .72);
+  --login-preview-row-line: rgba(255, 255, 255, .06);
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #4f55f1; /* 在播 chip = cobalt bright 字 */
+  --login-preview-chip-bg: rgba(79, 85, 241, .16);
+  --login-preview-bar: #494fdf;      /* 进度条 = cobalt（药丸圆角见片段） */
+  --login-foot: rgba(255, 255, 255, .55);
+  --login-card-kicker: #c9c9cd;
+  --login-card-heading: #ffffff;
+  --login-card-copy: rgba(255, 255, 255, .72);
+  --login-notice-border: rgba(0, 123, 194, .4); /* 公告条 = light-blue 淡染 */
+  --login-notice-bg: rgba(0, 123, 194, .12);
+  --login-notice-ink: rgba(255, 255, 255, .85);
+  --login-label: #ffffff;
+  --login-input-border: rgba(255, 255, 255, .3);  /* 输入环 = 白发丝线（暗面内嵌） */
+  --login-input-border-hover: rgba(255, 255, 255, .55);
+  --login-primary: #ffffff;          /* 白药丸：黑画布上最响的 CTA（规格 button-primary） */
+  --login-primary-active: #c9c9cd;   /* 按压 = faint（规格 button-primary-pressed） */
+}
+
+/* ============================================================
+   revolut 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="revolut"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 白底黑字 selection：白药丸签名应用到选区（黑画布上最亮的像素） ── */
+[data-theme="revolut"] ::selection { background: #ffffff; color: #000000; }
+
+/* ── 系统滚动条：细、charcoal #3a3d40、圆头 ── */
+[data-theme="revolut"] * { scrollbar-width: thin; scrollbar-color: #3a3d40 transparent; }
+[data-theme="revolut"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="revolut"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="revolut"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #3a3d40; background-clip: padding-box; }
+[data-theme="revolut"] ::-webkit-scrollbar-thumb:hover { background: #6f757d; background-clip: padding-box; }
+
+/* ── 展示字 = Aeonik Pro 语汇：数字/标题一律 500 + -1% 字距
+      （规格「Display sizes always run at weight 500」+ 替代族 -1% 收紧） ── */
+[data-theme="revolut"] .brand-block strong,
+[data-theme="revolut"] .panel-heading h2,
+[data-theme="revolut"] .business-outcomes__card > span,
+[data-theme="revolut"] .business-outcomes__card > strong,
+[data-theme="revolut"] .ratio-card__title,
+[data-theme="revolut"] .ratio-card > strong,
+[data-theme="revolut"] .codex-metric > strong,
+[data-theme="revolut"] .codex-token-ledger strong,
+[data-theme="revolut"] .configuration-status-rail > div > strong,
+[data-theme="revolut"] .configuration-summary-grid strong,
+[data-theme="revolut"] .configuration-step-copy h2,
+[data-theme="revolut"] .configuration-summary h2,
+[data-theme="revolut"] .configuration-inline-title h3,
+[data-theme="revolut"] .connector-configuration-step__heading h3,
+[data-theme="revolut"] .repo-row strong,
+[data-theme="revolut"] .intent-row strong,
+[data-theme="revolut"] .duration-card strong,
+[data-theme="revolut"] .duration-section__heading strong,
+[data-theme="revolut"] .value-list__title,
+[data-theme="revolut"] .connector-watch__item strong,
+[data-theme="revolut"] .detail-section h3,
+[data-theme="revolut"] .admin-table .ant-table-thead > tr > th,
+[data-theme="revolut"] .audit-json > summary,
+[data-theme="revolut"] .login-page__brand strong,
+[data-theme="revolut"] .login-page__showcase-copy h2,
+[data-theme="revolut"] .login-page__card h1 { font-weight: 500; letter-spacing: -.01em; }
+
+/* ── 页头 eyebrow / 面板 kicker / 登录 kicker：Inter 600 标签位
+      （规格：UI 标签用 Inter 600；mono 不属于本品牌字库） ── */
+[data-theme="revolut"] .page-heading__eyebrow,
+[data-theme="revolut"] .panel-kicker,
+[data-theme="revolut"] .section-label,
+[data-theme="revolut"] .login-page__showcase-copy > span,
+[data-theme="revolut"] .login-page__card-heading > span { font-family: var(--font-sans); font-weight: 600; letter-spacing: .09em; }
+
+/* ── 导航：未激活 = 次级白 .72，激活 = 纯白 600（cobalt 只留指示条与 veil） ── */
+[data-theme="revolut"] .workspace-nav a { color: rgba(255, 255, 255, .72); }
+[data-theme="revolut"] .workspace-nav a[aria-current="page"] { color: #ffffff; font-weight: 600; }
+[data-theme="revolut"] .workspace-nav a[aria-current="page"] .anticon { color: #ffffff; }
+
+/* ── brand-mark：隐藏角标（cobalt 方印 + 白条已由令牌承担） ── */
+[data-theme="revolut"] .brand-mark::after { display: none; }
+
+/* ── 登录页：白药丸 CTA 黑字（规格 button-primary：白底 canvas-dark 字） ── */
+[data-theme="revolut"] .login-page__card .ant-btn-primary,
+[data-theme="revolut"] .login-page__card .ant-btn-primary:hover { color: #000000; }
+
+/* ── 登录预览进度条：药丸圆角（规格「All buttons are pill-shaped」的条形对应） ── */
+[data-theme="revolut"] .login-page__preview-row strong { border-radius: 9999px; }

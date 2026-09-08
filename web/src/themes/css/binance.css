@@ -1,0 +1,288 @@
+/* ============================================================
+   binance 主题令牌块 —— 规格驱动（binance 设计语言），
+   无参考实现；正文令牌表可直接取值（默认轨 = marketing dark），
+   角色按 映射进 162 令牌超集。
+   Binance 设计语言（深近黑金融平台）：
+   - 色块分层：canvas-dark #0b0e11（微冷调、never pure black）→
+     surface-card-dark #1e2329（卡/下拉/次按钮）→ surface-elevated-dark
+     #2b3139（嵌套/hover 项/浮层）；hairline-on-dark #2b3139 与提升面
+     同 hex ——「边即表面台阶，不是墨线」
+   - Binance Yellow #fcd535 唯一品牌色：主 CTA/品牌强调/黄底黑字
+     （on-primary #181a20）；按压 #f0b90b；黄稀缺故强
+   - 涨绿跌红贯穿：trading-up #0ecb81 / trading-down #f6465d 承担
+     任务态 success/error（规格 Don't 禁止挪用的取舍详见 slots.ts）
+   - warning 规格缺位 → #f19d27 推导（品牌黄橙移避开 CTA 黄）
+   - 文字四级：on-dark #ffffff / body #eaecef / muted-strong #929aa5 /
+     muted #707a8a；focus = info-ring #3b82f6 50% 纱（规格字面值）
+   - 扁平色块分层：卡面零阴影（规格「flat surfaces with color-block
+     separation」）；json 凹陷面 #07090b 为推导（画布压深一档）
+   - 圆角刻度 2/4/6/8/12；字重克制（标题 600 / 正文 400）
+   骨架表达不了的形态（brand-mark 三 span 黄色码条、Plex 数字排版、
+   登录主 CTA 药丸、黄底黑字选区、暗色滚动条）见块后片段。
+   ============================================================ */
+[data-theme="binance"] {
+  color-scheme: dark;
+
+  /* ── Typography（BinanceNova 承文案 → Inter 近似；BinancePlex 承一切数字 → JetBrains Mono 近似） ── */
+  --font-sans: 'BinanceNova', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'BinancePlex', 'JetBrains Mono', 'IBM Plex Sans', 'Cascadia Code', Consolas, monospace; /* 数字 = 「trustworthy number」之声（规格替代字体 JetBrains Mono/IBM Plex Sans） */
+  --font-display: 'BinancePlex', 'JetBrains Mono', 'IBM Plex Sans', 'Cascadia Code', Consolas, monospace; /* 大数字展示位 = BinancePlex（规格 number-display 一律 Plex） */
+
+  /* ── Radius（规格刻度 2/4/6/8/12 + 药丸；药丸只给顶部注册类 CTA——登录主按钮见片段） ── */
+  --radius-xs: 2px;      /* 图标提示 focus = 规格 xs（小徽章档） */
+  --radius-soft: 4px;    /* 登录预览小色块 = 规格 sm */
+  --radius-sm: 4px;      /* 内嵌小块 = 规格 sm（小内联按钮） */
+  --radius-md: 6px;      /* 行卡 = 规格 md（标准 CTA/主输入） */
+  --radius-lg: 8px;      /* 指标卡 = 规格 lg（内容卡/信任徽章） */
+  --radius-xl: 12px;     /* 面板 = 规格 xl（提升容器/行情表卡） */
+  --radius-brand: 8px;   /* brand-mark = 信任徽章档 8px */
+  --radius-pill: 9999px; /* 迷你徽标 = 药丸档（规格 pill 留给「THE action」信号） */
+  --radius-panel: 12px;  /* 登录外壳 = 规格 xl 提升容器 */
+
+  /* ── Canvas & surfaces（色块分层；边即表面台阶） ── */
+  --canvas: #0b0e11;                 /* Canvas Dark：主导页底（微冷调近黑） */
+  --canvas-soft: #0b0e11;            /* 嵌面卡/表头与画布同底（规格 Flat 层：body 扁平无底，分隔靠发丝线） */
+  --canvas-card: #1e2329;            /* 面板/卡 = Surface Card Dark */
+  --canvas-dark: #07090b;            /* json pre 凹陷面 = 画布压深一档（推导：规格无更深令牌，照 spotify 凹陷先例） */
+  --surface-sidebar: #0b0e11;        /* 规格 top-nav-dark：导航与画布同底 */
+  --surface-bar: rgba(11, 14, 17, .92);
+  --surface-inset: #2b3139;          /* 卡内交互/内嵌面 = Surface Elevated（规格「nested cards」） */
+  --surface-matrix: #1e2329;         /* 密数据矩阵 = 卡面阶 */
+  --surface-tint: #2b3139;           /* 表行 hover = 提升阶（规格「hovered nav items」同阶语汇） */
+  --surface-rail: #1e2329;           /* 配置状态轨 = 卡面阶 */
+  --surface-detail: #1e2329;         /* 详情卡 = Surface Card Dark */
+  --surface-chip: #2b3139;
+  --surface-legacy: #2b3139;
+  --surface-draft: #1e2329;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担 */
+  --surface-json-bar: #2b3139;       /* json 头条 = 嵌套提升阶 */
+  --tooltip-bg: #2b3139;             /* 浮层 = Surface Elevated（卡面上仍可见） */
+
+  /* ── Ink & text ladder（on-dark 白 / body #eaecef / muted-strong #929aa5 / muted #707a8a） ── */
+  --ink: #ffffff;         /* On Dark：高对比标题（规格「Pure white for high-contrast headlines」） */
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #eaecef;     /* 行/列表文字 = body（「deliberately not pure white」） */
+  --ink-list: #eaecef;
+  --ink-data: #eaecef;
+  --ink-field: #eaecef;
+  --ink-rail: #ffffff;
+  --ink-rail-value: #ffffff;
+  --ink-secret: #929aa5;  /* 密钥标签 = muted-strong（次级可读） */
+  --ink-chip: #eaecef;    /* chip 文字 = body */
+  --body: #eaecef;                    /* 规格：暗面默认正文 */
+  --body-alt: #eaecef;
+  --body-soft: #929aa5;               /* 占比卡小注 = muted-strong（caption 12/500 档） */
+  --mute: #707a8a;                    /* 规格：页脚/面包屑/表列头主静音色 */
+  --mute-deep: #929aa5;               /* 暗底上「更深」= 更亮：muted-strong 半档（照 spotify 思路） */
+  --mute-inline: #707a8a;
+  --mute-caption: #707a8a;
+  --mute-intro: #707a8a;
+  --mute-terse: #707a8a;
+  --mute-quiet: #929aa5;              /* 表头 11px 小字 = muted-strong（可读性） */
+  --mute-soft: #707a8a;
+  --mute-dim: #707a8a;
+  --mute-draft: #707a8a;
+  --mute-json: #929aa5;               /* json 头条 10px 大写小字 = muted-strong */
+  --mute-matrix: #707a8a;
+  --faint: #707a8a;        /* faint 坍缩到 muted（规格静音阶只有两级，照 spotify 坍缩先例） */
+  --faint-alt: #707a8a;
+  --faint-soft: #707a8a;
+  --faint-ghost: #707a8a;
+  --faint-hint: #707a8a;
+  --faint-meta: #707a8a;
+  --faint-note: #707a8a;
+  --faint-empty: #707a8a;
+  --on-dark: #ffffff;      /* 深块（tooltip/json bar）文字 */
+  --on-dark-soft: #eaecef;
+  --on-dark-faint: #929aa5;
+
+  /* ── Primary / link / focus（黄即唯一品牌电压；黑字黄底；focus = info 蓝环） ── */
+  --primary: #fcd535;                /* Binance Yellow：全部主 CTA/品牌强调 */
+  --primary-active: #f0b90b;         /* 规格 primary-active：按压加饱和黄 */
+  --on-primary: #181a20;             /* 签名：黄底黑字（规格 on-primary #181a20） */
+  --link: #fcd535;                   /* 规格 text-link：黄链（暗/亮两轨同黄） */
+  --link-hover: #f0b90b;             /* hover 压深一档 */
+  --focus-ring: rgba(59, 130, 246, .5); /* info-ring 50% 纱（规格字面值） */
+  --primary-veil: rgba(252, 213, 53, .1); /* 激活导航 = 黄纱（当前节 = 主信号） */
+
+  /* ── Semantic（success/error = 涨跌对直译；warning = 推导琥珀；取舍见 slots.ts） ── */
+  --success: #0ecb81;                      /* Trading Up：涨绿（任务态成功同构） */
+  --success-halo: 0 0 0 4px rgba(14, 203, 129, .16);
+  --warning: #f19d27;                      /* 推导：品牌黄橙移 17° 同亮度，避开 CTA 黄（规格 warning 缺位） */
+  --warning-soft: rgba(241, 157, 39, .14);
+  --error: #f6465d;                        /* Trading Down：跌红 */
+  --error-deep: #c83a4d;                   /* 推导：按压深红 */
+  --info: #3b82f6;                         /* 规格 info / info-ring 同源 */
+  --info-soft: rgba(59, 130, 246, .14);
+
+  /* ── Hairlines & bars（hairline-on-dark #2b3139 单轨；强线为推导提亮阶；色条无彩） ── */
+  --hairline: #2b3139;        /* 画布/表行主分隔（与提升面同 hex：边即表面台阶） */
+  --hairline-soft: #262c33;   /* 推导：卡面上比 #2b3139 近隐半档的最弱分隔 */
+  --hairline-strong: #454c57; /* 推导：强线/滚动条 = hairline 提亮一档保可见 */
+  --hairline-card: #2b3139;
+  --hairline-inset: #2b3139;
+  --hairline-mid: #2b3139;
+  --hairline-rail: #2b3139;
+  --hairline-codex: #2b3139;
+  --hairline-detail: #2b3139;
+  --hairline-json: #2b3139;
+  --hairline-dashed: #454c57; /* 空态虚线需要可见 = 强线阶 */
+  --hairline-legacy: #454c57;
+  --hairline-row: #2b3139;    /* 表行分隔 = 行情表发丝线 */
+  --hairline-draft: #454c57;
+  --bar-value: #454c57;       /* 左色条一律无彩（黄不装饰次级元素） */
+  --bar-matrix: #454c57;
+  --bar-summary: #454c57;
+  --bar-usage: #fcd535;       /* 用量进度 = 黄（价值指标色，规格 stat-callout 角色） */
+
+  /* ── Overlays & shadows（黑画布上黑雾不可见 → 白纱；卡面零阴影扁平分层） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: rgba(255, 255, 255, .04);  /* 导航 hover = 白纱 */
+  --overlay-line: rgba(255, 255, 255, .06);
+  --overlay-medium: rgba(255, 255, 255, .08);
+  --shadow-panel: none;  /* 卡面零阴影：色块分层承担（规格「flat color-block separation」） */
+
+  /* ── brand-mark（#1e2329 码块框 + 三根黄色品牌码条 + 涨绿在线点） ── */
+  --brand-frame-bg: #1e2329;
+  --brand-frame-border: #2b3139;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #fcd535;   /* 三码条全黄：黄色 wordmark 即品牌（规格「the wordmark itself」） */
+  --brand-bar-2: #fcd535;
+  --brand-bar-3: #fcd535;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #0ecb81;     /* 角标 = 涨绿在线点（推导：正向状态语义） */
+  --brand-dot-border: #0b0e11;
+  --brand-dot-glow: none;
+  --nav-indicator: #fcd535; /* 当前导航指示 = 黄（主信号） */
+
+  /* ── 登录页（#0b0e11 画布 + #1e2329 展示板 + 黄底黑字药丸 CTA） ── */
+  --login-bg: #0b0e11;
+  --login-shell-border: #2b3139;
+  --login-shell-shadow: none;         /* 扁平：外壳靠色块分层 */
+  --login-showcase-bg: #1e2329;
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #707a8a;
+  --login-signal-bg: #1e2329;        /* signal = brand-mark 同款黄色码条（见片段） */
+  --login-signal-border: #2b3139;
+  --login-signal-shadow: none;
+  --login-signal-bar: #fcd535;
+  --login-kicker: #929aa5;           /* kicker = muted-strong 500（规格 caption 档，无大写语汇） */
+  --login-heading: #ffffff;
+  --login-copy: #929aa5;             /* 副文 = muted-strong（标题白/正文灰的层级差） */
+  --login-preview-bg: #2b3139;       /* 展示板内嵌预览 = 嵌套提升阶（规格 nested cards） */
+  --login-preview-border: transparent; /* 色块分层：内嵌卡不描边 */
+  --login-preview-shadow: none;
+  --login-preview-divider: #2b3139;
+  --login-preview-dot: #0ecb81;      /* 在线状态点 = 涨绿 */
+  --login-preview-dot-soft: #707a8a;
+  --login-preview-label: #929aa5;
+  --login-preview-row-line: #2b3139;
+  --login-preview-row-ink: #eaecef;
+  --login-preview-chip-ink: #0ecb81; /* 在播 chip = 涨绿字绿染（价格上行 chip 语汇） */
+  --login-preview-chip-bg: rgba(14, 203, 129, .12);
+  --login-preview-bar: #fcd535;      /* 进度条 = 黄（4px 圆角见片段） */
+  --login-foot: #707a8a;             /* 页脚链接 = muted（规格 footer 角色色） */
+  --login-card-kicker: #929aa5;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #707a8a;
+  --login-notice-border: rgba(59, 130, 246, .35); /* 公告条 = info 蓝淡染 */
+  --login-notice-bg: rgba(59, 130, 246, .12);
+  --login-notice-ink: #eaecef;
+  --login-label: #eaecef;
+  --login-input-border: #2b3139;     /* 规格 hairline-on-dark 输入边 */
+  --login-input-border-hover: #707a8a;
+  --login-primary: #fcd535;          /* 黄底黑字药丸 CTA（规格 button-primary-pill；黑字走 antd colorTextLightSolid） */
+  --login-primary-active: #f0b90b;
+}
+
+/* ============================================================
+   binance 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="binance"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 黄底黑字选区：系统签名组合的功能性使用 ── */
+[data-theme="binance"] ::selection { background: #fcd535; color: #181a20; }
+
+/* ── 系统滚动条：细、hairline #2b3139、4px 微圆头 ── */
+[data-theme="binance"] * { scrollbar-width: thin; scrollbar-color: #2b3139 transparent; }
+[data-theme="binance"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="binance"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="binance"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 6px; background: #2b3139; background-clip: padding-box; }
+[data-theme="binance"] ::-webkit-scrollbar-thumb:hover { background: #454c57; background-clip: padding-box; }
+
+/* ── 数字一律 BinancePlex：指标/数值/账本 = Plex 700 负字距
+     （规格 number-display 40px/700/-0.3px 的 dashboard 档） ── */
+[data-theme="binance"] .business-outcomes__card > strong,
+[data-theme="binance"] .ratio-card > strong,
+[data-theme="binance"] .codex-metric > strong,
+[data-theme="binance"] .codex-token-ledger strong,
+[data-theme="binance"] .metric-matrix strong,
+[data-theme="binance"] .configuration-status-rail > div > strong,
+[data-theme="binance"] .configuration-summary-grid strong,
+[data-theme="binance"] .duration-card strong,
+[data-theme="binance"] .connector-watch__item strong,
+[data-theme="binance"] .login-page__brand strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+/* ── 标题字重 600（规格 title 档 600；克制的字重，信任字号而非粗体） ── */
+[data-theme="binance"] .brand-block strong,
+[data-theme="binance"] .panel-heading h2,
+[data-theme="binance"] .business-outcomes__card > span,
+[data-theme="binance"] .ratio-card__title,
+[data-theme="binance"] .configuration-step-copy h2,
+[data-theme="binance"] .configuration-summary h2,
+[data-theme="binance"] .configuration-inline-title h3,
+[data-theme="binance"] .connector-configuration-step__heading h3,
+[data-theme="binance"] .repo-row strong,
+[data-theme="binance"] .intent-row strong,
+[data-theme="binance"] .duration-section__heading strong,
+[data-theme="binance"] .value-list__title,
+[data-theme="binance"] .connector-watch__item strong,
+[data-theme="binance"] .detail-section h3,
+[data-theme="binance"] .admin-table .ant-table-thead > tr > th,
+[data-theme="binance"] .audit-json > summary { font-weight: 600; }
+
+/* ── 页头 eyebrow / 面板 kicker：muted-strong 500（规格 caption 12px/500 档；
+     刻意不做大写宽字距 —— Binance 无 uppercase kicker 语汇，偏离 spotify 式写法） ── */
+[data-theme="binance"] .page-heading__eyebrow,
+[data-theme="binance"] .panel-kicker,
+[data-theme="binance"] .section-label { color: var(--mute); font-weight: 500; }
+
+/* ── 导航：nav-link 14px/500 语汇（正文灰白）；激活 = 白 600 + 黄指示条 ── */
+[data-theme="binance"] .workspace-nav a { color: var(--mute); font-weight: 500; }
+[data-theme="binance"] .workspace-nav a[aria-current="page"] { color: #ffffff; font-weight: 600; background: transparent; }
+[data-theme="binance"] .workspace-nav a[aria-current="page"] .anticon { color: #fcd535; }
+
+/* ── brand-mark：#1e2329 码块框内三根黄色码条（wordmark 抽象），2px 微圆角 ── */
+[data-theme="binance"] .brand-mark { gap: 3px; }
+[data-theme="binance"] .brand-mark span { width: 4px; border-radius: 2px; opacity: 1; box-shadow: none; }
+
+/* ── 详情格：卡内嵌面回落 Surface Elevated #2b3139（色块分层） ── */
+[data-theme="binance"] .detail-grid > div { background: var(--surface-inset); }
+
+/* ── 登录主 CTA = button-primary-pill 药丸（规格：药丸是「this is THE action」
+     信号，登录注册正是该场景）；黑字黄底走 antd ── */
+[data-theme="binance"] .login-page .ant-btn-primary { border-radius: 9999px; }
+
+/* ── 登录页：signal = brand-mark 同款黄色码条；预览进度条 4px 圆角 ── */
+[data-theme="binance"] .login-page__signal span { border-radius: 2px; }
+[data-theme="binance"] .login-page__preview-row strong { border-radius: 4px; }
+
+/* ── 登录 showcase / 卡标题 = BinanceNova 700 负字距
+     （规格 hero-display/display-lg 700/-0.5~-1px 的登录档） ── */
+[data-theme="binance"] .login-page__showcase-copy h2,
+[data-theme="binance"] .login-page__card h1 { font-family: var(--font-sans); font-weight: 700; letter-spacing: -.01em; }

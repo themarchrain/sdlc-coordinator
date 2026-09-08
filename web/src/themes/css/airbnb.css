@@ -1,0 +1,259 @@
+/* ============================================================
+   airbnb 主题令牌块 —— 规格驱动，
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Airbnb 设计语言（慷慨的消费市场）：
+   - 纯白画布 #ffffff（公网页无暗模式）+ 白卡白面，靠 hairline 与一档阴影分层；
+     Surface Soft #f7f7f7 = 唯一填充阶（表头/内嵌/hover）；Strong #f2f2f2 = 图标钮面
+   - 文字四级坍缩：Ink #222222（从不纯黑）/ Body #3f3f3f / Muted #6a6a6a / Muted-Soft #929292
+   - 品牌电压 Rausch #ff385c = 唯一品牌色（主 CTA/搜索球/心动/用量轨），
+     按压 #e00b41（规格），hover 派生偏移 #f0204e；error 独立红 #c13515（规格）
+   - 发丝线双阶 #dddddd / #ebebeb + 强线 #c1c1c1（border-strong 规格字面值）
+   - 墨面倒置岛 #222222（date-picker-day-selected「Ink fill, white text」语汇）
+     承担 json/tooltip/登录 showcase
+   - 海拔 = 全系统唯一阴影档（rgba 三层字面值）；圆角 4/8/14/20/药丸，无硬角
+   - 语义派生（规格只有 error）：success #008a70 青绿 / warning #b7791f 暖金
+   骨架表达不了的形态（墨下划线导航、白球 brand-mark + Rausch 心点、
+   展示位 22–28px 低调字重、uppercase eyebrow、登录 Rausch 搜索球 signal、
+   48px 触达高 CTA）见块后片段。
+   ============================================================ */
+[data-theme="airbnb"] {
+  /* ── Typography ───────────────────────────── */
+  /* Cereal VF（授权定制族，禁外部加载）→ Circular → 系统栈（规格回退链）；
+     无独立展示族，单族承担全部层级 */
+  --font-sans: Circular, -apple-system, system-ui, Roboto, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: Circular, -apple-system, system-ui, Roboto, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif; /* 数字展示位 = rating 64px/700 的 UI 无衬线 */
+
+  /* ── Radius（规格 刻度：xs 4 / sm 8 按钮 / md 14 卡 / lg 20 / xl 32 / full 药丸；无硬角） ── */
+  --radius-xs: 4px;      /* term-hint focus（小件 xs） */
+  --radius-soft: 9999px; /* 登录预览小色块 = guest-favorite badge 全药丸 */
+  --radius-sm: 8px;      /* 内嵌小块 = 按钮 sm 8px */
+  --radius-md: 8px;      /* 行卡 = utility 8px（小卡） */
+  --radius-lg: 14px;     /* 指标卡 = property/host 卡 ~14px */
+  --radius-xl: 14px;     /* 面板 = reservation-card 14px */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 圆形搜索球（规格 50% 几何） */
+  --radius-pill: 9999px; /* 迷你徽标 = badge/full pill */
+  --radius-panel: 20px;  /* 登录外壳 = rounded.lg 20px 大容器 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #ffffff;             /* Canvas：纯白页底（规格「The default page floor」） */
+  --canvas-soft: #f7f7f7;        /* Surface Soft：表头/结果卡软带（最轻填充阶） */
+  --canvas-card: #ffffff;        /* 白卡：photo-first 卡全白，靠 hairline 分层 */
+  --canvas-dark: #222222;        /* json 凹面 = 墨倒置岛（Ink fill, white text 语汇） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = top-nav 白面 + 底部 hairline */
+  --surface-bar: rgba(255, 255, 255, .92); /* 白导航 + 微透（滚动条带模糊） */
+  --surface-inset: #f7f7f7;      /* 白卡内嵌面回落 Soft 阶 */
+  --surface-matrix: #f7f7f7;
+  --surface-tint: #f7f7f7;       /* 表行 hover = Soft 微填充 */
+  --surface-rail: #f7f7f7;
+  --surface-detail: #f7f7f7;     /* 详情节 = Soft 阶内嵌 */
+  --surface-chip: #f7f7f7;
+  --surface-legacy: #f7f7f7;
+  --surface-draft: #f2f2f2;      /* draft 更沉一档 = Surface Strong */
+  --surface-empty: #ffffff;      /* 空态卡 = 白卡 + 虚线 */
+  --surface-json-bar: #f7f7f7;   /* json 头条 = Soft 软带（pre 墨岛下的分层） */
+  --tooltip-bg: #222222;         /* 浮层提示 = 墨倒置岛（与 antd colorBgSpotlight 同源） */
+
+  /* ── Ink & text ladder（坍缩为 规格 四级墨，从不纯黑） ── */
+  --ink: #222222;
+  --ink-strong: #222222;
+  --ink-display: #222222;
+  --ink-heading: #222222;
+  --ink-value: #222222;
+  --ink-repo: #222222;
+  --ink-step: #222222;
+  --ink-label-strong: #222222;
+  --ink-label: #222222;
+  --ink-row: #222222;
+  --ink-list: #3f3f3f;   /* value-list li = Body 正文 */
+  --ink-data: #222222;
+  --ink-field: #222222;
+  --ink-rail: #222222;
+  --ink-rail-value: #222222;
+  --ink-secret: #3f3f3f; /* secret-label = 正文级 */
+  --ink-chip: #3f3f3f;   /* duration 数值 = 正文级 */
+  --body: #3f3f3f;       /* Body：长文评论级正文 */
+  --body-alt: #3f3f3f;
+  --body-soft: #6a6a6a;  /* Muted：占比卡小注 */
+  --mute: #6a6a6a;       /* Muted：副标题/未激活导航 */
+  --mute-deep: #3f3f3f;  /* 指标卡标题抬回正文级 */
+  --mute-inline: #6a6a6a;
+  --mute-caption: #6a6a6a;
+  --mute-intro: #3f3f3f; /* 配置导语 = 正文级 */
+  --mute-terse: #6a6a6a;
+  --mute-quiet: #6a6a6a;
+  --mute-soft: #6a6a6a;
+  --mute-dim: #6a6a6a;
+  --mute-draft: #6a6a6a;
+  --mute-json: #6a6a6a;  /* json 头条字 = Muted 大写 */
+  --mute-matrix: #6a6a6a;
+  --faint: #929292;      /* Muted-Soft：禁用链接级（规格「used very sparingly」） */
+  --faint-alt: #929292;
+  --faint-soft: #929292;
+  --faint-ghost: #929292;
+  --faint-hint: #929292;
+  --faint-meta: #929292;
+  --faint-note: #929292;
+  --faint-empty: #929292;
+  --on-dark: #ffffff;    /* 墨岛上的字 = 纯白（Ink fill, white text） */
+  --on-dark-soft: rgba(255, 255, 255, .92); /* json 墨岛正文 */
+  --on-dark-faint: rgba(255, 255, 255, .6); /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #ff385c;    /* Rausch：唯一品牌电压 */
+  --primary-active: #e00b41; /* Rausch Active（规格字面值）；hover 用派生偏移 #f0204e */
+  --on-primary: #ffffff;
+  --link: #222222;       /* 行内链接 = 墨字（规格「most inline link text = ink」） */
+  --link-hover: #ff385c; /* hover 显 Rausch（心动保存态：交互才见彩色） */
+  --focus-ring: rgba(34, 34, 34, .9); /* 焦点 = 2px 墨边无光晕（text-input 规格原文） */
+  --primary-veil: transparent;    /* 导航激活不叠底（product-tab：墨字 + 墨下划线，见片段） */
+
+  /* ── Semantic ─────────────────────────────── */
+  /* error = 规格 #c13515（比 Rausch 更暗的独立红）；success/warning 规格未给 →
+     旅行语境派生：青绿（黄星显廉价 → 绿走青调）/ 暖金 */
+  --success: #008a70;
+  --success-halo: 0 0 0 4px rgba(0, 138, 112, .12);
+  --warning: #b7791f;
+  --warning-soft: rgba(183, 121, 31, .12);
+  --error: #c13515;
+  --error-deep: #b32505; /* Error Hover（规格字面值） */
+  --info: #428bff;       /* inferred-mark = legal-link 蓝复用（规格唯一蓝） */
+  --info-soft: #ecf4ff;  /* 蓝 10% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars ─────────────────────── */
+  --hairline: #dddddd;         /* hairline：默认 1px 边（搜索条/表分隔/卡边） */
+  --hairline-soft: #ebebeb;    /* hairline-soft：轻分隔（长文/分页） */
+  --hairline-strong: #c1c1c1;  /* border-strong：禁用描边/滚动条（规格字面值） */
+  --hairline-card: #dddddd;
+  --hairline-inset: #dddddd;
+  --hairline-mid: #dddddd;
+  --hairline-rail: #dddddd;
+  --hairline-codex: #dddddd;
+  --hairline-detail: #dddddd;
+  --hairline-json: #dddddd;
+  --hairline-dashed: #c1c1c1;  /* 空态虚线 = 强线一档 */
+  --hairline-legacy: #c1c1c1;
+  --hairline-row: #ebebeb;
+  --hairline-draft: #c1c1c1;
+  --bar-value: #dddddd;   /* value-list 左规线 = hairline（无彩结构） */
+  --bar-matrix: #dddddd;
+  --bar-summary: #dddddd;
+  --bar-usage: #ff385c;   /* 用量轨 = Rausch（搜索球级的唯一电压落点） */
+
+  /* ── Overlays & shadows ───────────────────── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: rgba(0, 0, 0, .04);  /* nav hover ≈ Surface Soft */
+  --overlay-line: rgba(0, 0, 0, .06);  /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .07);
+  --shadow-panel: rgba(0, 0, 0, 0.02) 0 0 0 1px, rgba(0, 0, 0, 0.04) 0 2px 6px, rgba(0, 0, 0, 0.1) 0 4px 8px; /* 全系统唯一阴影档（规格字面值） */
+
+  /* ── brand-mark（圆形白球 + 墨药丸条 + Rausch 心点；icon-button-outline 语汇，形态见片段） ── */
+  --brand-frame-bg: #ffffff;
+  --brand-frame-border: #dddddd;
+  --brand-frame-shadow: none;   /* 图标钮扁平 */
+  --brand-bar-1: #222222;  /* 三根墨条 = Ink（白球内 glyph） */
+  --brand-bar-2: #222222;
+  --brand-bar-3: #222222;
+  --brand-bar-inset: none;      /* 无光泽 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: #ff385c;   /* 角点 = Rausch 心动保存态（小电压时刻） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #222222; /* 当前导航指示 = 墨下划线（product-tab-active 规格） */
+
+  /* ── 登录页（showcase = 墨倒置岛 + Rausch 搜索球 signal；白卡侧 = 纯白市场面） ── */
+  --login-bg: #ffffff;         /* 页底 = 纯白 */
+  --login-shell-border: #dddddd;
+  --login-shell-shadow: rgba(0, 0, 0, 0.02) 0 0 0 1px, rgba(0, 0, 0, 0.06) 0 6px 16px, rgba(0, 0, 0, 0.1) 0 12px 32px; /* 唯一阴影档放大近似 */
+  --login-showcase-bg: #222222; /* showcase = 墨倒置岛（Ink fill, white text 语汇） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .55);
+  --login-signal-bg: #ff385c;   /* signal = Rausch 搜索球（首页最热单色时刻的 showroom 复刻） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;  /* 球内三根白条 */
+  --login-kicker: rgba(255, 255, 255, .6);  /* uppercase-tag 见片段 */
+  --login-heading: #ffffff;     /* hero 标题 = display-xl 28px/700/1.43（见片段） */
+  --login-copy: rgba(255, 255, 255, .62);
+  --login-preview-bg: rgba(255, 255, 255, .94); /* 墨岛上的白房产卡（photo-first 白卡） */
+  --login-preview-border: rgba(34, 34, 34, .08);
+  --login-preview-shadow: 0 6px 16px rgba(34, 34, 34, .18), 0 12px 32px rgba(34, 34, 34, .12);
+  --login-preview-divider: #ebebeb;    /* 卡内轻分隔 */
+  --login-preview-dot: #ff385c;        /* 数据点 = Rausch 心点 */
+  --login-preview-dot-soft: #929292;
+  --login-preview-label: #6a6a6a;
+  --login-preview-row-line: #ebebeb;
+  --login-preview-row-ink: #222222;
+  --login-preview-chip-ink: #ff385c;   /* chip = Rausch 染 */
+  --login-preview-chip-bg: rgba(255, 56, 92, .1);
+  --login-preview-bar: #dddddd;        /* 占位元数据条 = hairline */
+  --login-foot: rgba(255, 255, 255, .5);
+  --login-card-kicker: #6a6a6a;  /* 白卡侧 eyebrow = Muted（分类标签语汇） */
+  --login-card-heading: #222222;
+  --login-card-copy: #6a6a6a;
+  --login-notice-border: rgba(255, 56, 92, .28); /* 公告条 = Rausch 淡染 */
+  --login-notice-bg: rgba(255, 56, 92, .07);
+  --login-notice-ink: #3f3f3f;
+  --login-label: #222222;
+  --login-input-border: #dddddd;   /* text-input：白面 + hairline 描边 */
+  --login-input-border-hover: #222222; /* focus 转墨（规格：边色翻 Ink，无光晕） */
+  --login-primary: #ff385c;        /* 主 CTA = Rausch */
+  --login-primary-active: #f0204e; /* hover = 派生偏移（active 见 --primary-active） */
+}
+
+/* ============================================================
+   airbnb 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="airbnb"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：Rausch 选区 / 2px 墨焦点（规格「no glow, no ring」） ── */
+[data-theme="airbnb"] ::selection { background: rgba(255, 56, 92, .18); }
+[data-theme="airbnb"] :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ── 字重克制：面板标题 600（骨架 700 → Cereal 展示位 500–600）；
+      大数字保留 700 + 负字距（rating-display 64px/700/-1px 是唯一最响时刻） ── */
+[data-theme="airbnb"] .panel-heading h2,
+[data-theme="airbnb"] .detail-section h3 { font-weight: 600; }
+[data-theme="airbnb"] .business-outcomes__card > strong,
+[data-theme="airbnb"] .ratio-card > strong { font-weight: 700; letter-spacing: -.015em; }
+
+/* ── eyebrow / kicker：uppercase-tag 语汇（8px/700/+0.32px 大写，骨架上放大到 10px） ── */
+[data-theme="airbnb"] .page-heading__eyebrow,
+[data-theme="airbnb"] .panel-kicker,
+[data-theme="airbnb"] .section-label { color: var(--mute); font: 700 10px/1.25 var(--font-sans); letter-spacing: .04em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="airbnb"] .context-heading-slot .page-heading__eyebrow { font-family: inherit; font-size: 15px; font-weight: 650; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 导航：激活 = 墨字 600 + 墨下划线（product-tab-active 规格），hover = Soft 微填充 ── */
+[data-theme="airbnb"] .workspace-nav a[aria-current="page"] { color: var(--ink); background: transparent; font-weight: 600; }
+[data-theme="airbnb"] .workspace-nav a[aria-current="page"] .anticon { color: var(--ink); }
+
+/* ── brand-mark：圆形白球内三根墨药丸条（icon-button-outline 语汇；圆角走 --radius-brand 9999px） ── */
+[data-theme="airbnb"] .brand-mark span { border-radius: 9999px; box-shadow: none; }
+
+/* ── 表头：600 字重（nav-link 级标签，白底 + hairline 由令牌/antd 承担） ── */
+[data-theme="airbnb"] .admin-table .ant-table-thead > tr > th { font-weight: 600; }
+
+/* ── 系统滚动条：细、border-strong #c1c1c1、圆头 ── */
+[data-theme="airbnb"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="airbnb"] ::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--hairline-strong); }
+[data-theme="airbnb"] ::-webkit-scrollbar-thumb:hover { background: #929292; }
+[data-theme="airbnb"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="airbnb"] * { scrollbar-width: thin; scrollbar-color: var(--hairline-strong) transparent; }
+
+/* ── 登录 showcase：hero 标题 = display-xl 28px/700/1.43（规格字面值；小而克制，摄影扛层级） ── */
+[data-theme="airbnb"] .login-page__showcase-copy h2 { font-size: 28px; font-weight: 700; line-height: 1.43; }
+/* kicker / 卡片 eyebrow = uppercase-tag 大写宽字距 */
+[data-theme="airbnb"] .login-page__showcase-copy > span,
+[data-theme="airbnb"] .login-page__card-heading > span { font: 700 10px/1.25 var(--font-sans); letter-spacing: .04em; text-transform: uppercase; }
+
+/* ── 登录卡片：h1 = display-lg 22px/500/1.18/-0.44px（规格字面值）；
+      48px 触达高输入/CTA（规格 Touch Targets）；预览占位条药丸圆角 ── */
+[data-theme="airbnb"] .login-page__card h1 { font-size: 22px; font-weight: 500; line-height: 1.18; letter-spacing: -.44px; }
+[data-theme="airbnb"] .login-page__card .ant-input,
+[data-theme="airbnb"] .login-page__card .ant-input-affix-wrapper { min-height: 48px; }
+[data-theme="airbnb"] .login-page__card .ant-btn-primary { height: 48px; }
+[data-theme="airbnb"] .login-page__preview-row strong { border-radius: 9999px; }

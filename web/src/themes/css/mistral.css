@@ -1,0 +1,278 @@
+/* ============================================================
+   mistral 主题令牌块 —— 规格驱动（mistral 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Mistral AI 设计语言（大气日落编辑风 / warm editorial）：
+   - 画布 = 暖奶油黄 cream #fff8e0（规格「warm yellow-cream surfaces」
+     主导底）；卡 = 白（card-base 白底）；奶油面一律 beige-deep
+     #e6d5a8 描边（规格「Cream surface 1px border color」字面值）
+   - 文字阶梯坍缩为规格七级墨：ink #1f1f1f / ink-tint #3d3d3d /
+     charcoal #2c2c2c / slate #4a4a4a / steel #6a6a6a / stone #8a8a8a /
+     muted #a8a8a8
+   - 主橙一族：--primary #fa520f（唯一 CTA）/ 按压 #cc3a05（primary-deep）；
+     日落谱 sunshine-300/500/700/800/900 与 yellow-saturated #ffd900
+     只落在品牌位（brand-mark 三柱 / 登录日落面 / sunset stripe 回声）
+   - 语义色：规格只给 link=主橙；语义态按功能豁免推导暖调文字级
+     （绿 #1e7b45 / 芥末琥珀 #a16207 / 落日红 #c53030），行内注明
+   - 发丝线三级：#e5e5e5 / #ededed / #c7c7c7（白卡上）+
+     beige-deep #e6d5a8（奶油边界/可见虚线）；json 深面 = surface-code
+     #1c1c1e（code-block 字面）
+   - 海拔克制：Level 1 微影起，浮层才到 Level 3/4（规格 Elevation 表字面值）
+   骨架表达不了的形态（brand-mark 三柱日落重绘、登录展示板的
+   hero-band-sunset 渐变天空 + 页尾 sunset stripe 回声、近衬线展示级、
+   micro-uppercase 眉题、暖滚动条）见块后片段。
+   ============================================================ */
+[data-theme="mistral"] {
+  /* ── Typography ───────────────────────────── */
+  /* Inter 直用（规格 UI prose 指定族）+ CJK 系统回退；
+     PP Editorial Old 为商用族禁外部加载 → 按规格自给回退栈
+     'Times New Roman', Georgia, serif 近似近衬线展示声 */
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-display: "PP Editorial Old", "Times New Roman", Georgia, serif;
+
+  /* ── Radius（规格刻度：xs 4 / sm 6 / md 8 按钮 / lg 12 卡 / xl 16 / full 徽章专用） ── */
+  --radius-xs: 4px;      /* term-hint focus / 小 chips（规格 rounded.xs） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 6px;      /* 内嵌小块（规格 rounded.sm） */
+  --radius-md: 8px;      /* 行卡（紧凑件 = rounded.md） */
+  --radius-lg: 12px;     /* 指标卡 = rounded.lg 主导卡圆角 */
+  --radius-xl: 12px;     /* 面板 = rounded.lg（卡/模态同阶，几何 sober） */
+  --radius-brand: 8px;   /* brand-mark / 登录 signal = 按钮件 rounded.md */
+  --radius-pill: 9999px; /* 迷你徽标 = rounded.full（徽章专用，按钮禁药丸） */
+  --radius-panel: 12px;  /* 登录外壳 = rounded.lg */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #fff8e0;             /* cream：暖奶油画布（规格主导底） */
+  --canvas-soft: #fffaeb;        /* cream-light：面板内嵌卡/表头交替面 */
+  --canvas-card: #ffffff;        /* 卡片白（card-base 白底） */
+  --canvas-dark: #1c1c1e;        /* surface-code：json 深码面（code-block 字面） */
+  --surface-sidebar: #fffaeb;    /* 侧栏 = cream-light（比画布亮半档分层） */
+  --surface-bar: rgba(255, 248, 224, .92); /* 顶栏 = 磨砂奶油 */
+  --surface-inset: #fffaeb;      /* 内嵌面 = cream-light */
+  --surface-matrix: #fffaeb;
+  --surface-tint: #fff8e0;       /* 表行 hover = cream 轻染 */
+  --surface-rail: #fffaeb;       /* 配置状态轨 = 内嵌奶油面 */
+  --surface-detail: #fffaeb;
+  --surface-chip: #fffaeb;       /* people 行卡 = 内嵌奶油面 */
+  --surface-legacy: #fffaeb;
+  --surface-draft: #fff0c2;      /* 草稿标签 = cream-deeper（badge-cream 同底） */
+  --surface-empty: #fffaeb;
+  --surface-json-bar: #1c1c1e;   /* json 头条 = code-block-header 深码面 */
+  --tooltip-bg: #1f1f1f;         /* 反转面 = Ink（黑徽章语汇） */
+
+  /* ── Ink & text ladder（坍缩为规格七级墨） ── */
+  --ink: #1f1f1f;
+  --ink-strong: #1f1f1f;
+  --ink-display: #1f1f1f;
+  --ink-heading: #1f1f1f;
+  --ink-value: #1f1f1f;
+  --ink-repo: #1f1f1f;
+  --ink-step: #1f1f1f;
+  --ink-label-strong: #1f1f1f;
+  --ink-label: #1f1f1f;
+  --ink-row: #1f1f1f;
+  --ink-list: #3d3d3d;   /* value-list li = Ink Tint 正文级 */
+  --ink-data: #1f1f1f;
+  --ink-field: #1f1f1f;
+  --ink-rail: #1f1f1f;
+  --ink-rail-value: #1f1f1f;
+  --ink-secret: #4a4a4a; /* secret-label = Slate */
+  --ink-chip: #3d3d3d;   /* duration 数值 = Ink Tint 正文级 */
+  --body: #2c2c2c;       /* Charcoal：正文强调 */
+  --body-alt: #4a4a4a;   /* Slate */
+  --body-soft: #4a4a4a;
+  --mute: #6a6a6a;       /* Steel：次级文字/标签 */
+  --mute-deep: #4a4a4a;  /* 「更深」= Slate 抬回正文级 */
+  --mute-inline: #6a6a6a;
+  --mute-caption: #6a6a6a;
+  --mute-intro: #4a4a4a; /* 配置导语 = 正文级 */
+  --mute-terse: #6a6a6a;
+  --mute-quiet: #6a6a6a;
+  --mute-soft: #6a6a6a;
+  --mute-dim: #6a6a6a;
+  --mute-draft: #6a6a6a;
+  --mute-json: #a8a8a8;  /* json 深头条文字 = On Dark Muted 字面值 */
+  --mute-matrix: #6a6a6a;
+  --faint: #8a8a8a;      /* Stone：占位/提示级 */
+  --faint-alt: #8a8a8a;
+  --faint-soft: #8a8a8a;
+  --faint-ghost: #8a8a8a;
+  --faint-hint: #8a8a8a;
+  --faint-meta: #8a8a8a;
+  --faint-note: #8a8a8a;
+  --faint-empty: #a8a8a8; /* 空态占位 = Muted */
+  --on-dark: #ffffff;     /* 暗面字 = 纯白（code-block 字面） */
+  --on-dark-soft: #ffffff; /* json 深块正文 = On Dark 全亮 */
+  --on-dark-faint: #a8a8a8;
+
+  /* ── Primary / link / focus ── */
+  --primary: #fa520f;    /* Mistral Orange：唯一 CTA 色 */
+  --primary-active: #cc3a05; /* Orange Deep：按压态（字面值） */
+  --on-primary: #ffffff;
+  --link: #fa520f;       /* 链接 = 主橙（规格 link matches primary orange） */
+  --link-hover: #cc3a05;
+  --focus-ring: rgba(250, 82, 15, .28); /* 橙 28% 焦点环（text-input-focused 2px 橙） */
+  --primary-veil: rgba(250, 82, 15, .08); /* 导航当前项 = 橙薄纱（segmented-tab-active 语汇） */
+
+  /* ── Semantic ──（规格仅给 link；语义态按日落调色板推导文字级，行内注明） */
+  --success: #1e7b45;    /* 派生暖调绿（奶油底可读） */
+  --success-halo: 0 0 0 4px rgba(30, 123, 69, .14);
+  --warning: #a16207;    /* 派生芥末琥珀（yellow-saturated 文字级同族） */
+  --warning-soft: #fff0c2; /* cream-deeper：调色板内的暖琥珀软面 */
+  --error: #c53030;      /* 派生落日深红（与主橙保持色相差） */
+  --error-deep: #9c2525;
+  --info: #1f1f1f;       /* 编辑墨代替 info 彩色（badge-dark 语汇） */
+  --info-soft: #fff8e0;  /* cream 编辑式软面（contact-form-panel 同底） */
+
+  /* ── Hairlines & bars（白卡三级 + 奶油边界 beige-deep） ── */
+  --hairline: #e6d5a8;         /* Beige Deep：奶油画布上的主分隔 */
+  --hairline-soft: #ededed;    /* Hairline Soft：白卡内静分隔 */
+  --hairline-strong: #c7c7c7;  /* Hairline Strong：控件边/滚动条 */
+  --hairline-card: #e6d5a8;    /* 白卡外框 = 奶油面 1px 边（规格字面） */
+  --hairline-inset: #e6d5a8;   /* 内嵌奶油卡边 */
+  --hairline-mid: #e5e5e5;     /* Hairline：白卡内部 */
+  --hairline-rail: #e6d5a8;    /* 奶油轨右缘 */
+  --hairline-codex: #ededed;   /* 白面板内分隔 */
+  --hairline-detail: #e6d5a8;  /* 奶油详情卡边 */
+  --hairline-json: #e6d5a8;    /* json 外框（深面头条由 --surface-json-bar 承担） */
+  --hairline-dashed: #e6d5a8;  /* 空态虚线 = 可见奶油边 */
+  --hairline-legacy: #e6d5a8;
+  --hairline-row: #ededed;     /* 白底行分隔 */
+  --hairline-draft: #c7c7c7;   /* 草稿虚线 = 控件边一档 */
+  --bar-value: #e6d5a8;   /* value-list 左规线 = 暖发丝（数据非装饰） */
+  --bar-matrix: #e6d5a8;
+  --bar-summary: #e6d5a8;
+  --bar-usage: #fa520f;   /* codex 用量轨 = 主橙数据墨水（sunset 进度） */
+
+  /* ── Overlays & shadows ──（海拔克制：Level 1 起步） */
+  --overlay-faint: rgba(31, 31, 31, .04);
+  --overlay-soft: rgba(31, 31, 31, .05);  /* nav hover = 墨系微高亮 */
+  --overlay-line: rgba(31, 31, 31, .07);  /* nav 分组线 */
+  --overlay-medium: rgba(31, 31, 31, .085);
+  --shadow-panel: 0 4px 12px rgba(0, 0, 0, .04); /* 规格 Level 2 卡影字面值 */
+
+  /* ── brand-mark（奶油瓷片 + 三柱日落谱 yellow/orange/sunshine；形态见片段） ── */
+  --brand-frame-bg: #ffffff;   /* 白瓷片（button-on-cream 白底语汇） */
+  --brand-frame-border: #e6d5a8;
+  --brand-frame-shadow: 0 1px 2px rgba(0, 0, 0, .04); /* 规格 Level 1 */
+  --brand-bar-1: #ffd900;      /* Yellow Saturated：日落谱短柱 */
+  --brand-bar-2: #fa520f;      /* Mistral Orange：日落谱主柱 */
+  --brand-bar-3: #ff8105;      /* Sunshine 800：日落谱尾柱 */
+  --brand-bar-inset: none;     /* 平面编辑感，无高光内嵌 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;    /* 角标隐藏（三柱即签名，片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #fa520f;    /* 当前导航指示条 = 主橙（segmented-tab-active 下划线语汇） */
+
+  /* ── 登录页（cream 画布 + hero-band-sunset 渐变天空 + sunset stripe 回声） ── */
+  --login-bg: #fff8e0;         /* footer-cream / cta-banner-cream 的奶油底 */
+  --login-shell-border: #e6d5a8;
+  --login-shell-shadow: 0 12px 24px -4px rgba(0, 0, 0, .08); /* 规格 Level 3 mockup */
+  --login-showcase-bg: linear-gradient(135deg, #ffa110 0%, #ff8a00 60%, #fa520f 100%); /* hero-band-sunset 字面渐变 */
+  --login-showcase-ink: #1f1f1f; /* 规格英雄带文字 = Ink on sunset */
+  --login-grid-line: rgba(31, 31, 31, .06); /* 摄影式英雄无网格（片段隐藏，占位保留） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #1f1f1f;
+  --login-brand-mute: #3d3d3d; /* Ink Tint：英雄副标字面色 */
+  --login-signal-bg: #fff8e0;  /* signal = cream 瓷片（brand-mark 同语汇） */
+  --login-signal-border: #e6d5a8;
+  --login-signal-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  --login-signal-bar: #fa520f; /* 基色主橙；三柱日落谱见片段 */
+  --login-kicker: #1f1f1f;     /* micro-uppercase 眉题 = Ink 600 */
+  --login-heading: #1f1f1f;    /* 英雄标题 = 近衬线 400（字体见片段） */
+  --login-copy: #3d3d3d;       /* 副标 = Ink Tint（规格 hero subtitle 字面） */
+  --login-preview-bg: rgba(255, 255, 255, .82); /* 白预览卡浮于日落（button-on-cream） */
+  --login-preview-border: rgba(255, 255, 255, .7);
+  --login-preview-shadow: 0 12px 24px -4px rgba(0, 0, 0, .08); /* Level 3 */
+  --login-preview-divider: #e6d5a8; /* 预览内奶油分隔 */
+  --login-preview-dot: #fa520f;      /* 状态点 = 主橙 */
+  --login-preview-dot-soft: #ffd900; /* 次点 = Yellow Saturated（日落对） */
+  --login-preview-label: #6a6a6a;    /* Steel */
+  --login-preview-row-line: #ededed;
+  --login-preview-row-ink: #1f1f1f;
+  --login-preview-chip-ink: #1f1f1f; /* chip = badge-cream 语汇 */
+  --login-preview-chip-bg: #fff0c2;  /* Cream Deeper 字面值 */
+  --login-preview-bar: #fa520f;      /* 进度条 = 主橙数据墨水 */
+  --login-foot: #3d3d3d;             /* 展示板页脚注 = Ink Tint（stripe 上可读） */
+  --login-card-kicker: #cc3a05;      /* 白卡眉题 = Orange Deep（footer-link 同橙） */
+  --login-card-heading: #1f1f1f;     /* 近衬线 400（字体见片段） */
+  --login-card-copy: #6a6a6a;        /* Steel */
+  --login-notice-border: #e6d5a8;    /* 通知条 = contact-form-panel 奶油面 */
+  --login-notice-bg: #fff8e0;
+  --login-notice-ink: #3d3d3d;
+  --login-label: #1f1f1f;
+  --login-input-border: #c7c7c7;     /* Hairline Strong（text-input 字面） */
+  --login-input-border-hover: #fa520f; /* focus 2px 主橙（text-input-focused） */
+  --login-primary: #fa520f;          /* 主 CTA = 饱和橙（button-primary） */
+  --login-primary-active: #cc3a05;   /* 按压 = Orange Deep */
+}
+
+/* ============================================================
+   mistral 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="mistral"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 橙染文本选区（主橙的功能性使用） ── */
+[data-theme="mistral"] ::selection { background: rgba(250, 82, 15, .22); }
+
+/* ── 系统滚动条：细、Hairline Strong、圆头（编辑感克制） ── */
+[data-theme="mistral"] * { scrollbar-width: thin; scrollbar-color: #c7c7c7 transparent; }
+[data-theme="mistral"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="mistral"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="mistral"] ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 9999px; background: #c7c7c7; background-clip: padding-box; }
+[data-theme="mistral"] ::-webkit-scrollbar-thumb:hover { background-color: #8a8a8a; background-clip: padding-box; }
+
+/* ── 展示级近衬线：PP Editorial Old（规格 stat-display / hero 语汇）
+      weight 400 + 负字距，落在大数字与英雄标题；小号数字回落 Inter 600 ── */
+[data-theme="mistral"] .brand-block strong { font-family: var(--font-display); font-weight: 400; letter-spacing: -.2px; }
+[data-theme="mistral"] .business-outcomes__card > strong { font: 400 25px/1.05 var(--font-display); letter-spacing: -.3px; }
+[data-theme="mistral"] .ratio-card > strong { font: 400 29px/1.05 var(--font-display); letter-spacing: -.3px; }
+[data-theme="mistral"] .codex-metric > strong { font: 400 20px/1.1 var(--font-display); letter-spacing: -.2px; }
+[data-theme="mistral"] .configuration-step-copy h2,
+[data-theme="mistral"] .configuration-summary h2 { font-family: var(--font-display); font-weight: 400; letter-spacing: -.2px; }
+[data-theme="mistral"] .login-page__brand strong { font-family: var(--font-display); font-weight: 400; }
+[data-theme="mistral"] .login-page__showcase-copy h2 { font: 400 31px/1.15 var(--font-display); letter-spacing: -.5px; }
+[data-theme="mistral"] .login-page__card h1 { font-family: var(--font-display); font-weight: 400; letter-spacing: -.3px; }
+
+/* ── 小号数据数字：Inter 600（编辑 sans 承担数据，衬线只留展示级） ── */
+[data-theme="mistral"] .metric-matrix strong { font: 600 13px/1.3 var(--font-sans); }
+[data-theme="mistral"] .configuration-status-rail > div > strong { font: 600 12px/1.4 var(--font-sans); }
+[data-theme="mistral"] .configuration-summary-grid strong { font: 600 12px/1.5 var(--font-sans); }
+[data-theme="mistral"] .codex-token-ledger strong { font: 600 12px/1.4 var(--font-sans); }
+
+/* ── 标题字重：UI 标题一律 500（规格 heading-2..5 Inter 500，无 bold） ── */
+[data-theme="mistral"] .panel-heading h2,
+[data-theme="mistral"] .detail-section h3,
+[data-theme="mistral"] .configuration-inline-title h3,
+[data-theme="mistral"] .connector-configuration-step__heading h3,
+[data-theme="mistral"] .business-outcomes__card > span,
+[data-theme="mistral"] .ratio-card__title,
+[data-theme="mistral"] .admin-table .ant-table-thead > tr > th { font-weight: 500; }
+
+/* ── 眉题 / kicker：micro-uppercase（规格 11px/600/1px 字距），主橙承担 ── */
+[data-theme="mistral"] .page-heading__eyebrow,
+[data-theme="mistral"] .panel-kicker,
+[data-theme="mistral"] .section-label { color: var(--primary); font: 600 11px/1.4 var(--font-sans); letter-spacing: 1px; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="mistral"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── brand-mark 重绘：去角标，三 span = 三档日落谱
+      （Yellow Saturated / Mistral Orange / Sunshine 800，令牌直供），平面无内嵌 ── */
+[data-theme="mistral"] .brand-mark span { border-radius: 2px 2px 1px 1px; box-shadow: none; }
+[data-theme="mistral"] .brand-mark span:nth-child(1) { opacity: 1; }
+[data-theme="mistral"] .brand-mark::after { display: none; }
+
+/* ── 登录展示板：摄影式日落英雄 —— 隐藏网格底纹；页尾 sunset stripe 回声
+      （规格最 recognizable 签名：primary → sunshine-700 → sunshine-500 → yellow → cream） ── */
+[data-theme="mistral"] .login-page__showcase::before { display: none; }
+[data-theme="mistral"] .login-page__showcase::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: linear-gradient(90deg, #fa520f 0%, #ffa110 32%, #ffb83e 58%, #ffd900 80%, #fff8e0 100%); }
+
+/* ── 登录 signal：brand-mark 同款三柱日落谱（基色令牌 + 逐柱覆写） ── */
+[data-theme="mistral"] .login-page__signal span:nth-child(1) { background: #ffd900; }
+[data-theme="mistral"] .login-page__signal span:nth-child(2) { background: #fa520f; }
+[data-theme="mistral"] .login-page__signal span:nth-child(3) { background: #ff8105; }
+
+/* ── 登录卡 micro 标签：同 micro-uppercase 法则 ── */
+[data-theme="mistral"] .login-page__showcase-copy > span,
+[data-theme="mistral"] .login-page__card-heading > span { font: 600 11px/1.4 var(--font-sans); letter-spacing: 1px; text-transform: uppercase; }

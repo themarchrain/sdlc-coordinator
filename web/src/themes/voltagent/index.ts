@@ -20,6 +20,7 @@ export const voltagentSwatches: ThemeSwatches = {
 export const voltagentTheme: ThemeDefinition = {
   id: 'voltagent',
   label: 'Voltagent',
+  family: 'dark',
   isDark: true,
   chromeColor: '#101010',
   swatches: voltagentSwatches,

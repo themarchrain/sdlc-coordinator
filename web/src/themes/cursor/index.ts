@@ -19,6 +19,7 @@ export const cursorSwatches: ThemeSwatches = {
 export const cursorTheme: ThemeDefinition = {
   id: 'cursor',
   label: 'Cursor',
+  family: 'warm',
   isDark: false,
   chromeColor: '#f7f7f4',
   swatches: cursorSwatches,

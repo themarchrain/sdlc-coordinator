@@ -1,0 +1,283 @@
+/* ============================================================
+   discord 主题令牌块 —— 自设计语言
+   按角色映射到骨架 162 令牌超集（用途对用途，不按名字）。
+   Discord 设计语言（暗色，深靛蓝画布）：
+   - 画布阶：canvas #0a0d3a（深靛蓝页面 floor）/ soft #141847（canvas→card 中点，
+     表头/输入/内嵌条）/ card #1e2353（规格 surface-indigo：暗卡/定价表/ghost 钮）/
+     elevated #262b62（抬升靛蓝：hover/浮层）/ inset #060826（更深嵌入面）/
+     tooltip #000000（规格 surface-black：产品黑浮层）
+   - 文字阶坍缩为三阶：ink #ffffff / body #d4d8ef（靛调白，ggsans 正文）/
+     mute #9ba1cf（靛调灰）；数值统计走 --font-display 重无衬线
+   - 主交互 = Blurple #5865f2（+官方暗阶 #4752c4）；link = 规格 cyan #00b0f4；
+     渐变（blurple→violet→magenta）是品牌大气签名，见作用域片段与令牌
+     （login showcase hero / 登录 CTA / usage 进度条）
+   - 语义：success = 规格 green #35ed7e（状态色非点缀）；warning/error
+     规格未给 → Discord 产品状态语言推导（idle 黄 #f0b132 / dnd 红 #f23f43）；
+     info = 规格 link cyan
+   - 发丝线：#2a2f68 抬升靛蓝主线 / 规格 hairline #23272a（onyx 安静阶）/
+     #3a3f7d 强调阶（虚线框/滚动条）
+   - 圆角按规格刻度：xs 6 / sm 12 / md 14 / lg 16 / xl 40（特性面板）/
+     pill 50（胶囊/徽标）；投影只留规格那条紫晕 diffuse（其余无投影）
+   - 字体 gg sans / ABC Ginto Nord → 'Helvetica Neue'/Arial/system-ui
+     web-safe 近似（禁外部字体），展示声部 = 字重 800 全大写（见片段）
+   骨架表达不了的形态（brand-mark 语音均衡器重绘、登录 blurple 渐变 hero、
+   黑 tooltip 发丝线描边、全大写展示声部、暗色滚动条/selection）见块后片段。
+   ============================================================ */
+[data-theme="discord"] {
+  color-scheme: dark;
+  color: var(--body); /* 规格正文 = 靛调白（骨架 :root 用 --ink，纯白偏亮） */
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: "Helvetica Neue", Helvetica, Arial, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; /* gg sans 近似 */
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "Helvetica Neue", Helvetica, Arial, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; /* ABC Ginto Nord 近似：重无衬线统计字（声部见片段 800） */
+
+  /* ── Radius（规格刻度 xs 6 / sm 12 / md 14 / lg 16 / xl 40 / pill 50；向超集九档归并） ── */
+  --radius-xs: 6px;      /* 规格 rounded.xs：紧凑 chip / focus */
+  --radius-soft: 50px;   /* 登录预览 chip = 规格 rounded.pill 胶囊 */
+  --radius-sm: 12px;     /* 规格 rounded.sm：内嵌小块 / sparkline 提示 */
+  --radius-md: 14px;     /* 规格 rounded.md：行卡（game-rank rows 同角色） */
+  --radius-lg: 16px;     /* 规格 rounded.lg：卡片 / 白·ghost 按钮 */
+  --radius-xl: 40px;     /* 规格 rounded.xl：特性面板 / 大媒体框（面板角色） */
+  --radius-brand: 50px;  /* 规格 rounded.pill：brand-mark / 登录 signal = 胶囊座 */
+  --radius-pill: 50px;   /* 规格 rounded.pill：迷你徽标 / 推断章 = 胶囊 */
+  --radius-panel: 40px;  /* 登录外壳 = 特性面板档（signature 圆润大框） */
+
+  /* ── Canvas & surfaces（规格 Surface 组按用途映射 + 靛蓝阶推导） ── */
+  --canvas: #0a0d3a;             /* 规格 canvas：深靛蓝页面 floor */
+  --canvas-soft: #141847;        /* canvas→card 中点（推导）：表头 / 输入 / 内嵌条 */
+  --canvas-card: #1e2353;        /* 规格 surface-indigo：卡片 / ghost 按钮底 */
+  --canvas-dark: #060826;        /* json-viewer pre = 更深嵌入面（推导压暗阶） */
+  --surface-sidebar: #0a0d3a;    /* 侧栏与画布同底（规格 nav-bar bg = canvas） */
+  --surface-bar: rgba(10, 13, 58, .88); /* 顶栏 = 靛蓝半透 + blur */
+  --surface-inset: #060826;      /* duration chip = 深嵌入面 */
+  --surface-matrix: #141847;     /* metric-matrix cell = soft 阶 */
+  --surface-tint: #262b62;       /* 表格行 hover = 抬升靛蓝 */
+  --surface-rail: #141847;       /* 配置状态轨 = soft 阶 */
+  --surface-detail: #1e2353;     /* 详情节 = surface-indigo 卡 */
+  --surface-chip: #1e2353;       /* 身份行卡 = surface-indigo 卡 */
+  --surface-legacy: #141847;     /* legacy 值面板 = soft 阶 */
+  --surface-draft: rgba(88, 101, 242, .14); /* 草稿章 = blurple 薄纱（推导） */
+  --surface-empty: transparent;  /* 空态透明（暗底由虚线框承担） */
+  --surface-json-bar: #141847;   /* json 工具条 = soft 阶 */
+  --tooltip-bg: #000000;         /* 规格 surface-black：产品黑浮层（描边见片段） */
+
+  /* ── Ink & text ladder（坍缩为 ink/body/mute 三阶 + 靛调近白阶） ── */
+  --ink: #ffffff;                /* 规格 ink：画布上的主导文字 */
+  --ink-strong: #ffffff;
+  --ink-display: #ffffff;
+  --ink-heading: #ffffff;
+  --ink-value: #ffffff;          /* 数值统计 = 白（stat-card 白大数字） */
+  --ink-repo: #ffffff;
+  --ink-step: #ffffff;
+  --ink-label-strong: #ffffff;
+  --ink-label: #ffffff;
+  --ink-row: #e6e9fb;            /* 行内 strong = 靛调近白（body 上一阶） */
+  --ink-list: #e6e9fb;
+  --ink-data: #ffffff;           /* detail dd 数值 = 白 */
+  --ink-field: #e6e9fb;
+  --ink-rail: #d4d8ef;           /* 轨正文 = body */
+  --ink-rail-value: #ffffff;     /* 轨数值 = ink */
+  --ink-secret: #d4d8ef;
+  --ink-chip: #e6e9fb;
+  --body: #d4d8ef;               /* ggsans 正文 = 靛调白（推导） */
+  --body-alt: #d4d8ef;           /* 分类页签未激活 = body */
+  --body-soft: #9ba1cf;          /* 占位采样行 = mute */
+  --mute: #9ba1cf;               /* 靛调灰（推导，对齐规格 muted 角色） */
+  --mute-deep: #d4d8ef;          /* 业务卡/占比卡标题 = body（顶栏见片段改 mute） */
+  --mute-inline: #9ba1cf;
+  --mute-caption: #9ba1cf;
+  --mute-intro: #9ba1cf;
+  --mute-terse: #9ba1cf;
+  --mute-quiet: #9ba1cf;         /* 表头标签 = mute */
+  --mute-soft: #9ba1cf;
+  --mute-dim: #9ba1cf;
+  --mute-draft: #9ba1cf;
+  --mute-json: #9ba1cf;
+  --mute-matrix: #9ba1cf;
+  --faint: #9ba1cf;
+  --faint-alt: #9ba1cf;
+  --faint-soft: #9ba1cf;
+  --faint-ghost: #9ba1cf;
+  --faint-hint: #9ba1cf;
+  --faint-meta: #9ba1cf;
+  --faint-note: #9ba1cf;
+  --faint-empty: #9ba1cf;
+  --on-dark: #ffffff;            /* 规格 ink（黑浮层上文字） */
+  --on-dark-soft: #d4d8ef;       /* json pre 正文 = body */
+  --on-dark-faint: #9ba1cf;
+
+  /* ── Primary / link / focus（Blurple 主操作；link = 规格 cyan） ── */
+  --primary: #5865f2;            /* 规格 primary：Blurple */
+  --primary-active: #4752c4;     /* blurple-deep（Discord 官方暗阶） */
+  --on-primary: #ffffff;         /* 规格 on-primary */
+  --link: #00b0f4;               /* 规格 link：暗面行内链接 cyan */
+  --link-hover: #4cc3f7;         /* cyan 提亮一阶（推导） */
+  --focus-ring: rgba(88, 101, 242, .5); /* blurple 焦点环 */
+  --primary-veil: rgba(88, 101, 242, .16); /* 当前导航项底 = blurple 薄纱 */
+
+  /* ── Semantic（success = 规格 green；warning/error 产品状态推导；info = link cyan） ── */
+  --success: #35ed7e;            /* 规格 green（语义状态位，非通用点缀） */
+  --success-halo: 0 0 0 4px rgba(53, 237, 126, .16);
+  --warning: #f0b132;            /* 推导：Discord idle 黄 */
+  --warning-soft: rgba(240, 177, 50, .14); /* 暗底软面 */
+  --error: #f23f43;              /* 推导：Discord dnd 红 */
+  --error-deep: #d8383c;         /* 红压深一阶（摘要 code 用） */
+  --info: #00b0f4;               /* 规格 link cyan */
+  --info-soft: rgba(0, 176, 244, .14);
+
+  /* ── Hairlines & bars（抬升靛蓝主线 / 规格 onyx 安静阶 / 强调阶） ── */
+  --hairline: #2a2f68;           /* 主分隔线 = 抬升靛蓝（推导） */
+  --hairline-soft: #23272a;      /* 规格 hairline = onyx（安静分隔） */
+  --hairline-strong: #3a3f7d;    /* 强调阶：滚动条 / tooltip 描边 */
+  --hairline-card: #2a2f68;      /* 卡外框 */
+  --hairline-inset: #2a2f68;
+  --hairline-mid: #23272a;       /* 区块顶分隔 = 安静阶 */
+  --hairline-rail: #2a2f68;
+  --hairline-codex: #2a2f68;     /* codex 事实格分隔 */
+  --hairline-detail: #2a2f68;
+  --hairline-json: #2a2f68;
+  --hairline-dashed: #3a3f7d;    /* 空态虚线框 = 强调阶 */
+  --hairline-legacy: #3a3f7d;    /* legacy 虚线 = 强调阶 */
+  --hairline-row: #23272a;       /* 行分隔 = 规格 hairline（onyx 安静） */
+  --hairline-draft: #3a3f7d;     /* 草稿章描边 = 强调阶 */
+  --bar-value: #5865f2;          /* value-list 左条 = blurple */
+  --bar-matrix: #ec48bd;         /* metric-matrix 左条 = magenta */
+  --bar-summary: #00b0f4;        /* summary 卡左条 = link cyan */
+  --bar-usage: linear-gradient(90deg, #5865f2, #ec48bd); /* codex 进度条 = 品牌渐变 */
+
+  /* ── Overlays & shadows（层级靠色/圆角/渐变；只留规格那条紫晕 diffuse） ── */
+  --overlay-faint: rgba(255, 255, 255, .03);
+  --overlay-soft: #141847;       /* 导航 hover = soft 阶 */
+  --overlay-line: rgba(255, 255, 255, .08); /* nav 分组线 */
+  --overlay-medium: #1e2353;     /* collapse hover = surface-indigo */
+  --shadow-panel: 0 3px 68px rgba(69, 42, 124, .1); /* 规格 Elevation-1 紫晕 diffuse */
+
+  /* ── brand-mark（形态见片段：语音均衡器 —— 无框三胶囊条 + 绿 presence 点） ── */
+  --brand-frame-bg: transparent;   /* 条直接落在靛蓝画布上 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: linear-gradient(180deg, #8b94f8, #5865f2); /* blurple 亮阶 */
+  --brand-bar-2: linear-gradient(180deg, #6d78f5, #4752c4); /* blurple 深阶 */
+  --brand-bar-3: linear-gradient(180deg, #f26fd2, #ec48bd); /* magenta */
+  --brand-bar-inset: none;         /* 平涂渐变条，无光效 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: #35ed7e;            /* green presence 点（在线状态记号） */
+  --brand-dot-border: #0a0d3a;     /* 点边 = 画布色挖边 */
+  --brand-dot-glow: 0 0 8px rgba(53, 237, 126, .7);
+  --nav-indicator: #5865f2;        /* 当前导航指示条 = blurple（green 留给高意向 CTA） */
+
+  /* ── 登录页（靛蓝画布 + blurple→magenta 渐变 hero + 黑 tooltip/玻璃预览） ── */
+  --login-bg: radial-gradient(900px 480px at 20% -10%, rgba(88, 101, 242, .25), transparent 60%), radial-gradient(760px 420px at 85% 110%, rgba(236, 72, 189, .16), transparent 62%), #0a0d3a; /* 页面级品牌 mesh 晕 */
+  --login-shell-border: #2a2f68;
+  --login-shell-shadow: 0 24px 68px rgba(69, 42, 124, .4); /* 规格 Elevation-1 紫晕加深（暗底可见） */
+  --login-showcase-bg: linear-gradient(160deg, #5865f2 0%, #6a3fd0 45%, #ec48bd 100%); /* 品牌渐变 hero：blurple→深紫→magenta */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .14); /* 渐变 hero 上的白网格 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #cfd4f5;
+  --login-signal-bg: transparent;  /* signal = brand-mark 同款胶囊条（见片段） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: linear-gradient(180deg, #7d88f6, #5865f2); /* blurple 渐变条 */
+  --login-kicker: #d9defc;        /* hero 上的 kicker（亮区白阶） */
+  --login-heading: #ffffff;       /* hero 大字 = 白 800 全大写（见片段） */
+  --login-copy: #e8eafe;
+  --login-preview-bg: rgba(10, 13, 58, .42); /* 渐变 hero 上的靛蓝玻璃 */
+  --login-preview-border: rgba(255, 255, 255, .28);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .18);
+  --login-preview-dot: rgba(255, 255, 255, .55);
+  --login-preview-dot-soft: rgba(255, 255, 255, .28);
+  --login-preview-label: #cdd2f4;
+  --login-preview-row-line: rgba(255, 255, 255, .16);
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #ffffff;   /* 玻璃 chip（胶囊圆角由 --radius-soft 承担） */
+  --login-preview-chip-bg: rgba(10, 13, 58, .5);
+  --login-preview-bar: rgba(255, 255, 255, .5);
+  --login-foot: #c9cef4;
+  --login-card-kicker: #9ba1cf;
+  --login-card-heading: #ffffff;
+  --login-card-copy: #9ba1cf;
+  --login-notice-border: #2a2f68; /* 暗软面 + 发丝线（与 antd Table 边同源） */
+  --login-notice-bg: #141847;
+  --login-notice-ink: #d4d8ef;
+  --login-label: #d4d8ef;
+  --login-input-border: #3a3f7d;  /* 输入描边 = 强调阶（卡面上可见） */
+  --login-input-border-hover: #5865f2; /* 规格：focus 转 blurple */
+  --login-primary: #5865f2;       /* blurple CTA（渐变重绘见片段） */
+  --login-primary-active: #4752c4;
+
+  /* ── Discord 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --blurple: #5865f2;             /* 规格 primary */
+  --blurple-deep: #4752c4;        /* blurple 官方暗阶 */
+  --magenta: #ec48bd;             /* 规格 magenta */
+  --green: #35ed7e;               /* 规格 green（高意向 CTA / presence） */
+  --grad-brand: linear-gradient(135deg, #5865f2 0%, #7048e8 55%, #ec48bd 120%); /* 品牌渐变：blurple→深紫→magenta */
+}
+
+/* ============================================================
+   discord 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="discord"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暗色选区 / 焦点（blurple 选区、blurple 焦点外环） ── */
+[data-theme="discord"] ::selection { background: rgba(88, 101, 242, .45); color: var(--ink); }
+[data-theme="discord"] :focus-visible { outline-color: rgba(88, 101, 242, .6); }
+[data-theme="discord"] .term-hint:focus-visible { outline-color: var(--primary); }
+
+/* ── 系统滚动条：细、强调靛蓝、圆润（soft 几何） ── */
+[data-theme="discord"] * { scrollbar-width: thin; scrollbar-color: #3a3f7d transparent; }
+[data-theme="discord"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="discord"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="discord"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: #3a3f7d; background-clip: padding-box; }
+[data-theme="discord"] ::-webkit-scrollbar-thumb:hover { background: #4a4f96; background-clip: padding-box; }
+
+/* ── 外壳补正：顶栏次级铭牌回落 mute（mute-deep 让给业务卡标题） ── */
+[data-theme="discord"] .context-bar { color: var(--mute); }
+
+/* ── brand-mark：语音均衡器重绘 —— 去框去光效，三根渐变胶囊条自底生长
+      （45%/100%/70% 骨架高度即均衡器节律），绿 presence 点由令牌承担 ── */
+[data-theme="discord"] .brand-mark { align-items: flex-end; gap: 4px; padding: 5px 6px; }
+[data-theme="discord"] .brand-mark span { border-radius: 999px; box-shadow: none; }
+
+/* ── 登录 signal：brand-mark 同款胶囊均衡条 ── */
+[data-theme="discord"] .login-page__signal span { border-radius: 999px; }
+
+/* ── 重全大写展示声部（规格「headlines shout in all-caps, 700-800」）：
+      eyebrow/kicker = sans 800 大写追字（规格 display letterSpacing 0，
+      仅小标签需要追字可读） ── */
+[data-theme="discord"] .page-heading__eyebrow,
+[data-theme="discord"] .panel-kicker,
+[data-theme="discord"] .section-label {
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+/* ── 标题字重归一到 800（ABC Ginto Nord 重展示声部；letterSpacing 0） ── */
+[data-theme="discord"] .brand-block strong,
+[data-theme="discord"] .panel-heading h2,
+[data-theme="discord"] .detail-section h3,
+[data-theme="discord"] .login-page__showcase-copy h2,
+[data-theme="discord"] .login-page__card h1 { font-weight: 800; letter-spacing: 0; }
+
+/* ── 登录 hero / 卡片大标题：全大写（规格 display-xl 声部） ── */
+[data-theme="discord"] .login-page__showcase-copy h2,
+[data-theme="discord"] .login-page__card h1 { text-transform: uppercase; }
+
+/* ── 黑 tooltip 发丝线描边（纯黑浮层在靛蓝面上的边缘定义） ── */
+[data-theme="discord"] .sparkline__tip { border: 1px solid var(--hairline-strong); }
+
+/* ── 登录表单：输入落在 soft 面（与 antd Input/Select colorBgContainer 同源） ── */
+[data-theme="discord"] .login-page__card .ant-input,
+[data-theme="discord"] .login-page__card .ant-input-affix-wrapper { background: var(--canvas-soft); }
+
+/* ── 登录 CTA：blurple→magenta 品牌渐变（antd 层给字面 blurple，渐进渐变在此表达；
+      hover 提亮保持渐变 —— 需 !important 压过骨架的 --login-primary-active 规则） ── */
+[data-theme="discord"] .login-page__card .ant-btn-primary { background: var(--grad-brand); border: none; }
+[data-theme="discord"] .login-page__card .ant-btn-primary:hover { background: var(--grad-brand) !important; filter: brightness(1.1); }
+[data-theme="discord"] .login-page__card .ant-btn-primary:active { background: var(--grad-brand) !important; filter: brightness(.94); }

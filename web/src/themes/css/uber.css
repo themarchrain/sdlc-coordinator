@@ -1,0 +1,274 @@
+/* ============================================================
+   uber 主题令牌块 —— 规格驱动（uber 设计语言，无参考实现），
+   正文色值按角色映射进 162 令牌超集。白画布 + 黑白二重唱：
+   - 画布阶：canvas #ffffff（页面）/ soft #efefef（canvas-soft：输入行、
+     category chip、软药丸）/ softer #f3f3f3（canvas-softer：白卡内嵌输入）/
+     pressed #e2e2e2（surface-pressed：按压态 + 行分隔线两职）/
+     ink #000000（黑 promo 带 / footer → json 深面）/
+     black-elevated #282828（近黑抬升档 → tooltip / json 头条）
+   - 文字阶坍缩为规格四级：ink #000000 / hairline-mid #4b4b4b /
+     body #5e5e5e / mute #afafaf（正文即纯黑，规格「body paragraph = ink」）
+   - 主操作 = 纯黑药丸 #000000，按压 = black-elevated #282828；
+     #0000ee（浏览器默认链接蓝）是系统唯一彩 → info/link
+   - 语义：规格明言无语义盘 → 三色按浏览器默认语义克制化推导
+     （绿 #1f7a3d / 琥珀 #a16207 / 红 #c8102e，tesla 同法）
+   - 圆角签名：药丸 999（brand-mark / 迷你徽标）/ 卡 16（面板 / 登录外壳）/
+     输入 8（rounded.md）—— 与 antd 侧 Button 999 / token 8/16 同源
+   - 海拔两档规格原文：Level 1 `rgba(0,0,0,.12) 0 4px 16px`（面板）、
+     Level 2 `rgba(0,0,0,.16) 0 4px 16px`（登录外壳 = ride-request 卡）；
+     极性翻转黑带（json 面 / 登录 showcase）本身即深度
+   - 字体 UberMove / UberMoveText → Inter 替身（规格 官方推荐）
+   骨架表达不了的形态（brand-mark 黑药丸 + 灰阶三条、眉签唯一合法大写、
+     黑 showcase 白 display 大字、灰填充登录输入、句首大写补正）见块后片段。
+   ============================================================ */
+[data-theme="uber"] {
+  /* ── Typography ───────────────────────────── */
+  /* UberMove（display 700）/ UberMoveText（正文 400/500）均私有 → Inter 官方替身；
+     display 与 UI 共用 sans 栈，700/500/400 字重分工见片段与 antd */
+  --font-sans: "UberMove", "UberMoveText", Inter, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --font-display: "UberMove", "UberMoveText", Inter, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  /* ── Radius（规格刻度：md 8 输入 / lg 12 / xl 16 卡 / pill 999 交互 / pill-tab 36） ── */
+  --radius-xs: 8px;      /* 图标提示 focus = rounded.md */
+  --radius-soft: 8px;    /* 登录预览小色块 = rounded.md */
+  --radius-sm: 8px;      /* 内嵌小块 / sparkline 提示 */
+  --radius-md: 8px;      /* 行卡 = rounded.md（request-form 输入行） */
+  --radius-lg: 12px;     /* 指标卡 = rounded.lg（次级小卡 chrome） */
+  --radius-xl: 16px;     /* 面板 = rounded.xl（canonical 卡半径） */
+  --radius-brand: 999px; /* brand-mark / 登录 signal = 药丸签名 */
+  --radius-pill: 999px;  /* 迷你徽标 = rounded.pill */
+  --radius-panel: 16px;  /* 登录外壳 = rounded.xl（request-form 卡） */
+
+  /* ── Canvas & surfaces（规格 Surface 组按用途映射） ── */
+  --canvas: #ffffff;             /* 规格画布白 */
+  --canvas-soft: #efefef;        /* 规格 canvas-soft：输入行/chip/软药丸面 */
+  --canvas-card: #ffffff;        /* 卡片白（card-content bg canvas） */
+  --canvas-dark: #000000;        /* json pre 深面 = ink 黑 promo 带（极性翻转） */
+  --surface-sidebar: #ffffff;    /* 侧栏 = 白（规格 nav-bar bg canvas） */
+  --surface-bar: rgba(255, 255, 255, .92); /* 顶栏 = 白半透 sticky */
+  --surface-inset: #efefef;      /* 内嵌面 = 输入行灰填充 */
+  --surface-matrix: #efefef;
+  --surface-tint: #f3f3f3;       /* 表行 hover = canvas-softer 轻一档 */
+  --surface-rail: #efefef;
+  --surface-detail: #efefef;
+  --surface-chip: #efefef;       /* chip = category-button bg canvas-soft */
+  --surface-legacy: #efefef;
+  --surface-draft: #e2e2e2;      /* 草稿章 = surface-pressed 更沉一档 */
+  --surface-empty: #efefef;
+  --surface-json-bar: #282828;   /* json 头条 = black-elevated（黑面上的抬升阶） */
+  --tooltip-bg: #282828;         /* tooltip = black-elevated（规格近黑浮升档） */
+
+  /* ── Ink & text ladder（坍缩为规格四级：黑 / 深灰 / body / mute） ── */
+  --ink: #000000;         /* 规格 ink：标题与正文段（正文即黑） */
+  --ink-strong: #000000;
+  --ink-display: #000000;
+  --ink-heading: #000000;
+  --ink-value: #000000;
+  --ink-repo: #000000;
+  --ink-step: #000000;
+  --ink-label-strong: #000000;
+  --ink-label: #000000;
+  --ink-row: #000000;
+  --ink-list: #5e5e5e;    /* value-list li = body */
+  --ink-data: #000000;
+  --ink-field: #5e5e5e;
+  --ink-rail: #5e5e5e;    /* 轨正文 = body */
+  --ink-rail-value: #000000;
+  --ink-secret: #5e5e5e;  /* secret-label = body 级 */
+  --ink-chip: #5e5e5e;    /* duration chip = body 级 */
+  --body: #000000;        /* 规格正文段 = ink 黑（「body paragraph = ink」） */
+  --body-alt: #5e5e5e;    /* 规格 body：次级正文 */
+  --body-soft: #5e5e5e;
+  --mute: #5e5e5e;        /* 指标说明/表头标签 = body 灰 */
+  --mute-deep: #4b4b4b;   /* 业务卡/占比卡标题抬回深灰（hairline-mid 兼深标签） */
+  --mute-inline: #5e5e5e;
+  --mute-caption: #5e5e5e;
+  --mute-intro: #5e5e5e;
+  --mute-terse: #5e5e5e;
+  --mute-quiet: #5e5e5e;
+  --mute-soft: #5e5e5e;
+  --mute-dim: #5e5e5e;
+  --mute-draft: #5e5e5e;
+  --mute-json: #5e5e5e;
+  --mute-matrix: #5e5e5e;
+  --faint: #afafaf;       /* 规格 mute：占位/细则/低优先元数据 */
+  --faint-alt: #afafaf;
+  --faint-soft: #afafaf;
+  --faint-ghost: #afafaf;
+  --faint-hint: #afafaf;
+  --faint-meta: #afafaf;
+  --faint-note: #afafaf;
+  --faint-empty: #afafaf;
+  --on-dark: #ffffff;     /* 规格 on-dark：黑带上的白字 */
+  --on-dark-soft: rgba(255, 255, 255, .72); /* json 深面正文（派生 alpha 阶） */
+  --on-dark-faint: rgba(255, 255, 255, .5);
+
+  /* ── Primary / link / focus（黑药丸主操作 + 浏览器蓝链接） ── */
+  --primary: #000000;      /* 规格 primary = Ink Black */
+  --primary-active: #282828; /* 规格 black-elevated（近黑按压档） */
+  --on-primary: #ffffff;   /* 规格 on-primary */
+  --link: #0000ee;         /* 规格 link-blue：系统唯一彩 */
+  --link-hover: #0000c7;   /* 派生：蓝压深一阶（hover 未记录） */
+  --focus-ring: rgba(0, 0, 0, .3); /* 派生：黑 30% 焦点环（黑即主操作） */
+  --primary-veil: rgba(0, 0, 0, .06); /* 派生：黑 6% 薄纱（ex-app-shell 激活态的面前等价） */
+
+  /* ── Semantic（规格无语义盘 → 浏览器默认语义克制化推导） ── */
+  --success: #1f7a3d;      /* 派生：标准绿克制化（context-dot 唯一消费者） */
+  --success-halo: 0 0 0 4px rgba(31, 122, 61, .15);
+  --warning: #a16207;      /* 派生：标准琥珀克制化 */
+  --warning-soft: rgba(161, 98, 7, .12);
+  --error: #c8102e;       /* 派生：标准红克制化 */
+  --error-deep: #a00d24;  /* 派生：红压深一阶（摘要 code 用） */
+  --info: #0000ee;        /* info = link 蓝（唯一彩兼信息色） */
+  --info-soft: #f1f1fe;   /* 派生：蓝 6% 薄纱（与 antd colorInfoBg 同源） */
+
+  /* ── Hairlines & bars（pressed #e2e2e2 兼行分隔 / soft #efefef 软线 / mid #4b4b4b 强线） ── */
+  --hairline: #e2e2e2;           /* surface-pressed 兼分隔（规格 rowBorder / item-divider） */
+  --hairline-soft: #efefef;      /* canvas-soft 软线 */
+  --hairline-strong: #4b4b4b;    /* 规格 hairline-mid：滚动条/强线 */
+  --hairline-card: #e2e2e2;
+  --hairline-inset: #e2e2e2;
+  --hairline-mid: #efefef;       /* 区块顶分隔 = 软线 */
+  --hairline-rail: #e2e2e2;
+  --hairline-codex: #e2e2e2;
+  --hairline-detail: #e2e2e2;
+  --hairline-json: rgba(255, 255, 255, .14); /* json 深块内缘 = 白 alpha（黑面上） */
+  --hairline-dashed: #afafaf;    /* 空态虚线 = mute 灰可见档 */
+  --hairline-legacy: #afafaf;
+  --hairline-row: #e2e2e2;
+  --hairline-draft: #afafaf;
+  --bar-value: #afafaf;   /* value-list 左规线 = 中性灰 */
+  --bar-matrix: #afafaf;
+  --bar-summary: #4b4b4b; /* summary 左条 = 深灰（近数据墨） */
+  --bar-usage: #000000;   /* codex 用量轨 = 纯黑数据墨（vercel 先例的纯黑版） */
+
+  /* ── Overlays & shadows（黑 alpha 覆盖系 + 规格 Level 1 面板投影） ── */
+  --overlay-faint: rgba(0, 0, 0, .03);
+  --overlay-soft: #efefef;       /* 导航 hover = canvas-soft 灰 */
+  --overlay-line: rgba(0, 0, 0, .08); /* nav 分组线 */
+  --overlay-medium: rgba(0, 0, 0, .06);
+  --shadow-panel: rgba(0, 0, 0, 0.12) 0px 4px 16px 0px; /* 规格 Level 1 subtle drop（card-elevated） */
+
+  /* ── brand-mark（纯黑药丸座 + 灰阶三条：白/中灰/深灰；形态见片段） ── */
+  --brand-frame-bg: #000000;      /* 极性翻转黑面（黑 promo 带的徽标化身） */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;     /* Level 0 扁平 */
+  --brand-bar-1: #ffffff;         /* 灰阶三条：白 */
+  --brand-bar-2: #afafaf;         /* mute 中灰 */
+  --brand-bar-3: #5e5e5e;         /* body 深灰 */
+  --brand-bar-inset: none;        /* 平涂色条，无光效 */
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;       /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #000000;       /* 当前导航指示 = 主操作黑（ex-app-shell-row activeIndicator） */
+
+  /* ── 登录页（白卡 + 黑 showcase：规格 showcase-image-card「GO•GET」的 showroom 时刻） ── */
+  --login-bg: #ffffff;
+  --login-shell-border: #e2e2e2;  /* 行分隔线档描边 */
+  --login-shell-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px 0px; /* 规格 Level 2（request-form 卡） */
+  --login-showcase-bg: #000000;   /* showcase = ink 黑大卡（极性翻转） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .06); /* 极淡网格（编辑插画底噪替身） */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%); /* 黑面上均匀淡纹 */
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #afafaf;
+  --login-signal-bg: #282828;     /* signal = black-elevated（黑面上的抬升 chip） */
+  --login-signal-border: rgba(255, 255, 255, .12);
+  --login-signal-shadow: none;
+  --login-signal-bar: #ffffff;    /* signal 三条 = 白（同 brand-mark 形态） */
+  --login-kicker: #afafaf;        /* kicker = 眉签（唯一合法大写，见片段） */
+  --login-heading: #ffffff;       /* showcase 大字 = 白 display 700（见片段） */
+  --login-copy: rgba(255, 255, 255, .72);
+  --login-preview-bg: #282828;    /* 展示板内嵌预览卡 = 抬升阶 */
+  --login-preview-border: rgba(255, 255, 255, .12);
+  --login-preview-shadow: none;
+  --login-preview-divider: rgba(255, 255, 255, .1);
+  --login-preview-dot: #ffffff;   /* 数据点 = 白（黑面上的数据墨） */
+  --login-preview-dot-soft: rgba(255, 255, 255, .35);
+  --login-preview-label: rgba(255, 255, 255, .55);
+  --login-preview-row-line: rgba(255, 255, 255, .1);
+  --login-preview-row-ink: rgba(255, 255, 255, .85);
+  --login-preview-chip-ink: #ffffff;
+  --login-preview-chip-bg: rgba(255, 255, 255, .14);
+  --login-preview-bar: rgba(255, 255, 255, .3);
+  --login-foot: #afafaf;
+  --login-card-kicker: #5e5e5e;   /* 白卡侧 eyebrow = body 灰 */
+  --login-card-heading: #000000;
+  --login-card-copy: #5e5e5e;
+  --login-notice-border: #e2e2e2; /* 通知 = 灰系软面（蓝只留给链接，不染通知） */
+  --login-notice-bg: #efefef;
+  --login-notice-ink: #4b4b4b;
+  --login-label: #4b4b4b;
+  --login-input-border: #e2e2e2;  /* 输入描边（面 = antd Input 灰填充 #efefef） */
+  --login-input-border-hover: #4b4b4b; /* hover 转深灰（黑边过重，取 hairline-mid） */
+  --login-primary: #000000;       /* 主 CTA = 黑药丸（白字走 antd colorTextLightSolid） */
+  --login-primary-active: #282828;
+}
+
+/* ============================================================
+   uber 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="uber"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 墨色选区（黑底白字 = 极性翻转的最小表达）+ 黑 2px 焦点环 ── */
+[data-theme="uber"] ::selection { background: rgba(0, 0, 0, .82); color: #ffffff; }
+[data-theme="uber"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 系统滚动条：细、mute 灰、圆头（药丸几何贯穿到底） ── */
+[data-theme="uber"] * { scrollbar-width: thin; scrollbar-color: #afafaf transparent; }
+[data-theme="uber"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="uber"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="uber"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #afafaf; background-clip: padding-box; }
+[data-theme="uber"] ::-webkit-scrollbar-thumb:hover { background: #4b4b4b; background-clip: padding-box; }
+
+/* ── 药丸按钮兜底：字重 500（规格 button-md；700 只属于标题），
+      追字一律 0（规格「never letter-spaces」） ── */
+[data-theme="uber"] .ant-btn { border-radius: 999px; font-weight: 500; letter-spacing: 0; }
+
+/* ── 眉签：section eyebrow 是唯一合法大写（规格「WHY BECOME」例外） ── */
+[data-theme="uber"] .page-heading__eyebrow,
+[data-theme="uber"] .panel-kicker,
+[data-theme="uber"] .section-label {
+  color: var(--mute);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+/* context-bar 页标题回落句首大写（sentence-case 是语声；先例：tesla.css 同名补正） */
+[data-theme="uber"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0; text-transform: none; }
+
+/* ── 表头：body-sm-strong 语声 = 500 字重、无大写变换（灰面由 antd 承担） ── */
+[data-theme="uber"] .admin-table .ant-table-thead > tr > th {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── brand-mark 重绘：纯黑药丸座内三根圆头条（白/中灰/深灰 —— 黑白二重唱） ── */
+[data-theme="uber"] .brand-mark { background: var(--brand-frame-bg); border-color: transparent; box-shadow: none; border-radius: 999px; }
+[data-theme="uber"] .brand-mark span { border-radius: 999px; box-shadow: none; }
+[data-theme="uber"] .brand-mark span:nth-child(1) { opacity: 1; background: var(--brand-bar-1); }
+[data-theme="uber"] .brand-mark span:nth-child(2) { background: var(--brand-bar-2); }
+[data-theme="uber"] .brand-mark span:nth-child(3) { background: var(--brand-bar-3); }
+[data-theme="uber"] .brand-mark::after { display: none; }
+
+/* ── 登录 showcase：黑大卡白 display 字（40px≈display-lg 缩一档 / 700 / 1.2 行高） ── */
+[data-theme="uber"] .login-page__showcase-copy h2 { font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: 0; }
+[data-theme="uber"] .login-page__showcase-copy > span,
+[data-theme="uber"] .login-page__card-heading > span {
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+/* ── 登录 signal：brand-mark 同款黑抬升 chip + 白圆头条 ── */
+[data-theme="uber"] .login-page__signal { box-shadow: none; }
+[data-theme="uber"] .login-page__signal span { border-radius: 999px; background: #ffffff; }
+
+/* ── 登录卡片：输入灰填充（规格 text-input bg canvas-soft）+ 主 CTA 黑药丸 44px 触达高 ── */
+[data-theme="uber"] .login-page__card .ant-input,
+[data-theme="uber"] .login-page__card .ant-input-affix-wrapper { background: #efefef; }
+[data-theme="uber"] .login-page__card .ant-btn-primary { min-height: 44px; border-radius: 999px; }

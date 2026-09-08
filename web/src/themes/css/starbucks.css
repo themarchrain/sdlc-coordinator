@@ -1,0 +1,299 @@
+/* ============================================================
+   starbucks 主题令牌块 —— 规格驱动（starbucks 设计语言），
+   无参考实现；规格为叙述体、无令牌表，色值全部自正文角色句提取，
+   按角色映射进 162 令牌超集。
+   Starbucks 设计语言（暖奶油旗舰零售）：
+   - 暖奶油画布：--canvas #f2f0eb（Neutral Warm 主页底）与 --canvas-soft
+     #edebe9（Ceramic 分区洗）交替；白卡 #ffffff 浮于其上，留白代分隔
+   - 四档绿角色制：Starbucks #006241（h1/区块标题/按压深档）/
+     Accent #00754a（主 CTA/Frap 填充）/ House #1e3932（bookend 深带、
+     暗面：json 深卡/tooltip/登录展示板）/ Uplift #2b5148（深面装饰档）；
+     Green Light #d4e9e2 淡薄荷洗 = 当前导航/info 软面/成功淡洗
+   - 金 #cba258 只落 Rewards 仪式位：登录展示板星点/chip（200★ 语汇）；
+     不作通用 accent（规格 Don't 明令）
+   - 文字：Text Black rgba(0,0,0,.87)（非纯黑，匹配暖底）/ Soft .58 /
+     Rewards Green #33433d 微尘读色 → 标签级；黑 alpha 阶（10% 步进）承担 faint
+   - 形态：50px 全药丸按钮 + scale(0.95) 按压、12px 圆角卡、
+     耳语双层卡影 + 导航三层软抬升（字面值）、SoDoSans 紧排 -0.01em
+   派生值（规格未给、按设计语言推导，均在行内注明）：
+     warning 深化 #97690f（Yellow #fbbc05 在奶油底上文字级对比不足）
+     hover 提亮绿 #008248（正文 Consent Agree rgb(0,130,72) 借作 hover 档）
+     表格发丝线 #e7e7e7（规格营养表 hairline 字面值）+ 控件边 #d6dbde（Input Border）
+   骨架表达不了的形态（绿圆 brand-mark、50px 药丸 + scale(0.95) 按压、
+   -0.01em 全站紧排、字重封顶 600、Lander Tall 衬线登录标题）见块后片段。
+   ============================================================ */
+[data-theme="starbucks"] {
+  /* ── Typography ───────────────────────────── */
+  /* SoDoSans 专有族（禁外部加载）→ 规格替代指引 Inter/Nunito Sans 系统栈近似；
+     mono 保持代码族；display 与 UI 同族（衬线只属 Rewards 标题时刻，见 --font-serif） */
+  --font-sans: 'SoDo Sans', SoDoSans, Inter, 'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+  --font-display: 'SoDo Sans', SoDoSans, Inter, 'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* ── Radius（规格刻度：输入/小件 4 / 卡·模态 12 / 按钮 50 全药丸 / 圆标 50%） ── */
+  --radius-xs: 4px;      /* 输入件/小内嵌（Add-in radius 4px） */
+  --radius-soft: 4px;    /* 登录预览小色块 */
+  --radius-sm: 4px;      /* 内嵌小块 */
+  --radius-md: 12px;     /* 行卡 = 卡 12px */
+  --radius-lg: 12px;     /* 指标卡 = --cardBorderRadius 12px */
+  --radius-xl: 12px;     /* 面板/模态 = 卡 12px（模态随卡规格） */
+  --radius-brand: 9999px; /* brand-mark / 登录 signal = 绿圆徽标（50% 几何） */
+  --radius-pill: 9999px; /* 迷你徽标 = 全药丸（Rewards Cost Pill 语汇） */
+  --radius-panel: 12px;  /* 登录外壳 = 卡规格 */
+
+  /* ── Canvas & surfaces（奶油画布 + 白卡 + Neutral Cool 工具面） ── */
+  --canvas: #f2f0eb;                 /* Neutral Warm：primary page canvas（正文） */
+  --canvas-soft: #edebe9;            /* Ceramic：分区洗/zone separators（交替档） */
+  --canvas-card: #ffffff;            /* 白卡/模态（--cardBackgroundColor） */
+  --canvas-dark: #1e3932;            /* House Green：bookend 深带 → json 深面 */
+  --surface-sidebar: #ffffff;        /* 全局导航白底（三层软抬升承担分隔） */
+  --surface-bar: rgba(255, 255, 255, .92);
+  --surface-inset: #f9f9f9;          /* Neutral Cool：卡内安静工具面/下拉底 */
+  --surface-matrix: #f9f9f9;
+  --surface-tint: #f9f9f9;           /* 行 hover = Neutral Cool 微沉 */
+  --surface-rail: #f9f9f9;
+  --surface-detail: #f9f9f9;
+  --surface-chip: #f9f9f9;
+  --surface-legacy: #f9f9f9;
+  --surface-draft: #edebe9;          /* draft 更沉一档 = Ceramic */
+  --surface-empty: #f9f9f9;
+  --surface-json-bar: #1e3932;       /* json 头条 = House Green bookend 带 */
+  --tooltip-bg: #1e3932;             /* House Green 反转面 */
+
+  /* ── Ink & text ladder（Text Black .87 / Soft .58 / Rewards Green 微尘档） ── */
+  --ink: rgba(0, 0, 0, .87);
+  --ink-strong: rgba(0, 0, 0, .87);
+  --ink-display: rgba(0, 0, 0, .87);
+  --ink-heading: #006241;            /* H1/区块标题 = Starbucks Green（「used on h1 headings」） */
+  --ink-value: rgba(0, 0, 0, .87);
+  --ink-repo: rgba(0, 0, 0, .87);
+  --ink-step: rgba(0, 0, 0, .87);
+  --ink-label-strong: rgba(0, 0, 0, .87);
+  --ink-label: #33433d;              /* 字段标签 = Rewards Green 微尘读色 */
+  --ink-row: rgba(0, 0, 0, .87);
+  --ink-list: #33433d;               /* value-list li = Rewards Green */
+  --ink-data: rgba(0, 0, 0, .87);
+  --ink-field: #33433d;
+  --ink-rail: rgba(0, 0, 0, .87);
+  --ink-rail-value: rgba(0, 0, 0, .87);
+  --ink-secret: #33433d;
+  --ink-chip: #33433d;
+  --body: rgba(0, 0, 0, .87);        /* Text Black：正文即 .87 黑（「never pure black」） */
+  --body-alt: rgba(0, 0, 0, .58);    /* Text Black Soft：次级/元数据 */
+  --body-soft: rgba(0, 0, 0, .58);
+  --mute: #33433d;                   /* Rewards Green：微尘读色 → 标签/小注档 */
+  --mute-deep: rgba(0, 0, 0, .87);   /* 卡片标题抬回正文级 */
+  --mute-inline: #33433d;
+  --mute-caption: #33433d;
+  --mute-intro: #33433d;
+  --mute-terse: #33433d;
+  --mute-quiet: #33433d;
+  --mute-soft: #33433d;
+  --mute-dim: #33433d;
+  --mute-draft: #33433d;
+  --mute-json: rgba(255, 255, 255, .72); /* json 深头条上的字（Text White Soft 近旁档） */
+  --mute-matrix: #33433d;
+  --faint: rgba(0, 0, 0, .5);        /* 黑 alpha 阶（规格 10% 步进梯） */
+  --faint-alt: rgba(0, 0, 0, .5);
+  --faint-soft: rgba(0, 0, 0, .5);
+  --faint-ghost: rgba(0, 0, 0, .5);
+  --faint-hint: rgba(0, 0, 0, .5);
+  --faint-meta: rgba(0, 0, 0, .5);
+  --faint-note: rgba(0, 0, 0, .5);
+  --faint-empty: rgba(0, 0, 0, .4);  /* 空态最弱级 = alpha 阶下一档 */
+  --on-dark: #ffffff;                /* 深绿带上的字 = Text White */
+  --on-dark-soft: rgba(255, 255, 255, .7); /* Text White Soft（字面值） */
+  --on-dark-faint: rgba(255, 255, 255, .55);
+
+  /* ── Primary / link / focus（CTA = Green Accent；按压回落历史绿） ── */
+  --primary: #00754a;                /* Green Accent：主填充 CTA（Button 1） */
+  --primary-active: #006241;         /* Starbucks Green：按压压深（四绿家族内回落） */
+  --on-primary: #ffffff;
+  --link: #00754a;                   /* 链接 = Green Accent（Back Link「14/700 green-accent」） */
+  --link-hover: #006241;
+  --focus-ring: rgba(0, 117, 74, .3); /* 派生：Accent 绿 30% 焦点环 */
+  --primary-veil: rgba(212, 233, 226, .5); /* 当前导航 = Green Light 淡洗（valid 淡洗同族） */
+
+  /* ── Semantic（success 走四绿系统；warning 黄深化；error 规格红） ── */
+  --success: #00754a;                /* 成功 = CTA 绿（系统不引入第五绿） */
+  --success-halo: 0 0 0 4px rgba(0, 117, 74, .14);
+  --warning: #97690f;                /* 派生：Yellow #fbbc05 深化到文字/节点级 */
+  --warning-soft: rgba(251, 188, 5, .2); /* Yellow 20% 淡洗（legacy 黄的软面） */
+  --error: #c82014;                  /* Red：error/destructive（字面值） */
+  --error-deep: #a0140c;             /* 派生：红压深一档 */
+  --info: #006241;                   /* info = Starbucks Green（与 CTA 绿分轨） */
+  --info-soft: #d4e9e2;              /* Green Light 淡薄荷洗（字面值） */
+
+  /* ── Hairlines & bars（暖调发丝线双阶 + 绿色数据条） ── */
+  --hairline: #e7e7e7;               /* 营养表 hairline（字面值）→ 通用分隔 */
+  --hairline-soft: #edebe9;          /* Ceramic 软分隔 */
+  --hairline-strong: #d6dbde;        /* Input Border（字面值）→ 控件强边 */
+  --hairline-card: #e7e7e7;
+  --hairline-inset: #e7e7e7;
+  --hairline-mid: #e7e7e7;
+  --hairline-rail: #e7e7e7;
+  --hairline-codex: #e7e7e7;
+  --hairline-detail: #e7e7e7;
+  --hairline-json: #1e3932;          /* json 深卡铬与头条同面（House Green） */
+  --hairline-dashed: #d6dbde;        /* 空态虚线 = 控件边保可见 */
+  --hairline-legacy: #d6dbde;
+  --hairline-row: #e7e7e7;
+  --hairline-draft: #d6dbde;
+  --bar-value: #d6dbde;              /* value-list 左规线 = Input Border 中性 */
+  --bar-matrix: #d6dbde;
+  --bar-summary: #33433d;            /* 摘要左规线 = Rewards Green 数据墨 */
+  --bar-usage: #00754a;              /* 用量轨 = Green Accent 功能绿 */
+
+  /* ── Overlays & shadows（黑 alpha 阶 + 耳语双层卡影/三层导航影字面值） ── */
+  --overlay-faint: rgba(0, 0, 0, .04);
+  --overlay-soft: rgba(0, 0, 0, .05);   /* nav hover 微高亮 */
+  --overlay-line: rgba(0, 0, 0, .07);
+  --overlay-medium: rgba(0, 0, 0, .08);
+  --shadow-panel: 0 0 .5px 0 rgba(0, 0, 0, .14), 0 1px 1px 0 rgba(0, 0, 0, .24); /* --cardBoxShadow 字面值 */
+
+  /* ── brand-mark（Starbucks Green 圆徽 + 三根白条；三层软抬升；形态见片段） ── */
+  --brand-frame-bg: #006241;         /* Starbucks Green 圆形徽标底 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: 0 1px 3px rgba(0, 0, 0, .1), 0 2px 2px rgba(0, 0, 0, .06), 0 0 2px rgba(0, 0, 0, .07); /* Global Nav 三层软抬升（字面值） */
+  --brand-bar-1: #ffffff;            /* 徽标三白条（白字于绿底的图标版） */
+  --brand-bar-2: #ffffff;
+  --brand-bar-3: #ffffff;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #d4e9e2;              /* 角标 = Green Light（金不进通用装饰位） */
+  --brand-dot-border: #ffffff;
+  --brand-dot-glow: none;
+  --nav-indicator: #006241;          /* 当前导航指示条 = Starbucks Green */
+
+  /* ── 登录页（奶油画布 + 白壳卡 + House Green Rewards 展示带） ── */
+  --login-bg: #f2f0eb;               /* Neutral Warm 页底 */
+  --login-shell-border: #e7e7e7;
+  --login-shell-shadow: 0 22px 55px rgba(30, 57, 50, .12); /* 派生：House 色调重投影 */
+  --login-showcase-bg: #1e3932;      /* House Green hero 带（「Free coffee…」hero band 同面） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(43, 81, 72, .6); /* Green Uplift 装饰档作深带网格线 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: rgba(255, 255, 255, .7); /* Text White Soft */
+  --login-signal-bg: #006241;        /* signal = 绿圆徽标（brand-mark 同款） */
+  --login-signal-border: transparent;
+  --login-signal-shadow: 0 1px 3px rgba(0, 0, 0, .1), 0 2px 2px rgba(0, 0, 0, .06), 0 0 2px rgba(0, 0, 0, .07);
+  --login-signal-bar: #ffffff;
+  --login-kicker: #d4e9e2;           /* 深带 kicker = Green Light（暖薄荷小签） */
+  --login-heading: #ffffff;
+  --login-copy: rgba(255, 255, 255, .7); /* Text White Soft */
+  --login-preview-bg: #2b5148;       /* Green Uplift 面板：深带内嵌装饰档 */
+  --login-preview-border: rgba(255, 255, 255, .12);
+  --login-preview-shadow: none;      /* 深带内克制（海拔留给壳卡） */
+  --login-preview-divider: rgba(255, 255, 255, .14);
+  --login-preview-dot: #cba258;      /* 数据点 = Gold（Rewards 星点仪式位） */
+  --login-preview-dot-soft: #dfc49d; /* Gold Light */
+  --login-preview-label: rgba(255, 255, 255, .7);
+  --login-preview-row-line: rgba(255, 255, 255, .12);
+  --login-preview-row-ink: #ffffff;
+  --login-preview-chip-ink: #cba258; /* chip = 200★ Cost Pill 语汇（金字金描） */
+  --login-preview-chip-bg: rgba(203, 162, 88, .16);
+  --login-preview-bar: #d4e9e2;      /* 预览进度条 = Green Light 淡薄荷 */
+  --login-foot: rgba(0, 0, 0, .58);
+  --login-card-kicker: #006241;      /* 白卡侧 eyebrow = Starbucks Green 品牌标题色 */
+  --login-card-heading: rgba(0, 0, 0, .87);
+  --login-card-copy: rgba(0, 0, 0, .58);
+  --login-notice-border: #d4e9e2;    /* 公告条 = 薄荷洗软面（info 同族） */
+  --login-notice-bg: rgba(212, 233, 226, .4);
+  --login-notice-ink: #33433d;
+  --login-label: rgba(0, 0, 0, .87);
+  --login-input-border: #d6dbde;     /* Input Border（字面值） */
+  --login-input-border-hover: #00754a; /* 聚焦边转 Green Accent（「Focus border shifts to Green Accent」） */
+  --login-primary: #00754a;          /* Green Accent 药丸 CTA */
+  --login-primary-active: #006241;
+
+  /* ── starbucks 特有补充令牌（超集之外，下方专属片段消费） ── */
+  --font-serif: 'Lander Tall', 'Iowan Old Style', Lora, 'Source Serif Pro', Georgia, serif; /* Rewards 衬线（规格替代指引栈） */
+}
+
+/* ============================================================
+   starbucks 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="starbucks"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 全站紧排 -0.01em（「applied almost universally」；随作用域根继承） ── */
+[data-theme="starbucks"] { letter-spacing: -.01em; }
+
+/* ── 淡薄荷选区（Green Light 的功能性使用） ── */
+[data-theme="starbucks"] ::selection { background: rgba(212, 233, 226, .85); color: rgba(0, 0, 0, .87); }
+
+/* ── 系统滚动条：细、Input Border、圆头（药丸词汇） ── */
+[data-theme="starbucks"] * { scrollbar-width: thin; scrollbar-color: #d6dbde transparent; }
+[data-theme="starbucks"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="starbucks"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="starbucks"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #d6dbde; }
+[data-theme="starbucks"] ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, .4); }
+
+/* ── 50px 药丸签名：all .2s ease 过渡 + scale(0.95) 按压
+      （「Active state transform scale(0.95) … transition all 0.2s ease」） ── */
+[data-theme="starbucks"] .ant-btn { transition: all .2s ease; }
+[data-theme="starbucks"] .ant-btn:active { transform: scale(.95); }
+
+/* ── 药丸导航：pill 词汇延伸到侧栏项（非按钮不受 antd 管辖） ── */
+[data-theme="starbucks"] .workspace-nav a { border-radius: 9999px; }
+
+/* ── 字重带 400–600：标题 600（H1 规格）、数值/标签封顶 600（骨架默认 650–700） ── */
+[data-theme="starbucks"] .brand-block strong,
+[data-theme="starbucks"] .panel-heading h2,
+[data-theme="starbucks"] .business-outcomes__card > span,
+[data-theme="starbucks"] .business-outcomes__card > strong,
+[data-theme="starbucks"] .ratio-card__title,
+[data-theme="starbucks"] .ratio-card > strong,
+[data-theme="starbucks"] .codex-metric > strong,
+[data-theme="starbucks"] .codex-token-ledger strong,
+[data-theme="starbucks"] .configuration-status-rail > div > strong,
+[data-theme="starbucks"] .configuration-summary-grid strong,
+[data-theme="starbucks"] .configuration-step-copy h2,
+[data-theme="starbucks"] .configuration-summary h2,
+[data-theme="starbucks"] .configuration-inline-title h3,
+[data-theme="starbucks"] .connector-configuration-step__heading h3,
+[data-theme="starbucks"] .repo-row strong,
+[data-theme="starbucks"] .intent-row strong,
+[data-theme="starbucks"] .duration-card strong,
+[data-theme="starbucks"] .duration-section__heading strong,
+[data-theme="starbucks"] .value-list__title,
+[data-theme="starbucks"] .connector-watch__item strong,
+[data-theme="starbucks"] .detail-section h3,
+[data-theme="starbucks"] .admin-table .ant-table-thead > tr > th,
+[data-theme="starbucks"] .audit-json > summary,
+[data-theme="starbucks"] .login-page__brand strong,
+[data-theme="starbucks"] .login-page__showcase-copy h2,
+[data-theme="starbucks"] .login-page__card h1 { font-weight: 600; }
+[data-theme="starbucks"] .metric-matrix strong { font-weight: 600; }
+
+/* ── 页头 eyebrow / 面板 kicker：Starbucks Green 大写宽字距小签
+      （letterSpacingLoose .1em emphasized caps + 标题绿角色） ── */
+[data-theme="starbucks"] .page-heading__eyebrow,
+[data-theme="starbucks"] .panel-kicker,
+[data-theme="starbucks"] .section-label { color: #006241; font-family: var(--font-sans); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+/* context-bar 页标题不受 kicker 化影响（先例：tesla.css 同名补正） */
+[data-theme="starbucks"] .context-heading-slot .page-heading__eyebrow { color: var(--ink); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; text-transform: none; }
+
+/* ── brand-mark 重绘：Starbucks Green 圆徽 + 居中三根白条
+      （siren 圆徽的抽象；角标 = Green Light 小点，金不进通用位） ── */
+[data-theme="starbucks"] .brand-mark { align-items: center; padding: 0; gap: 3px; }
+[data-theme="starbucks"] .brand-mark span { width: 4px; border-radius: 9999px; box-shadow: none; }
+[data-theme="starbucks"] .brand-mark span:nth-child(1) { height: 13px; opacity: 1; }
+[data-theme="starbucks"] .brand-mark span:nth-child(2) { height: 20px; }
+[data-theme="starbucks"] .brand-mark span:nth-child(3) { height: 16px; }
+@media (max-width: 760px) {
+  [data-theme="starbucks"] .brand-mark span:nth-child(1) { height: 10px; }
+  [data-theme="starbucks"] .brand-mark span:nth-child(2) { height: 16px; }
+  [data-theme="starbucks"] .brand-mark span:nth-child(3) { height: 13px; }
+}
+
+/* ── 登录 showcase：Rewards 衬线标题时刻（Lander Tall 只属 Rewards headline，
+      管理台内唯一合法落点 = 登录展示板大标题；「serif for Rewards headlines」） ── */
+[data-theme="starbucks"] .login-page__showcase-copy h2 { font-family: var(--font-serif); }
+
+/* ── 登录 signal = 绿圆徽标同款（居中三白条） ── */
+[data-theme="starbucks"] .login-page__signal { align-items: center; padding: 0; gap: 3px; }
+[data-theme="starbucks"] .login-page__signal span { width: 4px; border-radius: 9999px; }
+
+/* ── 登录预览 chip/em = 200★ Cost Pill 全药丸（金描仪式位） ── */
+[data-theme="starbucks"] .login-page__preview-row em { border-radius: 9999px; }

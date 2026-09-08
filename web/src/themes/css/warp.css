@@ -1,0 +1,298 @@
+/* ============================================================
+   warp 主题令牌块 —— 规格驱动（warp 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Warp 设计语言（暖棕终端暗画布）：
+   - 表面阶：canvas #2b2622（比纯黑更棕的暖近炭）→ 卡/嵌面/输入
+     canvas-soft #383330 → json 凹陷 #221e1a（推导暖深阶）
+   - 唯一的「颜色」是暖白 #f7f5f0：同时充当 ink、主 CTA 填充与
+     wordmark（无彩色品牌强调）；实底主按钮 = 暖白底 + 暖深字
+   - 文字阶梯：ink #f7f5f0 / body-strong #dad2c1 / body #c9c0ad /
+     mute #aea69c（全部带暖色温）
+   - 发丝线双轨：#3f3a36（规格 hairline，卡/输入边）/ #37322e（近隐
+     内部分隔）；强线 #554e47（推导，滚动条/空态虚线）
+   - 语义色：规格无语义色板 → 暖调低饱和推导（绿 #8fbf7f /
+     琥珀 #d9a253 / 赤陶红 #e07a5f / 石板蓝 #94a7bd）
+   - 海拔 = 面阶 + 发丝线（规格：营销面无软投影；浮层仅留功能性分离影）
+   骨架表达不了的形态（brand-mark 三 span 终端光标、表头 mono-caps、
+   400/500 字重纪律、负字距标题、Instrument Serif 编辑斜体、暖色滚动条）
+   见块后片段。
+   ============================================================ */
+[data-theme="warp"] {
+  color-scheme: dark;
+
+  /* ── Typography ───────────────────────────── */
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-display: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; /* 展示位 = Inter 400/500；Instrument Serif 只作罕见编辑斜体（见片段） */
+
+  /* ── Radius（规格刻度：chips 2 / 按钮·输入 3 / 卡 4 / 大卡·面板 6 / 状态药丸 9999） ── */
+  --radius-xs: 2px;      /* 规格 rounded.xs：inline very-small chips */
+  --radius-soft: 2px;    /* 登录预览小色块 = 规格 xs */
+  --radius-sm: 3px;      /* 按钮/输入 = 规格 rounded.sm「extremely tight」 */
+  --radius-md: 4px;      /* 行卡 = 规格 rounded.md 卡基 */
+  --radius-lg: 4px;      /* 指标卡 = 卡基 4px */
+  --radius-xl: 6px;      /* 面板/对话框 = 规格 rounded.lg */
+  --radius-brand: 4px;   /* brand-mark = 卡基 chrome */
+  --radius-pill: 9999px; /* 迷你徽标 = 规格 pill（仅限状态药丸） */
+  --radius-panel: 6px;   /* 登录外壳 = 规格 lg */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #2b2622;                 /* 暖近炭画布（规格 canvas，oklch 暖色调出的棕） */
+  --canvas-soft: #383330;            /* 嵌面卡/表头 = 规格 canvas-soft（card-content） */
+  --canvas-card: #383330;            /* 面板/卡（card-content 同 chrome） */
+  --canvas-dark: #221e1a;            /* json pre 凹陷面（推导：比画布再深一档的暖阶，终端 recess 质感） */
+  --surface-sidebar: #2b2622;        /* 规格 nav-bar：导航与画布同底 */
+  --surface-bar: rgba(43, 38, 34, .92);
+  --surface-inset: #383330;          /* 卡内交互/输入 = 规格 text-input 底 canvas-soft */
+  --surface-matrix: #383330;
+  --surface-tint: #3e3934;           /* 表行 hover = 面阶上浮一阶（推导） */
+  --surface-rail: #383330;
+  --surface-detail: #383330;
+  --surface-chip: #383330;
+  --surface-legacy: #383330;
+  --surface-draft: #383330;
+  --surface-empty: transparent;      /* 空态不叠面，虚线框承担（同 spotify 暗色先例） */
+  --surface-json-bar: #413c37;       /* json 头条 = 卡面上浮一阶（推导） */
+  --tooltip-bg: #3f3a36;             /* 浮层提示 = 发丝线色阶（推导：卡面之上的暖阶） */
+
+  /* ── Ink & text ladder（坍缩为 暖白 #f7f5f0 / body-strong #dad2c1 / body #c9c0ad / mute #aea69c） ── */
+  --ink: #f7f5f0;
+  --ink-strong: #f7f5f0;
+  --ink-display: #f7f5f0;
+  --ink-heading: #f7f5f0;
+  --ink-value: #f7f5f0;
+  --ink-repo: #f7f5f0;
+  --ink-step: #f7f5f0;
+  --ink-label-strong: #f7f5f0;
+  --ink-label: #f7f5f0;
+  --ink-row: #f7f5f0;
+  --ink-list: #f7f5f0;
+  --ink-data: #f7f5f0;
+  --ink-field: #f7f5f0;
+  --ink-rail: #f7f5f0;
+  --ink-rail-value: #f7f5f0;
+  --ink-secret: #dad2c1;             /* 密钥值 = 中强调 body-strong */
+  --ink-chip: #dad2c1;
+  --body: #c9c0ad;                   /* 规格 body：次级正文 */
+  --body-alt: #dad2c1;               /* 规格 body-strong：中强调正文 */
+  --body-soft: #c9c0ad;
+  --mute: #aea69c;                   /* 规格 mute：最低优先级文字 */
+  --mute-deep: #c9c0ad;              /* 暗底上「更深」= 更亮：标签比 mute 高半档 */
+  --mute-inline: #aea69c;
+  --mute-caption: #aea69c;
+  --mute-intro: #aea69c;
+  --mute-terse: #aea69c;
+  --mute-quiet: #aea69c;
+  --mute-soft: #aea69c;
+  --mute-dim: #aea69c;
+  --mute-draft: #aea69c;
+  --mute-json: #aea69c;
+  --mute-matrix: #aea69c;
+  --faint: #aea69c;
+  --faint-alt: #aea69c;
+  --faint-soft: #aea69c;
+  --faint-ghost: #aea69c;
+  --faint-hint: #aea69c;
+  --faint-meta: #aea69c;
+  --faint-note: #aea69c;
+  --faint-empty: #aea69c;
+  --on-dark: #f7f5f0;
+  --on-dark-soft: #dad2c1;           /* json 深块文字 */
+  --on-dark-faint: #aea69c;          /* sparkline 提示日期 */
+
+  /* ── Primary / link / focus（暖白一族；ink 即 primary 的规格原文） ── */
+  --primary: #f7f5f0;                /* 规格 primary：暖白 = 主 CTA 填充 */
+  --primary-active: #e6e1d8;         /* 按压压深（推导：规格未给 hover/active，暖白唯一暗方向） */
+  --on-primary: #2b2622;             /* 规格 on-primary：暖白底上的暖深字 */
+  --link: #f7f5f0;                   /* 链接 = 暖白（默认文字即交互信号） */
+  --link-hover: #ffffff;             /* hover 提亮到纯白（推导） */
+  --focus-ring: rgba(247, 245, 240, .45);
+  --primary-veil: rgba(247, 245, 240, .08); /* 激活导航 = 暖白薄纱（推导） */
+
+  /* ── Semantic（推导：规格无语义色板 → 暖调低饱和、暗底可读的终端语义色） ── */
+  --success: #8fbf7f;                /* 暖绿（推导） */
+  --success-halo: 0 0 0 4px rgba(143, 191, 127, .14);
+  --warning: #d9a253;                /* 琥珀（推导） */
+  --warning-soft: rgba(217, 162, 83, .14);
+  --error: #e07a5f;                  /* 赤陶红（推导，与暖画布同体温） */
+  --error-deep: #c9654f;             /* 按压深一档（推导） */
+  --info: #94a7bd;                   /* 低饱和石板蓝（推导：无彩色约束下的 info 区分色） */
+  --info-soft: rgba(148, 167, 189, .12);
+
+  /* ── Hairlines & bars（规格 hairline #3f3a36 / 近隐内部分隔 #37322e / 强线 #554e47 推导） ── */
+  --hairline: #3f3a36;               /* 规格 hairline：卡/输入 1px 边 */
+  --hairline-soft: #37322e;          /* 近隐内部分隔（推导：介于画布与卡面之间） */
+  --hairline-strong: #554e47;        /* 强线 = 滚动条/空态虚线（推导暖强阶） */
+  --hairline-card: #3f3a36;          /* 卡外线 = 规格 card chrome 发丝线 */
+  --hairline-inset: #3f3a36;         /* 输入边 = 规格 text-input borderColor */
+  --hairline-mid: #37322e;
+  --hairline-rail: #3f3a36;
+  --hairline-codex: #37322e;
+  --hairline-detail: #3f3a36;
+  --hairline-json: #3f3a36;
+  --hairline-dashed: #554e47;        /* 空态虚线需要可见 = 强线 */
+  --hairline-legacy: #554e47;
+  --hairline-row: #37322e;           /* 表行分隔近隐 */
+  --hairline-draft: #554e47;
+  --bar-value: #554e47;              /* 左色条一律无彩（暖强阶，推导） */
+  --bar-matrix: #554e47;
+  --bar-summary: #8a8178;            /* 摘要条再亮一档（推导暖银） */
+  --bar-usage: #c9c0ad;              /* codex 用量进度 = body 暖银（无彩色纪律） */
+
+  /* ── Overlays & shadows（暖白薄纱 hover；海拔 = 面阶 + 发丝线） ── */
+  --overlay-faint: rgba(247, 245, 240, .03);
+  --overlay-soft: rgba(247, 245, 240, .05); /* 导航 hover = 暖白薄纱 */
+  --overlay-line: rgba(247, 245, 240, .06);
+  --overlay-medium: rgba(247, 245, 240, .08);
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, .4); /* 推导：规格营销面无软投影，浮层仅留功能性分离影 */
+
+  /* ── brand-mark（#383330 卡 chrome + 发丝线，三 span = 终端光标 + 暖银拖影；形态见片段） ── */
+  --brand-frame-bg: #383330;
+  --brand-frame-border: #3f3a36;
+  --brand-frame-shadow: none;        /* 规格：卡不发投影 */
+  --brand-bar-1: #f7f5f0;            /* 块状光标 = 品牌暖白 */
+  --brand-bar-2: #c9c0ad;            /* 拖影 = body */
+  --brand-bar-3: #aea69c;            /* 拖影 = mute */
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: transparent;          /* 角标隐藏（片段 display:none） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #f7f5f0;          /* 当前导航指示条 = 品牌暖白（ex-app-shell activeIndicator: primary） */
+
+  /* ── 登录页（暖棕画布 + canvas-soft 展示板 + 暖白 CTA + 暖深凹陷终端预览） ── */
+  --login-bg: #2b2622;
+  --login-shell-border: #3f3a36;     /* auth 卡 chrome = 发丝线 */
+  --login-shell-shadow: 0 8px 24px rgba(0, 0, 0, .4); /* 推导：ex-modal「elevated shadow」 */
+  --login-showcase-bg: #383330;      /* 展示板 = 规格 canvas-soft tile */
+  --login-showcase-ink: #f7f5f0;
+  --login-grid-line: rgba(247, 245, 240, .05);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #f7f5f0;
+  --login-brand-mute: #aea69c;
+  --login-signal-bg: #383330;        /* signal = brand-mark 同款终端光标（见片段） */
+  --login-signal-border: #3f3a36;
+  --login-signal-shadow: none;
+  --login-signal-bar: #f7f5f0;
+  --login-kicker: #aea69c;           /* kicker = mute 小标签（mono-caps 见片段） */
+  --login-heading: #f7f5f0;
+  --login-copy: #c9c0ad;
+  --login-preview-bg: #221e1a;       /* 展示板内终端预览 = 暖深凹陷（推导，同 json recess） */
+  --login-preview-border: #3f3a36;
+  --login-preview-shadow: none;
+  --login-preview-divider: #3f3a36;
+  --login-preview-dot: #8fbf7f;      /* 在线绿点 = 推导语义绿（功能性彩色） */
+  --login-preview-dot-soft: #aea69c;
+  --login-preview-label: #aea69c;
+  --login-preview-row-line: #3f3a36;
+  --login-preview-row-ink: #f7f5f0;
+  --login-preview-chip-ink: #f7f5f0; /* 在播 chip = 暖白字 + 暖白染（无彩色纪律） */
+  --login-preview-chip-bg: rgba(247, 245, 240, .1);
+  --login-preview-bar: #f7f5f0;      /* 进度条 = 暖白 */
+  --login-foot: #aea69c;
+  --login-card-kicker: #aea69c;
+  --login-card-heading: #f7f5f0;
+  --login-card-copy: #c9c0ad;
+  --login-notice-border: rgba(148, 167, 189, .35); /* 公告条 = 推导 info 石板蓝淡染 */
+  --login-notice-bg: rgba(148, 167, 189, .1);
+  --login-notice-ink: #c9c0ad;
+  --login-label: #f7f5f0;
+  --login-input-border: #3f3a36;     /* 规格输入 borderColor */
+  --login-input-border-hover: #554e47; /* hover 上浮到强线（推导） */
+  --login-primary: #f7f5f0;          /* 暖白 CTA（暖深字走 antd colorTextLightSolid） */
+  --login-primary-active: #e6e1d8;
+}
+
+/* ============================================================
+   warp 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="warp"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 暖白选区：极性翻转（暖白底 + 暖深字——品牌唯一的「颜色」作选区） ── */
+[data-theme="warp"] ::selection { background: rgba(247, 245, 240, .85); color: #2b2622; }
+
+/* ── 系统滚动条：细、暖强线 #554e47、近方头（紧圆角纪律） ── */
+[data-theme="warp"] * { scrollbar-width: thin; scrollbar-color: #554e47 transparent; }
+[data-theme="warp"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="warp"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="warp"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 3px; background: #554e47; background-clip: padding-box; }
+[data-theme="warp"] ::-webkit-scrollbar-thumb:hover { background: #6b635a; background-clip: padding-box; }
+
+/* ── 字重纪律：只有 400/500——标题/数值从骨架 650–700 压到 500 ── */
+[data-theme="warp"] .brand-block strong,
+[data-theme="warp"] .panel-heading h2,
+[data-theme="warp"] .business-outcomes__card > span,
+[data-theme="warp"] .business-outcomes__card > strong,
+[data-theme="warp"] .ratio-card__title,
+[data-theme="warp"] .ratio-card > strong,
+[data-theme="warp"] .codex-metric > strong,
+[data-theme="warp"] .codex-token-ledger strong,
+[data-theme="warp"] .configuration-status-rail > div > strong,
+[data-theme="warp"] .configuration-summary-grid strong,
+[data-theme="warp"] .configuration-step-copy h2,
+[data-theme="warp"] .configuration-summary h2,
+[data-theme="warp"] .configuration-inline-title h3,
+[data-theme="warp"] .connector-configuration-step__heading h3,
+[data-theme="warp"] .repo-row strong,
+[data-theme="warp"] .intent-row strong,
+[data-theme="warp"] .duration-card strong,
+[data-theme="warp"] .duration-section__heading strong,
+[data-theme="warp"] .value-list__title,
+[data-theme="warp"] .connector-watch__item strong,
+[data-theme="warp"] .detail-section h3,
+[data-theme="warp"] .admin-table .ant-table-thead > tr > th,
+[data-theme="warp"] .audit-json > summary,
+[data-theme="warp"] .login-page__brand strong,
+[data-theme="warp"] .login-page__showcase-copy h2,
+[data-theme="warp"] .login-page__card h1 { font-weight: 500; }
+
+/* ── 负字距是品牌声音（display -0.4px @24px ≈ -.017em）：大标题收紧 ── */
+[data-theme="warp"] .login-page__showcase-copy h2,
+[data-theme="warp"] .login-page__card h1 { letter-spacing: -0.017em; }
+
+/* ── Instrument Serif 编辑斜体：规格第三字体只作罕见的 tagline 瞬间（Georgia 回退） ── */
+[data-theme="warp"] .login-page__showcase-copy h2 {
+  font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* ── 表头 mono-caps eyebrow：ex-data-table「Header uses mono-caps eyebrow typography」 ── */
+[data-theme="warp"] .admin-table .ant-table-thead > tr > th,
+[data-theme="warp"] .page-heading__eyebrow,
+[data-theme="warp"] .panel-kicker,
+[data-theme="warp"] .section-label {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* ── 导航：nav-link 字重 500（规格）；当前项 = 暖白 + 暖白指示条，无彩色高亮 ── */
+[data-theme="warp"] .workspace-nav a { font-weight: 500; }
+[data-theme="warp"] .workspace-nav a[aria-current="page"] { color: #f7f5f0; }
+[data-theme="warp"] .workspace-nav a[aria-current="page"] .anticon { color: #f7f5f0; }
+
+/* ── brand-mark：canvas-soft 卡 chrome 内三 span = 块状终端光标 + 暖银拖影（1px 紧圆角） ── */
+[data-theme="warp"] .brand-mark { align-items: flex-end; padding: 0 0 7px; gap: 3px; }
+[data-theme="warp"] .brand-mark span { width: 5px; border-radius: 1px; box-shadow: none; }
+[data-theme="warp"] .brand-mark span:nth-child(1) { height: 16px; opacity: 1; }
+[data-theme="warp"] .brand-mark span:nth-child(2) { height: 9px; }
+[data-theme="warp"] .brand-mark span:nth-child(3) { height: 5px; }
+[data-theme="warp"] .brand-mark::after { display: none; }
+@media (max-width: 760px) {
+  [data-theme="warp"] .brand-mark span:nth-child(1) { height: 12px; }
+  [data-theme="warp"] .brand-mark span:nth-child(2) { height: 7px; }
+  [data-theme="warp"] .brand-mark span:nth-child(3) { height: 4px; }
+}
+
+/* ── 详情格：卡内嵌套面回落暖深凹陷（终端 recess，面阶对比承担海拔） ── */
+[data-theme="warp"] .detail-grid > div { background: var(--canvas); border-color: var(--hairline); }
+
+/* ── 登录页：signal = brand-mark 同款终端光标；预览进度条 2px 紧圆角 ── */
+[data-theme="warp"] .login-page__signal { align-items: flex-end; padding: 0 0 8px; gap: 3px; }
+[data-theme="warp"] .login-page__signal span { width: 5px; border-radius: 1px; }
+[data-theme="warp"] .login-page__signal span:nth-child(1) { height: 16px; }
+[data-theme="warp"] .login-page__signal span:nth-child(2) { height: 9px; }
+[data-theme="warp"] .login-page__signal span:nth-child(3) { height: 5px; }
+[data-theme="warp"] .login-page__preview-row strong { border-radius: 2px; }

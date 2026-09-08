@@ -19,6 +19,7 @@ export const vercelSwatches: ThemeSwatches = {
 export const vercelTheme: ThemeDefinition = {
   id: 'vercel',
   label: 'Vercel',
+  family: 'brand',
   isDark: false,
   chromeColor: '#171717',
   swatches: vercelSwatches,

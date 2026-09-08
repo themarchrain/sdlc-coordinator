@@ -1,0 +1,312 @@
+/* ============================================================
+   nintendo-2001 主题令牌块 —— 自设计语言
+   按角色映射到 162 超集令牌（用途对用途，不按名字）。
+   Nintendo.com 2001（Y2K 主机面板，亮色极性）：
+   - 画布 = 拉丝佩瑞汪金属 canvas #7a8aba（细密拉丝纹理见块后片段）；
+     内容面 = 白/铂灰面板；凹面板 = Pale Sky #9fbee7（次级导航条/浅内嵌面）
+   - 侧栏/页脚式命令层 = Carbon Navy #21242e 碳黑板 + 半调点阵（扬声器栅格纹，
+     见片段）；导航词 = Nav Gold，悬停 Amber，当前项白 + 品牌红指示条
+   - 暖色配给「行动」：--primary = Signal Orange（submit/forward），
+     active 压向 Nav Gold；链接/结构强调 = Chrome Indigo（规格 link = ink-soft）
+   - 深度 = 硬斜切：面板投影为零模糊铬靛偏移；无软模糊阴影（规格 Don't）
+   - 圆角收紧 2/4/6/10px，药丸只留给徽标点；墨阶坍缩为
+     carbon / chrome-indigo / muted-indigo / faint 四阶
+   骨架表达不了的形态（拉丝金属、碳黑点阵、斜切 brand-mark、描边大字、
+   电路板网格、uppercase 丝印标签等）见块后 [data-theme="nintendo-2001"] 专属片段。
+   ============================================================ */
+[data-theme="nintendo-2001"] {
+  /* ── Typography（全系统栈：Arial / Arial Black / Courier New，无外部字体） ── */
+  --font-sans: Arial, Helvetica, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Courier New", Consolas, monospace;
+  --font-display: "Arial Black", "Arial Bold", Arial, sans-serif; /* 盒装封面式大字 */
+
+  /* ── Radius（规格刻度 none 0 / xs 2 / sm 4 / md 6 / lg 10 / full；锋利为主） ── */
+  --radius-xs: 2px;      /* 图标提示 focus（规格 rounded.xs） */
+  --radius-soft: 2px;    /* 登录预览小色块（esrb-badge 同 xs） */
+  --radius-sm: 4px;      /* 内嵌小块（规格 rounded.sm） */
+  --radius-md: 4px;      /* 行卡（news-row rounded.sm） */
+  --radius-lg: 6px;      /* 指标卡（规格 rounded.md 面板） */
+  --radius-xl: 6px;      /* 面板 / hero-panel（规格 rounded.md） */
+  --radius-brand: 2px;   /* brand-mark / 登录 signal（斜切机械角，见片段） */
+  --radius-pill: 9999px; /* 迷你徽标 / radio 点 / 圆箭头（规格 rounded.full） */
+  --radius-panel: 10px;  /* 登录外壳（规格 rounded.lg 外层板块） */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #7a8aba;              /* 拉丝佩瑞汪金属界面主体 */
+  --canvas-soft: #9fbee7;         /* Pale Sky：次级条 / 浅内嵌面（ratio 卡/表头） */
+  --canvas-card: #ffffff;         /* 白色内容面板 */
+  --canvas-dark: #21242e;         /* Carbon Navy：json/code 深色面板 */
+  --surface-sidebar: #21242e;     /* 碳黑命令板（点阵纹理见片段） */
+  --surface-bar: rgba(159, 190, 231, .92); /* 顶栏 = Pale Sky 次级导航条 */
+  --surface-inset: #dedede;       /* Platinum：凹入内容面（duration 值格） */
+  --surface-matrix: #dedede;      /* Platinum：指标格 */
+  --surface-tint: #eef3fa;        /* 表格行 hover（推导：极淡 Pale Sky） */
+  --surface-rail: #9fbee7;        /* 配置状态栏 = 浅内嵌条面 */
+  --surface-detail: #dedede;      /* Platinum：详情外层面（内格为白卡） */
+  --surface-chip: #ffffff;        /* 身份行卡 = 白面板 */
+  --surface-legacy: rgba(159, 190, 231, .35); /* 旧值虚线盒 = Pale Sky 纱 */
+  --surface-draft: rgba(236, 171, 55, .25);    /* 草稿签 = Amber 工具纱 */
+  --surface-empty: #ffffff;       /* 空态框 = 白面 */
+  --surface-json-bar: #9fbee7;    /* json 栏 = chrome 标签条面 */
+  --tooltip-bg: #21242e;          /* 碳黑板 */
+
+  /* ── Ink & text ladder（坍缩四阶：carbon / chrome-indigo / muted-indigo / faint） ── */
+  --ink: #21242e;
+  --ink-strong: #21242e;
+  --ink-display: #21242e;         /* 大数字（font-display 由 Arial Black 承担分量） */
+  --ink-heading: #21242e;
+  --ink-value: #21242e;
+  --ink-repo: #21242e;
+  --ink-step: #21242e;
+  --ink-label-strong: #21242e;
+  --ink-label: #21242e;
+  --ink-row: #21242e;
+  --ink-list: #333847;            /* 数据行正文（碳黑轻一档，推导） */
+  --ink-data: #21242e;
+  --ink-field: #21242e;
+  --ink-rail: #21242e;
+  --ink-rail-value: #21242e;
+  --ink-secret: #3d4f97;          /* chrome 标签色（规格 ink-soft） */
+  --ink-chip: #3d4f97;
+  --body: #333847;                /* 正文（推导：碳黑软化一档） */
+  --body-alt: #3d4f97;            /* 次级文字 = 规格 ink-soft */
+  --body-soft: #60619c;           /* muted-indigo */
+  --mute: #60619c;
+  --mute-deep: #3d4f97;           /* 卡片标题/顶栏文字 = chrome 标签色 */
+  --mute-inline: #60619c;
+  --mute-caption: #60619c;
+  --mute-intro: #3d4f97;          /* 配置导语 = 次级文字 */
+  --mute-terse: #60619c;
+  --mute-quiet: #60619c;
+  --mute-soft: #60619c;
+  --mute-dim: #60619c;
+  --mute-draft: #8c5c00;          /* 草稿签文字 = amber 压深金棕（配 Amber 纱底） */
+  --mute-json: #3d4f97;           /* json 栏标签在 Pale Sky 上 */
+  --mute-matrix: #60619c;
+  --faint: #767ba6;               /* faint 阶（muted-indigo 提亮，推导） */
+  --faint-alt: #767ba6;
+  --faint-soft: #767ba6;
+  --faint-ghost: #767ba6;
+  --faint-hint: #767ba6;
+  --faint-meta: #767ba6;
+  --faint-note: #767ba6;
+  --faint-empty: #9aa0c4;         /* 空态最淡阶（推导） */
+  --on-dark: #ffffff;
+  --on-dark-soft: #dfe6f5;        /* 碳黑面板上的浅字 */
+  --on-dark-faint: #aab4d6;
+
+  /* ── Primary / link / focus ───────────────── */
+  --primary: #f68d1f;             /* Signal Orange：前进/提交（button-submit 角色） */
+  --primary-active: #e48600;      /* Nav Gold：按压加深（button-primary-pressed 方向） */
+  --on-primary: #ffffff;          /* 规格 on-primary：橙底白字 */
+  --link: #3d4f97;                /* 规格 link = ink-soft（Chrome Indigo Bold） */
+  --link-hover: #2e3c77;          /* 推导：铬靛压深 */
+  --focus-ring: rgba(61, 79, 151, .5); /* 铬靛聚焦环 */
+  --primary-veil: rgba(246, 141, 31, .16); /* Signal 纱（当前导航底在片段中改碳黑白纱） */
+
+  /* ── Semantic ─────────────────────────────── */
+  --success: #206479;             /* Systems Teal（推导：规格内唯一冷青） */
+  --success-halo: 0 0 0 4px rgba(32, 100, 121, .14);
+  --warning: #8c5c00;             /* Amber 压深金棕（推导：#ecab37 白面不可读） */
+  --warning-soft: rgba(236, 171, 55, .3); /* Amber 纱 */
+  --error: #e60012;               /* Nintendo Red（规格 error 同值） */
+  --error-deep: #a7282b;          /* Games Red：更深红阶 */
+  --info: #3d4f97;                /* Chrome Indigo（结构 info） */
+  --info-soft: rgba(159, 190, 231, .35); /* Pale Sky 纱 */
+
+  /* ── Hairlines & bars（斜面线三阶：铬靛 / 混合斜面线 / 淡佩瑞汪） ── */
+  --hairline: #5a5f8c;            /* 规格 hairline：混合斜面分隔线 */
+  --hairline-soft: #a8b3d6;       /* 淡内部分隔（推导：淡佩瑞汪线） */
+  --hairline-strong: #3d4f97;     /* Chrome Indigo：斜面阴影线/滚动条 */
+  --hairline-card: #5a5f8c;       /* 卡片板缘 */
+  --hairline-inset: #a8b3d6;
+  --hairline-mid: #a8b3d6;
+  --hairline-rail: #5a5f8c;       /* Pale Sky 栏上的分隔 */
+  --hairline-codex: #a8b3d6;
+  --hairline-detail: #5a5f8c;
+  --hairline-json: #5a5f8c;
+  --hairline-dashed: #60619c;     /* 虚线 = 规格 dotted-divider（muted-indigo） */
+  --hairline-legacy: #60619c;
+  --hairline-row: #a8b3d6;
+  --hairline-draft: #c39a33;      /* 草稿签描边 = Amber 中阶（推导） */
+  --bar-value: #9fbee7;           /* value-list 左条 = Pale Sky */
+  --bar-matrix: #3d4f97;          /* 指标格左条 = Chrome Indigo */
+  --bar-summary: #60619c;         /* 摘要卡左条 = Muted Indigo */
+  --bar-usage: linear-gradient(90deg, #f68d1f, #ecab37); /* 用量条 = Signal→Amber */
+
+  /* ── Overlays & shadows（碳黑板上的白纱；面板投影 = 硬斜切零模糊） ── */
+  --overlay-faint: rgba(255, 255, 255, .05);
+  --overlay-soft: rgba(255, 255, 255, .1);
+  --overlay-line: rgba(255, 255, 255, .14);
+  --overlay-medium: rgba(255, 255, 255, .12);
+  --shadow-panel: 3px 3px 0 rgba(61, 79, 151, .22); /* 硬偏移铬靛斜切阴影 */
+
+  /* ── brand-mark（碳黑板 + 暖三色条 + 品牌红角标；斜切与点阵见片段） ── */
+  --brand-frame-bg: #21242e;      /* 碳黑板（点阵纹理见片段） */
+  --brand-frame-border: #5a5f8c;
+  --brand-frame-shadow: inset 0 1px 0 rgba(255, 255, 255, .22); /* 亮顶缘斜面 */
+  --brand-bar-1: #e48600;         /* Nav Gold */
+  --brand-bar-2: #ecab37;         /* Amber */
+  --brand-bar-3: #f68d1f;         /* Signal */
+  --brand-bar-inset: inset 0 1px 0 rgba(255, 255, 255, .4);
+  --brand-bar-inset-strong: inset 0 1px 0 rgba(255, 255, 255, .45);
+  --brand-dot: #e60012;           /* Nintendo Red 角标（logo 色点） */
+  --brand-dot-border: #ffffff;    /* 白环 = logo-pill 白底 */
+  --brand-dot-glow: none;         /* 规格无光晕语法 */
+  --nav-indicator: #e60012;       /* 规格 ex-app-shell-row：activeIndicator = primary */
+
+  /* ── 登录页（拉丝金属画布 + Systems 电路板 hero + Signal 提交键） ── */
+  --login-bg: #7a8aba;            /* 登录画布 = 主机面板金属（拉丝见片段） */
+  --login-shell-border: #3d4f97;  /* 铬靛板缘 */
+  --login-shell-shadow: 4px 4px 0 rgba(61, 79, 151, .35); /* 硬斜切 */
+  --login-showcase-bg: #206479;   /* Systems hero：电路板青（展示板电路网格见片段） */
+  --login-showcase-ink: #ffffff;
+  --login-grid-line: rgba(255, 255, 255, .16); /* 电路网格线 */
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #ffffff;
+  --login-brand-mute: #9fbee7;    /* Pale Sky 小字 */
+  --login-signal-bg: #21242e;     /* 品牌芯片 = 碳黑板（点阵见片段） */
+  --login-signal-border: rgba(255, 255, 255, .45);
+  --login-signal-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+  --login-signal-bar: #ecab37;    /* Amber 条 */
+  --login-kicker: #9fbee7;
+  --login-heading: #ffffff;       /* 描边大字（描边+硬影见片段） */
+  --login-copy: #d7e4ee;          /* 淡冰蓝正文（推导） */
+  --login-preview-bg: rgba(255, 255, 255, .92);  /* 白玻璃预览卡 */
+  --login-preview-border: rgba(255, 255, 255, .5);
+  --login-preview-shadow: 3px 3px 0 rgba(16, 49, 60, .45); /* 深青硬影 */
+  --login-preview-divider: rgba(32, 100, 121, .25);
+  --login-preview-dot: #f68d1f;   /* Signal 点 */
+  --login-preview-dot-soft: #ecab37;
+  --login-preview-label: #3d4f97;
+  --login-preview-row-line: rgba(32, 100, 121, .2);
+  --login-preview-row-ink: #21242e;
+  --login-preview-chip-ink: #8c5c00;  /* Amber chip（金棕文字） */
+  --login-preview-chip-bg: rgba(236, 171, 55, .35);
+  --login-preview-bar: #9fbee7;
+  --login-foot: #cfe0ec;
+  --login-card-kicker: #8c5c00;   /* 右侧白卡 kicker = 金棕 */
+  --login-card-heading: #21242e;
+  --login-card-copy: #3d4f97;     /* 次级文字 = ink-soft */
+  --login-notice-border: #9fbee7;
+  --login-notice-bg: #eef3fa;
+  --login-notice-ink: #21242e;
+  --login-label: #21242e;         /* 规格 field-label：碳黑粗体 */
+  --login-input-border: #5a5f8c;  /* 规格 text-input：1px hairline 边 */
+  --login-input-border-hover: #3d4f97;
+  --login-primary: #f68d1f;       /* 登录主键 = button-submit（Signal） */
+  --login-primary-active: #e48600;
+}
+
+/* ============================================================
+   nintendo-2001 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="nintendo-2001"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 拉丝佩瑞汪金属：画布与登录页叠细密横向拉丝纹（极淡，不抢面板） ── */
+[data-theme="nintendo-2001"] body,
+[data-theme="nintendo-2001"] .login-page {
+  background-image: repeating-linear-gradient(180deg, rgba(255, 255, 255, .05) 0 1px, rgba(33, 36, 46, .045) 1px 2px, transparent 2px 4px);
+}
+
+/* ── 碳黑命令板侧栏：半调点阵（扬声器栅格）+ Nav Gold 导航词 + 白当前项 ── */
+[data-theme="nintendo-2001"] .control-sidebar {
+  color: #dfe6f5;
+  background-image: radial-gradient(rgba(255, 255, 255, .08) 1px, transparent 1.6px);
+  background-size: 5px 5px;
+  border-right-color: #3d4f97;
+}
+[data-theme="nintendo-2001"] .brand-block strong { color: #ffffff; }
+[data-theme="nintendo-2001"] .brand-block span,
+[data-theme="nintendo-2001"] .nav-caption,
+[data-theme="nintendo-2001"] .nav-group-title { color: #9fbee7; }
+[data-theme="nintendo-2001"] .nav-group-title::before { background: rgba(255, 255, 255, .14); }
+[data-theme="nintendo-2001"] .workspace-nav a { color: #e48600; }           /* nav-bar：碳黑上发光的金导航词 */
+[data-theme="nintendo-2001"] .workspace-nav .anticon { color: #9fbee7; }
+[data-theme="nintendo-2001"] .workspace-nav a:hover { color: #ecab37; background: rgba(255, 255, 255, .08); }
+[data-theme="nintendo-2001"] .workspace-nav a:hover .anticon { color: #ecab37; }
+[data-theme="nintendo-2001"] .workspace-nav a[aria-current="page"] { color: #ffffff; background: rgba(255, 255, 255, .12); }
+[data-theme="nintendo-2001"] .workspace-nav a[aria-current="page"] .anticon { color: #f68d1f; } /* Signal 图标（红指示条走 --nav-indicator） */
+[data-theme="nintendo-2001"] .collapse-toggle { color: #9fbee7; background: transparent; border-top: 1px solid rgba(255, 255, 255, .14); }
+[data-theme="nintendo-2001"] .collapse-toggle:hover { color: #ecab37; background: rgba(255, 255, 255, .08); }
+
+/* ── brand-mark：碳黑点阵芯片 + 45° 斜切角（机械面板缘）+ 红角标内收 ── */
+[data-theme="nintendo-2001"] .brand-mark {
+  background-image: radial-gradient(rgba(255, 255, 255, .1) 1px, transparent 1.5px);
+  background-size: 4px 4px;
+  clip-path: polygon(0 6px, 6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+}
+[data-theme="nintendo-2001"] .brand-mark::after { top: 2px; right: 2px; } /* 角标收进斜切多边形内 */
+
+/* ── 丝印铬标签：eyebrow / kicker / section-label = Arial Bold 大写 + 0.5px 追字，铬靛色 ── */
+[data-theme="nintendo-2001"] .page-heading__eyebrow,
+[data-theme="nintendo-2001"] .panel-kicker,
+[data-theme="nintendo-2001"] .section-label {
+  color: #3d4f97;
+  font-family: var(--font-sans);
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+[data-theme="nintendo-2001"] .context-heading-slot .page-heading__eyebrow {
+  letter-spacing: 0;                 /* 顶栏内的页题为正常大小写标题 */
+  text-transform: none;
+  color: var(--ink);
+  font-family: inherit;
+}
+
+/* ── 按钮：uppercase 丝印字 + 亮顶缘斜面 + 按压下沉（规格 elevation level 2） ── */
+[data-theme="nintendo-2001"] .ant-btn { text-transform: uppercase; letter-spacing: .5px; }
+[data-theme="nintendo-2001"] .ant-btn-primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3); }
+[data-theme="nintendo-2001"] .ant-btn-default { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6); }
+[data-theme="nintendo-2001"] .ant-btn:not(:disabled):active { transform: translateY(1px); }
+
+/* ── 表头：Pale Sky 条上的碳黑大写丝印表头 ── */
+[data-theme="nintendo-2001"] .admin-table .ant-table-thead > tr > th {
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+/* ── 选区 / 滚动条：Amber 选区；方形细滚动条（锋利铬） ── */
+[data-theme="nintendo-2001"] ::selection { background: rgba(236, 171, 55, .5); color: #21242e; }
+[data-theme="nintendo-2001"] * { scrollbar-width: thin; scrollbar-color: #5a5f8c transparent; }
+[data-theme="nintendo-2001"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="nintendo-2001"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="nintendo-2001"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 0; background: #5a5f8c; background-clip: padding-box; }
+[data-theme="nintendo-2001"] ::-webkit-scrollbar-thumb:hover { background: #3d4f97; background-clip: padding-box; }
+
+/* ── 点阵分隔线：表单子区块顶线改 dotted（规格 dotted-divider 语法） ── */
+[data-theme="nintendo-2001"] .duration-section,
+[data-theme="nintendo-2001"] .tick-result,
+[data-theme="nintendo-2001"] .configuration-actions {
+  border-top-style: dotted;
+  border-top-color: var(--hairline-dashed);
+}
+
+/* ── json/code 面板：碳黑底叠半调点阵（与命令板同款栅格） ── */
+[data-theme="nintendo-2001"] .json-viewer pre {
+  background-image: radial-gradient(rgba(255, 255, 255, .06) 1px, transparent 1.6px);
+  background-size: 5px 5px;
+}
+
+/* ── 登录展示板：Systems 电路板网格（线网 + 交点焊点）+ 盒装描边大字 ── */
+[data-theme="nintendo-2001"] .login-page__showcase::before {
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, .32) 1.2px, transparent 1.8px),
+    linear-gradient(rgba(255, 255, 255, .16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .16) 1px, transparent 1px);
+  background-size: 28px 28px, 28px 28px, 28px 28px;
+  opacity: .8;
+}
+[data-theme="nintendo-2001"] .login-page__showcase-copy h2 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  color: #ffffff;
+  -webkit-text-stroke: 2px #12333f; /* 深青描边（盒装封面字语法） */
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 rgba(16, 49, 60, .55); /* 硬偏移投影，无模糊 */
+}
+[data-theme="nintendo-2001"] .login-page__signal {
+  background-image: radial-gradient(rgba(255, 255, 255, .1) 1px, transparent 1.5px);
+  background-size: 4px 4px;
+}

@@ -1,0 +1,258 @@
+/* ============================================================
+   zapier 主题令牌块 —— 规格驱动（zapier 设计语言），
+   无参考实现；正文色值按角色映射进 162 令牌超集。
+   Zapier 设计语言（暖奶油 + 咖啡墨 + 唯一橙）：
+   - 海拔 = 填充对比（Level 2 无边框软卡）：canvas #fffefb → 卡/嵌面
+     #f8f4f0 → 更深奶油（派生 #efe9e2）→ 反转深咖啡 #201515
+   - 文字一族咖啡暖墨（规格四级原文）：ink #201515 / body #605d52 /
+     body-mid #939084 / mute #c5c0b1；正文默认即 body 级
+   - 唯一彩色 = Zapier 橙 #ff4f00：主 CTA/链接/当前项指示/用量条/默认
+     图表线；「Don't introduce a second chromatic accent」
+   - 边线双轨：Level 1 = 1px 墨线 #201515（输入/描边按钮字面）；
+     分隔线 = mute #c5c0b1（ex-data-table rowBorder 字面）；软线派生 #e8e2d9
+   - 语义无规格字面 → 派生暖调克制化：success #2f7a3c / warning #9a6a10 /
+     error #b3261e（行内注明）
+   - 圆角：12px 是「按钮 + 卡」的品牌标志半径（rounded.md），小件 6px，
+     pill 只给状态徽标
+   - Degular Display 500 只给 hero、Inter 包办其余；eyebrow 全大写 +1px
+     正字距（品牌签名），display 标题永不大写
+   骨架表达不了的形态（橙条 brand-mark、全大写 eyebrow/表头、600 按钮字重、
+   登录深咖啡 hero 面）见块后 [data-theme="zapier"] 专属片段。
+   ============================================================ */
+[data-theme="zapier"] {
+  /* ── Typography ───────────────────────────── */
+  /* 两面系统：Degular Display（hero 专属，禁外部加载 → Inter 500 替代）+ Inter 主力 */
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 规格无 mono 面 → 保留骨架栈 */
+  --font-display: 'Degular Display', Inter, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; /* 展示位 = Degular 500（替代栈） */
+
+  /* ── Radius（规格刻度：none 0 / sm 6 / md 12 / pill 9999；卡与按钮同径是品牌签名） ── */
+  --radius-xs: 4px;      /* 图标提示 focus 圆角（派生：none 与 sm 之间的微圆角） */
+  --radius-soft: 6px;    /* 登录预览小色块 / inline pill = rounded.sm 字面 */
+  --radius-sm: 6px;      /* 内嵌小块 / 表单输入 = rounded.sm 字面 */
+  --radius-md: 12px;     /* 行卡 = rounded.md 字面（canonical） */
+  --radius-lg: 12px;     /* 指标卡 = rounded.md 字面 */
+  --radius-xl: 12px;     /* 面板 = rounded.md 字面（品牌无更大卡径） */
+  --radius-brand: 12px;  /* brand-mark / 登录 signal = rounded.md 字面 */
+  --radius-pill: 9999px; /* 迷你徽标 = 状态 pill/badge 字面 */
+  --radius-panel: 12px;  /* 登录外壳 = rounded.md 字面 */
+
+  /* ── Canvas & surfaces ────────────────────── */
+  --canvas: #fffefb;              /* Warm Canvas：暖白页面（规格禁纯白画布） */
+  --canvas-soft: #f8f4f0;         /* Canvas Soft：奶油软面 */
+  --canvas-card: #f8f4f0;         /* 卡 = card-content 的 canvas-soft（Level 2 软卡） */
+  --canvas-dark: #201515;         /* Ink：深咖啡暗面（hero-band-dark/footer 字面） */
+  --surface-sidebar: #fffefb;     /* nav-bar 底 = canvas 字面 */
+  --surface-bar: rgba(255, 254, 251, .92); /* 滚动后 sticky 暖白条 */
+  --surface-inset: #f8f4f0;       /* 嵌面 = canvas-soft */
+  --surface-matrix: #f8f4f0;
+  --surface-tint: #f8f4f0;        /* 行 hover = 奶油软面 */
+  --surface-rail: #f8f4f0;
+  --surface-detail: #f8f4f0;
+  --surface-chip: #f8f4f0;        /* badge-pill 底 = canvas-soft 字面 */
+  --surface-legacy: #f8f4f0;
+  --surface-draft: #efe9e2;       /* draft 更沉一档（派生：soft 之下的奶油） */
+  --surface-empty: #f8f4f0;       /* ex-empty-state-card 底 = canvas-soft 字面 */
+  --surface-json-bar: #efe9e2;    /* json 头条 = 更深奶油（派生档） */
+  --tooltip-bg: #201515;          /* 反转提示面 = 深咖啡墨 */
+
+  /* ── Ink & text ladder（咖啡暖墨四级：Ink/Body/Body Mid/Mute） ── */
+  --ink: #201515;
+  --ink-strong: #201515;
+  --ink-display: #201515;
+  --ink-heading: #201515;
+  --ink-value: #201515;
+  --ink-repo: #201515;
+  --ink-step: #201515;
+  --ink-label-strong: #201515;
+  --ink-label: #201515;
+  --ink-row: #201515;
+  --ink-list: #36342e;   /* value-list 项 = Ink Mid（墨与 body 之间） */
+  --ink-data: #201515;
+  --ink-field: #201515;
+  --ink-rail: #201515;
+  --ink-rail-value: #201515;
+  --ink-secret: #605d52; /* secret-label = Body 级 */
+  --ink-chip: #605d52;
+  --body: #605d52;       /* 规格：Default body = Body 色（墨只给标题） */
+  --body-alt: #939084;   /* Body Mid：次级正文/metadata */
+  --body-soft: #939084;
+  --mute: #939084;
+  --mute-deep: #605d52;  /* 「更深」mute = 抬回 Body */
+  --mute-inline: #939084;
+  --mute-caption: #939084;
+  --mute-intro: #605d52; /* 导语 = Body */
+  --mute-terse: #939084;
+  --mute-quiet: #939084;
+  --mute-soft: #939084;
+  --mute-dim: #939084;
+  --mute-draft: #605d52;
+  --mute-json: #939084;
+  --mute-matrix: #605d52;
+  --faint: #c5c0b1;      /* Mute：fine print/最低优先级文字（规格字面） */
+  --faint-alt: #c5c0b1;
+  --faint-soft: #c5c0b1;
+  --faint-ghost: #c5c0b1;
+  --faint-hint: #c5c0b1;
+  --faint-meta: #c5c0b1;
+  --faint-note: #c5c0b1;
+  --faint-empty: #c5c0b1;
+  --on-dark: #fffefb;    /* 深咖啡面上的字 = footer textColor（canvas-soft 字面族） */
+  --on-dark-soft: #fffefb;
+  --on-dark-faint: #c5c0b1; /* 暗面上的 fine print = Mute */
+
+  /* ── Primary / link / focus（唯一彩色 = Zapier 橙） ── */
+  --primary: #ff4f00;    /* colors.primary 字面 */
+  --primary-active: #cc3f00; /* 派生：橙压深两档 */
+  --on-primary: #fffefb; /* 橙底上的暖白字（on-primary 字面） */
+  --link: #ff4f00;       /* 链接 = 橙（Zapier 官网链接即橙） */
+  --link-hover: #cc3f00;
+  --focus-ring: rgba(255, 79, 0, .3); /* 派生：橙 30% 焦点环 */
+  --primary-veil: rgba(255, 79, 0, .07); /* 当前项 = 橙薄纱（activeIndicator 语义） */
+
+  /* ── Semantic（规格无语义色板 → 暖调克制化派生，与主橙拉开明度） ── */
+  --success: #2f7a3c;    /* 派生：暖绿 */
+  --success-halo: 0 0 0 4px rgba(47, 122, 60, .14);
+  --warning: #9a6a10;    /* 派生：琥珀 */
+  --warning-soft: rgba(154, 106, 16, .12);
+  --error: #b3261e;      /* 派生：暖红（橙族加深转红） */
+  --error-deep: #8f1e18;
+  --info: #ff4f00;       /* 唯一彩色原则：info 借主橙 */
+  --info-soft: rgba(255, 79, 0, .07); /* 与 antd colorInfoBg 同源 */
+
+  /* ── Hairlines & bars（Level 1 墨线 / mute 行线 / 软线派生） ── */
+  --hairline: #c5c0b1;         /* 通用分隔 = Mute（ex-data-table-cell rowBorder 字面） */
+  --hairline-soft: #e8e2d9;    /* 派生：更浅暖线 */
+  --hairline-strong: #201515;  /* Level 1 = 1px solid Ink（pricing/outline 字面） */
+  --hairline-card: transparent; /* Level 2 软卡无边框：填充对比承担海拔（规格字面） */
+  --hairline-inset: #e8e2d9;
+  --hairline-mid: #c5c0b1;
+  --hairline-rail: #c5c0b1;
+  --hairline-codex: #e8e2d9;
+  --hairline-detail: #e8e2d9;
+  --hairline-json: #c5c0b1;
+  --hairline-dashed: #c5c0b1;  /* 空态虚线可见 = mute 一档 */
+  --hairline-legacy: #c5c0b1;
+  --hairline-row: #c5c0b1;     /* 数据行线 = rowBorder 字面 */
+  --hairline-draft: #c5c0b1;
+  --bar-value: #36342e;        /* value-list 左规线 = Ink Mid 墨阶（数据墨水） */
+  --bar-matrix: #36342e;
+  --bar-summary: #605d52;
+  --bar-usage: #ff4f00;        /* 用量轨 = Zapier 橙（转化数据的品牌表达） */
+
+  /* ── Overlays & shadows（海拔靠填充；浮层阴影克制化） ── */
+  --overlay-faint: rgba(32, 21, 21, .04);
+  --overlay-soft: rgba(32, 21, 21, .05);
+  --overlay-line: rgba(32, 21, 21, .07);
+  --overlay-medium: rgba(32, 21, 21, .09);
+  --shadow-panel: 0 2px 8px rgba(32, 21, 21, .07); /* ex-modal-card「elevated shadow」的克制化 */
+
+  /* ── brand-mark（软卡无框 tile + 三根橙色条；星芒意象，形态见片段） ── */
+  --brand-frame-bg: #f8f4f0;        /* brand-mark = Level 2 软卡 */
+  --brand-frame-border: transparent;
+  --brand-frame-shadow: none;
+  --brand-bar-1: #ff4f00;           /* 三根全橙条（品牌唯一彩色的标识化） */
+  --brand-bar-2: #ff4f00;
+  --brand-bar-3: #ff4f00;
+  --brand-bar-inset: none;
+  --brand-bar-inset-strong: none;
+  --brand-dot: #201515;             /* 角标 = 咖啡墨（橙已满额，墨点收束） */
+  --brand-dot-border: transparent;
+  --brand-dot-glow: none;
+  --nav-indicator: #ff4f00;         /* 当前导航指示条 = 橙（ex-app-shell-row activeIndicator 字面） */
+
+  /* ── 登录页（暖白壳 + 深咖啡 hero 面 + 软奶油卡 + 橙 CTA） ── */
+  --login-bg: #fffefb;
+  --login-shell-border: #e8e2d9;
+  --login-shell-shadow: 0 2px 8px rgba(32, 21, 21, .06); /* 克制浮层影 */
+  --login-showcase-bg: #201515;     /* showcase = hero-band-dark 深咖啡面 */
+  --login-showcase-ink: #fffefb;    /* on-primary 暖白字 */
+  --login-grid-line: rgba(255, 254, 251, .06);
+  --login-grid-mask: linear-gradient(140deg, #000, transparent 78%);
+  --login-brand-ink: #fffefb;
+  --login-brand-mute: #c5c0b1;      /* 暗面上 fine print = Mute */
+  --login-signal-bg: rgba(255, 254, 251, .08); /* 咖啡面上的浅纱底 */
+  --login-signal-border: transparent;
+  --login-signal-shadow: none;
+  --login-signal-bar: #ff4f00;      /* signal 三条 = 橙（brand-mark 同款） */
+  --login-kicker: #c5c0b1;
+  --login-heading: #fffefb;
+  --login-copy: #c5c0b1;
+  --login-preview-bg: #fffefb;      /* 预览卡 = 暖白卡（咖啡面上的产品卡） */
+  --login-preview-border: #e8e2d9;
+  --login-preview-shadow: none;
+  --login-preview-divider: #e8e2d9;
+  --login-preview-dot: #2f7a3c;     /* 在线点 = 派生暖绿 */
+  --login-preview-dot-soft: #c5c0b1;
+  --login-preview-label: #605d52;
+  --login-preview-row-line: #e8e2d9;
+  --login-preview-row-ink: #201515;
+  --login-preview-chip-ink: #201515;  /* badge-pill = 软奶油底 + 墨字（规格字面） */
+  --login-preview-chip-bg: #f8f4f0;
+  --login-preview-bar: #ff4f00;       /* 进度条 = Zapier 橙 */
+  --login-foot: #c5c0b1;
+  --login-card-kicker: #939084;
+  --login-card-heading: #201515;
+  --login-card-copy: #605d52;
+  --login-notice-border: rgba(255, 79, 0, .32); /* info 通知 = 橙薄纱 */
+  --login-notice-bg: rgba(255, 79, 0, .06);
+  --login-notice-ink: #b23a00;       /* 派生：深橙保证薄纱上可读 */
+  --login-label: #201515;
+  --login-input-border: #201515;     /* text-input「1px solid Ink」字面 */
+  --login-input-border-hover: #ff4f00; /* 派生：hover 转橙 */
+  --login-primary: #ff4f00;          /* 主 CTA = button-primary 字面 */
+  --login-primary-active: #cc3f00;
+}
+
+/* ============================================================
+   zapier 专属片段 —— 骨架令牌表达不了的形态，全部收在
+   [data-theme="zapier"] 作用域内，防止泄漏到其他主题。
+   ============================================================ */
+
+/* ── 系统级：橙选区 / 焦点环（橙 outline） ── */
+[data-theme="zapier"] ::selection { background: rgba(255, 79, 0, .18); }
+[data-theme="zapier"] :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── 系统滚动条：细、Mute 暖灰、圆头 ── */
+[data-theme="zapier"] * { scrollbar-width: thin; scrollbar-color: #c5c0b1 transparent; }
+[data-theme="zapier"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="zapier"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="zapier"] ::-webkit-scrollbar-thumb { border-radius: 9999px; background: #c5c0b1; }
+[data-theme="zapier"] ::-webkit-scrollbar-thumb:hover { background: #939084; }
+
+/* ── eyebrow / kicker：UPPERCASE + 1px 正字距（Degular eyebrow 品牌签名，字面） ── */
+[data-theme="zapier"] .page-heading__eyebrow,
+[data-theme="zapier"] .panel-kicker,
+[data-theme="zapier"] .section-label { color: var(--mute); font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── 按钮字重：button-md 18px/600（规格字面；骨架默认偏轻） ── */
+[data-theme="zapier"] .ant-btn { font-weight: 600; }
+
+/* ── display 500：标题从骨架 600–650 回落到规格 500（sentence-case，永不大写） ── */
+[data-theme="zapier"] .brand-block strong,
+[data-theme="zapier"] .panel-heading h2,
+[data-theme="zapier"] .detail-section h3,
+[data-theme="zapier"] .login-page__brand strong,
+[data-theme="zapier"] .login-page__showcase-copy h2,
+[data-theme="zapier"] .login-page__card h1 { font-weight: 500; }
+
+/* ── 表头：mono-caps eyebrow 语汇（ex-data-table-cell「header uses mono-caps
+      eyebrow typography」→ 大写 + 1px 正字距 + 软奶油底由令牌承担） ── */
+[data-theme="zapier"] .admin-table .ant-table-thead > tr > th { font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── brand-mark：软卡 tile 内三根橙条（Zapier 星芒的唯一彩色标识） ── */
+[data-theme="zapier"] .brand-mark { box-shadow: none; }
+[data-theme="zapier"] .brand-mark span { border-radius: 2px; background: #ff4f00; box-shadow: none; }
+[data-theme="zapier"] .brand-mark::after { box-shadow: none; }
+
+/* ── 登录 showcase：深咖啡 hero 面；标题 500 sentence-case（规格禁大写 display） ── */
+[data-theme="zapier"] .login-page__showcase-copy h2 { font-family: var(--font-display); font-size: 40px; line-height: 1.1; letter-spacing: 0; }
+
+/* ── 登录 signal：brand-mark 同款三根橙条 ── */
+[data-theme="zapier"] .login-page__signal { background: rgba(255, 254, 251, .08); box-shadow: none; }
+[data-theme="zapier"] .login-page__signal span { border-radius: 2px; background: #ff4f00; box-shadow: none; }
+
+/* ── 登录卡片：输入/主 CTA 对齐 48px 触达高（规格「Buttons render ~48px tall」） ── */
+[data-theme="zapier"] .login-page__card .ant-input,
+[data-theme="zapier"] .login-page__card .ant-input-affix-wrapper { min-height: 44px; }
+[data-theme="zapier"] .login-page__card .ant-btn-primary { height: 44px; }
