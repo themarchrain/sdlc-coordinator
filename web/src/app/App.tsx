@@ -14,11 +14,17 @@ import { AuthenticationBoundary } from './AuthenticationBoundary'
 import { ConfigurationBoundary } from './ConfigurationBoundary'
 import { LoginPage } from '../pages/LoginPage'
 import { AgentObservabilityPage } from '../pages/AgentObservabilityPage'
+import { PortalApp } from '../portal/PortalApp'
+import { SuperAdminApp } from '../superadmin/SuperAdminApp'
 
 export function App() {
   return (
     <Routes>
       <Route path="login" element={<LoginPage />} />
+      {/* 多租户新增页面区：门户（登录/注册/选组织/组织管理）与超管独立后台。
+          纯增量，不影响存量 admin 页面与其认证边界。 */}
+      <Route path="portal/*" element={<PortalApp />} />
+      <Route path="super-admin/*" element={<SuperAdminApp />} />
       <Route path="*" element={<AuthenticationBoundary><AppShell><ConfigurationBoundary><AdminRoutes /></ConfigurationBoundary></AppShell></AuthenticationBoundary>} />
     </Routes>
   )

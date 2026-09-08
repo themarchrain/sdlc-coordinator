@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
+	"sdlc-coordinator/internal/controlplane"
 	effectexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/events"
 	api "sdlc-coordinator/internal/http"
@@ -202,6 +205,12 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if err != nil {
 		return nil, err
 	}
+	// 控制面库（多租户）：独立 sqlite 单文件；DSN 为空退化为进程内
+	// 内存库。种子超管按 env 装配，动作写控制面审计。
+	controlPlaneService, err := newControlPlane(cfg.ControlPlane, logger)
+	if err != nil {
+		return nil, err
+	}
 
 	routerOptions := []any{
 		// webhook secret 按仓持有:验签凭据来自注册仓行,无全局回退。
@@ -217,6 +226,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		api.WithRequirementsService(requirementsService),
 		api.WithAuthService(authService),
 		api.WithMCPHandler(mcpHandler),
+	}
+	if controlPlaneService != nil {
+		routerOptions = append(routerOptions, api.WithControlPlaneService(controlPlaneService))
 	}
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
@@ -385,6 +397,46 @@ func (d peopleMentionDirectory) ResolveMentionNames(ctx context.Context, reposit
 		result[id] = orchestrator.AssigneeMention{DisplayName: mention.DisplayName, Username: mention.Username}
 	}
 	return result
+}
+
+// newControlPlane 打开控制面库、迁移并按 env 种子超管。任何配置形态下都返回
+// 可用服务（内存库兜底），保证路由行为可预期。
+func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (*controlplane.Service, error) {
+	dsn := settings.DSN
+	if dsn == "" {
+		// 空 DSN 用随机命名的私有内存库。共享名（file::memory:?cache=shared）
+		// 会让同进程多实例共用同一份数据（跨测试/跨实例状态串扰）。
+		buf := make([]byte, 8)
+		if _, err := rand.Read(buf); err != nil {
+			return nil, fmt.Errorf("generate control plane memory dsn: %w", err)
+		}
+		dsn = "file:control-plane-memory-" + hex.EncodeToString(buf) + "?mode=memory&cache=shared"
+		if logger != nil {
+			logger.Warn("control plane dsn not configured; using ephemeral in-memory sqlite (data is instance-local)")
+		}
+	}
+	db, err := store.Open(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open control plane database: %w", err)
+	}
+	repository := controlplane.NewRepository(db)
+	if err := repository.Migrate(); err != nil {
+		return nil, err
+	}
+	service := controlplane.NewService(repository)
+	if settings.SuperAdminUsername != "" && settings.SuperAdminPassword != "" {
+		if err := service.SeedSuperAdmin(context.Background(), controlplane.SeedSuperAdminInput{
+			Username: settings.SuperAdminUsername,
+			Password: settings.SuperAdminPassword,
+			Reset:    settings.SuperAdminReset,
+		}); err != nil {
+			return nil, fmt.Errorf("seed super admin: %w", err)
+		}
+		if logger != nil {
+			logger.Info("control plane super admin ensured", zap.String("username", settings.SuperAdminUsername), zap.Bool("reset", settings.SuperAdminReset))
+		}
+	}
+	return service, nil
 }
 
 func newAdminAuth(db *gorm.DB) (*auth.Service, error) {

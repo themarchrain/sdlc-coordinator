@@ -7,6 +7,7 @@ import (
 	"sdlc-coordinator/internal/auth"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
+	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/events"
 	"sdlc-coordinator/internal/http/handlers"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
@@ -36,6 +37,7 @@ type RouterOptions struct {
 	AuthService          *auth.Service
 	RepositoryService    *registeredrepo.Service
 	RequirementsService  *requirements.Service
+	ControlPlaneService  *controlplane.Service
 }
 
 type RouterOption func(*RouterOptions)
@@ -129,6 +131,14 @@ func WithRequirementsService(service *requirements.Service) RouterOption {
 	}
 }
 
+// WithControlPlaneService 注入多租户控制面服务（纯增量）；为 nil 时新认证
+// 体系整体不挂载，存量路由行为不变。
+func WithControlPlaneService(service *controlplane.Service) RouterOption {
+	return func(options *RouterOptions) {
+		options.ControlPlaneService = service
+	}
+}
+
 func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	var eventProcessor *events.Processor
 	options := RouterOptions{RuntimeMode: configuration.ModeReady}
@@ -145,6 +155,12 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	// 不信任任何代理：gin 默认信任一切代理，直连形态下
+	// ClientIP() 会取攻击者自设的 X-Forwarded-For，登录限速键可被逐请求
+	// 轮换 XFF 整体绕过。收身后 ClientIP=直连对端地址；反代部署的授信清单
+	// 属部署侧配置，随部署文档一并给出。全仓 ClientIP 调用点已核对
+	// （仅 portal 登录限速一处），不影响 webhook 与业务路由。
+	_ = router.SetTrustedProxies(nil)
 	var healthProvider handlers.ConfigurationStatusProvider
 	if options.ConfigurationService != nil {
 		healthProvider = options.ConfigurationService
@@ -240,6 +256,19 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 			runtimeAPI.POST("/events/gitea", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 			runtimeAPI.POST("/events/github", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		}
+	}
+
+	// 控制面（多租户）：独立命名空间 /api/portal/* 与 /api/super-admin/*，
+	// 与存量 /api/auth/*、/api/admin/* 并行（切换归后续批次）。
+	if options.ControlPlaneService != nil {
+		controlPlaneHandler := handlers.NewControlPlaneHandler(options.ControlPlaneService)
+		superAdminHandler := handlers.NewSuperAdminHandler(options.ControlPlaneService)
+		portal := api.Group("/portal")
+		controlPlaneHandler.RegisterAuthRoutes(portal)
+		controlPlaneHandler.RegisterTenantRoutes(portal.Group("/tenant"))
+		superAdmin := api.Group("/super-admin",
+			controlPlaneHandler.RequirePortalAuth, controlPlaneHandler.RequireSuperAdmin)
+		superAdminHandler.RegisterRoutes(superAdmin)
 	}
 
 	return router

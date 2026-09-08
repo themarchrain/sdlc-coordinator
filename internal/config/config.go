@@ -38,10 +38,21 @@ type AgentRunnerSettings struct {
 	ProviderConfigRevision uint64
 }
 
+// ControlPlaneSettings 是多租户控制面配置：DSN 为空
+// 时控制面退化为进程内 sqlite（:memory:）；种子超管三件套仅在配置了用户名与
+// 密码时生效，RESET 是密码丢失重置通道。
+type ControlPlaneSettings struct {
+	DSN                string
+	SuperAdminUsername string
+	SuperAdminPassword string
+	SuperAdminReset    bool
+}
+
 type Config struct {
 	AgentRunner                  AgentRunnerSettings
 	HTTPAddr                     string
 	DatabaseDSN                  string
+	ControlPlane                 ControlPlaneSettings
 	CodeHostProvider             string
 	CodeHostBaseURL              string
 	CodeHostReworkAllowedUserIDs string
@@ -60,6 +71,7 @@ func Load() Config {
 	scheduler := loadSchedulerSettings()
 
 	cfg := Config{
+		ControlPlane: loadControlPlaneSettings(),
 		AgentRunner: AgentRunnerSettings{
 			ServiceURL:      getEnv("AGENT_RUNNER_SERVICE_URL", "http://agent-runner:8081"),
 			WorkspaceRoot:   getEnv("AGENT_RUNNER_WORKSPACE_ROOT", "/app/workspaces"),
@@ -97,6 +109,15 @@ func Load() Config {
 		Scheduler:          scheduler,
 	}
 	return cfg
+}
+
+func loadControlPlaneSettings() ControlPlaneSettings {
+	return ControlPlaneSettings{
+		DSN:                strings.TrimSpace(getEnv("CONTROL_PLANE_DSN", "")),
+		SuperAdminUsername: strings.ToLower(strings.TrimSpace(getEnv("CONTROL_PLANE_SUPERADMIN_USERNAME", ""))),
+		SuperAdminPassword: getEnv("CONTROL_PLANE_SUPERADMIN_PASSWORD", ""),
+		SuperAdminReset:    getEnvBool("CONTROL_PLANE_SUPERADMIN_RESET", false),
+	}
 }
 
 func parseStringMap(raw string) map[string]string {
