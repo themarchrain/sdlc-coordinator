@@ -38,6 +38,14 @@ type RouterOptions struct {
 	RequirementsService  *requirements.Service
 	ControlPlaneService  *controlplane.Service
 	TenantStores         tenantdb.Resolver
+	RouteIndexSync       registeredrepo.RouteIndexSync
+}
+
+// WithRouteIndexSync 注入控制面路由索引写穿端口。
+func WithRouteIndexSync(sync registeredrepo.RouteIndexSync) RouterOption {
+	return func(options *RouterOptions) {
+		options.RouteIndexSync = sync
+	}
 }
 
 type RouterOption func(*RouterOptions)
@@ -226,6 +234,9 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 		}
 		if options.RepositoryService != nil {
 			adminRepositoryHandler := handlers.NewAdminRepositoryHandler(options.RepositoryService)
+			if options.RouteIndexSync != nil {
+				adminRepositoryHandler.SetRouteIndexSync(options.RouteIndexSync)
+			}
 			adminRepositoryHandler.RegisterRoutes(adminAPI)
 		}
 		if options.RequirementsService != nil {

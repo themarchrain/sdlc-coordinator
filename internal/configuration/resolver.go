@@ -87,6 +87,8 @@ func (resolver *Resolver) resolveSnapshot(ctx context.Context, bootstrap config.
 	// 控制面是基础设施配置（与 bootstrap 同级），不进快照 schema。ready
 	// 产物必须回填 legacy，否则生产永远落到内存库且不建种子超管。
 	effective.ControlPlane = legacy.ControlPlane
+	// 租户数据根同理：不入快照 schema，ready 产物从 legacy 回填。
+	effective.TenantDataDir = legacy.TenantDataDir
 	return Resolution{
 		Mode:            ModeReady,
 		EffectiveConfig: effective,

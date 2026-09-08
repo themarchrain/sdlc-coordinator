@@ -10,9 +10,12 @@ import (
 
 // AdminRouteAccess 是一条 /api/admin 路由对三角色的放行位。
 type AdminRouteAccess struct {
-	SuperAdmin  bool
-	TenantAdmin bool
-	Member      bool
+	SuperAdmin bool
+	// SuperAdminSupportOnly：super_admin 仅在支持访问（带审计）
+	// 中放行；tenant_admin/member 列不受影响。
+	SuperAdminSupportOnly bool
+	TenantAdmin           bool
+	Member                bool
 }
 
 // AdminRoutePolicy 按 gin FullPath 查找矩阵放行位；未登记则 found=false，门禁 fail-closed。
@@ -63,6 +66,10 @@ func (handler *ControlPlaneHandler) RequireAdminMatrix(c *gin.Context) {
 func decideAdminMatrix(info *controlplane.SessionInfo, access AdminRouteAccess) (bool, string, string) {
 	if info.SuperAdminMode {
 		if access.SuperAdmin {
+			return true, "", ""
+		}
+		// 业务面收窄为 support_only——仅在带审计的支持访问中放行。
+		if access.SuperAdminSupportOnly && info.SupportMode {
 			return true, "", ""
 		}
 		return false, "forbidden", "没有执行该操作的权限"

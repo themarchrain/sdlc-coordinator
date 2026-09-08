@@ -11,16 +11,29 @@ import (
 )
 
 type AdminRepositoryHandler struct {
-	service *registeredrepo.Service
+	service   *registeredrepo.Service
+	routeSync registeredrepo.RouteIndexSync
 }
 
 func NewAdminRepositoryHandler(service *registeredrepo.Service) *AdminRepositoryHandler {
 	return &AdminRepositoryHandler{service: service}
 }
 
+// SetRouteIndexSync 注入控制面路由索引写穿端口；租户作用域
+// 请求由 reposFor 按会话租户绑定写穿。
+func (handler *AdminRepositoryHandler) SetRouteIndexSync(sync registeredrepo.RouteIndexSync) {
+	handler.routeSync = sync
+}
+
 func (handler *AdminRepositoryHandler) reposFor(c *gin.Context) *registeredrepo.Service {
 	if store, ok := TenantStoreFrom(c); ok {
-		return registeredrepo.NewService(registeredrepo.NewStore(store.DB), nil, registeredrepo.NewSQLActivityChecker(store.DB))
+		service := registeredrepo.NewService(registeredrepo.NewStore(store.DB), nil, registeredrepo.NewSQLActivityChecker(store.DB))
+		if handler.routeSync != nil {
+			if info := CurrentPortalSession(c); info != nil && info.EffectiveTenant != nil {
+				service.SetRouteIndexSync(handler.routeSync, info.EffectiveTenant.ID)
+			}
+		}
+		return service
 	}
 	return handler.service
 }

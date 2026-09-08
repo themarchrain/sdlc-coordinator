@@ -58,6 +58,27 @@ type Service struct {
 	// 经此执行一次比较，「不存在的用户名也付满额比较代价」成为结构性事实
 	// 而非调用点顺序约定；注入实现供测试计数断言。
 	comparePasswords func(hashedPassword, password []byte) error
+	// tenantProvisioner 是新租户数据面开通钩子：在创建
+	// 组织的同一事务内建目录建库并迁移，失败整体回滚登记行；nil = 无数据面
+	// 开通（当前形态，只落 db_locator 串）。
+	tenantProvisioner TenantProvisioner
+}
+
+// Repository 返回底层仓储：仅供装配与存量迁移等系统级路径使用；业务动作
+// 一律经 Service（事务/审计在服务层）。
+func (service *Service) Repository() *Repository {
+	return service.repository
+}
+
+// TenantProvisioner 开通租户数据面（建库+迁移），并把实际 db_locator 写回
+// tenant。实现须自担半成品的目录清理（登记行由事务回滚兜底）。
+type TenantProvisioner interface {
+	ProvisionTenant(ctx context.Context, tenant *Tenant) error
+}
+
+// SetTenantProvisioner 注入数据面开通钩子（装配期调用）。
+func (service *Service) SetTenantProvisioner(provisioner TenantProvisioner) {
+	service.tenantProvisioner = provisioner
 }
 
 type Option func(*Service)
@@ -133,6 +154,15 @@ func (service *Service) CreateTenant(ctx context.Context, actor *Actor, input Te
 		}
 		if err := service.repo(ctx).CreateTenant(ctx, tenant); err != nil {
 			return nil, err
+		}
+		if service.tenantProvisioner != nil {
+			// 同事务开通数据面：建库/迁移失败 → 事务回滚登记行，slug 释放可重试。
+			if err := service.tenantProvisioner.ProvisionTenant(ctx, tenant); err != nil {
+				return nil, err
+			}
+			if err := service.repo(ctx).SaveTenant(ctx, tenant); err != nil {
+				return nil, err
+			}
 		}
 		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.created", "slug="+slug+" display_name="+displayName); err != nil {
 			return nil, err

@@ -9,6 +9,9 @@ const (
 	AccessAllow RoleAccess = "allow"
 	AccessDeny  RoleAccess = "deny"
 	AccessNA    RoleAccess = "n/a"
+	// AccessSupportOnly：super_admin 仅在支持访问（带审计）中
+	// 放行；tenant_admin/member 列不受影响。
+	AccessSupportOnly RoleAccess = "support_only"
 )
 
 type NonHumanChannel string
@@ -105,9 +108,10 @@ func mr(method, path string, class RouteClass, sa, ta, mem, unauth RoleAccess, n
 }
 
 const (
-	allow = AccessAllow
-	deny  = AccessDeny
-	na    = AccessNA
+	allow        = AccessAllow
+	deny         = AccessDeny
+	na           = AccessNA
+	support_only = AccessSupportOnly
 )
 
 var routeMatrixCatalog = concatMatrix(
@@ -176,23 +180,23 @@ var mcpRows = []MatrixRow{
 var adminQueryRows = []MatrixRow{
 	mr("GET", "/api/admin/overview", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类：member 只读"),
 	mr("GET", "/api/admin/metrics", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/tasks", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/tasks/:task_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/tasks/:task_id/timeline", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/runs", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/runs/:run_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/artifacts", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/artifacts/:artifact_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/dependencies", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/dependencies/:dependency_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/writebacks", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/writebacks/:writeback_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/effects", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/effects/:effect_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/inbound-events", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/inbound-events/:event_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/result-submissions", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
-	mr("GET", "/api/admin/result-submissions/:submission_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/tasks", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/tasks/:task_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/tasks/:task_id/timeline", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/runs", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/runs/:run_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/artifacts", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/artifacts/:artifact_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/dependencies", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/dependencies/:dependency_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/writebacks", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/writebacks/:writeback_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/effects", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/effects/:effect_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/inbound-events", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/inbound-events/:event_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/result-submissions", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/result-submissions/:submission_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
 }
 
 var adminAgentRows = []MatrixRow{
@@ -217,32 +221,32 @@ var adminConfigurationRows = []MatrixRow{
 }
 
 var adminPeopleRows = []MatrixRow{
-	mr("POST", "/api/admin/people/codehost-identities/lookup", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
-	mr("POST", "/api/admin/people/codehost-identities/lookup-batch", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
-	mr("GET", "/api/admin/people", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人员资产页；member 403"),
-	mr("POST", "/api/admin/people", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
-	mr("GET", "/api/admin/people/:person_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人员资产页"),
-	mr("PATCH", "/api/admin/people/:person_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
-	mr("DELETE", "/api/admin/people/:person_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
+	mr("POST", "/api/admin/people/codehost-identities/lookup", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
+	mr("POST", "/api/admin/people/codehost-identities/lookup-batch", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
+	mr("GET", "/api/admin/people", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人员资产页；member 403"),
+	mr("POST", "/api/admin/people", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
+	mr("GET", "/api/admin/people/:person_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人员资产页"),
+	mr("PATCH", "/api/admin/people/:person_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
+	mr("DELETE", "/api/admin/people/:person_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "people 写"),
 }
 
 var adminRepositoryRows = []MatrixRow{
-	mr("GET", "/api/admin/repositories", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "member 可读（任务页筛选器）；响应无 token/webhook_secret；管理页 UI 隐藏归后续批次"),
-	mr("POST", "/api/admin/repositories", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
-	mr("GET", "/api/admin/repositories/:repository_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "member 可读；响应无 token/webhook_secret"),
-	mr("PATCH", "/api/admin/repositories/:repository_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
-	mr("POST", "/api/admin/repositories/:repository_id/disable", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
-	mr("POST", "/api/admin/repositories/:repository_id/enable", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
+	mr("GET", "/api/admin/repositories", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "member 可读（任务页筛选器）；响应无 token/webhook_secret；管理页 UI 隐藏归后续批次"),
+	mr("POST", "/api/admin/repositories", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
+	mr("GET", "/api/admin/repositories/:repository_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "member 可读；响应无 token/webhook_secret"),
+	mr("PATCH", "/api/admin/repositories/:repository_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
+	mr("POST", "/api/admin/repositories/:repository_id/disable", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
+	mr("POST", "/api/admin/repositories/:repository_id/enable", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "repositories 写"),
 }
 
 var adminRequirementRows = []MatrixRow{
-	mr("GET", "/api/admin/requirements", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "requirements 读"),
-	mr("POST", "/api/admin/requirements", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
-	mr("POST", "/api/admin/requirements/sync", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
-	mr("PATCH", "/api/admin/requirements/:requirement_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
-	mr("POST", "/api/admin/requirements/:requirement_id/publish", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
-	mr("POST", "/api/admin/requirements/:requirement_id/cancel", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
-	mr("POST", "/api/admin/requirements/:requirement_id/complete", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
+	mr("GET", "/api/admin/requirements", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "requirements 读"),
+	mr("POST", "/api/admin/requirements", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
+	mr("POST", "/api/admin/requirements/sync", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
+	mr("PATCH", "/api/admin/requirements/:requirement_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
+	mr("POST", "/api/admin/requirements/:requirement_id/publish", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
+	mr("POST", "/api/admin/requirements/:requirement_id/cancel", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
+	mr("POST", "/api/admin/requirements/:requirement_id/complete", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "requirements 写"),
 }
 
 var adminConnectorRows = []MatrixRow{

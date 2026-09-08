@@ -28,7 +28,7 @@ func TestNewReadyRejectsStartupOnInvalidRunnerAssignments(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	})
-	cfg := config.Config{HTTPAddr: ":0", ControlPlane: settings}
+	cfg := config.Config{HTTPAddr: ":0", ControlPlane: settings, TenantDataDir: t.TempDir()}
 
 	_, err = New(cfg, zap.NewNop(), db)
 	if err == nil {

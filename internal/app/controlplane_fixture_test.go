@@ -34,6 +34,11 @@ func withTestControlPlane(t *testing.T, cfg config.Config) config.Config {
 	if cfg.ControlPlane.SuperAdminPassword == "" {
 		cfg.ControlPlane.SuperAdminPassword = "test-super-password"
 	}
+	// 租户数据根生产默认指向进程相对路径 data/tenants，测试必须改指临时
+	// 目录，避免 Handle 在源码树里落 data/tenants 目录。
+	if strings.TrimSpace(cfg.TenantDataDir) == "" {
+		cfg.TenantDataDir = t.TempDir()
+	}
 	return cfg
 }
 

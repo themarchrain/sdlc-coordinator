@@ -30,6 +30,15 @@ function RoleGate({ min, children }: { min: WorkspaceRole; children: ReactNode }
   return children
 }
 
+// SupportOnlyGate：业务页面对应的 API 已收窄为 support_only——
+// 无支持访问的超管直接访问业务路由时引导回运行总览，不再渲染必然 403 的页面；
+// 支持访问中（role 降为 tenant_admin）行为不变。
+function SupportOnlyGate({ children }: { children: ReactNode }) {
+  const { superAdmin, session } = useWorkspaceSession()
+  if (superAdmin && !session?.support?.active) return <Navigate to="/" replace />
+  return children
+}
+
 function HomeRoute() {
   const { role } = useWorkspaceSession()
   if (role === 'member') return <MemberHomePage />
@@ -53,13 +62,13 @@ function AdminRoutes() {
           <Route index element={<HomeRoute />} />
           <Route path="setup" element={<RoleGate min="super_admin"><ConfigurationPage /></RoleGate>} />
           <Route path="settings" element={<RoleGate min="super_admin"><ConfigurationPage /></RoleGate>} />
-          <Route path="people" element={<RoleGate min="tenant_admin"><PeoplePage /></RoleGate>} />
+          <Route path="people" element={<RoleGate min="tenant_admin"><SupportOnlyGate><PeoplePage /></SupportOnlyGate></RoleGate>} />
           {/* 组织管理内嵌工作台：菜单直达 /org；portal 区只留无壳页。 */}
           <Route path="org" element={<RoleGate min="tenant_admin"><OrgManagementPage /></RoleGate>} />
-          <Route path="requirements" element={<RequirementsPage />} />
-          <Route path="repositories" element={<RoleGate min="tenant_admin"><RepositoriesPage /></RoleGate>} />
-          <Route path="tasks" element={<TasksPage />} />
-          <Route path="explorer" element={<DataExplorerPage />} />
+          <Route path="requirements" element={<SupportOnlyGate><RequirementsPage /></SupportOnlyGate>} />
+          <Route path="repositories" element={<RoleGate min="tenant_admin"><SupportOnlyGate><RepositoriesPage /></SupportOnlyGate></RoleGate>} />
+          <Route path="tasks" element={<SupportOnlyGate><TasksPage /></SupportOnlyGate>} />
+          <Route path="explorer" element={<SupportOnlyGate><DataExplorerPage /></SupportOnlyGate>} />
           <Route path="connectors" element={<RoleGate min="tenant_admin"><ConnectorsPage /></RoleGate>} />
           <Route path="operations" element={<RoleGate min="tenant_admin"><OperationsPage /></RoleGate>} />
           <Route path="agents" element={<AgentObservabilityPage />} />

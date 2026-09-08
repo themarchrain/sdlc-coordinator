@@ -17,6 +17,7 @@ import (
 
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/configuration"
+	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/events"
 	"sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
@@ -120,6 +121,16 @@ func TestNewBootstrapExposesPeopleDirectoryWithoutRuntimeWorkers(t *testing.T) {
 		t.Fatal("missing portal session cookie")
 	}
 
+	// people 面收窄为 support_only——bootstrap 装配同语义，进入
+	// 支持访问后仍可用（本测锁定的是 bootstrap 装配接线，非鉴权窗口）。
+	createdTenant, err := application.ControlPlane.CreateTenant(context.Background(), nil, controlplane.TenantInput{Slug: "acme-it", DisplayName: "Acme IT"})
+	if err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	if err := application.ControlPlane.EnterSupportAccess(context.Background(), portalCookie.Value, createdTenant.ID, "bootstrap wiring test"); err != nil {
+		t.Fatalf("enter support access: %v", err)
+	}
+
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/people", nil)
 	request.AddCookie(portalCookie)
@@ -168,6 +179,18 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	}
 	seedAppRepository(t, application.DB, "repo-app-reviewer", "1001", "group/project", reviewerBaseURL)
 	repositoryID := "repo-app-reviewer"
+	// 派发按真租户路由（fail-closed）：为仓登记路由索引指到默认租户。
+	cpRepo := application.ControlPlane.Repository()
+	tenant := &controlplane.Tenant{Slug: "acme-it", DisplayName: "Acme IT"}
+	if err := cpRepo.CreateTenant(context.Background(), tenant); err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	if err := cpRepo.UpsertRepoRouteIndex(context.Background(), controlplane.RepoRouteIndex{
+		Provider: "gitlab", BaseURL: reviewerBaseURL, PathWithNamespace: "group/project",
+		TenantID: tenant.ID, RepoFingerprint: repositoryID,
+	}); err != nil {
+		t.Fatalf("seed repo route index: %v", err)
+	}
 	// 事件载荷 URL 固定为不可达的外部地址:若实现回退为事件 URL,真实 git 准备会
 	// 网络失败,本测试即红——锁定「clone 以注册仓行为权威」。
 	task, err := application.Orch.CreateTask(context.Background(), &model.Task{
@@ -211,6 +234,7 @@ func TestNewAndBootstrapMigrateAgentExecutions(t *testing.T) {
 }
 
 func TestNewWiresAdminQueryRoutesToSharedDatabase(t *testing.T) {
+	ctx := context.Background()
 	db := openAppTestDB(t)
 	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
@@ -219,11 +243,30 @@ func TestNewWiresAdminQueryRoutesToSharedDatabase(t *testing.T) {
 		t.Fatalf("new app: %v", err)
 	}
 
-	if err := db.Create(&model.Task{
+	// 真分库装配：经服务建租户（触发同事务数据面开通），任务种进租户库，
+	// 租户作用域查询命中租户自己的库（不再是平台库）。
+	if _, err := application.ControlPlane.CreateTenant(ctx, nil, controlplane.TenantInput{Slug: "acme-it", DisplayName: "Acme IT"}); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tenant, err := application.ControlPlane.Repository().GetTenantBySlug(ctx, "acme-it")
+	if err != nil || tenant == nil {
+		t.Fatalf("lookup tenant: %v", err)
+	}
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := tenantStore.DB.Create(&model.Task{
 		TaskID: "task-app-admin", DedupeKey: "task-app-admin", Type: "test", Role: "TesterWorker", Status: model.TaskStatusPending,
 	}).Error; err != nil {
-		t.Fatalf("create task: %v", err)
+		t.Fatalf("create task in tenant store: %v", err)
 	}
+
+	t.Cleanup(func() {
+		if closer, ok := application.TenantStores.(interface{ Close() }); ok {
+			closer.Close()
+		}
+	})
 
 	recorder := httptest.NewRecorder()
 	request := authenticatedAdminRequest(t, application, http.MethodGet, "/api/admin/tasks")
@@ -249,6 +292,12 @@ func TestNewWiresConnectorAdminRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
+
+	t.Cleanup(func() {
+		if closer, ok := application.TenantStores.(interface{ Close() }); ok {
+			closer.Close()
+		}
+	})
 
 	recorder := httptest.NewRecorder()
 	request := authenticatedAdminRequest(t, application, http.MethodGet, "/api/admin/connectors")
@@ -299,6 +348,24 @@ func authenticatedAdminRequest(t *testing.T, application *App, method, path stri
 	}
 	if cookie == nil {
 		t.Fatal("missing portal session cookie")
+	}
+	// 业务面对超管收窄为 support_only：helper 统一进入支持访问
+	//（租户 lookup-or-create；经服务创建以触发数据面开通）。
+	repository := application.ControlPlane.Repository()
+	tenant, err := repository.GetTenantBySlug(ctx, "acme-it")
+	if err != nil {
+		t.Fatalf("lookup support tenant: %v", err)
+	}
+	if tenant == nil {
+		if _, err := application.ControlPlane.CreateTenant(ctx, nil, controlplane.TenantInput{Slug: "acme-it", DisplayName: "Acme IT"}); err != nil {
+			t.Fatalf("seed support tenant: %v", err)
+		}
+		if tenant, err = repository.GetTenantBySlug(ctx, "acme-it"); err != nil || tenant == nil {
+			t.Fatalf("reload support tenant: %v", err)
+		}
+	}
+	if err := application.ControlPlane.EnterSupportAccess(ctx, cookie.Value, tenant.ID, "wiring test"); err != nil {
+		t.Fatalf("enter support access: %v", err)
 	}
 	request := httptest.NewRequest(method, path, nil)
 	request.AddCookie(cookie)

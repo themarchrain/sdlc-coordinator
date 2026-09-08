@@ -63,10 +63,13 @@ func (s ControlPlaneSettings) Validate() error {
 }
 
 type Config struct {
-	AgentRunner                  AgentRunnerSettings
-	HTTPAddr                     string
-	DatabaseDSN                  string
-	ControlPlane                 ControlPlaneSettings
+	AgentRunner  AgentRunnerSettings
+	HTTPAddr     string
+	DatabaseDSN  string
+	ControlPlane ControlPlaneSettings
+	// TenantDataDir 是租户数据根（基础设施配置与 CONTROL_PLANE_* 同级，
+	// 不入运行时快照 schema），env TENANT_DATA_DIR 可覆盖。
+	TenantDataDir                string
 	CodeHostProvider             string
 	CodeHostBaseURL              string
 	CodeHostReworkAllowedUserIDs string
@@ -78,6 +81,9 @@ type Config struct {
 	Scheduler                    SchedulerSettings
 }
 
+// DefaultTenantDataDir 是租户数据根的默认值（相对进程工作目录）。
+const DefaultTenantDataDir = "data/tenants"
+
 func Load() Config {
 	bootstrap := LoadBootstrap()
 	codeHostProvider := strings.ToLower(getEnv("CODEHOST_PROVIDER", ""))
@@ -85,7 +91,8 @@ func Load() Config {
 	scheduler := loadSchedulerSettings()
 
 	cfg := Config{
-		ControlPlane: bootstrap.ControlPlane,
+		ControlPlane:  bootstrap.ControlPlane,
+		TenantDataDir: strings.TrimSpace(getEnv("TENANT_DATA_DIR", DefaultTenantDataDir)),
 		AgentRunner: AgentRunnerSettings{
 			ServiceURL:      getEnv("AGENT_RUNNER_SERVICE_URL", "http://agent-runner:8081"),
 			WorkspaceRoot:   getEnv("AGENT_RUNNER_WORKSPACE_ROOT", "/app/workspaces"),

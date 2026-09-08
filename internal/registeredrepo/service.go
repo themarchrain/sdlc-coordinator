@@ -109,6 +109,49 @@ type Service struct {
 	httpClient   *http.Client
 	activity     ActivityChecker
 	probeFactory func(provider string) ProjectProbe
+	// routeIndex 是 repo_route_index 写穿端口；nil = 不写穿
+	//（平台级装配/存量回填路径）。写穿失败不阻塞注册，由低频对账兜底修正。
+	routeIndex    RouteIndexSync
+	routeTenantID uint
+}
+
+// RouteIndexEntry 是路由索引的写穿条目（平台身份锚点 + 仓指纹）。
+type RouteIndexEntry struct {
+	Provider          string
+	BaseURL           string
+	PathWithNamespace string
+	RepoFingerprint   string
+}
+
+// RouteIndexSync 是控制面路由索引的写穿端口。
+type RouteIndexSync interface {
+	Upsert(ctx context.Context, tenantID uint, entry RouteIndexEntry) error
+	Delete(ctx context.Context, entry RouteIndexEntry) error
+}
+
+// SetRouteIndexSync 注入写穿端口与租户上下文（租户作用域 handler 装配期调用）。
+func (s *Service) SetRouteIndexSync(sync RouteIndexSync, tenantID uint) {
+	if s == nil {
+		return
+	}
+	s.routeIndex = sync
+	s.routeTenantID = tenantID
+}
+
+func (s *Service) indexEntry(repo *RegisteredRepository) RouteIndexEntry {
+	return RouteIndexEntry{
+		Provider: repo.Provider, BaseURL: repo.BaseURL, PathWithNamespace: repo.PathWithNamespace,
+		RepoFingerprint: repo.RepositoryID,
+	}
+}
+
+// syncUpsertRoute 在仓行身份定稿后写穿索引；失败不阻塞注册（低频对账以
+// 租户库为权威兜底修正）。
+func (s *Service) syncUpsertRoute(ctx context.Context, repo *RegisteredRepository) {
+	if s == nil || s.routeIndex == nil {
+		return
+	}
+	_ = s.routeIndex.Upsert(ctx, s.routeTenantID, s.indexEntry(repo))
 }
 
 // NewService 构造注册服务:探针按仓行的 provider/base_url 构造(平台身份按仓),
@@ -182,9 +225,11 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 		return nil, err
 	}
 	if err := s.refreshIdentity(ctx, repo); err != nil {
+		s.syncUpsertRoute(ctx, repo)
 		view := ViewFrom(repo)
 		return &view, err
 	}
+	s.syncUpsertRoute(ctx, repo)
 	view := ViewFrom(repo)
 	return &view, nil
 }
@@ -333,10 +378,12 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 	}
 	if pathChanged || tokenChanged || providerChanged || baseURLChanged {
 		if err := s.refreshIdentity(ctx, repo); err != nil {
+			s.syncUpsertRoute(ctx, repo)
 			view := ViewFrom(repo)
 			return &view, err
 		}
 	}
+	s.syncUpsertRoute(ctx, repo)
 	view := ViewFrom(repo)
 	return &view, nil
 }

@@ -18,7 +18,7 @@ func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 func (repository *Repository) Migrate() error {
 	if err := repository.db.AutoMigrate(
 		&User{}, &Tenant{}, &Membership{}, &InviteCode{},
-		&RunnerAssignment{}, &AuditLog{}, &Session{},
+		&RunnerAssignment{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
 	); err != nil {
 		return fmt.Errorf("migrate control plane: %w", err)
 	}

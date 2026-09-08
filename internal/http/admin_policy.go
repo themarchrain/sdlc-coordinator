@@ -12,9 +12,10 @@ func (adminMatrixPolicy) Lookup(method, path string) (handlers.AdminRouteAccess,
 		}
 		if row.Method == method && row.Path == path {
 			return handlers.AdminRouteAccess{
-				SuperAdmin:  row.SuperAdmin == AccessAllow,
-				TenantAdmin: row.TenantAdmin == AccessAllow,
-				Member:      row.Member == AccessAllow,
+				SuperAdmin:            row.SuperAdmin == AccessAllow,
+				SuperAdminSupportOnly: row.SuperAdmin == AccessSupportOnly,
+				TenantAdmin:           row.TenantAdmin == AccessAllow,
+				Member:                row.Member == AccessAllow,
 			}, true
 		}
 	}

@@ -112,9 +112,12 @@ func TestAdminAPIMemberDeniedWritesAndTenantAdminOnlyRoutes(t *testing.T) {
 	}
 }
 
-func TestAdminAPISuperAdminUsesBusinessAPIsWithoutSupportAccess(t *testing.T) {
+// 业务面 API 对超管收窄为 support_only（红线头条升级）——
+// 未走支持访问一律 403；运维/观测/配置面（overview/metrics/configuration/
+// agents/operations/connectors）保持 allow；支持访问中业务面放行（带审计）。
+func TestAdminAPISuperAdminBusinessAPISupportOnly(t *testing.T) {
 	world := newFullyWiredWorld(t)
-	_ = world.seedTenant(t, "acme")
+	tenantID := world.seedTenant(t, "acme")
 	token := world.loginSuperAdmin(t)
 
 	status := world.portalDo(t, http.MethodGet, "/api/admin/configuration/status", token, nil)
@@ -127,9 +130,46 @@ func TestAdminAPISuperAdminUsesBusinessAPIsWithoutSupportAccess(t *testing.T) {
 		t.Fatalf("super_admin get configuration = %d body=%s", config.Code, config.Body.String())
 	}
 
+	overview := world.portalDo(t, http.MethodGet, "/api/admin/overview", token, nil)
+	if overview.Code != http.StatusOK {
+		t.Fatalf("super_admin overview = %d body=%s", overview.Code, overview.Body.String())
+	}
+
+	schedulerDefaults := world.portalDo(t, http.MethodGet, "/api/admin/scheduler/defaults", token, nil)
+	if schedulerDefaults.Code != http.StatusOK {
+		t.Fatalf("super_admin scheduler defaults = %d body=%s", schedulerDefaults.Code, schedulerDefaults.Body.String())
+	}
+
+	// 未支持访问：业务面 403。
 	tasks := world.portalDo(t, http.MethodGet, "/api/admin/tasks?page=1&page_size=10", token, nil)
-	if tasks.Code != http.StatusOK {
-		t.Fatalf("super_admin list tasks = %d body=%s", tasks.Code, tasks.Body.String())
+	if tasks.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support list tasks = %d, want 403 body=%s", tasks.Code, tasks.Body.String())
+	}
+	repos := world.portalDo(t, http.MethodPost, "/api/admin/repositories", token, map[string]any{})
+	if repos.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support create repository = %d, want 403", repos.Code)
+	}
+	people := world.portalDo(t, http.MethodGet, "/api/admin/people", token, nil)
+	if people.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support list people = %d, want 403", people.Code)
+	}
+	requirements := world.portalDo(t, http.MethodGet, "/api/admin/requirements", token, nil)
+	if requirements.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support list requirements = %d, want 403", requirements.Code)
+	}
+
+	// 支持访问中：业务面放行（动作入审计）。
+	ctx := context.Background()
+	if err := world.ControlPlane.EnterSupportAccess(ctx, token, tenantID, "支持访问收窄"); err != nil {
+		t.Fatalf("enter support access: %v", err)
+	}
+	tasksSupported := world.portalDo(t, http.MethodGet, "/api/admin/tasks?page=1&page_size=10", token, nil)
+	if tasksSupported.Code != http.StatusOK {
+		t.Fatalf("super_admin with support list tasks = %d body=%s", tasksSupported.Code, tasksSupported.Body.String())
+	}
+	peopleSupported := world.portalDo(t, http.MethodGet, "/api/admin/people", token, nil)
+	if peopleSupported.Code != http.StatusOK {
+		t.Fatalf("super_admin with support list people = %d body=%s", peopleSupported.Code, peopleSupported.Body.String())
 	}
 }
 
