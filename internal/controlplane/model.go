@@ -107,6 +107,7 @@ type AuditLog struct {
 	TenantID      *uint     `gorm:"index"`
 	Action        string    `gorm:"not null;index"`
 	Detail        string    `gorm:"not null;default:''"`
+	SourceIP      string    `gorm:"not null;default:''"`
 	CreatedAt     time.Time `gorm:"index"`
 }
 

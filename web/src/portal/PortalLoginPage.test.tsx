@@ -34,14 +34,14 @@ describe('PortalLoginPage', () => {
     expect(document.body.textContent).not.toContain('企业')
   })
 
-  it('navigates to org page for tenant scoped sessions', async () => {
+  it('navigates tenant scoped sessions to the admin workspace root', async () => {
     const user = userEvent.setup()
     vi.spyOn(portalApi, 'login').mockResolvedValue(tenantSession)
     render(
       <MemoryRouter initialEntries={['/portal/login']}>
         <Routes>
           <Route path="/portal/login" element={<PortalLoginPage />} />
-          <Route path="/portal/org" element={<LocationProbe />} />
+          <Route path="/" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -49,7 +49,7 @@ describe('PortalLoginPage', () => {
     await user.type(screen.getByLabelText('密码'), 'password-001')
     await user.click(screen.getByRole('button', { name: /登\s*录/ }))
     expect(portalApi.login).toHaveBeenCalledWith('member', 'password-001')
-    expect(await screen.findByTestId('location')).toHaveTextContent('/portal/org')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/')
   })
 
   it('navigates to super admin area for super admin sessions', async () => {

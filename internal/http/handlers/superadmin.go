@@ -22,6 +22,7 @@ func NewSuperAdminHandler(service *controlplane.Service) *SuperAdminHandler {
 // RegisterRoutes 挂载超管端点；中间件（RequirePortalAuth + RequireSuperAdmin）
 // 由路由装配层挂在外层 group 上。
 func (handler *SuperAdminHandler) RegisterRoutes(group *gin.RouterGroup) {
+	group.Use(AnnotateAuditSourceIP())
 	group.GET("/tenants", handler.ListTenants)
 	group.POST("/tenants", handler.CreateTenant)
 	group.PATCH("/tenants/:id", handler.UpdateTenant)
@@ -315,6 +316,7 @@ func (handler *SuperAdminHandler) ListAuditLog(c *gin.Context) {
 			"tenant_id":      logs[i].TenantID,
 			"action":         logs[i].Action,
 			"detail":         logs[i].Detail,
+			"source_ip":      logs[i].SourceIP,
 			"created_at":     logs[i].CreatedAt.UTC().Format(timeRFC3339),
 		})
 	}

@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"sdlc-coordinator/internal/admin"
-	"sdlc-coordinator/internal/auth"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
 	"sdlc-coordinator/internal/controlplane"
@@ -15,6 +14,7 @@ import (
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
+	"sdlc-coordinator/internal/tenantdb"
 	adminweb "sdlc-coordinator/web"
 
 	"github.com/gin-gonic/gin"
@@ -34,10 +34,10 @@ type RouterOptions struct {
 	PeopleService        *people.Service
 	PeopleLookup         people.IdentityLookup
 	MCPHandler           *handlers.MCPHandler
-	AuthService          *auth.Service
 	RepositoryService    *registeredrepo.Service
 	RequirementsService  *requirements.Service
 	ControlPlaneService  *controlplane.Service
+	TenantStores         tenantdb.Resolver
 }
 
 type RouterOption func(*RouterOptions)
@@ -113,12 +113,6 @@ func WithPeopleService(service *people.Service, lookup people.IdentityLookup) Ro
 	}
 }
 
-func WithAuthService(service *auth.Service) RouterOption {
-	return func(options *RouterOptions) {
-		options.AuthService = service
-	}
-}
-
 func WithRepositoryService(service *registeredrepo.Service) RouterOption {
 	return func(options *RouterOptions) {
 		options.RepositoryService = service
@@ -131,11 +125,17 @@ func WithRequirementsService(service *requirements.Service) RouterOption {
 	}
 }
 
-// WithControlPlaneService 注入多租户控制面服务（纯增量）；为 nil 时新认证
-// 体系整体不挂载，存量路由行为不变。
+// WithControlPlaneService 注入多租户控制面；为 nil 时不挂门户/超管路由，
+// /api/admin 也无会话门禁（仅供 handler 隔离测试）。生产装配始终注入。
 func WithControlPlaneService(service *controlplane.Service) RouterOption {
 	return func(options *RouterOptions) {
 		options.ControlPlaneService = service
+	}
+}
+
+func WithTenantStoreResolver(resolver tenantdb.Resolver) RouterOption {
+	return func(options *RouterOptions) {
+		options.TenantStores = resolver
 	}
 }
 
@@ -190,12 +190,17 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 
 	api := router.Group("/api")
 	{
+		var controlPlaneHandler *handlers.ControlPlaneHandler
+		if options.ControlPlaneService != nil {
+			controlPlaneHandler = handlers.NewControlPlaneHandler(options.ControlPlaneService)
+			controlPlaneHandler.SetAdminRoutePolicy(adminMatrixPolicy{})
+		}
 		var adminMiddleware []gin.HandlerFunc
-		if options.AuthService != nil {
-			authHandler := handlers.NewAuthHandler(options.AuthService)
-			api.POST("/auth/login", authHandler.Login)
-			api.GET("/auth/session", authHandler.Session)
-			adminMiddleware = append(adminMiddleware, authHandler.RequireSession)
+		if controlPlaneHandler != nil {
+			adminMiddleware = append(adminMiddleware, controlPlaneHandler.RequirePortalAuth, controlPlaneHandler.RequireAdminMatrix)
+			if options.TenantStores != nil {
+				adminMiddleware = append(adminMiddleware, handlers.BindTenantStore(options.TenantStores))
+			}
 		}
 		adminAPI := api.Group("/admin", adminMiddleware...)
 		var adminOperations handlers.AdminOperations
@@ -256,19 +261,17 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 			runtimeAPI.POST("/events/gitea", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 			runtimeAPI.POST("/events/github", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		}
-	}
 
-	// 控制面（多租户）：独立命名空间 /api/portal/* 与 /api/super-admin/*，
-	// 与存量 /api/auth/*、/api/admin/* 并行（切换归后续批次）。
-	if options.ControlPlaneService != nil {
-		controlPlaneHandler := handlers.NewControlPlaneHandler(options.ControlPlaneService)
-		superAdminHandler := handlers.NewSuperAdminHandler(options.ControlPlaneService)
-		portal := api.Group("/portal")
-		controlPlaneHandler.RegisterAuthRoutes(portal)
-		controlPlaneHandler.RegisterTenantRoutes(portal.Group("/tenant"))
-		superAdmin := api.Group("/super-admin",
-			controlPlaneHandler.RequirePortalAuth, controlPlaneHandler.RequireSuperAdmin)
-		superAdminHandler.RegisterRoutes(superAdmin)
+		// 控制面：/api/portal/* 与 /api/super-admin/*。同一 handler 也门禁 /api/admin/*。
+		if controlPlaneHandler != nil {
+			superAdminHandler := handlers.NewSuperAdminHandler(options.ControlPlaneService)
+			portal := api.Group("/portal")
+			controlPlaneHandler.RegisterAuthRoutes(portal)
+			controlPlaneHandler.RegisterTenantRoutes(portal.Group("/tenant"))
+			superAdmin := api.Group("/super-admin",
+				controlPlaneHandler.RequirePortalAuth, controlPlaneHandler.RequireSuperAdmin)
+			superAdminHandler.RegisterRoutes(superAdmin)
+		}
 	}
 
 	return router

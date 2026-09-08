@@ -15,8 +15,7 @@ type GateState =
   | { phase: 'ready'; session: PortalSessionPayload }
 
 // PortalSessionGate 拉取会话并按状态分流：强制改密账号先改密；
-// 超管（未支持访问）跳独立后台；多组织未选择先选组织；支持访问中的超管留在
-// 组织页（顶部横幅提示审计态）。
+// 超管（未支持访问）跳独立后台；多组织未选择先选组织；已绑组织进管理台工作区。
 function PortalSessionGate() {
   const location = useLocation()
   const [state, setState] = useState<GateState>({ phase: 'loading' })
@@ -47,7 +46,7 @@ function PortalSessionGate() {
     return <Navigate to="/portal/select-tenant" replace />
   }
   if (session.scope.kind === 'tenant' && path === '/portal/select-tenant') {
-    return <Navigate to="/portal/org" replace />
+    return <Navigate to="/" replace />
   }
   return (
     <>

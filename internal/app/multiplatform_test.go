@@ -76,7 +76,7 @@ func TestMultiPlatformCoexistence(t *testing.T) {
 	defer giteaBackend.Close()
 
 	db := openAppTestDB(t)
-	application, err := New(config.Config{HTTPAddr: ":0"}, zap.NewNop(), db)
+	application, err := New(withTestControlPlane(t, config.Config{HTTPAddr: ":0"}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app without global codehost config: %v", err)
 	}
@@ -231,11 +231,11 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 		t.Fatalf("seed legacy row: %v", err)
 	}
 
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "gitlab",
 		CodeHostBaseURL:  "https://gitlab.example.com",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -253,11 +253,11 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	}
 
 	// 重启幂等:第二次启动回填零行、索引 IF NOT EXISTS,仓行与状态不变。
-	if _, err := New(config.Config{
+	if _, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "gitlab",
 		CodeHostBaseURL:  "https://gitlab.example.com",
-	}, zap.NewNop(), db); err != nil {
+	}), zap.NewNop(), db); err != nil {
 		t.Fatalf("second startup must be idempotent: %v", err)
 	}
 	rerun, err := repoStore.Get(context.Background(), "repo_legacy")

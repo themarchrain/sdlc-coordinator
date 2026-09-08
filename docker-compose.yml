@@ -9,6 +9,9 @@ services:
       COORDINATOR_LOG_LEVEL: info
       COORDINATOR_LOG_DIR: /app/logs
       COORDINATOR_ENVIRONMENT: production
+      CONTROL_PLANE_DSN: "file:/app/data/control-plane.db?_foreign_keys=on&_busy_timeout=5000"
+      CONTROL_PLANE_SUPERADMIN_USERNAME: "${CONTROL_PLANE_SUPERADMIN_USERNAME:-}"
+      CONTROL_PLANE_SUPERADMIN_PASSWORD: "${CONTROL_PLANE_SUPERADMIN_PASSWORD:-}"
       GIN_MODE: release
     volumes:
       - ./data:/app/data

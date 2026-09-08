@@ -3,12 +3,11 @@ import { useState } from 'react'
 import {
   ApiOutlined,
   AppstoreOutlined,
-  BarChartOutlined,
+  BankOutlined,
   BulbOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FolderOutlined,
-  LineChartOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ProfileOutlined,
@@ -19,6 +18,7 @@ import {
 import { NavLink, useSearchParams } from 'react-router-dom'
 import { PageHeadingHostContext } from '../components/PageHeading'
 import { RepositorySwitcher } from '../components/RepositorySwitcher'
+import { useWorkspaceSession } from './workspaceSession'
 
 const workspaces = [
   { to: '/', label: '运行总览', icon: <AppstoreOutlined />, end: true },
@@ -49,6 +49,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [pageHeadingHost, setPageHeadingHost] = useState<HTMLDivElement | null>(null)
   const [searchParams] = useSearchParams()
   const repositoryID = searchParams.get('repository_id')
+  const { role, superAdmin } = useWorkspaceSession()
+  const member = role === 'member' && !superAdmin
+  const workspaceItems = member
+    ? [
+        { to: '/', label: '工作台', icon: <AppstoreOutlined />, end: true },
+        { to: '/requirements', label: '需求管理', icon: <BulbOutlined /> },
+        { to: '/tasks', label: '任务查询', icon: <ProfileOutlined /> },
+        { to: '/explorer', label: '数据查询', icon: <DatabaseOutlined /> },
+      ]
+    : workspaces
+  const adminItems = member
+    ? []
+    : [
+        ...adminWorkspaces.filter((item) => item.to !== '/settings' || superAdmin || role === 'super_admin'),
+        ...(role === 'tenant_admin' ? [{ to: '/portal/org', label: '组织管理', icon: <BankOutlined /> }] : []),
+      ]
 
   return (
     <div className={`control-room${collapsed ? ' control-room--collapsed' : ''}`}>
@@ -60,8 +76,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <nav className="workspace-nav" aria-label="管理台工作区">
           <div className="nav-caption">工作区</div>
-          {workspaces.map((item) => (
-            <NavLink key={item.to} to={withRepository(item.to, repositoryID)} end={item.end} title={item.label}>
+          {workspaceItems.map((item) => (
+            <NavLink key={item.to} to={withRepository(item.to, repositoryID)} end={'end' in item ? item.end : false} title={item.label}>
               {item.icon}<span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
@@ -71,12 +87,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               {item.icon}<span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
-          <div className="nav-group-title">管理与配置</div>
-          {adminWorkspaces.map((item) => (
-            <NavLink key={item.to} to={withRepository(item.to, repositoryID)} title={item.label}>
-              {item.icon}<span className="nav-label">{item.label}</span>
-            </NavLink>
-          ))}
+          {adminItems.length > 0 ? (
+            <>
+              <div className="nav-group-title">管理与配置</div>
+              {adminItems.map((item) => (
+                <NavLink key={item.to} to={withRepository(item.to, repositoryID)} title={item.label}>
+                  {item.icon}<span className="nav-label">{item.label}</span>
+                </NavLink>
+              ))}
+            </>
+          ) : null}
         </nav>
 
         <button

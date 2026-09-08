@@ -24,6 +24,20 @@ func TestLoadControlPlaneSettings(t *testing.T) {
 	}
 }
 
+func TestControlPlaneSettingsValidateRequiresDSNAndSeed(t *testing.T) {
+	if err := (ControlPlaneSettings{}).Validate(); err == nil {
+		t.Fatal("expected empty settings to fail")
+	}
+	if err := (ControlPlaneSettings{DSN: "file:control-plane.db"}).Validate(); err == nil {
+		t.Fatal("expected missing seed to fail")
+	}
+	if err := (ControlPlaneSettings{
+		DSN: "file:control-plane.db", SuperAdminUsername: "root", SuperAdminPassword: "secret",
+	}).Validate(); err != nil {
+		t.Fatalf("complete settings: %v", err)
+	}
+}
+
 func TestLoadControlPlaneSettingsDefaultToDisabled(t *testing.T) {
 	cfg := Load()
 	if cfg.ControlPlane.DSN != "" {

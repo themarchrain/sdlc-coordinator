@@ -1,6 +1,5 @@
 import type {
   AutomationMetrics,
-  AuthSession,
   BatchIdentityLookupRequest,
   BatchIdentityLookupResult,
   AgentExecution,
@@ -24,7 +23,6 @@ import type {
   PersonInput,
   IdentityLookupRequest,
   IdentityLookupResult,
-  LoginRequest,
   Query,
   RegisteredRepository,
   RepositoryCreateInput,
@@ -112,9 +110,6 @@ function jsonBody(value: unknown): string {
 }
 
 export const adminApi = {
-	login: (value: LoginRequest) => request<AuthSession>('/api/auth/login', { method: 'POST', body: jsonBody(value) }),
-	session: (signal?: AbortSignal) => request<AuthSession>('/api/auth/session', { signal }),
-
 	configurationStatus: (signal?: AbortSignal) => request<ConfigurationStatus>('/api/admin/configuration/status', { signal }),
 	configuration: (signal?: AbortSignal) => request<ConfigurationView>('/api/admin/configuration', { signal }),
 	validateConfiguration: (value: ConfigurationUpdateRequest) => request<ConfigurationValidationResult>('/api/admin/configuration/validate', { method: 'POST', body: jsonBody(value) }),

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
 import { ConfigurationBoundary } from './ConfigurationBoundary'
+import { WorkspaceSessionProvider } from './workspaceSession'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -47,5 +48,19 @@ describe('ConfigurationBoundary', () => {
     )
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/people')
+  })
+
+  it('does not send members into the setup wizard', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'setup_pending', revision: 0 })
+
+    render(
+      <MemoryRouter initialEntries={['/tasks']}>
+        <WorkspaceSessionProvider value={{ session: null, role: 'member', superAdmin: false }}>
+          <ConfigurationBoundary><LocationProbe /></ConfigurationBoundary>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('location')).toHaveTextContent('/tasks')
   })
 })

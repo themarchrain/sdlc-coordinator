@@ -1,4 +1,4 @@
-// portal.ts 是新认证体系（多租户控制面 M1）的前端 API client：会话走
+// portal.ts 是新认证体系的前端 API client：会话走
 // HttpOnly cookie（credentials: same-origin），与存量 adminApi（单管理员
 // 会话）互不干涉。
 
@@ -68,6 +68,7 @@ export interface PortalAuditItem {
   tenant_id: number | null
   action: string
   detail: string
+  source_ip?: string
   created_at: string
 }
 

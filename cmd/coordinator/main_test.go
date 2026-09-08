@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"sdlc-coordinator/internal/config"
@@ -22,7 +24,20 @@ func TestBuildApplicationSelectsBootstrapModeWithoutRuntimeWorkers(t *testing.T)
 	resolution := configuration.Resolution{Mode: configuration.ModeSetupPending}
 	service := configuration.NewService(repository, resolution)
 
-	application, err := buildApplication(config.BootstrapConfig{HTTPAddr: ":0"}, resolution, service, configuration.NewShutdownSignal(), zap.NewNop(), db)
+	dir, err := os.MkdirTemp("", "main-bootstrap-cp")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	bootstrap := config.BootstrapConfig{
+		HTTPAddr: ":0",
+		ControlPlane: config.ControlPlaneSettings{
+			DSN:                "file:" + filepath.Join(dir, "control-plane.db") + "?_busy_timeout=1000",
+			SuperAdminUsername: "root",
+			SuperAdminPassword: "test-super-password",
+		},
+	}
+	application, err := buildApplication(bootstrap, resolution, service, configuration.NewShutdownSignal(), zap.NewNop(), db)
 
 	if err != nil {
 		t.Fatalf("build application: %v", err)

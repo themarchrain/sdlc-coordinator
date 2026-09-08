@@ -5,9 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../api/client'
 import { AppShell } from './AppShell'
 import { PageHeading } from '../components/PageHeading'
+import { WorkspaceSessionProvider, type WorkspaceSessionValue } from './workspaceSession'
 import '../styles/index.css'
 
 afterEach(() => vi.restoreAllMocks())
+
+const memberWorkspace: WorkspaceSessionValue = { session: null, role: 'member', superAdmin: false }
+const tenantAdminWorkspace: WorkspaceSessionValue = { session: null, role: 'tenant_admin', superAdmin: false }
 
 function mockRepositories() {
   vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({
@@ -72,6 +76,45 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: /仓库管理/ })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: /连接器实例/ })).toHaveAttribute('href', '/connectors')
     expect(screen.queryByText('状态源连接器')).not.toBeInTheDocument()
+  })
+
+  it('hides repository management and other admin workspaces from members', () => {
+    mockRepositories()
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <WorkspaceSessionProvider value={memberWorkspace}>
+          <AppShell><div>成员内容</div></AppShell>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: /工作台/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /需求管理/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /任务查询/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /数据查询/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Agent 运行/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /仓库管理/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /人员资产/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /系统配置/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /安全操作/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /连接器实例/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('管理与配置')).not.toBeInTheDocument()
+  })
+
+  it('keeps repository management for tenant admins and hides system configuration', () => {
+    mockRepositories()
+    render(
+      <MemoryRouter initialEntries={['/repositories']}>
+        <WorkspaceSessionProvider value={tenantAdminWorkspace}>
+          <AppShell><div>仓库内容</div></AppShell>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: /仓库管理/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /人员资产/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('href', '/portal/org')
+    expect(screen.queryByRole('link', { name: /系统配置/ })).not.toBeInTheDocument()
   })
 
   it('defaults the top-bar switcher to 全部仓库', async () => {

@@ -47,10 +47,24 @@ type batchLookupIdentityBody struct {
 
 func NewAdminPeopleHandler(service *people.Service, lookup people.IdentityLookup) *AdminPeopleHandler {
 	handler := &AdminPeopleHandler{service: service, lookup: lookup}
-	if service != nil && lookup != nil {
+	if lookup != nil {
 		handler.batch = people.NewBatchLookupService(service, lookup)
 	}
 	return handler
+}
+
+func (handler *AdminPeopleHandler) peopleFor(c *gin.Context) *people.Service {
+	if store, ok := TenantStoreFrom(c); ok {
+		return people.NewService(people.NewRepository(store.DB))
+	}
+	return handler.service
+}
+
+func (handler *AdminPeopleHandler) batchFor(c *gin.Context) *people.BatchLookupService {
+	if _, ok := TenantStoreFrom(c); ok && handler.lookup != nil {
+		return people.NewBatchLookupService(handler.peopleFor(c), handler.lookup)
+	}
+	return handler.batch
 }
 
 func (handler *AdminPeopleHandler) RegisterRoutes(group *gin.RouterGroup) {
@@ -72,7 +86,7 @@ func (handler *AdminPeopleHandler) LookupIdentitiesBatch(c *gin.Context) {
 		writeAdminError(c, http.StatusServiceUnavailable, "gitlab_lookup_unavailable", "GitLab 身份查询暂不可用")
 		return
 	}
-	result, err := handler.batch.Lookup(c.Request.Context(), people.BatchLookupRequest{
+	result, err := handler.batchFor(c).Lookup(c.Request.Context(), people.BatchLookupRequest{
 		Provider: body.Provider, BaseURL: body.BaseURL, Token: body.Token,
 	})
 	if err != nil {
@@ -87,7 +101,7 @@ func (handler *AdminPeopleHandler) Create(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	person, err := handler.service.Create(c.Request.Context(), personRequest(body))
+	person, err := handler.peopleFor(c).Create(c.Request.Context(), personRequest(body))
 	if err != nil {
 		writeAdminPeopleError(c, err)
 		return
@@ -104,7 +118,7 @@ func (handler *AdminPeopleHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := handler.service.List(c.Request.Context(), people.PersonFilter{
+	result, err := handler.peopleFor(c).List(c.Request.Context(), people.PersonFilter{
 		PageRequest: people.PageRequest{Page: page.Page, PageSize: page.PageSize}, Query: c.Query("q"), Enabled: enabled,
 		Provider: c.Query("provider"), BaseURL: c.Query("base_url"),
 	})
@@ -120,7 +134,7 @@ func (handler *AdminPeopleHandler) List(c *gin.Context) {
 }
 
 func (handler *AdminPeopleHandler) Get(c *gin.Context) {
-	person, err := handler.service.Get(c.Request.Context(), c.Param("person_id"))
+	person, err := handler.peopleFor(c).Get(c.Request.Context(), c.Param("person_id"))
 	if err != nil {
 		writeAdminPeopleError(c, err)
 		return
@@ -133,7 +147,7 @@ func (handler *AdminPeopleHandler) Update(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	person, err := handler.service.Update(c.Request.Context(), c.Param("person_id"), people.UpdatePersonRequest(personRequest(body)))
+	person, err := handler.peopleFor(c).Update(c.Request.Context(), c.Param("person_id"), people.UpdatePersonRequest(personRequest(body)))
 	if err != nil {
 		writeAdminPeopleError(c, err)
 		return
@@ -142,7 +156,7 @@ func (handler *AdminPeopleHandler) Update(c *gin.Context) {
 }
 
 func (handler *AdminPeopleHandler) Delete(c *gin.Context) {
-	if err := handler.service.Delete(c.Request.Context(), c.Param("person_id")); err != nil {
+	if err := handler.peopleFor(c).Delete(c.Request.Context(), c.Param("person_id")); err != nil {
 		writeAdminPeopleError(c, err)
 		return
 	}

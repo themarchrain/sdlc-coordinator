@@ -33,17 +33,19 @@ func (service *Service) SeedSuperAdmin(ctx context.Context, input SeedSuperAdmin
 	if err != nil {
 		return err
 	}
-	existing, err := service.repository.GetUserByUsername(ctx, username)
+	existing, err := service.repo(ctx).GetUserByUsername(ctx, username)
 	if err != nil {
 		return err
 	}
 	if existing == nil {
 		user := &User{Username: username, PasswordHash: passwordHash, Role: UserRoleSuperAdmin}
-		if err := service.repository.CreateUser(ctx, user); err != nil {
-			return err
-		}
-		return service.writeAudit(ctx, nil, 0, "superadmin.seeded",
-			"username="+username+" user_id="+fmt.Sprint(user.ID))
+		return service.inTx(ctx, func(ctx context.Context) error {
+			if err := service.repo(ctx).CreateUser(ctx, user); err != nil {
+				return err
+			}
+			return service.writeAudit(ctx, nil, 0, "superadmin.seeded",
+				"username="+username+" user_id="+fmt.Sprint(user.ID))
+		})
 	}
 	if existing.Role != UserRoleSuperAdmin {
 		// fail-fast：env 声称的超管用户名被普通账号占用属于配置
@@ -56,13 +58,15 @@ func (service *Service) SeedSuperAdmin(ctx context.Context, input SeedSuperAdmin
 	}
 	existing.PasswordHash = passwordHash
 	existing.MustChangePassword = false
-	if err := service.repository.SaveUser(ctx, existing); err != nil {
-		return err
-	}
-	if err := service.repository.DeleteSessionsForUser(ctx, existing.ID); err != nil {
-		return err
-	}
-	return service.writeAudit(ctx, nil, 0, "superadmin.password_reset", "username="+username)
+	return service.inTx(ctx, func(ctx context.Context) error {
+		if err := service.repo(ctx).SaveUser(ctx, existing); err != nil {
+			return err
+		}
+		if err := service.repo(ctx).DeleteSessionsForUser(ctx, existing.ID); err != nil {
+			return err
+		}
+		return service.writeAudit(ctx, nil, 0, "superadmin.password_reset", "username="+username)
+	})
 }
 
 // resolveSeedPasswordHash 明文形态做 bcrypt；bcrypt 串形态校验长度与前缀后原样返回。

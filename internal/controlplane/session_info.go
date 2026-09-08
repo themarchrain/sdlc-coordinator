@@ -27,7 +27,7 @@ func (service *Service) SessionInfo(ctx context.Context, token string) (*Session
 	if err != nil {
 		return nil, err
 	}
-	user, err := service.repository.GetUser(ctx, session.UserID)
+	user, err := service.repo(ctx).GetUser(ctx, session.UserID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
@@ -36,7 +36,7 @@ func (service *Service) SessionInfo(ctx context.Context, token string) (*Session
 		info.SuperAdminMode = true
 		info.Scope = SessionScope{Kind: ScopeSuperAdmin, Role: RoleSuperAdmin}
 		if session.SupportTenantID != nil {
-			tenant, err := service.repository.GetTenant(ctx, *session.SupportTenantID)
+			tenant, err := service.repo(ctx).GetTenant(ctx, *session.SupportTenantID)
 			if err != nil {
 				return nil, ErrSessionRevoked
 			}
@@ -51,7 +51,7 @@ func (service *Service) SessionInfo(ctx context.Context, token string) (*Session
 	}
 	if session.ActiveTenantID == nil {
 		info.Scope = SessionScope{Kind: ScopeUnscoped}
-		memberships, err := service.repository.ListMembershipsByUser(ctx, user.ID)
+		memberships, err := service.repo(ctx).ListMembershipsByUser(ctx, user.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -62,14 +62,14 @@ func (service *Service) SessionInfo(ctx context.Context, token string) (*Session
 		info.Tenants = options
 		return info, nil
 	}
-	membership, err := service.repository.GetMembership(ctx, user.ID, *session.ActiveTenantID)
+	membership, err := service.repo(ctx).GetMembership(ctx, user.ID, *session.ActiveTenantID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
 	if membership.Role != session.Role {
 		return nil, ErrSessionRevoked
 	}
-	tenant, err := service.repository.GetTenant(ctx, *session.ActiveTenantID)
+	tenant, err := service.repo(ctx).GetTenant(ctx, *session.ActiveTenantID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
@@ -82,10 +82,10 @@ func (service *Service) SessionInfo(ctx context.Context, token string) (*Session
 // MarkMustChangePassword 设置/清除强制改密标记（管理员开通路径在创建时内置；
 // 该方法供运维修正与测试装配）。
 func (service *Service) MarkMustChangePassword(ctx context.Context, userID uint, mustChange bool) error {
-	user, err := service.repository.GetUser(ctx, userID)
+	user, err := service.repo(ctx).GetUser(ctx, userID)
 	if err != nil {
 		return err
 	}
 	user.MustChangePassword = mustChange
-	return service.repository.SaveUser(ctx, user)
+	return service.repo(ctx).SaveUser(ctx, user)
 }

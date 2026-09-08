@@ -31,7 +31,7 @@ export function SelectTenantPage() {
     setSelecting(option.id)
     try {
       await portalApi.selectTenant(option.id)
-      navigate('/portal/org', { replace: true })
+      navigate('/', { replace: true })
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : '选择组织失败')
       setSelecting(null)

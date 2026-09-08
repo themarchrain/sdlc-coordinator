@@ -113,108 +113,114 @@ func tenantDMLocator(slug string) string {
 }
 
 // CreateTenant 建组织：slug 全局唯一、状态 active、落 db_locator 串，
-// 写 tenant.created 审计。
+// 写 tenant.created 审计（与插入同事务）。
 func (service *Service) CreateTenant(ctx context.Context, actor *Actor, input TenantInput) (*Tenant, error) {
 	slug, displayName, ok := validTenantInput(input.Slug, input.DisplayName)
 	if !ok {
 		return nil, ErrInvalidInput
 	}
-	existing, err := service.repository.GetTenantBySlug(ctx, slug)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		return nil, ErrSlugTaken
-	}
-	tenant := &Tenant{
-		Slug: slug, DisplayName: displayName,
-		Status: TenantStatusActive, DMLocator: tenantDMLocator(slug),
-	}
-	if err := service.repository.CreateTenant(ctx, tenant); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.created", "slug="+slug+" display_name="+displayName); err != nil {
-		return nil, err
-	}
-	return tenant, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*Tenant, error) {
+		existing, err := service.repo(ctx).GetTenantBySlug(ctx, slug)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			return nil, ErrSlugTaken
+		}
+		tenant := &Tenant{
+			Slug: slug, DisplayName: displayName,
+			Status: TenantStatusActive, DMLocator: tenantDMLocator(slug),
+		}
+		if err := service.repo(ctx).CreateTenant(ctx, tenant); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.created", "slug="+slug+" display_name="+displayName); err != nil {
+			return nil, err
+		}
+		return tenant, nil
+	})
 }
 
 // UpdateTenant 修改 display_name，写 tenant.updated 审计。
 func (service *Service) UpdateTenant(ctx context.Context, actor *Actor, tenantID uint, displayName string) (*Tenant, error) {
-	tenant, err := service.repository.GetTenant(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	_, validName, ok := validTenantInput(tenant.Slug, displayName)
-	if !ok {
-		return nil, ErrInvalidInput
-	}
-	tenant.DisplayName = validName
-	if err := service.repository.SaveTenant(ctx, tenant); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.updated", "display_name="+validName); err != nil {
-		return nil, err
-	}
-	return tenant, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*Tenant, error) {
+		tenant, err := service.repo(ctx).GetTenant(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		_, validName, ok := validTenantInput(tenant.Slug, displayName)
+		if !ok {
+			return nil, ErrInvalidInput
+		}
+		tenant.DisplayName = validName
+		if err := service.repo(ctx).SaveTenant(ctx, tenant); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.updated", "display_name="+validName); err != nil {
+			return nil, err
+		}
+		return tenant, nil
+	})
 }
 
 // DisableTenant 停用组织：成员作用域会话即时吊销，写 tenant.disabled
 // 审计；重复停用报错防审计噪音。
 func (service *Service) DisableTenant(ctx context.Context, actor *Actor, tenantID uint) (*Tenant, error) {
-	tenant, err := service.repository.GetTenant(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if tenant.Status == TenantStatusDisabled {
-		return nil, ErrTenantAlreadyDisabled
-	}
-	tenant.Status = TenantStatusDisabled
-	if err := service.repository.SaveTenant(ctx, tenant); err != nil {
-		return nil, err
-	}
-	if err := service.repository.DeleteSessionsForTenant(ctx, tenant.ID); err != nil {
-		return nil, err
-	}
-	// 支持访问中的超管会话只清上下文不删本体。
-	if err := service.repository.ClearSupportForTenant(ctx, tenant.ID); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.disabled", "slug="+tenant.Slug); err != nil {
-		return nil, err
-	}
-	return tenant, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*Tenant, error) {
+		tenant, err := service.repo(ctx).GetTenant(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if tenant.Status == TenantStatusDisabled {
+			return nil, ErrTenantAlreadyDisabled
+		}
+		tenant.Status = TenantStatusDisabled
+		if err := service.repo(ctx).SaveTenant(ctx, tenant); err != nil {
+			return nil, err
+		}
+		if err := service.repo(ctx).DeleteSessionsForTenant(ctx, tenant.ID); err != nil {
+			return nil, err
+		}
+		// 支持访问中的超管会话只清上下文不删本体。
+		if err := service.repo(ctx).ClearSupportForTenant(ctx, tenant.ID); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.disabled", "slug="+tenant.Slug); err != nil {
+			return nil, err
+		}
+		return tenant, nil
+	})
 }
 
 // RestoreTenant 恢复组织并写 tenant.restored 审计。
 func (service *Service) RestoreTenant(ctx context.Context, actor *Actor, tenantID uint) (*Tenant, error) {
-	tenant, err := service.repository.GetTenant(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if tenant.Status != TenantStatusDisabled {
-		return nil, ErrTenantNotDisabled
-	}
-	tenant.Status = TenantStatusActive
-	if err := service.repository.SaveTenant(ctx, tenant); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.restored", "slug="+tenant.Slug); err != nil {
-		return nil, err
-	}
-	return tenant, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*Tenant, error) {
+		tenant, err := service.repo(ctx).GetTenant(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if tenant.Status != TenantStatusDisabled {
+			return nil, ErrTenantNotDisabled
+		}
+		tenant.Status = TenantStatusActive
+		if err := service.repo(ctx).SaveTenant(ctx, tenant); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.restored", "slug="+tenant.Slug); err != nil {
+			return nil, err
+		}
+		return tenant, nil
+	})
 }
 
 // GetUserByUsername 按用户名取控制面账号（不存在返回 nil, nil）。
 func (service *Service) GetUserByUsername(ctx context.Context, username string) (*User, error) {
-	return service.repository.GetUserByUsername(ctx, username)
+	return service.repo(ctx).GetUserByUsername(ctx, username)
 }
 
-// writeAudit 落一条审计日志；actor 为 nil 时记系统动作。如实声明（已知后置
-// 项）：本调用发生在业务动作生效之后，写入失败时动作已提交、调用方收到
-// 错误但重试将遇状态冲突——真正的「审计与动作同事务」留后续批次统一处理。
+// writeAudit 与当前 ctx 上的控制面仓库同事务写入审计，并记录来源 IP。
 func (service *Service) writeAudit(ctx context.Context, actor *Actor, tenantID uint, action, detail string) error {
-	entry := &AuditLog{Action: action, Detail: detail}
+	entry := &AuditLog{Action: action, Detail: detail, SourceIP: auditSourceIP(ctx)}
 	if tenantID != 0 {
 		id := tenantID
 		entry.TenantID = &id
@@ -224,5 +230,5 @@ func (service *Service) writeAudit(ctx context.Context, actor *Actor, tenantID u
 		entry.ActorUserID = &id
 		entry.ActorUsername = actor.Username
 	}
-	return service.repository.CreateAuditLog(ctx, entry)
+	return service.repo(ctx).CreateAuditLog(ctx, entry)
 }

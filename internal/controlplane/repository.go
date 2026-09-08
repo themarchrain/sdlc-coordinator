@@ -411,3 +411,12 @@ func (repository *Repository) DeleteSessionsForUser(ctx context.Context, userID 
 	}
 	return nil
 }
+
+// DeleteExpiredSessions 删除 expires_at 不晚于 now 的会话。
+func (repository *Repository) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
+	result := repository.db.WithContext(ctx).Where("expires_at <= ?", now).Delete(&Session{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("delete expired sessions: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}

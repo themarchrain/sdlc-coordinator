@@ -1,8 +1,9 @@
-import { LockOutlined, SafetyOutlined } from '@ant-design/icons'
+import { LockOutlined } from '@ant-design/icons'
 import { Alert, Button, Form, Input, message } from 'antd'
 import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 
+import { workspaceLandingPath } from '../app/workspaceSession'
 import { portalApi } from '../api/portal'
 
 interface LoginValues {
@@ -10,13 +11,12 @@ interface LoginValues {
   password: string
 }
 
-// navigateByScope 按会话作用域决定落点：超管独立后台、
-// 多组织成员先选组织、其余直达组织页。
-export function navigatePathForScope(scope: { kind: string }, mustChangePassword: boolean): string {
-  if (mustChangePassword) return '/portal/change-password'
-  if (scope.kind === 'super_admin') return '/super-admin/tenants'
-  if (scope.kind === 'unscoped') return '/portal/select-tenant'
-  return '/portal/org'
+export function navigatePathForScope(scope: { kind: string }, mustChangePassword: boolean, supportActive = false): string {
+  return workspaceLandingPath({
+    user: { id: 0, username: '', role: '', must_change_password: mustChangePassword },
+    scope: { kind: scope.kind as 'super_admin' | 'tenant' | 'unscoped' },
+    support: supportActive ? { active: true, reason: '' } : undefined,
+  })
 }
 
 export function PortalLoginPage() {
@@ -54,9 +54,6 @@ export function PortalLoginPage() {
         </Form>
         <div className="mt-4 flex items-center justify-between text-sm">
           <Link to="/portal/register">注册新账号</Link>
-          <Link to="/admin/login">
-            <SafetyOutlined /> 管理台入口
-          </Link>
         </div>
         <Alert className="mt-4" type="info" showIcon message="注册需要组织管理员签发的邀请码。" />
       </section>

@@ -320,3 +320,23 @@ func TestValidateAcceptsGitHubProvider(t *testing.T) {
 		t.Fatal("expected unknown provider to be rejected")
 	}
 }
+
+// TestRuntimeConfigTypeHasNoControlPlaneField 锁定既有修复口径：控制面是基础设施
+// 配置，不得进入运行时快照 schema。
+func TestRuntimeConfigTypeHasNoControlPlaneField(t *testing.T) {
+	typ := reflect.TypeOf(RuntimeConfig{})
+	for i := 0; i < typ.NumField(); i++ {
+		name := typ.Field(i).Name
+		tag := typ.Field(i).Tag.Get("json")
+		if strings.Contains(strings.ToLower(name), "controlplane") || strings.Contains(strings.ToLower(tag), "control_plane") {
+			t.Fatalf("RuntimeConfig must not carry control plane: field %s json=%q", name, tag)
+		}
+	}
+	encoded, err := json.Marshal(RuntimeConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(string(encoded)), "control_plane") {
+		t.Fatalf("snapshot JSON must omit control_plane: %s", encoded)
+	}
+}

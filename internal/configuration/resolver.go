@@ -29,7 +29,7 @@ func NewResolver(repository *Repository) *Resolver {
 func (resolver *Resolver) Resolve(ctx context.Context, bootstrap config.BootstrapConfig, legacy config.Config) Resolution {
 	snapshot, err := resolver.repository.Latest(ctx)
 	if err == nil {
-		return resolver.resolveSnapshot(ctx, bootstrap, snapshot)
+		return resolver.resolveSnapshot(ctx, bootstrap, snapshot, legacy)
 	}
 	if !errors.Is(err, ErrSnapshotNotFound) {
 		return Resolution{Mode: ModeConfigurationError, ConfigurationError: err.Error()}
@@ -42,7 +42,7 @@ func (resolver *Resolver) Resolve(ctx context.Context, bootstrap config.Bootstra
 			if saveErr != nil {
 				return Resolution{Mode: ModeConfigurationError, Prefill: prefill, ConfigurationError: saveErr.Error()}
 			}
-			return resolver.resolveSnapshot(ctx, bootstrap, saved)
+			return resolver.resolveSnapshot(ctx, bootstrap, saved, legacy)
 		}
 	}
 	result := Resolution{Mode: ModeSetupPending, Prefill: prefill}
@@ -52,7 +52,7 @@ func (resolver *Resolver) Resolve(ctx context.Context, bootstrap config.Bootstra
 	return result
 }
 
-func (resolver *Resolver) resolveSnapshot(ctx context.Context, bootstrap config.BootstrapConfig, snapshot *Snapshot) Resolution {
+func (resolver *Resolver) resolveSnapshot(ctx context.Context, bootstrap config.BootstrapConfig, snapshot *Snapshot, legacy config.Config) Resolution {
 	snapshot.Config = ApplyDefaults(snapshot.Config)
 	if validationErrs := Validate(snapshot.Config); len(validationErrs) > 0 {
 		return Resolution{
@@ -84,6 +84,9 @@ func (resolver *Resolver) resolveSnapshot(ctx context.Context, bootstrap config.
 		return Resolution{Mode: ModeConfigurationError, Prefill: snapshot.Config, Snapshot: snapshot, ConfigurationError: err.Error()}
 	}
 	effective.AgentRunner.ProviderConfigRevision = snapshot.Revision
+	// 控制面是基础设施配置（与 bootstrap 同级），不进快照 schema。ready
+	// 产物必须回填 legacy，否则生产永远落到内存库且不建种子超管。
+	effective.ControlPlane = legacy.ControlPlane
 	return Resolution{
 		Mode:            ModeReady,
 		EffectiveConfig: effective,

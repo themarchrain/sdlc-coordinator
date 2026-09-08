@@ -12,21 +12,33 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PortalSessionCookieName 是新认证体系的会话 cookie；与存量单管理员
-// cookie（auth.SessionCookieName）正交，互不影响（纯增量边界）。
+// PortalSessionCookieName 是门户会话 cookie，这是浏览器登录的唯一通道。
 const PortalSessionCookieName = "coordinator_portal_session"
 
 // ControlPlaneHandler 承载新认证体系 HTTP 面：/api/portal/auth/*（认证）
-// 与 /api/portal/tenant/*（组织作用域管理）。存量 /api/auth/*、/api/admin/*
-// 与 RequireSession 行为不在本 handler 职责内。
-type ControlPlaneHandler struct{ service *controlplane.Service }
+// 与 /api/portal/tenant/*（组织作用域管理）。控制面已装配时，
+// /api/admin/* 也走本 handler 的门户会话 + 矩阵 RBAC。
+type ControlPlaneHandler struct {
+	service     *controlplane.Service
+	adminPolicy AdminRoutePolicy
+}
 
 func NewControlPlaneHandler(service *controlplane.Service) *ControlPlaneHandler {
 	return &ControlPlaneHandler{service: service}
 }
 
+// AnnotateAuditSourceIP 把 Gin ClientIP（TrustedProxies=nil 时为直连对端）写入
+// 请求 ctx，控制面审计与业务同事务读取。
+func AnnotateAuditSourceIP() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request = c.Request.WithContext(controlplane.WithAuditSourceIP(c.Request.Context(), c.ClientIP()))
+		c.Next()
+	}
+}
+
 // RegisterAuthRoutes 挂载认证端点：登录/注册公开，其余须有效会话。
 func (handler *ControlPlaneHandler) RegisterAuthRoutes(group *gin.RouterGroup) {
+	group.Use(AnnotateAuditSourceIP())
 	group.POST("/auth/login", handler.Login)
 	group.POST("/auth/register", handler.Register)
 	authed := group.Group("/auth", handler.RequirePortalAuth)
@@ -39,7 +51,7 @@ func (handler *ControlPlaneHandler) RegisterAuthRoutes(group *gin.RouterGroup) {
 // RegisterTenantRoutes 挂载组织作用域端点：成员与邀请码管理归组织管理员
 // （tenant_admin），profile 面向全体成员。
 func (handler *ControlPlaneHandler) RegisterTenantRoutes(group *gin.RouterGroup) {
-	group.Use(handler.RequirePortalAuth, handler.RequireTenantScope)
+	group.Use(AnnotateAuditSourceIP(), handler.RequirePortalAuth, handler.RequireTenantScope)
 	group.GET("/profile", handler.TenantProfile)
 	adminOnly := group.Group("", handler.RequireTenantAdmin)
 	adminOnly.GET("/members", handler.ListMembers)
@@ -62,12 +74,7 @@ const (
 )
 
 func (handler *ControlPlaneHandler) sessionInfo(c *gin.Context) *controlplane.SessionInfo {
-	value, exists := c.Get(cpSessionKey)
-	if !exists {
-		return nil
-	}
-	info, _ := value.(*controlplane.SessionInfo)
-	return info
+	return CurrentPortalSession(c)
 }
 
 func currentActor(c *gin.Context) *controlplane.Actor {

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"sdlc-coordinator/internal/model"
+
+	"gorm.io/gorm"
 )
 
 type EnabledHook func(ctx context.Context, connectorID string, enabled bool) error
@@ -71,6 +73,19 @@ func NewService(repository *ConnectorRepository, remote RemoteClient, options ..
 		option(service)
 	}
 	return service
+}
+
+func (service *Service) WithDB(db *gorm.DB) *Service {
+	if service == nil {
+		return NewService(NewConnectorRepository(db), nil)
+	}
+	return &Service{
+		repository:   NewConnectorRepository(db),
+		remote:       service.remote,
+		now:          service.now,
+		newRequestID: service.newRequestID,
+		enabledHook:  service.enabledHook,
+	}
 }
 
 func WithClock(now func() time.Time) ServiceOption {

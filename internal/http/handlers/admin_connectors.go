@@ -40,6 +40,13 @@ func NewAdminConnectorHandler(service *connectors.Service) *AdminConnectorHandle
 	return &AdminConnectorHandler{service: service}
 }
 
+func (handler *AdminConnectorHandler) connectorsFor(c *gin.Context) *connectors.Service {
+	if store, ok := TenantStoreFrom(c); ok && handler.service != nil {
+		return handler.service.WithDB(store.DB)
+	}
+	return handler.service
+}
+
 func (handler *AdminConnectorHandler) RegisterRoutes(group *gin.RouterGroup) {
 	group.GET("/connectors", handler.List)
 	group.POST("/connectors", handler.Create)
@@ -66,7 +73,7 @@ func (handler *AdminConnectorHandler) Create(c *gin.Context) {
 	if body.Enabled != nil {
 		enabled = *body.Enabled
 	}
-	connector, err := handler.service.Create(c.Request.Context(), connectors.CreateConnectorRequest{
+	connector, err := handler.connectorsFor(c).Create(c.Request.Context(), connectors.CreateConnectorRequest{
 		Kind: body.Kind, DisplayName: body.DisplayName, BaseURL: body.BaseURL,
 		Enabled: enabled, TargetProjectPath: body.TargetProjectPath,
 	})
@@ -86,7 +93,7 @@ func (handler *AdminConnectorHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.service.List(c.Request.Context(), connectors.ConnectorFilter{
+	page, err := handler.connectorsFor(c).List(c.Request.Context(), connectors.ConnectorFilter{
 		PageRequest: pageRequestToConnector(pageRequest), Kind: c.Query("kind"), Enabled: enabled,
 		TargetProjectPath: c.Query("target_project_path"),
 	})
@@ -102,7 +109,7 @@ func (handler *AdminConnectorHandler) List(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) Get(c *gin.Context) {
-	connector, err := handler.service.Get(c.Request.Context(), c.Param("connector_id"))
+	connector, err := handler.connectorsFor(c).Get(c.Request.Context(), c.Param("connector_id"))
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -115,7 +122,7 @@ func (handler *AdminConnectorHandler) Update(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	connector, err := handler.service.Update(c.Request.Context(), c.Param("connector_id"), connectors.UpdateConnectorRequest{
+	connector, err := handler.connectorsFor(c).Update(c.Request.Context(), c.Param("connector_id"), connectors.UpdateConnectorRequest{
 		Kind: body.Kind, DisplayName: body.DisplayName, BaseURL: body.BaseURL,
 		Enabled: body.Enabled, TargetProjectPath: body.TargetProjectPath,
 	})
@@ -127,7 +134,7 @@ func (handler *AdminConnectorHandler) Update(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) Delete(c *gin.Context) {
-	if err := handler.service.Delete(c.Request.Context(), c.Param("connector_id")); err != nil {
+	if err := handler.connectorsFor(c).Delete(c.Request.Context(), c.Param("connector_id")); err != nil {
 		writeAdminConnectorError(c, err)
 		return
 	}
@@ -135,7 +142,7 @@ func (handler *AdminConnectorHandler) Delete(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) Probe(c *gin.Context) {
-	result, err := handler.service.Probe(c.Request.Context(), c.Param("connector_id"))
+	result, err := handler.connectorsFor(c).Probe(c.Request.Context(), c.Param("connector_id"))
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -146,7 +153,7 @@ func (handler *AdminConnectorHandler) Probe(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) TriggerRun(c *gin.Context) {
-	result, err := handler.service.TriggerRun(c.Request.Context(), c.Param("connector_id"), "")
+	result, err := handler.connectorsFor(c).TriggerRun(c.Request.Context(), c.Param("connector_id"), "")
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -159,7 +166,7 @@ func (handler *AdminConnectorHandler) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := handler.service.ListRuns(c.Request.Context(), c.Param("connector_id"), page)
+	result, err := handler.connectorsFor(c).ListRuns(c.Request.Context(), c.Param("connector_id"), page)
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -168,7 +175,7 @@ func (handler *AdminConnectorHandler) ListRuns(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) GetRun(c *gin.Context) {
-	result, err := handler.service.GetRun(c.Request.Context(), c.Param("connector_id"), c.Param("run_id"))
+	result, err := handler.connectorsFor(c).GetRun(c.Request.Context(), c.Param("connector_id"), c.Param("run_id"))
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -181,7 +188,7 @@ func (handler *AdminConnectorHandler) ListRecords(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := handler.service.ListRecords(c.Request.Context(), c.Param("connector_id"), page)
+	result, err := handler.connectorsFor(c).ListRecords(c.Request.Context(), c.Param("connector_id"), page)
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -190,7 +197,7 @@ func (handler *AdminConnectorHandler) ListRecords(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) GetRecord(c *gin.Context) {
-	result, err := handler.service.GetRecord(c.Request.Context(), c.Param("connector_id"), c.Param("record_id"))
+	result, err := handler.connectorsFor(c).GetRecord(c.Request.Context(), c.Param("connector_id"), c.Param("record_id"))
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -199,7 +206,7 @@ func (handler *AdminConnectorHandler) GetRecord(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) Metrics(c *gin.Context) {
-	result, err := handler.service.Metrics(c.Request.Context(), c.Param("connector_id"), "")
+	result, err := handler.connectorsFor(c).Metrics(c.Request.Context(), c.Param("connector_id"), "")
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -208,7 +215,7 @@ func (handler *AdminConnectorHandler) Metrics(c *gin.Context) {
 }
 
 func (handler *AdminConnectorHandler) Configuration(c *gin.Context) {
-	result, err := handler.service.Configuration(c.Request.Context(), c.Param("connector_id"))
+	result, err := handler.connectorsFor(c).Configuration(c.Request.Context(), c.Param("connector_id"))
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return
@@ -221,7 +228,7 @@ func (handler *AdminConnectorHandler) SaveConfiguration(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	result, err := handler.service.SaveConfiguration(c.Request.Context(), c.Param("connector_id"), body)
+	result, err := handler.connectorsFor(c).SaveConfiguration(c.Request.Context(), c.Param("connector_id"), body)
 	if err != nil {
 		writeAdminConnectorError(c, err)
 		return

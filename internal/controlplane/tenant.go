@@ -65,7 +65,7 @@ func (service *Service) createUserWithRole(ctx context.Context, username, passwo
 	if len([]rune(password)) < minPasswordLength || len(password) > maxPasswordLength {
 		return nil, ErrInvalidInput
 	}
-	existing, err := service.repository.GetUserByUsername(ctx, username)
+	existing, err := service.repo(ctx).GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (service *Service) createUserWithRole(ctx context.Context, username, passwo
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 	user := &User{Username: username, PasswordHash: string(hash), Role: role, MustChangePassword: mustChange}
-	if err := service.repository.CreateUser(ctx, user); err != nil {
+	if err := service.repo(ctx).CreateUser(ctx, user); err != nil {
 		return nil, err
 	}
 	return user, nil
@@ -88,33 +88,35 @@ func (service *Service) AddMembership(ctx context.Context, actor *Actor, tenantI
 	if role != RoleTenantAdmin && role != RoleMember {
 		return nil, ErrInvalidInput
 	}
-	if _, err := service.repository.GetTenant(ctx, tenantID); err != nil {
-		return nil, err
-	}
-	// 超管账号不持有任何 memberships。
-	target, err := service.repository.GetUser(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if target.Role == UserRoleSuperAdmin {
-		return nil, ErrForbidden
-	}
-	existing, err := service.repository.GetMembership(ctx, userID, tenantID)
-	if err != nil && !errors.Is(err, ErrMembershipNotFound) {
-		return nil, err
-	}
-	if existing != nil {
-		return nil, ErrMembershipExists
-	}
-	membership := &Membership{UserID: userID, TenantID: tenantID, Role: role}
-	if err := service.repository.CreateMembership(ctx, membership); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenantID, "member.added",
-		fmt.Sprintf("user_id=%d role=%s", userID, role)); err != nil {
-		return nil, err
-	}
-	return membership, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*Membership, error) {
+		if _, err := service.repo(ctx).GetTenant(ctx, tenantID); err != nil {
+			return nil, err
+		}
+		// 超管账号不持有任何 memberships。
+		target, err := service.repo(ctx).GetUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if target.Role == UserRoleSuperAdmin {
+			return nil, ErrForbidden
+		}
+		existing, err := service.repo(ctx).GetMembership(ctx, userID, tenantID)
+		if err != nil && !errors.Is(err, ErrMembershipNotFound) {
+			return nil, err
+		}
+		if existing != nil {
+			return nil, ErrMembershipExists
+		}
+		membership := &Membership{UserID: userID, TenantID: tenantID, Role: role}
+		if err := service.repo(ctx).CreateMembership(ctx, membership); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenantID, "member.added",
+			fmt.Sprintf("user_id=%d role=%s", userID, role)); err != nil {
+			return nil, err
+		}
+		return membership, nil
+	})
 }
 
 // RemoveMember 移出成员并即时吊销其在该组织的会话；
@@ -123,33 +125,32 @@ func (service *Service) RemoveMember(ctx context.Context, actor *Actor, tenantID
 	if actor != nil && actor.ID == userID {
 		return nil, ErrCannotRemoveSelf
 	}
-	membership, err := service.repository.GetMembership(ctx, userID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if err := service.repository.DeleteMembership(ctx, membership); err != nil {
-		return nil, err
-	}
-	if err := service.repository.DeleteSessionsForUserTenant(ctx, userID, tenantID); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenantID, "member.removed", fmt.Sprintf("user_id=%d", userID)); err != nil {
-		return nil, err
-	}
-	return membership, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*Membership, error) {
+		membership, err := service.repo(ctx).GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if err := service.repo(ctx).DeleteMembership(ctx, membership); err != nil {
+			return nil, err
+		}
+		if err := service.repo(ctx).DeleteSessionsForUserTenant(ctx, userID, tenantID); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenantID, "member.removed", fmt.Sprintf("user_id=%d", userID)); err != nil {
+			return nil, err
+		}
+		return membership, nil
+	})
 }
 
 // ListMembers 返回组织成员列表（含角色），按入会时间排序。
 func (service *Service) ListMembers(ctx context.Context, tenantID uint) ([]MemberView, error) {
-	return service.repository.ListMembersByTenant(ctx, tenantID)
+	return service.repo(ctx).ListMembersByTenant(ctx, tenantID)
 }
 
 // IssueInviteCode 签发组织邀请码：明文一次性返回，库内仅哈希；
 // 一律 member 角色。
 func (service *Service) IssueInviteCode(ctx context.Context, actor *Actor, tenantID uint, input InviteCodeInput) (*IssuedInviteCode, error) {
-	if _, err := service.repository.GetTenant(ctx, tenantID); err != nil {
-		return nil, err
-	}
 	hours := input.ExpiresInHours
 	if hours == 0 {
 		hours = defaultInviteTTL
@@ -158,7 +159,6 @@ func (service *Service) IssueInviteCode(ctx context.Context, actor *Actor, tenan
 	if maxUses == 0 {
 		maxUses = defaultInviteUses
 	}
-	// 负值拒绝：签出「已过期/零次」废码只会制造排障噪音。
 	if hours < 0 || maxUses < 1 {
 		return nil, ErrInvalidInput
 	}
@@ -166,85 +166,94 @@ func (service *Service) IssueInviteCode(ctx context.Context, actor *Actor, tenan
 	if err != nil {
 		return nil, err
 	}
-	record := &InviteCode{
-		TenantID:  tenantID,
-		CodeHash:  hashInviteCode(normalizeInviteCode(plaintext)),
-		Role:      RoleMember,
-		ExpiresAt: service.now().UTC().Add(time.Duration(hours) * time.Hour),
-		MaxUses:   maxUses,
-		CreatedBy: actorIDOf(actor),
-	}
-	if err := service.repository.CreateInviteCode(ctx, record); err != nil {
-		return nil, err
-	}
-	if err := service.writeAudit(ctx, actor, tenantID, "invite.issued",
-		fmt.Sprintf("invite_id=%d max_uses=%d expires_at=%s", record.ID, record.MaxUses, record.ExpiresAt.Format(time.RFC3339))); err != nil {
-		return nil, err
-	}
-	return &IssuedInviteCode{Plaintext: plaintext, Record: record}, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (*IssuedInviteCode, error) {
+		if _, err := service.repo(ctx).GetTenant(ctx, tenantID); err != nil {
+			return nil, err
+		}
+		record := &InviteCode{
+			TenantID:  tenantID,
+			CodeHash:  hashInviteCode(normalizeInviteCode(plaintext)),
+			Role:      RoleMember,
+			ExpiresAt: service.now().UTC().Add(time.Duration(hours) * time.Hour),
+			MaxUses:   maxUses,
+			CreatedBy: actorIDOf(actor),
+		}
+		if err := service.repo(ctx).CreateInviteCode(ctx, record); err != nil {
+			return nil, err
+		}
+		if err := service.writeAudit(ctx, actor, tenantID, "invite.issued",
+			fmt.Sprintf("invite_id=%d max_uses=%d expires_at=%s", record.ID, record.MaxUses, record.ExpiresAt.Format(time.RFC3339))); err != nil {
+			return nil, err
+		}
+		return &IssuedInviteCode{Plaintext: plaintext, Record: record}, nil
+	})
 }
 
 // RevokeInviteCode 吊销邀请码（幂等）；跨组织吊销按组织不存在拒绝，防越权探测。
 func (service *Service) RevokeInviteCode(ctx context.Context, actor *Actor, tenantID, codeID uint) error {
-	code, err := service.repository.GetInviteCode(ctx, codeID)
-	if err != nil {
-		return err
-	}
-	if code.TenantID != tenantID {
-		return ErrTenantNotFound
-	}
-	if code.RevokedAt != nil {
-		return nil
-	}
-	now := service.now().UTC()
-	code.RevokedAt = &now
-	if err := service.repository.SaveInviteCode(ctx, code); err != nil {
-		return err
-	}
-	return service.writeAudit(ctx, actor, tenantID, "invite.revoked", fmt.Sprintf("invite_id=%d", code.ID))
+	return service.inTx(ctx, func(ctx context.Context) error {
+		code, err := service.repo(ctx).GetInviteCode(ctx, codeID)
+		if err != nil {
+			return err
+		}
+		if code.TenantID != tenantID {
+			return ErrTenantNotFound
+		}
+		if code.RevokedAt != nil {
+			return nil
+		}
+		now := service.now().UTC()
+		code.RevokedAt = &now
+		if err := service.repo(ctx).SaveInviteCode(ctx, code); err != nil {
+			return err
+		}
+		return service.writeAudit(ctx, actor, tenantID, "invite.revoked", fmt.Sprintf("invite_id=%d", code.ID))
+	})
 }
 
 // ResetMemberPassword 组织管理员重置本组织成员密码（密码重置链）：
 // 生成一次性初始密码、置强制改密、吊销目标全部会话并写审计。仅 member 角色
 // 可被组织管理员重置。
 func (service *Service) ResetMemberPassword(ctx context.Context, actor *Actor, tenantID, targetUserID uint) (string, error) {
-	membership, err := service.repository.GetMembership(ctx, targetUserID, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if membership.Role != RoleMember {
-		return "", ErrForbidden
-	}
-	initial, err := generateInitialPassword()
-	if err != nil {
-		return "", err
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(initial), bcrypt.DefaultCost)
-	if err != nil {
-		return "", fmt.Errorf("hash reset password: %w", err)
-	}
-	user, err := service.repository.GetUser(ctx, targetUserID)
-	if err != nil {
-		return "", err
-	}
-	user.PasswordHash = string(hash)
-	user.MustChangePassword = true
-	if err := service.repository.SaveUser(ctx, user); err != nil {
-		return "", err
-	}
-	if err := service.repository.DeleteSessionsForUser(ctx, targetUserID); err != nil {
-		return "", err
-	}
-	if err := service.writeAudit(ctx, actor, tenantID, "password.reset",
-		fmt.Sprintf("target_user_id=%d by_role=%s", targetUserID, RoleTenantAdmin)); err != nil {
-		return "", err
-	}
-	return initial, nil
+	return inTxValue(service, ctx, func(ctx context.Context) (string, error) {
+		membership, err := service.repo(ctx).GetMembership(ctx, targetUserID, tenantID)
+		if err != nil {
+			return "", err
+		}
+		if membership.Role != RoleMember {
+			return "", ErrForbidden
+		}
+		initial, err := generateInitialPassword()
+		if err != nil {
+			return "", err
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(initial), bcrypt.DefaultCost)
+		if err != nil {
+			return "", fmt.Errorf("hash reset password: %w", err)
+		}
+		user, err := service.repo(ctx).GetUser(ctx, targetUserID)
+		if err != nil {
+			return "", err
+		}
+		user.PasswordHash = string(hash)
+		user.MustChangePassword = true
+		if err := service.repo(ctx).SaveUser(ctx, user); err != nil {
+			return "", err
+		}
+		if err := service.repo(ctx).DeleteSessionsForUser(ctx, targetUserID); err != nil {
+			return "", err
+		}
+		if err := service.writeAudit(ctx, actor, tenantID, "password.reset",
+			fmt.Sprintf("target_user_id=%d by_role=%s", targetUserID, RoleTenantAdmin)); err != nil {
+			return "", err
+		}
+		return initial, nil
+	})
 }
 
 // ListInviteCodes 返回组织邀请码列表（不含哈希，防枚举）。
 func (service *Service) ListInviteCodes(ctx context.Context, tenantID uint) ([]InviteCode, error) {
-	return service.repository.ListInviteCodesByTenant(ctx, tenantID)
+	return service.repo(ctx).ListInviteCodesByTenant(ctx, tenantID)
 }
 
 func actorIDOf(actor *Actor) uint {

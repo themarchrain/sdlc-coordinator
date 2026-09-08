@@ -19,6 +19,20 @@ func TestLoadBootstrapUsesOnlyFixedStartupSettings(t *testing.T) {
 	}
 }
 
+func TestLoadBootstrapIncludesControlPlaneSettings(t *testing.T) {
+	t.Setenv("CONTROL_PLANE_DSN", "file:bootstrap-cp.db")
+	t.Setenv("CONTROL_PLANE_SUPERADMIN_USERNAME", "Root")
+	t.Setenv("CONTROL_PLANE_SUPERADMIN_PASSWORD", "bootstrap-seed")
+
+	got := LoadBootstrap()
+	if got.ControlPlane.DSN != "file:bootstrap-cp.db" {
+		t.Fatalf("bootstrap control plane dsn = %q", got.ControlPlane.DSN)
+	}
+	if got.ControlPlane.SuperAdminUsername != "root" || got.ControlPlane.SuperAdminPassword != "bootstrap-seed" {
+		t.Fatalf("unexpected bootstrap seed: %#v", got.ControlPlane)
+	}
+}
+
 func TestLoadBootstrapUsesSafeDefaults(t *testing.T) {
 	for _, key := range []string{
 		"COORDINATOR_HTTP_ADDR",

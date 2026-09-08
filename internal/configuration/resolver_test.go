@@ -126,8 +126,61 @@ func completeLegacyConfig() config.Config {
 	return effective
 }
 
-// TestFromLegacyConfigDropsWebhookSecretChannel env 中的 webhook secret
-// 经 Load→FromLegacyConfig 导入链被忽略。验签凭据归属注册仓。
+func legacyControlPlane() config.ControlPlaneSettings {
+	return config.ControlPlaneSettings{
+		DSN:                "file:/app/data/control-plane.db?_foreign_keys=on",
+		SuperAdminUsername: "seed-root",
+		SuperAdminPassword: "seed-pass-not-default",
+		SuperAdminReset:    true,
+	}
+}
+
+func assertEffectiveControlPlane(t *testing.T, got config.ControlPlaneSettings, want config.ControlPlaneSettings) {
+	t.Helper()
+	if got.DSN != want.DSN || got.SuperAdminUsername != want.SuperAdminUsername ||
+		got.SuperAdminPassword != want.SuperAdminPassword || got.SuperAdminReset != want.SuperAdminReset {
+		t.Fatalf("EffectiveConfig.ControlPlane mismatch: got %#v want %#v", got, want)
+	}
+}
+
+// TestResolverReadyExistingSnapshotCarriesLegacyControlPlane 锁定 ready 路径
+// 一：库中已有运行时快照时，控制面配置仍从 legacy（env）回填。控制面是基础
+// 设施配置，不进快照 schema；丢弃会让生产永远落到内存库且不建种子超管。
+func TestResolverReadyExistingSnapshotCarriesLegacyControlPlane(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	if _, err := repository.Save(context.Background(), StatusReady, SourceUI, validRuntimeConfig()); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	legacy := completeLegacyConfig()
+	legacy.ControlPlane = legacyControlPlane()
+
+	result := NewResolver(repository).Resolve(context.Background(), testBootstrapConfig(), legacy)
+
+	if result.Mode != ModeReady {
+		t.Fatalf("unexpected resolution: %#v", result)
+	}
+	assertEffectiveControlPlane(t, result.EffectiveConfig.ControlPlane, legacy.ControlPlane)
+}
+
+// TestResolverReadyFirstStartAutoSnapshotCarriesLegacyControlPlane 锁定 ready
+// 路径二：无快照时 FromLegacyConfig 自动落一条再走 resolveSnapshot。首启之后
+// 永远 ready，控制面同样必须从 legacy 回填，不得因导入快照被整体丢弃。
+func TestResolverReadyFirstStartAutoSnapshotCarriesLegacyControlPlane(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	legacy := completeLegacyConfig()
+	legacy.ControlPlane = legacyControlPlane()
+
+	result := NewResolver(repository).Resolve(context.Background(), testBootstrapConfig(), legacy)
+
+	if result.Mode != ModeReady || result.Snapshot == nil || result.Snapshot.Source != SourceEnvImport {
+		t.Fatalf("unexpected first-start resolution: %#v", result)
+	}
+	assertEffectiveControlPlane(t, result.EffectiveConfig.ControlPlane, legacy.ControlPlane)
+}
+
+// TestFromLegacyConfigDropsWebhookSecretChannel 锁定全局 secret 通道退役:
+// env 直配(CODEHOST_WEBHOOK_SECRET/GITLAB_WEBHOOK_SECRET)经 Load→FromLegacyConfig
+// 导入链被忽略,验签凭据唯一归属注册仓,env 导入不再产生任何 webhook secret。
 func TestFromLegacyConfigDropsWebhookSecretChannel(t *testing.T) {
 	t.Setenv("GITLAB_WEBHOOK_SECRET", "old-secret")
 	t.Setenv("CODEHOST_WEBHOOK_SECRET", "new-secret")

@@ -4,9 +4,11 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { adminApi } from '../api/client'
 import type { ConfigurationStatus } from '../api/types'
 import { ErrorState, LoadingState } from '../components/PageState'
+import { useWorkspaceSession } from './workspaceSession'
 
 export function ConfigurationBoundary({ children }: { children: ReactNode }) {
   const location = useLocation()
+  const { superAdmin } = useWorkspaceSession()
   const [status, setStatus] = useState<ConfigurationStatus>()
   const [error, setError] = useState<unknown>()
 
@@ -22,7 +24,11 @@ export function ConfigurationBoundary({ children }: { children: ReactNode }) {
   if (!status) return <LoadingState />
 
   const bootstrapMode = status.mode === 'setup_pending' || status.mode === 'configuration_error'
-  if (bootstrapMode && location.pathname !== '/setup' && location.pathname !== '/people') return <Navigate to="/setup" replace />
-  if (status.mode === 'ready' && location.pathname === '/setup') return <Navigate to="/settings" replace />
+  if (superAdmin && bootstrapMode && location.pathname !== '/setup' && location.pathname !== '/people') {
+    return <Navigate to="/setup" replace />
+  }
+  if (status.mode === 'ready' && location.pathname === '/setup') {
+    return <Navigate to={superAdmin ? '/settings' : '/'} replace />
+  }
   return children
 }

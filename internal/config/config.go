@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -38,14 +39,27 @@ type AgentRunnerSettings struct {
 	ProviderConfigRevision uint64
 }
 
-// ControlPlaneSettings 是多租户控制面配置：DSN 为空
-// 时控制面退化为进程内 sqlite（:memory:）；种子超管三件套仅在配置了用户名与
-// 密码时生效，RESET 是密码丢失重置通道。
+// ErrControlPlaneNotConfigured 表示装配控制面时缺少 DSN 或种子超管（
+// 二者均为启动必填，不再退内存库、不再无种子起进程）。
+var ErrControlPlaneNotConfigured = errors.New("control plane is not configured")
+
+// ControlPlaneSettings 是多租户控制面配置：DSN
+// 与种子超管用户名/密码均为启动必填；RESET 仍是已有超管的密码丢失重置通道。
 type ControlPlaneSettings struct {
 	DSN                string
 	SuperAdminUsername string
 	SuperAdminPassword string
 	SuperAdminReset    bool
+}
+
+func (s ControlPlaneSettings) Validate() error {
+	if strings.TrimSpace(s.DSN) == "" {
+		return fmt.Errorf("%w: CONTROL_PLANE_DSN is required", ErrControlPlaneNotConfigured)
+	}
+	if strings.TrimSpace(s.SuperAdminUsername) == "" || s.SuperAdminPassword == "" {
+		return fmt.Errorf("%w: CONTROL_PLANE_SUPERADMIN_USERNAME and CONTROL_PLANE_SUPERADMIN_PASSWORD are required", ErrControlPlaneNotConfigured)
+	}
+	return nil
 }
 
 type Config struct {
@@ -71,7 +85,7 @@ func Load() Config {
 	scheduler := loadSchedulerSettings()
 
 	cfg := Config{
-		ControlPlane: loadControlPlaneSettings(),
+		ControlPlane: bootstrap.ControlPlane,
 		AgentRunner: AgentRunnerSettings{
 			ServiceURL:      getEnv("AGENT_RUNNER_SERVICE_URL", "http://agent-runner:8081"),
 			WorkspaceRoot:   getEnv("AGENT_RUNNER_WORKSPACE_ROOT", "/app/workspaces"),

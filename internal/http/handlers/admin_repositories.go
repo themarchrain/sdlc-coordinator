@@ -18,6 +18,13 @@ func NewAdminRepositoryHandler(service *registeredrepo.Service) *AdminRepository
 	return &AdminRepositoryHandler{service: service}
 }
 
+func (handler *AdminRepositoryHandler) reposFor(c *gin.Context) *registeredrepo.Service {
+	if store, ok := TenantStoreFrom(c); ok {
+		return registeredrepo.NewService(registeredrepo.NewStore(store.DB), nil, registeredrepo.NewSQLActivityChecker(store.DB))
+	}
+	return handler.service
+}
+
 func (handler *AdminRepositoryHandler) RegisterRoutes(group *gin.RouterGroup) {
 	group.GET("/repositories", handler.List)
 	group.POST("/repositories", handler.Create)
@@ -52,7 +59,7 @@ type patchRepositoryBody struct {
 }
 
 func (handler *AdminRepositoryHandler) List(c *gin.Context) {
-	items, err := handler.service.List(c.Request.Context())
+	items, err := handler.reposFor(c).List(c.Request.Context())
 	if err != nil {
 		writeAdminRepositoryError(c, err)
 		return
@@ -69,7 +76,7 @@ func (handler *AdminRepositoryHandler) Create(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	view, err := handler.service.Create(c.Request.Context(), registeredrepo.CreateRequest{
+	view, err := handler.reposFor(c).Create(c.Request.Context(), registeredrepo.CreateRequest{
 		DisplayName:         body.DisplayName,
 		PathWithNamespace:   body.PathWithNamespace,
 		Provider:            body.Provider,
@@ -88,7 +95,7 @@ func (handler *AdminRepositoryHandler) Create(c *gin.Context) {
 }
 
 func (handler *AdminRepositoryHandler) Get(c *gin.Context) {
-	view, err := handler.service.Get(c.Request.Context(), c.Param("repository_id"))
+	view, err := handler.reposFor(c).Get(c.Request.Context(), c.Param("repository_id"))
 	if err != nil {
 		writeAdminRepositoryError(c, err)
 		return
@@ -101,7 +108,7 @@ func (handler *AdminRepositoryHandler) Patch(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	view, err := handler.service.Patch(c.Request.Context(), c.Param("repository_id"), registeredrepo.PatchRequest{
+	view, err := handler.reposFor(c).Patch(c.Request.Context(), c.Param("repository_id"), registeredrepo.PatchRequest{
 		DisplayName:         body.DisplayName,
 		PathWithNamespace:   body.PathWithNamespace,
 		Provider:            body.Provider,
@@ -124,11 +131,11 @@ func (handler *AdminRepositoryHandler) Patch(c *gin.Context) {
 }
 
 func (handler *AdminRepositoryHandler) Disable(c *gin.Context) {
-	if err := handler.service.Disable(c.Request.Context(), c.Param("repository_id")); err != nil {
+	if err := handler.reposFor(c).Disable(c.Request.Context(), c.Param("repository_id")); err != nil {
 		writeAdminRepositoryError(c, err)
 		return
 	}
-	view, err := handler.service.Get(c.Request.Context(), c.Param("repository_id"))
+	view, err := handler.reposFor(c).Get(c.Request.Context(), c.Param("repository_id"))
 	if err != nil {
 		writeAdminRepositoryError(c, err)
 		return
@@ -137,7 +144,7 @@ func (handler *AdminRepositoryHandler) Disable(c *gin.Context) {
 }
 
 func (handler *AdminRepositoryHandler) Enable(c *gin.Context) {
-	view, err := handler.service.Enable(c.Request.Context(), c.Param("repository_id"))
+	view, err := handler.reposFor(c).Enable(c.Request.Context(), c.Param("repository_id"))
 	if err != nil {
 		writeAdminRepositoryError(c, err)
 		return

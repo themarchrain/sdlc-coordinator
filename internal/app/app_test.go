@@ -18,6 +18,7 @@ import (
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/events"
+	"sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/people"
@@ -45,9 +46,9 @@ func seedAppRepository(t *testing.T, db *gorm.DB, repositoryID, projectID, path,
 }
 
 func TestNewLeavesSchedulerDisabledByDefault(t *testing.T) {
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
-	}, zap.NewNop(), openAppTestDB(t))
+	}), zap.NewNop(), openAppTestDB(t))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestNewBootstrapDoesNotAssembleRuntimeWorkersAndGatesWrites(t *testing.T) {
 	}
 	service := configuration.NewService(repository, configuration.Resolution{Mode: configuration.ModeSetupPending})
 
-	application, err := NewBootstrap(config.BootstrapConfig{HTTPAddr: ":0"}, zap.NewNop(), db, service, configuration.NewShutdownSignal(), configuration.ModeSetupPending)
+	application, err := NewBootstrap(withTestBootstrap(t, config.BootstrapConfig{HTTPAddr: ":0"}), zap.NewNop(), db, service, configuration.NewShutdownSignal(), configuration.ModeSetupPending)
 	if err != nil {
 		t.Fatalf("new bootstrap app: %v", err)
 	}
@@ -88,23 +89,40 @@ func TestNewBootstrapExposesPeopleDirectoryWithoutRuntimeWorkers(t *testing.T) {
 		t.Fatalf("migrate configuration: %v", err)
 	}
 	service := configuration.NewService(repository, configuration.Resolution{Mode: configuration.ModeSetupPending})
-	application, err := NewBootstrap(config.BootstrapConfig{HTTPAddr: ":0"}, zap.NewNop(), db, service, configuration.NewShutdownSignal(), configuration.ModeSetupPending)
+	application, err := NewBootstrap(withTestBootstrap(t, config.BootstrapConfig{HTTPAddr: ":0"}), zap.NewNop(), db, service, configuration.NewShutdownSignal(), configuration.ModeSetupPending)
 	if err != nil {
 		t.Fatalf("new bootstrap app: %v", err)
 	}
 
-	loginBody := strings.NewReader(`{"username":"admin","password":"admin123"}`)
-	loginRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	legacyAuth := httptest.NewRecorder()
+	legacyReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin123"}`))
+	legacyReq.Header.Set("Content-Type", "application/json")
+	application.Router.ServeHTTP(legacyAuth, legacyReq)
+	if legacyAuth.Code != http.StatusNotFound {
+		t.Fatalf("legacy /api/auth/login must be gone, got %d: %s", legacyAuth.Code, legacyAuth.Body.String())
+	}
+
+	loginBody := strings.NewReader(`{"username":"root","password":"test-super-password"}`)
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/portal/auth/login", loginBody)
 	loginRequest.Header.Set("Content-Type", "application/json")
 	loginResponse := httptest.NewRecorder()
 	application.Router.ServeHTTP(loginResponse, loginRequest)
-	if loginResponse.Code != http.StatusOK || len(loginResponse.Result().Cookies()) != 1 {
-		t.Fatalf("unexpected bootstrap login response %d: %s", loginResponse.Code, loginResponse.Body.String())
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("unexpected bootstrap portal login %d: %s", loginResponse.Code, loginResponse.Body.String())
+	}
+	var portalCookie *http.Cookie
+	for _, item := range loginResponse.Result().Cookies() {
+		if item.Name == handlers.PortalSessionCookieName {
+			portalCookie = item
+		}
+	}
+	if portalCookie == nil {
+		t.Fatal("missing portal session cookie")
 	}
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/people", nil)
-	request.AddCookie(loginResponse.Result().Cookies()[0])
+	request.AddCookie(portalCookie)
 	application.Router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"items":[]`) {
 		t.Fatalf("unexpected people response %d: %s", response.Code, response.Body.String())
@@ -122,7 +140,7 @@ func TestNewWiresEnabledScheduler(t *testing.T) {
 	cfg.Scheduler.Interval = 30 * time.Second
 	cfg.Scheduler.TickRequest = orchestrator.TickRequest{DispatchLimit: 1, EffectLimit: 5}
 
-	application, err := New(cfg, zap.NewNop(), openAppTestDB(t))
+	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), openAppTestDB(t))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -144,7 +162,7 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 		ServiceURL: runnerServer.URL, WorkspaceRoot: t.TempDir(), Provider: "fake",
 		Model: "model-a", Effort: "high", ProviderConfigRevision: 9,
 	}
-	application, err := New(cfg, zap.NewNop(), openAppTestDB(t))
+	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), openAppTestDB(t))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -173,7 +191,7 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 func TestNewAndBootstrapMigrateAgentExecutions(t *testing.T) {
 	t.Run("ready", func(t *testing.T) {
 		db := openAppTestDB(t)
-		if _, err := New(config.Config{HTTPAddr: ":0"}, zap.NewNop(), db); err != nil {
+		if _, err := New(withTestControlPlane(t, config.Config{HTTPAddr: ":0"}), zap.NewNop(), db); err != nil {
 			t.Fatalf("new app: %v", err)
 		}
 		if !db.Migrator().HasTable(&model.AgentExecution{}) {
@@ -183,7 +201,7 @@ func TestNewAndBootstrapMigrateAgentExecutions(t *testing.T) {
 
 	t.Run("bootstrap", func(t *testing.T) {
 		db := openAppTestDB(t)
-		if _, err := NewBootstrap(config.BootstrapConfig{HTTPAddr: ":0"}, zap.NewNop(), db, nil, nil, configuration.ModeSetupPending); err != nil {
+		if _, err := NewBootstrap(withTestBootstrap(t, config.BootstrapConfig{HTTPAddr: ":0"}), zap.NewNop(), db, nil, nil, configuration.ModeSetupPending); err != nil {
 			t.Fatalf("new bootstrap app: %v", err)
 		}
 		if !db.Migrator().HasTable(&model.AgentExecution{}) {
@@ -194,9 +212,9 @@ func TestNewAndBootstrapMigrateAgentExecutions(t *testing.T) {
 
 func TestNewWiresAdminQueryRoutesToSharedDatabase(t *testing.T) {
 	db := openAppTestDB(t)
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -208,7 +226,7 @@ func TestNewWiresAdminQueryRoutesToSharedDatabase(t *testing.T) {
 	}
 
 	recorder := httptest.NewRecorder()
-	request := authenticatedAdminRequest(t, application.Router, http.MethodGet, "/api/admin/tasks")
+	request := authenticatedAdminRequest(t, application, http.MethodGet, "/api/admin/tasks")
 	application.Router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, recorder.Code, recorder.Body.String())
@@ -225,15 +243,15 @@ func TestNewWiresAdminQueryRoutesToSharedDatabase(t *testing.T) {
 }
 
 func TestNewWiresConnectorAdminRoutes(t *testing.T) {
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
-	}, zap.NewNop(), openAppTestDB(t))
+	}), zap.NewNop(), openAppTestDB(t))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := authenticatedAdminRequest(t, application.Router, http.MethodGet, "/api/admin/connectors")
+	request := authenticatedAdminRequest(t, application, http.MethodGet, "/api/admin/connectors")
 	application.Router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, recorder.Code, recorder.Body.String())
@@ -249,17 +267,41 @@ func openAppTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func authenticatedAdminRequest(t *testing.T, router http.Handler, method, path string) *http.Request {
+func authenticatedAdminRequest(t *testing.T, application *App, method, path string) *http.Request {
 	t.Helper()
-	loginRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin123"}`))
+	if application.ControlPlane == nil {
+		t.Fatal("authenticatedAdminRequest requires a wired control plane")
+	}
+	ctx := context.Background()
+	const username = "app-test-root"
+	const password = "test-super-password"
+	existing, err := application.ControlPlane.GetUserByUsername(ctx, username)
+	if err != nil {
+		t.Fatalf("lookup portal super admin: %v", err)
+	}
+	if existing == nil {
+		if _, err := application.ControlPlane.CreateSuperAdminUser(ctx, username, password); err != nil {
+			t.Fatalf("seed portal super admin: %v", err)
+		}
+	}
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/portal/auth/login", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
 	loginRequest.Header.Set("Content-Type", "application/json")
 	loginResponse := httptest.NewRecorder()
-	router.ServeHTTP(loginResponse, loginRequest)
-	if loginResponse.Code != http.StatusOK || len(loginResponse.Result().Cookies()) != 1 {
-		t.Fatalf("login admin for request: status=%d body=%s", loginResponse.Code, loginResponse.Body.String())
+	application.Router.ServeHTTP(loginResponse, loginRequest)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("portal login for request: status=%d body=%s", loginResponse.Code, loginResponse.Body.String())
+	}
+	var cookie *http.Cookie
+	for _, item := range loginResponse.Result().Cookies() {
+		if item.Name == handlers.PortalSessionCookieName {
+			cookie = item
+		}
+	}
+	if cookie == nil {
+		t.Fatal("missing portal session cookie")
 	}
 	request := httptest.NewRequest(method, path, nil)
-	request.AddCookie(loginResponse.Result().Cookies()[0])
+	request.AddCookie(cookie)
 	return request
 }
 
@@ -321,9 +363,9 @@ func TestNewMigratesWritebacks(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	_, err = New(config.Config{
+	_, err = New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -351,11 +393,11 @@ func TestNewAcceptsGiteaCodeHostProvider(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	_, err = New(config.Config{
+	_, err = New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "gitea",
 		CodeHostBaseURL:  "http://localhost:3000",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app with gitea codehost: %v", err)
 	}
@@ -366,11 +408,11 @@ func TestNewWiresRequirementsModule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "github",
 		CodeHostBaseURL:  "http://localhost:3000",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -401,7 +443,7 @@ func TestNewWiresIMEffectExecutor(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
 		IM: config.IMSettings{
 			Provider: "telegram",
@@ -411,7 +453,7 @@ func TestNewWiresIMEffectExecutor(t *testing.T) {
 				DefaultChatID: "-100123",
 			},
 		},
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -501,7 +543,7 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 		Provider: "telegram",
 		Telegram: config.IMTelegramSettings{BotToken: "bot-token", DefaultChatID: "-100123"},
 	}
-	application, err := New(cfg, zap.NewNop(), db)
+	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -617,10 +659,10 @@ func TestNewRejectsInvalidCodeHostReworkAllowedUserIDs(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	_, err = New(config.Config{
+	_, err = New(withTestControlPlane(t, config.Config{
 		HTTPAddr:                     ":0",
 		CodeHostReworkAllowedUserIDs: "42,invalid",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err == nil {
 		t.Fatal("expected invalid codehost rework allowlist to reject startup")
 	}
@@ -630,11 +672,11 @@ func TestNewRejectsInvalidCodeHostReworkAllowedUserIDs(t *testing.T) {
 }
 
 func TestNewWiresCodeHostReworkAllowedUserIDs(t *testing.T) {
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
 
 		CodeHostReworkAllowedUserIDs: "99",
-	}, zap.NewNop(), openAppTestDB(t))
+	}), zap.NewNop(), openAppTestDB(t))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -660,9 +702,9 @@ func TestNewWiresCodeHostReworkAllowedUserIDs(t *testing.T) {
 
 func TestGitLabMRReworkWebhookCreatesOneManagedPendingTask(t *testing.T) {
 	db := openAppTestDB(t)
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -730,9 +772,9 @@ func TestNewRejectsWebhookForUnregisteredRepo(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr: ":0",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -759,11 +801,11 @@ func TestNewToleratesUnknownGlobalCodeHostProvider(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	application, err := New(config.Config{
+	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "unknown",
 		CodeHostBaseURL:  "http://codehost.local",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("global provider must no longer gate startup: %v", err)
 	}
@@ -778,7 +820,7 @@ func TestNewWebhookAdmissionWithoutConfigurationService(t *testing.T) {
 		t.Fatalf("migrate registered repositories: %v", err)
 	}
 	seedAppRepository(t, db, "repo-app-webhook", "15594", "demo-group/lite-list", "https://gitlab.example.com")
-	application, err := New(config.Config{HTTPAddr: ":0"}, zap.NewNop(), db)
+	application, err := New(withTestControlPlane(t, config.Config{HTTPAddr: ":0"}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -809,11 +851,11 @@ func TestNewReadyRejectsUnregisteredWebhookWithoutPersisting(t *testing.T) {
 	service := configuration.NewService(configRepo, configuration.Resolution{
 		Mode: configuration.ModeReady, Prefill: runtimeConfig, Snapshot: saved,
 	})
-	application, err := NewReady(config.Config{
+	application, err := NewReady(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "gitlab",
 		CodeHostBaseURL:  "https://gitlab.example.com",
-	}, zap.NewNop(), db, service, nil)
+	}), zap.NewNop(), db, service, nil)
 	if err != nil {
 		t.Fatalf("new ready app: %v", err)
 	}
@@ -876,11 +918,11 @@ func TestNewAcceptsGitHubCodeHostProvider(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	_, err = New(config.Config{
+	_, err = New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
 		CodeHostProvider: "github",
 		CodeHostBaseURL:  "https://api.github.com",
-	}, zap.NewNop(), db)
+	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app with github codehost: %v", err)
 	}

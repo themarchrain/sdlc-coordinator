@@ -51,6 +51,17 @@ func NewService(store *Store, repositories *registeredrepo.Store, clients Client
 	}
 }
 
+func (service *Service) WithDB(db *gorm.DB) *Service {
+	if service == nil {
+		return NewService(NewStore(db), registeredrepo.NewStore(db), nil)
+	}
+	return &Service{
+		store:        NewStore(db),
+		repositories: registeredrepo.NewStore(db),
+		clients:      service.clients,
+	}
+}
+
 func (s *Service) Create(ctx context.Context, request CreateRequest) (*Requirement, error) {
 	title := strings.TrimSpace(request.Title)
 	if title == "" {

@@ -18,6 +18,13 @@ func NewAdminAgentObservabilityHandler(query *agentobservability.Query) *AdminAg
 	return &AdminAgentObservabilityHandler{query: query}
 }
 
+func (handler *AdminAgentObservabilityHandler) queryFor(c *gin.Context) *agentobservability.Query {
+	if store, ok := TenantStoreFrom(c); ok {
+		return agentobservability.NewQuery(store.DB)
+	}
+	return handler.query
+}
+
 func (handler *AdminAgentObservabilityHandler) RegisterRoutes(group *gin.RouterGroup) {
 	executions := group.Group("/agents/executions")
 	executions.GET("/summary", handler.AgentExecutionSummary)
@@ -30,7 +37,7 @@ func (handler *AdminAgentObservabilityHandler) AgentExecutionSummary(c *gin.Cont
 	if !ok {
 		return
 	}
-	summary, err := handler.query.ExecutionSummary(c.Request.Context(), filter)
+	summary, err := handler.queryFor(c).ExecutionSummary(c.Request.Context(), filter)
 	if err != nil {
 		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Agent 执行摘要失败")
 		return
@@ -50,7 +57,7 @@ func (handler *AdminAgentObservabilityHandler) ListAgentExecutions(c *gin.Contex
 	if !ok {
 		return
 	}
-	page, err := handler.query.ListExecutions(c.Request.Context(), filter)
+	page, err := handler.queryFor(c).ListExecutions(c.Request.Context(), filter)
 	if err != nil {
 		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Agent 执行记录失败")
 		return
@@ -59,7 +66,7 @@ func (handler *AdminAgentObservabilityHandler) ListAgentExecutions(c *gin.Contex
 }
 
 func (handler *AdminAgentObservabilityHandler) GetAgentExecution(c *gin.Context) {
-	detail, err := handler.query.GetExecution(c.Request.Context(), c.Param("execution_id"))
+	detail, err := handler.queryFor(c).GetExecution(c.Request.Context(), c.Param("execution_id"))
 	if errors.Is(err, repository.ErrNotFound) {
 		writeAdminError(c, http.StatusNotFound, "not_found", "Agent 执行记录不存在")
 		return

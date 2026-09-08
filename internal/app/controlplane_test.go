@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/config"
+	"sdlc-coordinator/internal/configuration"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -46,17 +48,42 @@ func TestNewReadyWiresControlPlaneAndSeedsSuperAdmin(t *testing.T) {
 	}
 }
 
-func TestNewReadyWithoutControlPlaneConfigStartsClean(t *testing.T) {
-	application, err := NewReady(config.Config{HTTPAddr: ":0"}, zap.NewNop(), openAppTestDB(t), nil, nil)
-	if err != nil {
-		t.Fatalf("new ready app: %v", err)
+func TestNewReadyRejectsMissingControlPlaneDSN(t *testing.T) {
+	_, err := NewReady(config.Config{HTTPAddr: ":0"}, zap.NewNop(), openAppTestDB(t), nil, nil)
+	if err == nil {
+		t.Fatal("expected missing CONTROL_PLANE_DSN to fail startup")
 	}
-	// 未配置时登录端点仍在（:memory: 控制面），但无种子账号 → 401
-	gin.SetMode(gin.TestMode)
-	body, _ := json.Marshal(map[string]string{"username": "root", "password": "whatever-pass"})
-	recorder := httptest.NewRecorder()
-	application.Router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/portal/auth/login", bytes.NewReader(body)))
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 without seed, got %d body=%s", recorder.Code, recorder.Body.String())
+	if !strings.Contains(err.Error(), "CONTROL_PLANE_DSN") {
+		t.Fatalf("err = %v, want CONTROL_PLANE_DSN in message", err)
+	}
+}
+
+func TestNewReadyRejectsMissingSuperAdminSeed(t *testing.T) {
+	dir, err := os.MkdirTemp("", "control-plane-noseed")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	_, err = NewReady(config.Config{
+		HTTPAddr: ":0",
+		ControlPlane: config.ControlPlaneSettings{
+			DSN: "file:" + filepath.Join(dir, "control-plane.db") + "?_busy_timeout=1000",
+		},
+	}, zap.NewNop(), openAppTestDB(t), nil, nil)
+	if err == nil {
+		t.Fatal("expected missing CONTROL_PLANE_SUPERADMIN_* to fail startup")
+	}
+	if !strings.Contains(err.Error(), "CONTROL_PLANE_SUPERADMIN") {
+		t.Fatalf("err = %v, want CONTROL_PLANE_SUPERADMIN in message", err)
+	}
+}
+
+func TestNewBootstrapRejectsMissingControlPlaneConfig(t *testing.T) {
+	_, err := NewBootstrap(config.BootstrapConfig{HTTPAddr: ":0"}, zap.NewNop(), openAppTestDB(t), nil, nil, configuration.ModeSetupPending)
+	if err == nil {
+		t.Fatal("expected bootstrap without control plane to fail startup")
+	}
+	if !strings.Contains(err.Error(), "CONTROL_PLANE") {
+		t.Fatalf("err = %v, want CONTROL_PLANE in message", err)
 	}
 }

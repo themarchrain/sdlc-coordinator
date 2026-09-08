@@ -23,6 +23,13 @@ func NewAdminQueryHandler(queries *admin.QueryService) *AdminQueryHandler {
 	return &AdminQueryHandler{queries: queries}
 }
 
+func (handler *AdminQueryHandler) queriesFor(c *gin.Context) *admin.QueryService {
+	if store, ok := TenantStoreFrom(c); ok {
+		return admin.NewQueryService(store.DB)
+	}
+	return handler.queries
+}
+
 func (handler *AdminQueryHandler) RegisterRoutes(group *gin.RouterGroup) {
 	group.GET("/overview", handler.Overview)
 	group.GET("/metrics", handler.Metrics)
@@ -51,7 +58,7 @@ func (handler *AdminQueryHandler) Metrics(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_query", "window 必须是 7d、30d 或 all")
 		return
 	}
-	metrics, err := handler.queries.Metrics(c.Request.Context(), admin.MetricsFilter{
+	metrics, err := handler.queriesFor(c).Metrics(c.Request.Context(), admin.MetricsFilter{
 		Window:       window,
 		Type:         strings.TrimSpace(c.Query("type")),
 		RepositoryID: strings.TrimSpace(c.Query("repository_id")),
@@ -71,12 +78,12 @@ func (handler *AdminQueryHandler) Overview(c *gin.Context) {
 		return
 	}
 	repositoryID := strings.TrimSpace(c.Query("repository_id"))
-	overview, err := handler.queries.Overview(c.Request.Context(), admin.OverviewFilter{RepositoryID: repositoryID})
+	overview, err := handler.queriesFor(c).Overview(c.Request.Context(), admin.OverviewFilter{RepositoryID: repositoryID})
 	if err != nil {
 		writeAdminQueryServiceError(c, err, "Overview")
 		return
 	}
-	business, err := handler.queries.BusinessSummary(c.Request.Context(), admin.MetricsFilter{
+	business, err := handler.queriesFor(c).BusinessSummary(c.Request.Context(), admin.MetricsFilter{
 		Window: window, RepositoryID: repositoryID, Now: time.Now().UTC(),
 	})
 	if err != nil {
@@ -87,7 +94,7 @@ func (handler *AdminQueryHandler) Overview(c *gin.Context) {
 }
 
 func (handler *AdminQueryHandler) TaskTimeline(c *gin.Context) {
-	events, err := handler.queries.TaskTimeline(c.Request.Context(), c.Param("task_id"))
+	events, err := handler.queriesFor(c).TaskTimeline(c.Request.Context(), c.Param("task_id"))
 	if err != nil {
 		writeAdminQueryLookupError(c, err, "Task")
 		return
@@ -105,7 +112,7 @@ func (handler *AdminQueryHandler) ListTasks(c *gin.Context) {
 		return
 	}
 
-	page, err := handler.queries.ListTasks(c.Request.Context(), admin.TaskFilter{
+	page, err := handler.queriesFor(c).ListTasks(c.Request.Context(), admin.TaskFilter{
 		PageRequest:  pageRequest,
 		Status:       c.Query("status"),
 		Role:         c.Query("role"),
@@ -130,7 +137,7 @@ func (handler *AdminQueryHandler) ListTasks(c *gin.Context) {
 }
 
 func (handler *AdminQueryHandler) GetTask(c *gin.Context) {
-	task, err := handler.queries.GetTask(c.Request.Context(), c.Param("task_id"))
+	task, err := handler.queriesFor(c).GetTask(c.Request.Context(), c.Param("task_id"))
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeAdminError(c, http.StatusNotFound, "not_found", "Task 不存在")
@@ -147,7 +154,7 @@ func (handler *AdminQueryHandler) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListRuns(c.Request.Context(), admin.RunFilter{
+	page, err := handler.queriesFor(c).ListRuns(c.Request.Context(), admin.RunFilter{
 		PageRequest: pageRequest, Status: c.Query("status"), WorkerRole: c.Query("worker_role"),
 		TaskID: c.Query("task_id"), RepositoryID: c.Query("repository_id"), CreatedFrom: from, CreatedTo: to,
 	})
@@ -155,7 +162,7 @@ func (handler *AdminQueryHandler) ListRuns(c *gin.Context) {
 }
 
 func (handler *AdminQueryHandler) GetRun(c *gin.Context) {
-	entity, err := handler.queries.GetRun(c.Request.Context(), c.Param("run_id"))
+	entity, err := handler.queriesFor(c).GetRun(c.Request.Context(), c.Param("run_id"))
 	writeAdminQueryDetail(c, entity, err, runDetail, "Run")
 }
 
@@ -164,12 +171,12 @@ func (handler *AdminQueryHandler) ListArtifacts(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListArtifacts(c.Request.Context(), filter)
+	page, err := handler.queriesFor(c).ListArtifacts(c.Request.Context(), filter)
 	writeAdminQueryPage(c, page, err, artifactSummary, "Artifact")
 }
 
 func (handler *AdminQueryHandler) GetArtifact(c *gin.Context) {
-	entity, err := handler.queries.GetArtifact(c.Request.Context(), c.Param("artifact_id"))
+	entity, err := handler.queriesFor(c).GetArtifact(c.Request.Context(), c.Param("artifact_id"))
 	writeAdminQueryDetail(c, entity, err, artifactDetail, "Artifact")
 }
 
@@ -178,7 +185,7 @@ func (handler *AdminQueryHandler) ListDependencies(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListDependencies(c.Request.Context(), admin.DependencyFilter{
+	page, err := handler.queriesFor(c).ListDependencies(c.Request.Context(), admin.DependencyFilter{
 		PageRequest: pageRequest, ParentTaskID: c.Query("parent_task_id"), ChildTaskID: c.Query("child_task_id"),
 		Relation: c.Query("relation"), Status: c.Query("status"), RepositoryID: c.Query("repository_id"),
 		CreatedFrom: from, CreatedTo: to,
@@ -187,7 +194,7 @@ func (handler *AdminQueryHandler) ListDependencies(c *gin.Context) {
 }
 
 func (handler *AdminQueryHandler) GetDependency(c *gin.Context) {
-	entity, err := handler.queries.GetDependency(c.Request.Context(), c.Param("dependency_id"))
+	entity, err := handler.queriesFor(c).GetDependency(c.Request.Context(), c.Param("dependency_id"))
 	writeAdminQueryDetail(c, entity, err, dependencyDetail, "Dependency")
 }
 
@@ -196,12 +203,12 @@ func (handler *AdminQueryHandler) ListWritebacks(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListWritebacks(c.Request.Context(), filter)
+	page, err := handler.queriesFor(c).ListWritebacks(c.Request.Context(), filter)
 	writeAdminQueryPage(c, page, err, writebackSummary, "Writeback")
 }
 
 func (handler *AdminQueryHandler) GetWriteback(c *gin.Context) {
-	entity, err := handler.queries.GetWriteback(c.Request.Context(), c.Param("writeback_id"))
+	entity, err := handler.queriesFor(c).GetWriteback(c.Request.Context(), c.Param("writeback_id"))
 	writeAdminQueryDetail(c, entity, err, writebackDetail, "Writeback")
 }
 
@@ -210,12 +217,12 @@ func (handler *AdminQueryHandler) ListEffects(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListEffects(c.Request.Context(), filter)
+	page, err := handler.queriesFor(c).ListEffects(c.Request.Context(), filter)
 	writeAdminQueryPage(c, page, err, effectSummary, "Effect")
 }
 
 func (handler *AdminQueryHandler) GetEffect(c *gin.Context) {
-	entity, err := handler.queries.GetEffect(c.Request.Context(), c.Param("effect_id"))
+	entity, err := handler.queriesFor(c).GetEffect(c.Request.Context(), c.Param("effect_id"))
 	writeAdminQueryDetail(c, entity, err, effectDetail, "Effect")
 }
 
@@ -224,12 +231,12 @@ func (handler *AdminQueryHandler) ListInboundEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListInboundEvents(c.Request.Context(), filter)
+	page, err := handler.queriesFor(c).ListInboundEvents(c.Request.Context(), filter)
 	writeAdminQueryPage(c, page, err, inboundEventSummary, "InboundEvent")
 }
 
 func (handler *AdminQueryHandler) GetInboundEvent(c *gin.Context) {
-	entity, err := handler.queries.GetInboundEvent(c.Request.Context(), c.Param("event_id"))
+	entity, err := handler.queriesFor(c).GetInboundEvent(c.Request.Context(), c.Param("event_id"))
 	writeAdminQueryDetail(c, entity, err, inboundEventDetail, "InboundEvent")
 }
 
@@ -238,12 +245,12 @@ func (handler *AdminQueryHandler) ListResultSubmissions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := handler.queries.ListResultSubmissions(c.Request.Context(), filter)
+	page, err := handler.queriesFor(c).ListResultSubmissions(c.Request.Context(), filter)
 	writeAdminQueryPage(c, page, err, resultSubmissionSummary, "ResultSubmission")
 }
 
 func (handler *AdminQueryHandler) GetResultSubmission(c *gin.Context) {
-	entity, err := handler.queries.GetResultSubmission(c.Request.Context(), c.Param("submission_id"))
+	entity, err := handler.queriesFor(c).GetResultSubmission(c.Request.Context(), c.Param("submission_id"))
 	writeAdminQueryDetail(c, entity, err, resultSubmissionDetail, "ResultSubmission")
 }
 

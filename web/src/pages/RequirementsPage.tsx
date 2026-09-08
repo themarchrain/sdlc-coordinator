@@ -6,6 +6,7 @@ import { adminApi } from '../api/client'
 import type { RegisteredRepository, Requirement } from '../api/types'
 import { ErrorState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
+import { useCanWrite } from '../app/workspaceSession'
 
 const statusLabels: Record<Requirement['status'], { label: string; color: string }> = {
   queued: { label: '待同步', color: 'warning' },
@@ -18,6 +19,7 @@ const statusLabels: Record<Requirement['status'], { label: string; color: string
 const priorityLabels: Record<string, string> = { high: '高', medium: '中', low: '低' }
 
 export function RequirementsPage() {
+  const canWrite = useCanWrite()
   const [items, setItems] = useState<Requirement[]>([])
   const [repositories, setRepositories] = useState<RegisteredRepository[]>([])
   const [loading, setLoading] = useState(true)
@@ -112,10 +114,12 @@ export function RequirementsPage() {
     <PageHeading eyebrow="需求入口" title="需求管理" />
     <section className="surface-panel">
       <div className="people-toolbar">
-        <Space>
-          <Button icon={<SyncOutlined />} onClick={() => void runSync()}>立即同步</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建需求</Button>
-        </Space>
+        {canWrite ? (
+          <Space>
+            <Button icon={<SyncOutlined />} onClick={() => void runSync()}>立即同步</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建需求</Button>
+          </Space>
+        ) : null}
       </div>
       {error ? <ErrorState error={error} /> : <Table<Requirement>
         size="small" loading={loading} rowKey="requirement_id" dataSource={items}
@@ -128,12 +132,12 @@ export function RequirementsPage() {
           { title: 'Issue', width: 90, render: (_, requirement) => requirement.issue_url ? <a href={requirement.issue_url} target="_blank" rel="noreferrer">#{requirement.issue_iid}</a> : '—' },
           { title: '错误', render: (_, requirement) => requirement.last_error ? <small className="table-secondary">{requirement.last_error}</small> : '—' },
           { title: '创建时间', width: 170, dataIndex: 'created_at', render: (value: string) => value ? new Date(value).toLocaleString() : '—' },
-          { title: '操作', width: 240, render: (_, requirement) => <Space size={0}>
+          ...(canWrite ? [{ title: '操作', width: 240, render: (_: unknown, requirement: Requirement) => <Space size={0}>
             {editable(requirement) ? <Button type="text" size="small" onClick={() => openEdit(requirement)}>编辑</Button> : null}
             {requirement.status === 'failed' ? <Button type="text" size="small" onClick={() => void act(() => adminApi.publishRequirement(requirement.requirement_id), '已重新排队')}>重试发布</Button> : null}
             {requirement.status === 'published' ? <Popconfirm title="确认该需求已完成？" okText="完成" cancelText="取消" onConfirm={() => void act(() => adminApi.completeRequirement(requirement.requirement_id), '已标记完成')}><Button type="text" size="small" icon={<CheckOutlined />}>完成</Button></Popconfirm> : null}
             {editable(requirement) ? <Popconfirm title="取消该需求？" okText="取消需求" cancelText="返回" onConfirm={() => void act(() => adminApi.cancelRequirement(requirement.requirement_id), '需求已取消')}><Button type="text" size="small" danger icon={<StopOutlined />}>取消</Button></Popconfirm> : null}
-          </Space> },
+          </Space> }] : []),
         ]}
       />}
     </section>

@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -12,7 +10,6 @@ import (
 	"sdlc-coordinator/internal/adapters/agentrunner"
 	"sdlc-coordinator/internal/adapters/im"
 	"sdlc-coordinator/internal/admin"
-	"sdlc-coordinator/internal/auth"
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
@@ -32,6 +29,7 @@ import (
 	"sdlc-coordinator/internal/scheduler"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
+	"sdlc-coordinator/internal/tenantdb"
 	"sdlc-coordinator/internal/workspace"
 
 	"github.com/gin-gonic/gin"
@@ -55,6 +53,8 @@ type App struct {
 	Orch             *orchestrator.Orchestrator
 	Scheduler        *scheduler.Runner
 	RequirementsSync *requirements.Runner
+	ControlPlane     *controlplane.Service
+	TenantStores     tenantdb.Resolver
 	Mode             configuration.Mode
 }
 
@@ -76,6 +76,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if err := requirements.NewStore(db).Migrate(); err != nil {
 		return nil, err
 	}
+
+	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
+	db = tenantStores.Main().DB
 
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
@@ -201,12 +204,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		requirements.NewProviderClientFactory(nil),
 	)
 	requirementsSyncRunner := requirements.NewRunner(requirements.SyncInterval, requirementsService.SyncOnce, logger)
-	authService, err := newAdminAuth(db)
-	if err != nil {
-		return nil, err
-	}
-	// 控制面库（多租户）：独立 sqlite 单文件；DSN 为空退化为进程内
-	// 内存库。种子超管按 env 装配，动作写控制面审计。
+	// 控制面与 ready/bootstrap 共用装配：DSN 与种子超管缺失时显式失败。
 	controlPlaneService, err := newControlPlane(cfg.ControlPlane, logger)
 	if err != nil {
 		return nil, err
@@ -224,11 +222,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		api.WithPeopleService(peopleService, peopleLookup),
 		api.WithRepositoryService(repositoryService),
 		api.WithRequirementsService(requirementsService),
-		api.WithAuthService(authService),
 		api.WithMCPHandler(mcpHandler),
-	}
-	if controlPlaneService != nil {
-		routerOptions = append(routerOptions, api.WithControlPlaneService(controlPlaneService))
+		api.WithTenantStoreResolver(tenantStores),
+		api.WithControlPlaneService(controlPlaneService),
 	}
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
@@ -250,6 +246,8 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		Orch:             orch,
 		Scheduler:        schedulerRunner,
 		RequirementsSync: requirementsSyncRunner,
+		ControlPlane:     controlPlaneService,
+		TenantStores:     tenantStores,
 		Mode:             configuration.ModeReady,
 	}, nil
 }
@@ -271,34 +269,38 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 	if err := requirements.NewStore(db).Migrate(); err != nil {
 		return nil, err
 	}
-	legacyConfig := config.Config{
-		HTTPAddr: bootstrap.HTTPAddr, DatabaseDSN: bootstrap.DatabaseDSN,
-		LogLevel: bootstrap.LogLevel, LogDir: bootstrap.LogDir, Environment: bootstrap.Environment,
-	}
 	peopleService, peopleLookup, err := newPeopleDirectory(db)
 	if err != nil {
 		return nil, err
 	}
 	repositoryService := newRepositoryDirectory(db)
-	authService, err := newAdminAuth(db)
+	controlPlaneService, err := newControlPlane(bootstrap.ControlPlane, logger)
 	if err != nil {
 		return nil, err
 	}
+	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
 	router := api.NewRouter(
 		nil,
 		api.WithConfigurationService(configurationService, shutdown),
 		api.WithRuntimeMode(mode),
 		api.WithPeopleService(peopleService, peopleLookup),
 		api.WithRepositoryService(repositoryService),
-		api.WithAuthService(authService),
+		api.WithControlPlaneService(controlPlaneService),
+		api.WithTenantStoreResolver(tenantStores),
 	)
 	return &App{
-		Config: legacyConfig,
-		Logger: logger,
-		DB:     db,
-		Router: router,
-		Server: api.NewServer(bootstrap.HTTPAddr, router),
-		Mode:   mode,
+		Config: config.Config{
+			HTTPAddr: bootstrap.HTTPAddr, DatabaseDSN: bootstrap.DatabaseDSN,
+			LogLevel: bootstrap.LogLevel, LogDir: bootstrap.LogDir, Environment: bootstrap.Environment,
+			ControlPlane: bootstrap.ControlPlane,
+		},
+		Logger:       logger,
+		DB:           db,
+		Router:       router,
+		Server:       api.NewServer(bootstrap.HTTPAddr, router),
+		ControlPlane: controlPlaneService,
+		TenantStores: tenantStores,
+		Mode:         mode,
 	}, nil
 }
 
@@ -399,23 +401,13 @@ func (d peopleMentionDirectory) ResolveMentionNames(ctx context.Context, reposit
 	return result
 }
 
-// newControlPlane 打开控制面库、迁移并按 env 种子超管。任何配置形态下都返回
-// 可用服务（内存库兜底），保证路由行为可预期。
+// newControlPlane 打开控制面库、迁移并种子超管。DSN 或种子缺失时返回
+// config.ErrControlPlaneNotConfigured，不再退内存库。
 func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (*controlplane.Service, error) {
-	dsn := settings.DSN
-	if dsn == "" {
-		// 空 DSN 用随机命名的私有内存库。共享名（file::memory:?cache=shared）
-		// 会让同进程多实例共用同一份数据（跨测试/跨实例状态串扰）。
-		buf := make([]byte, 8)
-		if _, err := rand.Read(buf); err != nil {
-			return nil, fmt.Errorf("generate control plane memory dsn: %w", err)
-		}
-		dsn = "file:control-plane-memory-" + hex.EncodeToString(buf) + "?mode=memory&cache=shared"
-		if logger != nil {
-			logger.Warn("control plane dsn not configured; using ephemeral in-memory sqlite (data is instance-local)")
-		}
+	if err := settings.Validate(); err != nil {
+		return nil, err
 	}
-	db, err := store.Open(dsn)
+	db, err := store.Open(settings.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("open control plane database: %w", err)
 	}
@@ -424,27 +416,17 @@ func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (
 		return nil, err
 	}
 	service := controlplane.NewService(repository)
-	if settings.SuperAdminUsername != "" && settings.SuperAdminPassword != "" {
-		if err := service.SeedSuperAdmin(context.Background(), controlplane.SeedSuperAdminInput{
-			Username: settings.SuperAdminUsername,
-			Password: settings.SuperAdminPassword,
-			Reset:    settings.SuperAdminReset,
-		}); err != nil {
-			return nil, fmt.Errorf("seed super admin: %w", err)
-		}
-		if logger != nil {
-			logger.Info("control plane super admin ensured", zap.String("username", settings.SuperAdminUsername), zap.Bool("reset", settings.SuperAdminReset))
-		}
+	if err := service.SeedSuperAdmin(context.Background(), controlplane.SeedSuperAdminInput{
+		Username: settings.SuperAdminUsername,
+		Password: settings.SuperAdminPassword,
+		Reset:    settings.SuperAdminReset,
+	}); err != nil {
+		return nil, fmt.Errorf("seed super admin: %w", err)
+	}
+	if logger != nil {
+		logger.Info("control plane super admin ensured", zap.String("username", settings.SuperAdminUsername), zap.Bool("reset", settings.SuperAdminReset))
 	}
 	return service, nil
-}
-
-func newAdminAuth(db *gorm.DB) (*auth.Service, error) {
-	repository := auth.NewRepository(db)
-	if err := repository.Migrate(); err != nil {
-		return nil, err
-	}
-	return auth.NewService(repository), nil
 }
 
 func (a *App) Run(ctx context.Context) error {
@@ -455,6 +437,9 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.RequirementsSync != nil {
 		go a.RequirementsSync.Run(runCtx)
+	}
+	if a.ControlPlane != nil {
+		go a.ControlPlane.RunSessionJanitor(runCtx)
 	}
 
 	errCh := make(chan error, 1)

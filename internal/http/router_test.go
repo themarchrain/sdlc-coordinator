@@ -14,9 +14,9 @@ import (
 	"testing/fstest"
 
 	"sdlc-coordinator/internal/admin"
-	"sdlc-coordinator/internal/auth"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
+	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/events"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
@@ -63,20 +63,19 @@ func TestAdminConfigurationRoutesUseInjectedService(t *testing.T) {
 	}
 }
 
-func TestRouterProtectsOnlyAdminAPIWhenAuthIsConfigured(t *testing.T) {
+func TestRouterProtectsAdminAPIWhenControlPlaneIsConfigured(t *testing.T) {
 	db, err := store.Open("file:router-admin-auth?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	authRepository := auth.NewRepository(db)
-	if err := authRepository.Migrate(); err != nil {
-		t.Fatalf("migrate auth: %v", err)
+	cpRepo := controlplane.NewRepository(db)
+	if err := cpRepo.Migrate(); err != nil {
+		t.Fatalf("migrate control plane: %v", err)
 	}
-	authService := auth.NewService(authRepository)
 	configurationService := configuration.NewService(nil, configuration.Resolution{Mode: configuration.ModeSetupPending})
 	router := NewRouter(nil,
 		WithConfigurationService(configurationService, configuration.NewShutdownSignal()),
-		WithAuthService(authService),
+		WithControlPlaneService(controlplane.NewService(cpRepo)),
 	)
 
 	adminRequest := httptest.NewRequest(http.MethodGet, "/api/admin/configuration/status", nil)

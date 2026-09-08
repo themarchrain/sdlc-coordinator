@@ -20,6 +20,13 @@ func NewAdminRequirementHandler(service *requirements.Service) *AdminRequirement
 	return &AdminRequirementHandler{service: service}
 }
 
+func (handler *AdminRequirementHandler) requirementsFor(c *gin.Context) *requirements.Service {
+	if store, ok := TenantStoreFrom(c); ok && handler.service != nil {
+		return handler.service.WithDB(store.DB)
+	}
+	return handler.service
+}
+
 func (handler *AdminRequirementHandler) RegisterRoutes(group *gin.RouterGroup) {
 	group.GET("/requirements", handler.List)
 	group.POST("/requirements", handler.Create)
@@ -47,7 +54,7 @@ type patchRequirementBody struct {
 
 func (handler *AdminRequirementHandler) List(c *gin.Context) {
 	page, pageSize := normalizeRequirementPage(c.Query("page"), c.Query("page_size"))
-	items, total, err := handler.service.List(c.Request.Context(), requirements.ListFilter{
+	items, total, err := handler.requirementsFor(c).List(c.Request.Context(), requirements.ListFilter{
 		Status:       requirements.Status(strings.ToLower(strings.TrimSpace(c.Query("status")))),
 		RepositoryID: c.Query("repository_id"),
 		Page:         page,
@@ -69,7 +76,7 @@ func (handler *AdminRequirementHandler) Create(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	item, err := handler.service.Create(c.Request.Context(), requirements.CreateRequest{
+	item, err := handler.requirementsFor(c).Create(c.Request.Context(), requirements.CreateRequest{
 		Title:        body.Title,
 		Description:  body.Description,
 		RepositoryID: body.RepositoryID,
@@ -88,7 +95,7 @@ func (handler *AdminRequirementHandler) Patch(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	item, err := handler.service.Patch(c.Request.Context(), c.Param("requirement_id"), requirements.PatchRequest{
+	item, err := handler.requirementsFor(c).Patch(c.Request.Context(), c.Param("requirement_id"), requirements.PatchRequest{
 		Title:       body.Title,
 		Description: body.Description,
 		Labels:      body.Labels,
@@ -102,7 +109,7 @@ func (handler *AdminRequirementHandler) Patch(c *gin.Context) {
 }
 
 func (handler *AdminRequirementHandler) Publish(c *gin.Context) {
-	item, err := handler.service.Publish(c.Request.Context(), c.Param("requirement_id"))
+	item, err := handler.requirementsFor(c).Publish(c.Request.Context(), c.Param("requirement_id"))
 	if err != nil {
 		writeAdminRequirementError(c, err)
 		return
@@ -111,7 +118,7 @@ func (handler *AdminRequirementHandler) Publish(c *gin.Context) {
 }
 
 func (handler *AdminRequirementHandler) Cancel(c *gin.Context) {
-	item, err := handler.service.Cancel(c.Request.Context(), c.Param("requirement_id"))
+	item, err := handler.requirementsFor(c).Cancel(c.Request.Context(), c.Param("requirement_id"))
 	if err != nil {
 		writeAdminRequirementError(c, err)
 		return
@@ -120,7 +127,7 @@ func (handler *AdminRequirementHandler) Cancel(c *gin.Context) {
 }
 
 func (handler *AdminRequirementHandler) Complete(c *gin.Context) {
-	item, err := handler.service.Complete(c.Request.Context(), c.Param("requirement_id"))
+	item, err := handler.requirementsFor(c).Complete(c.Request.Context(), c.Param("requirement_id"))
 	if err != nil {
 		writeAdminRequirementError(c, err)
 		return
@@ -129,7 +136,7 @@ func (handler *AdminRequirementHandler) Complete(c *gin.Context) {
 }
 
 func (handler *AdminRequirementHandler) Sync(c *gin.Context) {
-	result, err := handler.service.SyncOnce(c.Request.Context())
+	result, err := handler.requirementsFor(c).SyncOnce(c.Request.Context())
 	if err != nil {
 		writeAdminRequirementError(c, err)
 		return

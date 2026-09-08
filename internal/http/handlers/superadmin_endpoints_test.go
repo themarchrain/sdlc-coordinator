@@ -101,6 +101,31 @@ func TestSuperAdminTenantCRUD(t *testing.T) {
 	}
 }
 
+func TestCreateTenantAuditIncludesClientIP(t *testing.T) {
+	world, _, superToken := newSuperWorld(t)
+	created := world.do(t, http.MethodPost, "/api/super-admin/tenants", superToken, map[string]string{
+		"slug": "gamma", "display_name": "Gamma 组织",
+	})
+	if created.Code != http.StatusOK {
+		t.Fatalf("create tenant status = %d body=%s", created.Code, created.Body.String())
+	}
+	audit := world.do(t, http.MethodGet, "/api/super-admin/audit-log?action=tenant.created", superToken, nil)
+	if audit.Code != http.StatusOK {
+		t.Fatalf("audit log status = %d body=%s", audit.Code, audit.Body.String())
+	}
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	_ = json.Unmarshal(audit.Body.Bytes(), &payload)
+	if len(payload.Items) == 0 {
+		t.Fatal("expected tenant.created audit item")
+	}
+	sourceIP, _ := payload.Items[0]["source_ip"].(string)
+	if sourceIP == "" {
+		t.Fatalf("expected source_ip on audit item, got %#v", payload.Items[0])
+	}
+}
+
 func TestSuperAdminProvisionsTenantAdmin(t *testing.T) {
 	world, tenantID, superToken := newSuperWorld(t)
 

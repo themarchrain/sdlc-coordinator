@@ -5,16 +5,6 @@ export interface Page<T> {
   total: number
 }
 
-export interface AuthSession {
-  username: string
-  expires_at?: string
-}
-
-export interface LoginRequest {
-  username: string
-  password: string
-}
-
 export interface Overview {
   tasks_by_status: Record<string, number>
   runs_by_status: Record<string, number>

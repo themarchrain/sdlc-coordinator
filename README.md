@@ -30,7 +30,7 @@ Then start from `docker-compose.yml`. Agent Runner image uses `alpine:3.21` (git
 
 Admin UI: `http://<host>:<port>/admin`
 
-Default first-boot login is `admin` / `admin123`. Change it before any shared deployment. Do not expose this service to the public internet.
+The first super admin is seeded from `CONTROL_PLANE_SUPERADMIN_USERNAME` / `CONTROL_PLANE_SUPERADMIN_PASSWORD` environment variables at startup; startup refuses to run without `CONTROL_PLANE_DSN` and these credentials. Do not expose this service to the public internet.
 
 ## Tests
 

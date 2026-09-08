@@ -76,7 +76,7 @@ func (service *Service) Login(ctx context.Context, rawUsername, password, client
 	if service.rateLimiter.blocked(rateKey) || service.usernameLimiter.blocked(username) {
 		return nil, ErrRateLimited
 	}
-	user, err := service.repository.GetUserByUsername(ctx, username)
+	user, err := service.repo(ctx).GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (service *Service) Login(ctx context.Context, rawUsername, password, client
 	if user.Role == UserRoleSuperAdmin {
 		return service.issueSession(ctx, user, nil, ScopeSuperAdmin, RoleSuperAdmin)
 	}
-	memberships, err := service.repository.ListMembershipsByUser(ctx, user.ID)
+	memberships, err := service.repo(ctx).ListMembershipsByUser(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,25 +125,25 @@ func (service *Service) SelectTenant(ctx context.Context, token string, tenantID
 	if err != nil {
 		return nil, err
 	}
-	user, err := service.repository.GetUser(ctx, session.UserID)
+	user, err := service.repo(ctx).GetUser(ctx, session.UserID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
-	membership, err := service.repository.GetMembership(ctx, user.ID, tenantID)
+	membership, err := service.repo(ctx).GetMembership(ctx, user.ID, tenantID)
 	if err != nil {
 		if errors.Is(err, ErrMembershipNotFound) {
 			return nil, ErrForbidden
 		}
 		return nil, err
 	}
-	tenant, err := service.repository.GetTenant(ctx, tenantID)
+	tenant, err := service.repo(ctx).GetTenant(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	if tenant.Status != TenantStatusActive {
 		return nil, ErrTenantDisabled
 	}
-	if err := service.repository.DeleteSession(ctx, session); err != nil {
+	if err := service.repo(ctx).DeleteSession(ctx, session); err != nil {
 		return nil, err
 	}
 	return service.issueSession(ctx, user, &tenantID, ScopeTenant, membership.Role)
@@ -157,7 +157,7 @@ func (service *Service) ValidateSession(ctx context.Context, token string) (*Ses
 	if err != nil {
 		return nil, err
 	}
-	user, err := service.repository.GetUser(ctx, session.UserID)
+	user, err := service.repo(ctx).GetUser(ctx, session.UserID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
@@ -165,7 +165,7 @@ func (service *Service) ValidateSession(ctx context.Context, token string) (*Ses
 	if user.Role == UserRoleSuperAdmin || session.Role == RoleSuperAdmin {
 		sessionCtx.SuperAdminMode = true
 		if session.SupportTenantID != nil {
-			tenant, err := service.repository.GetTenant(ctx, *session.SupportTenantID)
+			tenant, err := service.repo(ctx).GetTenant(ctx, *session.SupportTenantID)
 			if err != nil {
 				return nil, ErrSessionRevoked
 			}
@@ -178,14 +178,14 @@ func (service *Service) ValidateSession(ctx context.Context, token string) (*Ses
 	if session.ActiveTenantID == nil {
 		return nil, ErrSessionRevoked
 	}
-	membership, err := service.repository.GetMembership(ctx, user.ID, *session.ActiveTenantID)
+	membership, err := service.repo(ctx).GetMembership(ctx, user.ID, *session.ActiveTenantID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
 	if membership.Role != session.Role {
 		return nil, ErrSessionRevoked
 	}
-	tenant, err := service.repository.GetTenant(ctx, *session.ActiveTenantID)
+	tenant, err := service.repo(ctx).GetTenant(ctx, *session.ActiveTenantID)
 	if err != nil {
 		return nil, ErrSessionRevoked
 	}
@@ -206,13 +206,13 @@ func (service *Service) Logout(ctx context.Context, token string) error {
 		}
 		return err
 	}
-	return service.repository.DeleteSession(ctx, session)
+	return service.repo(ctx).DeleteSession(ctx, session)
 }
 
 // ChangePassword 校验当前密码后改密并清除强制改密标记；改密后吊销该用户全部
 // 会话（同源安全语义：与密码重置一致）。
 func (service *Service) ChangePassword(ctx context.Context, userID uint, currentPassword, newPassword string) error {
-	user, err := service.repository.GetUser(ctx, userID)
+	user, err := service.repo(ctx).GetUser(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -228,10 +228,10 @@ func (service *Service) ChangePassword(ctx context.Context, userID uint, current
 	}
 	user.PasswordHash = string(hash)
 	user.MustChangePassword = false
-	if err := service.repository.SaveUser(ctx, user); err != nil {
+	if err := service.repo(ctx).SaveUser(ctx, user); err != nil {
 		return err
 	}
-	return service.repository.DeleteSessionsForUser(ctx, userID)
+	return service.repo(ctx).DeleteSessionsForUser(ctx, userID)
 }
 
 // CreateSuperAdminUser 建全局超管账号（env 种子与测试共用；永不入会）。
@@ -256,12 +256,12 @@ func (service *Service) issueSession(ctx context.Context, user *User, tenantID *
 		Role:           role,
 		ExpiresAt:      service.now().UTC().Add(DefaultSessionTTL),
 	}
-	if err := service.repository.CreateSession(ctx, session); err != nil {
+	if err := service.repo(ctx).CreateSession(ctx, session); err != nil {
 		return nil, err
 	}
 	result := &LoginResult{Token: token, User: user, Scope: SessionScope{Kind: scopeKind}}
 	if tenantID != nil {
-		tenant, err := service.repository.GetTenant(ctx, *tenantID)
+		tenant, err := service.repo(ctx).GetTenant(ctx, *tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +269,7 @@ func (service *Service) issueSession(ctx context.Context, user *User, tenantID *
 		result.Scope.Role = session.Role
 	}
 	if scopeKind == ScopeUnscoped {
-		memberships, err := service.repository.ListMembershipsByUser(ctx, user.ID)
+		memberships, err := service.repo(ctx).ListMembershipsByUser(ctx, user.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -285,7 +285,7 @@ func (service *Service) issueSession(ctx context.Context, user *User, tenantID *
 func (service *Service) tenantOptionsFor(ctx context.Context, memberships []Membership) ([]TenantOption, error) {
 	options := make([]TenantOption, 0, len(memberships))
 	for _, membership := range memberships {
-		tenant, err := service.repository.GetTenant(ctx, membership.TenantID)
+		tenant, err := service.repo(ctx).GetTenant(ctx, membership.TenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -305,7 +305,7 @@ func (service *Service) activeSession(ctx context.Context, token string) (*Sessi
 	if trimmed == "" {
 		return nil, ErrUnauthenticated
 	}
-	session, err := service.repository.GetActiveSessionByHash(ctx, sessionTokenHash(trimmed), service.now().UTC())
+	session, err := service.repo(ctx).GetActiveSessionByHash(ctx, sessionTokenHash(trimmed), service.now().UTC())
 	if err != nil {
 		return nil, err
 	}

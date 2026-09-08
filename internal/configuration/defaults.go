@@ -103,6 +103,7 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 		LogLevel:                     bootstrap.LogLevel,
 		LogDir:                       bootstrap.LogDir,
 		Environment:                  bootstrap.Environment,
+		ControlPlane:                 bootstrap.ControlPlane,
 		Scheduler: config.SchedulerSettings{
 			Enabled:  runtimeConfig.Scheduler.Enabled,
 			Interval: schedulerInterval,

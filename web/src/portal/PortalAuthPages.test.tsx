@@ -28,7 +28,7 @@ describe('PortalRegisterPage', () => {
       <MemoryRouter initialEntries={['/portal/register']}>
         <Routes>
           <Route path="/portal/register" element={<PortalRegisterPage />} />
-          <Route path="/portal/org" element={<LocationProbe />} />
+          <Route path="/" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -37,7 +37,7 @@ describe('PortalRegisterPage', () => {
     await user.type(screen.getByLabelText('邀请码'), 'ABCD-EFGH-JKLM')
     await user.click(screen.getByRole('button', { name: '注册并加入组织' }))
     expect(portalApi.register).toHaveBeenCalledWith('newcomer', 'password-001', 'ABCD-EFGH-JKLM')
-    expect(await screen.findByTestId('location')).toHaveTextContent('/portal/org')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/')
   })
 })
 
@@ -60,14 +60,14 @@ describe('SelectTenantPage', () => {
       <MemoryRouter initialEntries={['/portal/select-tenant']}>
         <Routes>
           <Route path="/portal/select-tenant" element={<SelectTenantPage />} />
-          <Route path="/portal/org" element={<LocationProbe />} />
+          <Route path="/" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>,
     )
     expect(await screen.findByText('Beta 组织')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Beta 组织/ }))
     expect(portalApi.selectTenant).toHaveBeenCalledWith(2)
-    expect(await screen.findByTestId('location')).toHaveTextContent('/portal/org')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/')
   })
 })
 

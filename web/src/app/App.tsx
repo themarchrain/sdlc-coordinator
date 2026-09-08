@@ -1,8 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import type { ReactNode } from 'react'
 
 import { ConnectorsPage } from '../pages/ConnectorsPage'
 import { ConfigurationPage } from '../pages/ConfigurationPage'
 import { DataExplorerPage } from '../pages/DataExplorerPage'
+import { MemberHomePage } from '../pages/MemberHomePage'
 import { OperationsPage } from '../pages/OperationsPage'
 import { OverviewPage } from '../pages/OverviewPage'
 import { PeoplePage } from '../pages/PeoplePage'
@@ -16,13 +18,27 @@ import { LoginPage } from '../pages/LoginPage'
 import { AgentObservabilityPage } from '../pages/AgentObservabilityPage'
 import { PortalApp } from '../portal/PortalApp'
 import { SuperAdminApp } from '../superadmin/SuperAdminApp'
+import { useWorkspaceSession, type WorkspaceRole } from './workspaceSession'
+
+const rank: Record<WorkspaceRole, number> = { member: 0, tenant_admin: 1, super_admin: 2 }
+
+function RoleGate({ min, children }: { min: WorkspaceRole; children: ReactNode }) {
+  const { role, superAdmin } = useWorkspaceSession()
+  const current = superAdmin ? 2 : rank[role]
+  if (current < rank[min]) return <Navigate to="/" replace />
+  return children
+}
+
+function HomeRoute() {
+  const { role } = useWorkspaceSession()
+  if (role === 'member') return <MemberHomePage />
+  return <OverviewPage />
+}
 
 export function App() {
   return (
     <Routes>
       <Route path="login" element={<LoginPage />} />
-      {/* 多租户新增页面区：门户（登录/注册/选组织/组织管理）与超管独立后台。
-          纯增量，不影响存量 admin 页面与其认证边界。 */}
       <Route path="portal/*" element={<PortalApp />} />
       <Route path="super-admin/*" element={<SuperAdminApp />} />
       <Route path="*" element={<AuthenticationBoundary><AppShell><ConfigurationBoundary><AdminRoutes /></ConfigurationBoundary></AppShell></AuthenticationBoundary>} />
@@ -33,16 +49,16 @@ export function App() {
 function AdminRoutes() {
   return (
     <Routes>
-          <Route index element={<OverviewPage />} />
-          <Route path="setup" element={<ConfigurationPage />} />
-          <Route path="settings" element={<ConfigurationPage />} />
-          <Route path="people" element={<PeoplePage />} />
+          <Route index element={<HomeRoute />} />
+          <Route path="setup" element={<RoleGate min="super_admin"><ConfigurationPage /></RoleGate>} />
+          <Route path="settings" element={<RoleGate min="super_admin"><ConfigurationPage /></RoleGate>} />
+          <Route path="people" element={<RoleGate min="tenant_admin"><PeoplePage /></RoleGate>} />
           <Route path="requirements" element={<RequirementsPage />} />
-          <Route path="repositories" element={<RepositoriesPage />} />
+          <Route path="repositories" element={<RoleGate min="tenant_admin"><RepositoriesPage /></RoleGate>} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="explorer" element={<DataExplorerPage />} />
-          <Route path="connectors" element={<ConnectorsPage />} />
-          <Route path="operations" element={<OperationsPage />} />
+          <Route path="connectors" element={<RoleGate min="tenant_admin"><ConnectorsPage /></RoleGate>} />
+          <Route path="operations" element={<RoleGate min="tenant_admin"><OperationsPage /></RoleGate>} />
           <Route path="agents" element={<AgentObservabilityPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

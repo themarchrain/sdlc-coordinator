@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
 import type { RegisteredRepository, Requirement } from '../api/types'
+import { WorkspaceSessionProvider } from '../app/workspaceSession'
 import { RequirementsPage } from './RequirementsPage'
 
 vi.mock('../api/client', () => ({
@@ -92,5 +93,19 @@ describe('RequirementsPage', () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /立即同步/ }))
     await waitFor(() => expect(mockedApi.triggerRequirementSync).toHaveBeenCalled())
+  })
+
+  it('hides write actions for organization members', async () => {
+    render(
+      <MemoryRouter>
+        <WorkspaceSessionProvider value={{ session: null, role: 'member', superAdmin: false }}>
+          <RequirementsPage />
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('支付回调幂等')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /新建需求/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /立即同步/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '操作' })).not.toBeInTheDocument()
   })
 })

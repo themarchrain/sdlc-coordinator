@@ -88,6 +88,7 @@ export function AuditLogPage() {
         columns={[
           { title: '时间', dataIndex: 'created_at', width: 170, render: formatDateTime },
           { title: '操作者', dataIndex: 'actor_username', width: 120 },
+          { title: '来源 IP', dataIndex: 'source_ip', width: 140, render: (value: string | undefined) => value || '—' },
           { title: '组织', dataIndex: 'tenant_id', width: 80, render: (value: number | null) => value ?? '—' },
           {
             title: '动作',

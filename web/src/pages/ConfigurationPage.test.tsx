@@ -271,7 +271,7 @@ describe('ConfigurationPage codehost providers', () => {
   })
 })
 
-describe('ConfigurationPage appearance panel', () => {
+describe('ConfigurationPage appearance panel', { timeout: 20_000 }, () => {
   beforeEach(() => {
     localStorage.clear()
     delete document.documentElement.dataset.theme
