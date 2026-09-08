@@ -127,7 +127,7 @@ func TestSPAPageMatrixCoversKnownAdminPages(t *testing.T) {
 		"GET /admin/portal/register",
 		"GET /admin/portal/select-tenant",
 		"GET /admin/portal/change-password",
-		"GET /admin/portal/org",
+		"GET /admin/org",
 		"GET /admin/super-admin/tenants",
 		"GET /admin/super-admin/tenants/:id",
 		"GET /admin/super-admin/audit-log",

@@ -36,7 +36,9 @@ type AgentRunnerCoordinator struct {
 	runs       RunRepository
 	executions AgentExecutionProjectionRepository
 	runner     ReviewerRunnerClient
-	now        func() time.Time
+	// router 是租户 runner 池路由；nil = 单端点直连（既有行为）。
+	router TenantRunnerRouter
+	now    func() time.Time
 	// ingress enables the MCP result channel on dispatch; nil keeps the
 	// channel closed (text-only mode).
 	ingressIssuer   RunTokenIssuer
@@ -76,6 +78,60 @@ func (c *AgentRunnerCoordinator) setResultIngress(issuer RunTokenIssuer, endpoin
 	c.ingressEndpoint = strings.TrimSpace(endpointURL)
 }
 
+// setTenantRunnerRouter 接入租户池路由；nil 保留单端点直连。
+func (c *AgentRunnerCoordinator) setTenantRunnerRouter(router TenantRunnerRouter) {
+	c.router = router
+}
+
+// attemptForTask 解析派发尝试：nil 路由回退单端点直连（Endpoint 留空 =
+// projection 不记录端点，观测走默认客户端，与既有行为一致）。
+func (c *AgentRunnerCoordinator) attemptForTask(ctx context.Context, task *model.Task) (RunnerAttempt, error) {
+	if c.router == nil {
+		return RunnerAttempt{Client: c.runner}, nil
+	}
+	return c.router.AttemptForTask(ctx, task)
+}
+
+// createOnPool 在端点池上派发执行：每轮先 Create，失败后同端点 Get 崩溃恢复
+// （既有语义）；Get 返回 404（确定性未建）才轮换下一端点，歧义失败（传输层
+// 错误等）按既有失败语义终止，池耗尽返回首个 Create 错误。返回实际承接执行
+// 的端点，供 projection 做观测亲和。
+func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt RunnerAttempt, run *model.Run, expectedHash string, request runner.CreateExecutionRequest) (*runner.Execution, string, error) {
+	firstErr := error(nil)
+	for {
+		remote, createErr := attempt.Client.Create(ctx, request)
+		if createErr == nil {
+			return remote, attempt.Endpoint, nil
+		}
+		if firstErr == nil {
+			firstErr = createErr
+		}
+		recovered, getErr := attempt.Client.Get(ctx, run.RunID)
+		if getErr == nil {
+			return recovered, attempt.Endpoint, nil
+		}
+		if !runnerNotFound(getErr) {
+			return nil, "", fmt.Errorf("create runner execution: %w", firstErr)
+		}
+		next, ok := attempt.Next()
+		if !ok {
+			return nil, "", fmt.Errorf("create runner execution: %w", firstErr)
+		}
+		attempt = next
+	}
+}
+
+// executionClient 返回观测执行的客户端：优先按 projection 记录的端点钉住
+// （池亲和），无记录或路由未知时回退默认客户端。
+func (c *AgentRunnerCoordinator) executionClient(stored *model.AgentExecution) ReviewerRunnerClient {
+	if c.router != nil && stored != nil {
+		if pinned, ok := c.router.ClientForEndpoint(stored.RunnerEndpoint); ok {
+			return pinned
+		}
+	}
+	return c.runner
+}
+
 func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, run *model.Run, request runner.CreateExecutionRequest) (*model.AgentExecution, error) {
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
@@ -101,12 +157,13 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 		}
 		request.ResultSubmission = &runner.ResultSubmissionChannel{EndpointURL: c.ingressEndpoint, BearerToken: token}
 	}
-	remote, createErr := c.runner.Create(ctx, request)
-	if createErr != nil {
-		remote, err = c.runner.Get(ctx, run.RunID)
-		if err != nil {
-			return nil, fmt.Errorf("create runner execution: %w", createErr)
-		}
+	attempt, err := c.attemptForTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	remote, endpoint, err := c.createOnPool(ctx, attempt, run, expectedHash, request)
+	if err != nil {
+		return nil, err
 	}
 	if err := validateRemoteExecution(remote, run.RunID, expectedHash); err != nil {
 		return nil, err
@@ -115,6 +172,7 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	if err != nil {
 		return nil, err
 	}
+	projection.RunnerEndpoint = endpoint
 	if err := c.executions.Create(ctx, projection); err != nil {
 		stored, lookupErr := c.executions.GetByRunID(ctx, run.RunID)
 		if lookupErr == nil && validateStoredExecution(stored, run.RunID, expectedHash) == nil {
@@ -137,7 +195,8 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if err != nil {
 		return nil, err
 	}
-	events, err := c.runner.Events(ctx, stored.ExecutionID, stored.LastEventSeq)
+	client := c.executionClient(stored)
+	events, err := client.Events(ctx, stored.ExecutionID, stored.LastEventSeq)
 	if err != nil {
 		return nil, fmt.Errorf("list runner execution events: %w", err)
 	}
@@ -162,7 +221,7 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if err := c.executions.UpsertEvents(ctx, persistedEvents); err != nil {
 		return nil, err
 	}
-	remote, err := c.runner.Get(ctx, stored.ExecutionID)
+	remote, err := client.Get(ctx, stored.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("get runner execution: %w", err)
 	}
@@ -175,6 +234,8 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	}
 	projection.ID = stored.ID
 	projection.CreatedAt = stored.CreatedAt
+	// 重投影不覆盖端点亲和：执行仍在原 runner 上，观测继续钉住同一端点。
+	projection.RunnerEndpoint = stored.RunnerEndpoint
 	if err := c.executions.Update(ctx, projection); err != nil {
 		return nil, err
 	}
@@ -182,7 +243,7 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if remote.Status != runner.StatusSucceeded {
 		return observation, nil
 	}
-	result, err := c.runner.Result(ctx, stored.ExecutionID)
+	result, err := client.Result(ctx, stored.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("get runner structured result: %w", err)
 	}

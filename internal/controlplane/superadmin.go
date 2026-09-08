@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -238,14 +239,21 @@ func (service *Service) ListRunnerAssignments(ctx context.Context, tenantID uint
 	return service.repo(ctx).ListRunnerAssignments(ctx, tenantID)
 }
 
-// ReplaceRunnerAssignments 整表替换组织 runner 端点列表：仅接受 http/https，
-// 去重、上限 20 条；写 runner_assignments.updated 审计。
+// ListAllRunnerAssignments 跨租户全量列举指派行（启动校验消费端）。
+func (service *Service) ListAllRunnerAssignments(ctx context.Context) ([]RunnerAssignment, error) {
+	return service.repo(ctx).ListAllRunnerAssignments(ctx)
+}
+
+// ReplaceRunnerAssignments 整表替换组织 runner 端点列表：仅接受绝对
+// http/https URL（含 host，与消费端启动校验同口径），去重、上限 20 条；
+// 写 runner_assignments.updated 审计。
 func (service *Service) ReplaceRunnerAssignments(ctx context.Context, actor *Actor, tenantID uint, endpoints []string) error {
 	cleaned := make([]string, 0, len(endpoints))
 	seen := map[string]struct{}{}
 	for _, endpoint := range endpoints {
 		endpoint = strings.TrimSpace(endpoint)
-		if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		parsed, err := url.Parse(endpoint)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 			return ErrInvalidInput
 		}
 		if _, duplicate := seen[endpoint]; duplicate {

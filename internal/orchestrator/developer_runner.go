@@ -56,12 +56,23 @@ func NewDeveloperRunnerCoordinator(
 	runnerClient ReviewerRunnerClient,
 	submitter ReviewerResultSubmitter,
 	settings ReviewerRunnerSettings,
+	opts ...RunnerCoordinatorOption,
 ) *DeveloperRunnerCoordinator {
+	core := NewAgentRunnerCoordinator(tasks, runs, executions, runnerClient)
+	if options := newRunnerCoordinatorOptions(opts); options.router != nil {
+		core.setTenantRunnerRouter(options.router)
+	}
 	return &DeveloperRunnerCoordinator{
 		tasks: tasks, runs: runs, preparer: preparer, finalizer: finalizer, submitter: submitter,
-		core: NewAgentRunnerCoordinator(tasks, runs, executions, runnerClient), settings: settings,
+		core: core, settings: settings,
 		channel: NewResultChannelCoordinator(finalizer, submitter, settings, "agent_runner"),
 	}
+}
+
+// SetTenantRunnerRouter 在装配期接入租户池路由（NewReady 返回前才发生派发，
+// 构造后接入安全；nil 保留单端点直连）。
+func (c *DeveloperRunnerCoordinator) SetTenantRunnerRouter(router TenantRunnerRouter) {
+	c.core.setTenantRunnerRouter(router)
 }
 
 func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request DeveloperRunnerStartRequest) (*model.AgentExecution, error) {

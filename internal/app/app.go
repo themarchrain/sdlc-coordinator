@@ -26,6 +26,7 @@ import (
 	"sdlc-coordinator/internal/requirements"
 	"sdlc-coordinator/internal/resulttoken"
 	"sdlc-coordinator/internal/runner"
+	"sdlc-coordinator/internal/runnerpool"
 	"sdlc-coordinator/internal/scheduler"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
@@ -209,6 +210,23 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if err != nil {
 		return nil, err
 	}
+	// 租户 runner 池：先对已存在的指派行做启动校验（fail-fast，空表
+	// 放行），再把池路由接入 reviewer/developer 派发协调器（结构先行，
+	// 当前的 TaskTenantResolver 恒无租户 → 全部派发仍落默认池，行为等价）。
+	if err := validateRunnerAssignments(context.Background(), controlPlaneService); err != nil {
+		return nil, err
+	}
+	defaultRunnerEndpoint := strings.TrimRight(strings.TrimSpace(cfg.AgentRunner.ServiceURL), "/")
+	tenantRunnerRouter := runnerpool.NewRouter(
+		runnerpool.StaticTenantResolver{},
+		runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
+		func(endpoint string) orchestrator.ReviewerRunnerClient {
+			return agentrunner.NewClient(endpoint, nil)
+		},
+	)
+	// 装配期接入（Run 启动后台派发前完成）：reviewer/developer 共用同一路由。
+	reviewerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
+	developerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
 
 	routerOptions := []any{
 		// webhook secret 按仓持有:验签凭据来自注册仓行,无全局回退。
@@ -302,6 +320,31 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 		TenantStores: tenantStores,
 		Mode:         mode,
 	}, nil
+}
+
+// validateRunnerAssignments 在启动时校验控制面 runner 指派形态：同端点跨
+// 租户/孤儿租户/URL 非法任一命中即拒绝启动；空表放行。
+func validateRunnerAssignments(ctx context.Context, service *controlplane.Service) error {
+	rows, err := service.ListAllRunnerAssignments(ctx)
+	if err != nil {
+		return fmt.Errorf("load runner assignments: %w", err)
+	}
+	tenants, err := service.ListTenants(ctx)
+	if err != nil {
+		return fmt.Errorf("load tenants: %w", err)
+	}
+	known := make(map[uint]bool, len(tenants))
+	for _, tenant := range tenants {
+		known[tenant.ID] = true
+	}
+	shapes := make([]runnerpool.AssignmentShape, 0, len(rows))
+	for _, row := range rows {
+		shapes = append(shapes, runnerpool.AssignmentShape{TenantID: row.TenantID, EndpointURL: row.EndpointURL})
+	}
+	if err := runnerpool.ValidateAssignments(shapes, known); err != nil {
+		return fmt.Errorf("validate runner assignments: %w", err)
+	}
+	return nil
 }
 
 func newRepositoryDirectory(db *gorm.DB) *registeredrepo.Service {

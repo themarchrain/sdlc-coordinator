@@ -316,7 +316,7 @@ var spaPageRows = []MatrixRow{
 	mr("GET", "/admin/portal/register", ClassSPA, na, na, na, allow, ChannelPublic, false, mwNone, mwNone, "邀请码注册"),
 	mr("GET", "/admin/portal/select-tenant", ClassSPA, allow, allow, allow, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "现状不变"),
 	mr("GET", "/admin/portal/change-password", ClassSPA, allow, allow, allow, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "现状不变"),
-	mr("GET", "/admin/portal/org", ClassSPA, deny, allow, deny, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "组织管理；member 不可见"),
+	mr("GET", "/admin/org", ClassSPA, deny, allow, deny, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "组织管理内嵌工作台；member 不可见；支持访问中的超管放行"),
 	mr("GET", "/admin/super-admin/tenants", ClassSPA, allow, deny, deny, deny, ChannelNone, false, "SuperAdminSessionGate", "SuperAdminSessionGate", "现状不变"),
 	mr("GET", "/admin/super-admin/tenants/:id", ClassSPA, allow, deny, deny, deny, ChannelNone, false, "SuperAdminSessionGate", "SuperAdminSessionGate", "现状不变"),
 	mr("GET", "/admin/super-admin/audit-log", ClassSPA, allow, deny, deny, deny, ChannelNone, false, "SuperAdminSessionGate", "SuperAdminSessionGate", "现状不变"),

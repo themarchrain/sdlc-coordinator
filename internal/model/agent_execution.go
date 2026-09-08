@@ -15,24 +15,27 @@ const (
 )
 
 type AgentExecution struct {
-	ID                     uint                 `gorm:"primaryKey"`
-	RunID                  string               `gorm:"uniqueIndex;not null"`
-	ExecutionID            string               `gorm:"uniqueIndex;not null"`
-	Provider               string               `gorm:"index;not null"`
-	ProviderConfigRevision int64                `gorm:"not null;default:0"`
-	ProviderModel          string               `gorm:"index"`
-	ProviderEffort         string               `gorm:"index"`
-	Status                 AgentExecutionStatus `gorm:"index;not null"`
-	RequestHash            string               `gorm:"index;not null"`
-	LastEventSeq           int64                `gorm:"not null;default:0"`
-	LastObservedAt         *time.Time           `gorm:"index"`
-	ResultHash             string               `gorm:"index"`
-	ErrorCode              string               `gorm:"index"`
-	ErrorMessage           string               `gorm:"type:text"`
-	StartedAt              *time.Time           `gorm:"index"`
-	FinishedAt             *time.Time           `gorm:"index"`
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	ID                     uint   `gorm:"primaryKey"`
+	RunID                  string `gorm:"uniqueIndex;not null"`
+	ExecutionID            string `gorm:"uniqueIndex;not null"`
+	Provider               string `gorm:"index;not null"`
+	ProviderConfigRevision int64  `gorm:"not null;default:0"`
+	ProviderModel          string `gorm:"index"`
+	ProviderEffort         string `gorm:"index"`
+	// RunnerEndpoint 记录执行所落的 runner 端点（租户池亲和：观测与清理
+	// 回到同一端点）；空值 = 单端点默认形态。对外 API 不暴露。
+	RunnerEndpoint string               `gorm:"column:runner_endpoint" json:"-"`
+	Status         AgentExecutionStatus `gorm:"index;not null"`
+	RequestHash    string               `gorm:"index;not null"`
+	LastEventSeq   int64                `gorm:"not null;default:0"`
+	LastObservedAt *time.Time           `gorm:"index"`
+	ResultHash     string               `gorm:"index"`
+	ErrorCode      string               `gorm:"index"`
+	ErrorMessage   string               `gorm:"type:text"`
+	StartedAt      *time.Time           `gorm:"index"`
+	FinishedAt     *time.Time           `gorm:"index"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type AgentExecutionEvent struct {

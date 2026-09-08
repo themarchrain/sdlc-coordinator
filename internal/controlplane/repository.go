@@ -289,6 +289,17 @@ func (repository *Repository) ListRunnerAssignments(ctx context.Context, tenantI
 	return assignments, nil
 }
 
+// ListAllRunnerAssignments 跨租户全量列举指派行（启动校验消费端：需要
+// 全表形态判断，租户池路由按租户走 ListRunnerAssignments）。
+func (repository *Repository) ListAllRunnerAssignments(ctx context.Context) ([]RunnerAssignment, error) {
+	var assignments []RunnerAssignment
+	if err := repository.db.WithContext(ctx).
+		Order("tenant_id ASC, endpoint_url ASC").Find(&assignments).Error; err != nil {
+		return nil, fmt.Errorf("list all runner assignments: %w", err)
+	}
+	return assignments, nil
+}
+
 // ReplaceRunnerAssignments 事务内整表替换。
 func (repository *Repository) ReplaceRunnerAssignments(ctx context.Context, tenantID uint, endpoints []string) error {
 	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

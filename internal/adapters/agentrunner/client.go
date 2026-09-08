@@ -86,7 +86,7 @@ func (c *Client) Delete(ctx context.Context, executionID string) error {
 		return nil
 	}
 	raw, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
-	return fmt.Errorf("agent runner DELETE %s returned %d: %s", executionPath(executionID), response.StatusCode, strings.TrimSpace(string(raw)))
+	return &runner.HTTPError{Method: http.MethodDelete, Path: executionPath(executionID), StatusCode: response.StatusCode, Body: strings.TrimSpace(string(raw))}
 }
 
 func (c *Client) do(ctx context.Context, method, path string, input, output any) error {
@@ -112,7 +112,7 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
-		return fmt.Errorf("agent runner %s %s returned %d: %s", method, path, response.StatusCode, strings.TrimSpace(string(raw)))
+		return &runner.HTTPError{Method: method, Path: path, StatusCode: response.StatusCode, Body: strings.TrimSpace(string(raw))}
 	}
 	if output == nil {
 		return nil
