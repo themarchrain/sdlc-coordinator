@@ -7,6 +7,7 @@ import { DataExplorerPage } from '../pages/DataExplorerPage'
 import { MemberHomePage } from '../pages/MemberHomePage'
 import { OperationsPage } from '../pages/OperationsPage'
 import { OverviewPage } from '../pages/OverviewPage'
+import { OrgManagementPage } from '../portal/OrgManagementPage'
 import { PeoplePage } from '../pages/PeoplePage'
 import { RepositoriesPage } from '../pages/RepositoriesPage'
 import { RequirementsPage } from '../pages/RequirementsPage'
@@ -53,6 +54,8 @@ function AdminRoutes() {
           <Route path="setup" element={<RoleGate min="super_admin"><ConfigurationPage /></RoleGate>} />
           <Route path="settings" element={<RoleGate min="super_admin"><ConfigurationPage /></RoleGate>} />
           <Route path="people" element={<RoleGate min="tenant_admin"><PeoplePage /></RoleGate>} />
+          {/* 组织管理内嵌工作台：菜单直达 /org；portal 区只留无壳页。 */}
+          <Route path="org" element={<RoleGate min="tenant_admin"><OrgManagementPage /></RoleGate>} />
           <Route path="requirements" element={<RequirementsPage />} />
           <Route path="repositories" element={<RoleGate min="tenant_admin"><RepositoriesPage /></RoleGate>} />
           <Route path="tasks" element={<TasksPage />} />

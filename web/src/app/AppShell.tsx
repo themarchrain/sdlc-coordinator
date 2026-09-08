@@ -51,6 +51,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const repositoryID = searchParams.get('repository_id')
   const { role, superAdmin } = useWorkspaceSession()
   const member = role === 'member' && !superAdmin
+  // 超管无租户身份：业务菜单（需求/仓库/任务/数据/人员）对其隐藏，只留系统级入口；
+  // 支持访问中的超管 role 视作 tenant_admin，不受此收敛影响。
+  const superAdminSolo = role === 'super_admin'
   const workspaceItems = member
     ? [
         { to: '/', label: '工作台', icon: <AppstoreOutlined />, end: true },
@@ -58,12 +61,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         { to: '/tasks', label: '任务查询', icon: <ProfileOutlined /> },
         { to: '/explorer', label: '数据查询', icon: <DatabaseOutlined /> },
       ]
-    : workspaces
+    : workspaces.filter((item) => !superAdminSolo || item.to === '/')
   const adminItems = member
     ? []
     : [
-        ...adminWorkspaces.filter((item) => item.to !== '/settings' || superAdmin || role === 'super_admin'),
-        ...(role === 'tenant_admin' ? [{ to: '/portal/org', label: '组织管理', icon: <BankOutlined /> }] : []),
+        ...adminWorkspaces.filter((item) => {
+          if (item.to === '/settings') return superAdmin || role === 'super_admin'
+          return !(superAdminSolo && item.to === '/people')
+        }),
+        ...(role === 'tenant_admin' ? [{ to: '/org', label: '组织管理', icon: <BankOutlined /> }] : []),
       ]
 
   return (

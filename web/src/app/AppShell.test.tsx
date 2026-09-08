@@ -12,6 +12,7 @@ afterEach(() => vi.restoreAllMocks())
 
 const memberWorkspace: WorkspaceSessionValue = { session: null, role: 'member', superAdmin: false }
 const tenantAdminWorkspace: WorkspaceSessionValue = { session: null, role: 'tenant_admin', superAdmin: false }
+const superAdminWorkspace: WorkspaceSessionValue = { session: null, role: 'super_admin', superAdmin: true }
 
 function mockRepositories() {
   vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({
@@ -30,7 +31,9 @@ describe('AppShell', () => {
     mockRepositories()
     render(
       <MemoryRouter initialEntries={['/tasks']}>
-        <AppShell><div>任务工作区内容</div></AppShell>
+        <WorkspaceSessionProvider value={tenantAdminWorkspace}>
+          <AppShell><div>任务工作区内容</div></AppShell>
+        </WorkspaceSessionProvider>
       </MemoryRouter>,
     )
 
@@ -50,20 +53,37 @@ describe('AppShell', () => {
 	    expect(screen.getByRole('link', { name: /Agent 运行/ })).toHaveAttribute('aria-current', 'page')
 	  })
 
-  it('groups person directory and system configuration under one admin block', () => {
+  it('groups person directory and org management under the admin block for tenant admins', () => {
     mockRepositories()
-    render(<MemoryRouter initialEntries={['/settings']}><AppShell><div>配置内容</div></AppShell></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/people']}><WorkspaceSessionProvider value={tenantAdminWorkspace}><AppShell><div>人员内容</div></AppShell></WorkspaceSessionProvider></MemoryRouter>)
 
     expect(screen.getByText('管理与配置')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /人员资产/ })).toHaveAttribute('href', '/people')
+    expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('href', '/org')
+    expect(screen.queryByRole('link', { name: /系统配置/ })).not.toBeInTheDocument()
+  })
+
+  it('trims business menus for super admins, keeping system configuration and agent observability', () => {
+    mockRepositories()
+    render(<MemoryRouter initialEntries={['/settings']}><WorkspaceSessionProvider value={superAdminWorkspace}><AppShell><div>超管内容</div></AppShell></WorkspaceSessionProvider></MemoryRouter>)
+
     expect(screen.getByRole('link', { name: /系统配置/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /Agent 运行/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /运行总览/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /需求管理/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /仓库管理/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /任务查询/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /数据查询/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /人员资产/ })).not.toBeInTheDocument()
   })
 
   it('adds repository management to the workspace and demotes connectors to the admin footer', () => {
     mockRepositories()
     const { container } = render(
       <MemoryRouter initialEntries={['/repositories']}>
-        <AppShell><div>仓库内容</div></AppShell>
+        <WorkspaceSessionProvider value={tenantAdminWorkspace}>
+          <AppShell><div>仓库内容</div></AppShell>
+        </WorkspaceSessionProvider>
       </MemoryRouter>,
     )
 
@@ -71,7 +91,7 @@ describe('AppShell', () => {
     expect(titles).toEqual([
       '运行总览', '需求管理', '仓库管理', '任务查询', '数据查询',
       'Agent 运行',
-      '人员资产', '系统配置', '安全操作', '连接器实例',
+      '人员资产', '安全操作', '连接器实例', '组织管理',
     ])
     expect(screen.getByRole('link', { name: /仓库管理/ })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: /连接器实例/ })).toHaveAttribute('href', '/connectors')
@@ -113,7 +133,7 @@ describe('AppShell', () => {
 
     expect(screen.getByRole('link', { name: /仓库管理/ })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: /人员资产/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('href', '/portal/org')
+    expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('href', '/org')
     expect(screen.queryByRole('link', { name: /系统配置/ })).not.toBeInTheDocument()
   })
 
@@ -127,7 +147,7 @@ describe('AppShell', () => {
 
   it('exposes the person directory as a workspace', () => {
     mockRepositories()
-    render(<MemoryRouter initialEntries={['/people']}><AppShell><div>人员内容</div></AppShell></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/people']}><WorkspaceSessionProvider value={tenantAdminWorkspace}><AppShell><div>人员内容</div></AppShell></WorkspaceSessionProvider></MemoryRouter>)
     expect(screen.getByRole('link', { name: /人员资产/ })).toHaveAttribute('aria-current', 'page')
   })
 
@@ -135,7 +155,9 @@ describe('AppShell', () => {
     mockRepositories()
     const { container } = render(
       <MemoryRouter>
-        <AppShell><div>内容</div></AppShell>
+        <WorkspaceSessionProvider value={tenantAdminWorkspace}>
+          <AppShell><div>内容</div></AppShell>
+        </WorkspaceSessionProvider>
       </MemoryRouter>,
     )
 
@@ -160,13 +182,15 @@ describe('AppShell', () => {
     mockRepositories()
     render(
       <MemoryRouter initialEntries={['/tasks?repository_id=repo_a']}>
-        <AppShell><div>任务内容</div></AppShell>
+        <WorkspaceSessionProvider value={tenantAdminWorkspace}>
+          <AppShell><div>任务内容</div></AppShell>
+        </WorkspaceSessionProvider>
       </MemoryRouter>,
     )
 
     expect(await screen.findByRole('link', { name: /运行总览/ })).toHaveAttribute('href', '/?repository_id=repo_a')
     expect(screen.getByRole('link', { name: /数据查询/ })).toHaveAttribute('href', '/explorer?repository_id=repo_a')
-    expect(screen.getByRole('link', { name: /系统配置/ })).toHaveAttribute('href', '/settings?repository_id=repo_a')
+    expect(screen.getByRole('link', { name: /安全操作/ })).toHaveAttribute('href', '/operations?repository_id=repo_a')
   })
 
   it('hosts the page heading in the compact top bar', async () => {

@@ -64,7 +64,7 @@ export function TenantsPage() {
       message.success('已进入支持访问，所有动作已记入审计')
       setSupportTenant(null)
       supportForm.resetFields()
-      navigate('/portal/org')
+      navigate('/org')
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : '进入支持访问失败')
     }

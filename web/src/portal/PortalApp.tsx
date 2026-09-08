@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { Spin } from 'antd'
 
 import { portalApi, type PortalSessionPayload } from '../api/portal'
-import { OrgManagementPage } from './OrgManagementPage'
 import { PortalChangePasswordPage } from './PortalChangePasswordPage'
 import { PortalLoginPage } from './PortalLoginPage'
 import { PortalRegisterPage } from './PortalRegisterPage'
@@ -69,7 +68,6 @@ export function PortalApp() {
       <Route element={<PortalSessionGate />}>
         <Route path="select-tenant" element={<SelectTenantPage />} />
         <Route path="change-password" element={<PortalChangePasswordPage />} />
-        <Route path="org" element={<OrgManagementPage />} />
       </Route>
       <Route path="*" element={<Navigate to="login" replace />} />
     </Routes>

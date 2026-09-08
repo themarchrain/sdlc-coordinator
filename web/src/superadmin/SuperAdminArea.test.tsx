@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { adminApi } from '../api/client'
 import { portalApi, type PortalSessionPayload, type PortalTenantSummary } from '../api/portal'
 import { TenantsPage } from './TenantsPage'
 import { TenantDetailPage } from './TenantDetailPage'
@@ -210,7 +211,7 @@ describe('portal gate for super admins', () => {
     }
     const { PortalApp } = await import('../portal/PortalApp')
     render(
-      <MemoryRouter initialEntries={['/portal/org']}>
+      <MemoryRouter initialEntries={['/portal/select-tenant']}>
         <Routes>
           <Route path="/portal/*" element={<PortalApp />} />
           <Route path="/super-admin/tenants" element={<LocationProbe />} />
@@ -220,12 +221,14 @@ describe('portal gate for super admins', () => {
     expect(await screen.findByTestId('location')).toHaveTextContent('/super-admin/tenants')
   })
 
-  it('keeps super admin with active support access on the org page', async () => {
+  it('keeps super admin with active support access on the workbench org page', async () => {
     vi.spyOn(portalApi, 'session').mockResolvedValue({
       user: { id: 9, username: 'root', role: 'super_admin', must_change_password: false },
       scope: { kind: 'super_admin', role: 'super_admin' },
       support: { active: true, reason: '排障', entered_at: '2026-09-04T00:00:00Z' },
     })
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({ items: [] })
     vi.spyOn(portalApi, 'tenantProfile').mockResolvedValue({
       tenant: { id: 1, slug: 'acme', display_name: 'Acme 组织', status: 'active' },
       role: 'tenant_admin',
@@ -233,13 +236,10 @@ describe('portal gate for super admins', () => {
     })
     vi.spyOn(portalApi, 'listMembers').mockResolvedValue({ members: [] })
     vi.spyOn(portalApi, 'listInviteCodes').mockResolvedValue({ invite_codes: [] })
-    const { PortalApp } = await import('../portal/PortalApp')
+    const { App } = await import('../app/App')
     render(
-      <MemoryRouter initialEntries={['/portal/org']}>
-        <Routes>
-          <Route path="/portal/*" element={<PortalApp />} />
-          <Route path="/super-admin/tenants" element={<div>super home</div>} />
-        </Routes>
+      <MemoryRouter initialEntries={['/org']}>
+        <App />
       </MemoryRouter>,
     )
     expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
