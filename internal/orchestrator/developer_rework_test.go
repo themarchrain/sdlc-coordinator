@@ -6,7 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
@@ -579,5 +581,215 @@ func TestStartMergeRequestReworkStillRequiresBranchesWhenWritebackLacksRequest(t
 	request.ExpectedHeadSHA = ""
 	if _, err := orch.StartOrResumeMergeRequestRework(ctx, request); err == nil {
 		t.Fatal("expected missing branches to be rejected when writeback cannot enrich")
+	}
+}
+
+type stubMergeRequestReader struct {
+	mergeRequest *codehost.MergeRequest
+	err          error
+	calls        int
+	seenRepo     string
+	seenIID      int
+	blockCtx     bool
+}
+
+func (stub *stubMergeRequestReader) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+	stub.calls++
+	stub.seenRepo, stub.seenIID = repo, mrIID
+	if stub.err != nil {
+		return nil, stub.err
+	}
+	if stub.blockCtx {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return stub.mergeRequest, nil
+}
+
+type stubMergeRequestReaderResolver struct {
+	reader codehost.MergeRequestReader
+}
+
+func (resolver *stubMergeRequestReaderResolver) ResolveMergeRequestReader(ctx context.Context, repositoryID string) (codehost.MergeRequestReader, error) {
+	return resolver.reader, nil
+}
+
+// externalGitHubReworkRequest 复刻 GitHub 外部 PR 评论事件经 processor 装配后的
+// 请求形态:载荷不携带 head/base(平台设计差异),且无 coordinator 写回记录。
+func externalGitHubReworkRequest() model.MergeRequestReworkRequest {
+	repositoryID := "repo-external-github"
+	return model.MergeRequestReworkRequest{
+		DedupeKey:               "github:mr-rework:72573381:17",
+		Source:                  "github",
+		ProjectID:               "72573381",
+		ProjectPath:             "octo-org/external",
+		RepositoryID:            &repositoryID,
+		RepositoryURL:           "https://github.com/octo-org/external.git",
+		MergeRequestIID:         17,
+		MergeRequestURL:         "https://github.com/octo-org/external/pull/17",
+		MergeRequestTitle:       "External contribution",
+		MergeRequestDescription: "External PR without coordinator writeback.",
+		NoteID:                  50001,
+		NoteURL:                 "https://github.com/octo-org/external/pull/17#issuecomment-50001",
+		ResumeContext:           "请按评审意见调整实现。",
+		RequesterID:             71,
+		RequesterName:           "External Author",
+		RequesterUsername:       "author1",
+		RequesterPreAuthorized:  true,
+		AssigneeIDs:             []int{71},
+	}
+}
+
+// TestStartMergeRequestReworkEnrichesExternalGitHubPullRequest 外部 PR(GitHub
+// 评论载荷不携带 head/base、无写回记录)经平台 API 补齐分支后创建任务。
+func TestStartMergeRequestReworkEnrichesExternalGitHubPullRequest(t *testing.T) {
+	orch, _, _ := newDeveloperReworkFixture(t)
+	stub := &stubMergeRequestReader{mergeRequest: &codehost.MergeRequest{
+		IID:          17,
+		WebURL:       "https://github.com/octo-org/external/pull/17",
+		SourceBranch: "feature/external-pr",
+		TargetBranch: "main",
+		HeadSHA:      "cccccccccccccccccccccccccccccccccccccccc",
+	}}
+	orch.mergeRequestReaderResolver = &stubMergeRequestReaderResolver{reader: stub}
+
+	created, err := orch.StartOrResumeMergeRequestRework(context.Background(), externalGitHubReworkRequest())
+	if err != nil {
+		t.Fatalf("start external github rework: %v", err)
+	}
+	if created.Type != model.TaskTypeReworkMergeRequest || created.Role != "DeveloperWorker" || created.Status != model.TaskStatusPending {
+		t.Fatalf("unexpected rework task identity: %#v", created)
+	}
+	if created.DeliveryBranch != "feature/external-pr" {
+		t.Fatalf("unexpected delivery branch %q", created.DeliveryBranch)
+	}
+	if stub.calls != 1 || stub.seenRepo != "octo-org/external" || stub.seenIID != 17 {
+		t.Fatalf("unexpected enrichment call: calls=%d repo=%q iid=%d", stub.calls, stub.seenRepo, stub.seenIID)
+	}
+
+	var taskContext map[string]any
+	if err := json.Unmarshal([]byte(created.ContextJSON), &taskContext); err != nil {
+		t.Fatalf("decode rework context: %v", err)
+	}
+	mergeRequest := taskContext["merge_request"].(map[string]any)
+	if mergeRequest["source_branch"] != "feature/external-pr" || mergeRequest["target_branch"] != "main" ||
+		mergeRequest["expected_head_sha"] != "cccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("unexpected enriched context: %#v", mergeRequest)
+	}
+}
+
+// TestStartMergeRequestReworkFailsClosedWhenGitHubEnrichmentFails 外部 PR 的
+// 分支补链 API 失败时请求照旧被拒(fail-closed),不创建任务、不静默放行。
+func TestStartMergeRequestReworkFailsClosedWhenGitHubEnrichmentFails(t *testing.T) {
+	orch, tasks, _ := newDeveloperReworkFixture(t)
+	orch.mergeRequestReaderResolver = &stubMergeRequestReaderResolver{reader: &stubMergeRequestReader{
+		err: errors.New("github 404 Not Found"),
+	}}
+	ctx := context.Background()
+
+	_, err := orch.StartOrResumeMergeRequestRework(ctx, externalGitHubReworkRequest())
+	if err == nil || !strings.Contains(err.Error(), "fetch github pull request octo-org/external#17") {
+		t.Fatalf("expected fail-closed enrichment error, got %v", err)
+	}
+	if _, err := tasks.GetByDedupeKey(ctx, "github:mr-rework:72573381:17"); err == nil {
+		t.Fatal("expected no rework task to be created")
+	}
+}
+
+// TestStartMergeRequestReworkTimesOutGitHubEnrichment 出网超时同样 fail-closed,
+// 错误链带 context deadline exceeded。
+func TestStartMergeRequestReworkTimesOutGitHubEnrichment(t *testing.T) {
+	orch, _, _ := newDeveloperReworkFixture(t)
+	orch.mergeRequestReaderResolver = &stubMergeRequestReaderResolver{reader: &stubMergeRequestReader{blockCtx: true}}
+	orch.reworkMergeRequestFetchTimeout = 50 * time.Millisecond
+
+	_, err := orch.StartOrResumeMergeRequestRework(context.Background(), externalGitHubReworkRequest())
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("expected timeout error, got %v", err)
+	}
+}
+
+func seedManagedGitHubMergeRequest(t *testing.T, ctx context.Context, tasks *repository.TaskRepository, writebacks *repository.WritebackRepository) {
+	t.Helper()
+	origin := &model.Task{
+		TaskID:             "task-origin-issue-gh-9",
+		DedupeKey:          "github:issue-develop:72573381:9",
+		Type:               "develop_from_issue",
+		Role:               "DeveloperWorker",
+		SourceRepo:         "octo-org/external",
+		TargetRepo:         "octo-org/external",
+		Objective:          "Implement GitHub Issue #9 in octo-org/external: external smoke",
+		AcceptanceCriteria: "Complete code changes and relevant verification.",
+		Status:             model.TaskStatusSucceeded,
+		ContextJSON: `{
+			"event":{"source":"github"},
+			"project":{"id":"72573381","path":"octo-org/external"},
+			"issue":{"iid":9,"url":"https://github.com/octo-org/external/issues/9","title":"external smoke","description":"smoke","assignee_ids":[71]},
+			"repos":[{"name":"external","url":"https://github.com/octo-org/external.git","branch":"main","access":"writable"}]
+		}`,
+	}
+	if err := tasks.Create(ctx, origin); err != nil {
+		t.Fatalf("create origin task: %v", err)
+	}
+	if err := writebacks.Create(ctx, &model.Writeback{
+		TaskID: origin.TaskID, RunID: "run-origin-gh", DedupeKey: "origin-mr-gh", Kind: "create_merge_request",
+		ProjectID: "octo-org/external", ExternalID: "17", ExternalURL: "https://github.com/octo-org/external/pull/17",
+		Status: model.WritebackStatusSucceeded, RequestJSON: `{"source_branch":"feature/managed-pr","target_branch":"main"}`,
+	}); err != nil {
+		t.Fatalf("create managed github MR writeback: %v", err)
+	}
+}
+
+// TestStartMergeRequestReworkSkipsPlatformEnrichmentWhenWritebackProvidesBranches
+// coordinator 自建 GitHub PR:分支来自写回记录,补链 API 零调用。
+func TestStartMergeRequestReworkSkipsPlatformEnrichmentWhenWritebackProvidesBranches(t *testing.T) {
+	orch, tasks, writebacks := newDeveloperReworkFixture(t)
+	ctx := context.Background()
+	seedManagedGitHubMergeRequest(t, ctx, tasks, writebacks)
+	stub := &stubMergeRequestReader{err: errors.New("platform enrichment must not be called")}
+	orch.mergeRequestReaderResolver = &stubMergeRequestReaderResolver{reader: stub}
+
+	created, err := orch.StartOrResumeMergeRequestRework(ctx, externalGitHubReworkRequest())
+	if err != nil {
+		t.Fatalf("start managed github rework: %v", err)
+	}
+	if created == nil || created.Status != model.TaskStatusPending || created.DeliveryBranch != "feature/managed-pr" {
+		t.Fatalf("unexpected rework task: %#v", created)
+	}
+	if stub.calls != 0 {
+		t.Fatalf("expected zero platform API calls for writeback-enriched rework, got %d", stub.calls)
+	}
+}
+
+// TestStartMergeRequestReworkSkipsPlatformEnrichmentForNonGitHubSources
+// 非 GitHub 平台零出网:分支已在载荷(GitLab/Gitea 直读);缺失时保持既有拒绝
+// 语义不变(Gitea 直读路径零改动)。
+func TestStartMergeRequestReworkSkipsPlatformEnrichmentForNonGitHubSources(t *testing.T) {
+	orch, tasks, writebacks := newDeveloperReworkFixture(t)
+	seedManagedMergeRequest(t, context.Background(), tasks, writebacks)
+	stub := &stubMergeRequestReader{err: errors.New("platform enrichment must not be called")}
+	orch.mergeRequestReaderResolver = &stubMergeRequestReaderResolver{reader: stub}
+	ctx := context.Background()
+
+	created, err := orch.StartOrResumeMergeRequestRework(ctx, sampleMergeRequestReworkRequest())
+	if err != nil {
+		t.Fatalf("start gitlab rework: %v", err)
+	}
+	if created == nil || created.Status != model.TaskStatusPending {
+		t.Fatalf("unexpected gitlab rework task: %#v", created)
+	}
+
+	giteaRequest := sampleMergeRequestReworkRequest()
+	giteaRequest.Source = "gitea"
+	giteaRequest.DedupeKey = "gitea:mr-rework:1001:21"
+	giteaRequest.SourceBranch = ""
+	giteaRequest.TargetBranch = ""
+	// 校验按 map 迭代报缺失字段,source/target 报谁先取决于迭代顺序,
+	// 断言收敛到「因分支缺失被拒」这一不变语义。
+	if _, err := orch.StartOrResumeMergeRequestRework(ctx, giteaRequest); err == nil || !strings.Contains(err.Error(), "branch is required") {
+		t.Fatalf("expected unchanged gitea rejection, got %v", err)
+	}
+	if stub.calls != 0 {
+		t.Fatalf("expected zero platform API calls for non-github sources, got %d", stub.calls)
 	}
 }

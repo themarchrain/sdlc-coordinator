@@ -196,3 +196,37 @@ func TestCreateIssueClassifiesAmbiguousAndDeterministicFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestGetMergeRequestMapsPullBranches(t *testing.T) {
+	var seenMethod, seenPath, seenAPIVersion string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenMethod = r.Method
+		seenPath = r.URL.EscapedPath()
+		seenAPIVersion = r.Header.Get("X-GitHub-Api-Version")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"number": 17,
+			"html_url": "https://github.com/octo-org/external/pull/17",
+			"head": {"ref": "feature/external-pr", "sha": "cccccccccccccccccccccccccccccccccccccccc"},
+			"base": {"ref": "main", "sha": "dddddddddddddddddddddddddddddddddddddddd"}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	mergeRequest, err := client.GetMergeRequest(context.Background(), "octo-org/external", 17)
+	if err != nil {
+		t.Fatalf("get merge request: %v", err)
+	}
+	if seenMethod != http.MethodGet || seenPath != "/repos/octo-org/external/pulls/17" {
+		t.Fatalf("unexpected request %s %s", seenMethod, seenPath)
+	}
+	if seenAPIVersion != "2022-11-28" {
+		t.Fatalf("expected api version header, got %q", seenAPIVersion)
+	}
+	if mergeRequest.IID != 17 || mergeRequest.WebURL != "https://github.com/octo-org/external/pull/17" ||
+		mergeRequest.SourceBranch != "feature/external-pr" || mergeRequest.TargetBranch != "main" ||
+		mergeRequest.HeadSHA != "cccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("unexpected merge request: %#v", mergeRequest)
+	}
+}

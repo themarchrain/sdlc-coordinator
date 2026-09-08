@@ -90,30 +90,32 @@ type ResultSubmissionRepository interface {
 }
 
 type Orchestrator struct {
-	tickMu                   sync.Mutex
-	tasks                    TaskRepository
-	runs                     RunRepository
-	artifacts                ArtifactRepository
-	effects                  EffectRepository
-	effectExecutor           EffectExecutor
-	writebacks               WritebackRepository
-	dependencies             DependencyRepository
-	resultSubmissions        ResultSubmissionRepository
-	codeHostResolver         CodeHostBackendResolver
-	writebackAuth            WritebackAuthHandler
-	repositoryLookup         RepositoryLookup
-	assigneeMentionDirectory AssigneeMentionDirectory
-	developerIMTarget        string
-	reviewerIMMentions       []string
-	reviewerRunner           ReviewerRunnerExecutionCoordinator
-	reviewerRunnerSettings   ReviewerRunnerSettings
-	developerRunner          DeveloperRunnerExecutionCoordinator
-	developerRunnerSettings  ReviewerRunnerSettings
-	agentExecutions          AgentExecutionLookup
-	runnerArtifacts          RunnerArtifactStore
-	stateMachine             *StateMachine
-	policy                   Policy
-	now                      func() time.Time
+	tickMu                         sync.Mutex
+	tasks                          TaskRepository
+	runs                           RunRepository
+	artifacts                      ArtifactRepository
+	effects                        EffectRepository
+	effectExecutor                 EffectExecutor
+	writebacks                     WritebackRepository
+	dependencies                   DependencyRepository
+	resultSubmissions              ResultSubmissionRepository
+	codeHostResolver               CodeHostBackendResolver
+	mergeRequestReaderResolver     MergeRequestReaderResolver
+	reworkMergeRequestFetchTimeout time.Duration
+	writebackAuth                  WritebackAuthHandler
+	repositoryLookup               RepositoryLookup
+	assigneeMentionDirectory       AssigneeMentionDirectory
+	developerIMTarget              string
+	reviewerIMMentions             []string
+	reviewerRunner                 ReviewerRunnerExecutionCoordinator
+	reviewerRunnerSettings         ReviewerRunnerSettings
+	developerRunner                DeveloperRunnerExecutionCoordinator
+	developerRunnerSettings        ReviewerRunnerSettings
+	agentExecutions                AgentExecutionLookup
+	runnerArtifacts                RunnerArtifactStore
+	stateMachine                   *StateMachine
+	policy                         Policy
+	now                            func() time.Time
 }
 
 type ReviewerRunnerExecutionCoordinator interface {
@@ -287,6 +289,18 @@ func WithCodeHostBackendResolver(resolver CodeHostBackendResolver) Option {
 	}
 }
 
+// MergeRequestReaderResolver 按 repository_id 解析平台客户端的 MR 读取能力;
+// 供 rework 分支补链出网(当前仅 GitHub 载荷缺失分支时消费)。
+type MergeRequestReaderResolver interface {
+	ResolveMergeRequestReader(ctx context.Context, repositoryID string) (codehost.MergeRequestReader, error)
+}
+
+func WithMergeRequestReaderResolver(resolver MergeRequestReaderResolver) Option {
+	return func(o *Orchestrator) {
+		o.mergeRequestReaderResolver = resolver
+	}
+}
+
 type WritebackAuthHandler interface {
 	HandleWritebackFailure(ctx context.Context, task *model.Task, writebackErr error) bool
 }
@@ -327,6 +341,9 @@ func New(tasks TaskRepository, runs RunRepository, opts ...Option) *Orchestrator
 
 	if orch.now == nil {
 		orch.now = time.Now
+	}
+	if orch.reworkMergeRequestFetchTimeout == 0 {
+		orch.reworkMergeRequestFetchTimeout = reworkMergeRequestFetchTimeout
 	}
 	if orch.developerIMTarget == "" {
 		orch.developerIMTarget = "default"

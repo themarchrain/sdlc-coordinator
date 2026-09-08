@@ -480,3 +480,40 @@ func TestGetProjectUsesPrivateTokenAndPathEscape(t *testing.T) {
 		t.Fatalf("project=%+v", project)
 	}
 }
+
+func TestGetMergeRequestDecodesBranches(t *testing.T) {
+	var seenPath string
+	var seenToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.EscapedPath()
+		seenToken = r.Header.Get("PRIVATE-TOKEN")
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"iid": 21,
+			"web_url": "https://gitlab.example/demo-group/demo-project/-/merge_requests/21",
+			"source_branch": "feature/external",
+			"target_branch": "main",
+			"sha": "cccccccccccccccccccccccccccccccccccccccc"
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	mergeRequest, err := client.GetMergeRequest(context.Background(), "demo-group/demo-project", 21)
+	if err != nil {
+		t.Fatalf("get merge request: %v", err)
+	}
+	if seenPath != "/api/v4/projects/demo-group%2Fdemo-project/merge_requests/21" {
+		t.Fatalf("unexpected path %s", seenPath)
+	}
+	if seenToken != "test-token" {
+		t.Fatalf("expected private token header, got %q", seenToken)
+	}
+	if mergeRequest.IID != 21 || mergeRequest.SourceBranch != "feature/external" || mergeRequest.TargetBranch != "main" ||
+		mergeRequest.HeadSHA != "cccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("unexpected merge request: %#v", mergeRequest)
+	}
+}

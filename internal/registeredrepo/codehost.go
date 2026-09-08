@@ -76,3 +76,28 @@ func (resolver *CodeHostResolver) Resolve(ctx context.Context, task *model.Task,
 	}
 	return CodeHostClient(repo.Provider, repo.BaseURL, repo.Token, resolver.httpClient)
 }
+
+// ResolveMergeRequestReader 按 repository_id 解析平台客户端的 MR 读取能力,
+// 供 orchestrator 的 rework 分支补链出网(当前仅 GitHub 载荷缺失分支时消费)。
+// 仓未启用 fail-closed;平台客户端无该能力同样报错(三平台均已实现,防御性收口)。
+func (resolver *CodeHostResolver) ResolveMergeRequestReader(ctx context.Context, repositoryID string) (codehost.MergeRequestReader, error) {
+	if resolver == nil || resolver.store == nil {
+		return nil, fmt.Errorf("repository store is required")
+	}
+	repo, err := resolver.store.Get(ctx, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	if repo.Status != StatusEnabled {
+		return nil, fmt.Errorf("repository_not_enabled")
+	}
+	client, err := CodeHostClient(repo.Provider, repo.BaseURL, repo.Token, resolver.httpClient)
+	if err != nil {
+		return nil, err
+	}
+	reader, ok := client.(codehost.MergeRequestReader)
+	if !ok {
+		return nil, fmt.Errorf("repository provider %q does not support reading merge requests", repo.Provider)
+	}
+	return reader, nil
+}

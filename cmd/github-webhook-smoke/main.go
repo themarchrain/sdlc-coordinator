@@ -30,6 +30,7 @@ type options struct {
 	secret         string
 	eventType      string
 	deliveryID     string
+	builtin        string
 	payloadPath    string
 	defaultPayload string
 }
@@ -40,9 +41,18 @@ func main() {
 	flag.StringVar(&opts.secret, "secret", env("CODEHOST_WEBHOOK_SECRET", ""), "GitHub webhook secret used for HMAC signing")
 	flag.StringVar(&opts.eventType, "event", "issues", "X-GitHub-Event header value")
 	flag.StringVar(&opts.deliveryID, "delivery", fmt.Sprintf("smoke-%d", time.Now().UnixMilli()), "X-GitHub-Delivery header value")
-	flag.StringVar(&opts.payloadPath, "payload", "", "path to a JSON payload file; omit to use the built-in issue payload")
+	flag.StringVar(&opts.builtin, "builtin", "issues", "built-in payload: issues or pr-comment")
+	flag.StringVar(&opts.payloadPath, "payload", "", "path to a JSON payload file; omit to use the built-in payload")
 	flag.Parse()
-	opts.defaultPayload = builtInIssuePayload()
+	switch opts.builtin {
+	case "pr-comment":
+		opts.defaultPayload = builtInPRCommentPayload()
+		if opts.eventType == "issues" {
+			opts.eventType = "issue_comment"
+		}
+	default:
+		opts.defaultPayload = builtInIssuePayload()
+	}
 
 	if err := run(context.Background(), opts); err != nil {
 		fmt.Fprintln(os.Stderr, "github smoke failed:", err)
@@ -101,6 +111,36 @@ func builtInIssuePayload() string {
 			"id": 72573381, "full_name": "org/repo",
 			"clone_url":      "https://github.com/org/repo.git",
 			"default_branch": "main",
+		},
+	}
+	encoded, _ := json.Marshal(payload)
+	return string(encoded)
+}
+
+// builtInPRCommentPayload 复刻 issue_comment(PR) 载荷:issue 对象带 pull_request
+// 标记键且不携带 head/base(平台设计差异),用于自测外部 PR rework 入站链。
+func builtInPRCommentPayload() string {
+	payload := map[string]any{
+		"action": "created",
+		"issue": map[string]any{
+			"id": 200, "number": 17, "title": "GitHub smoke PR", "body": "external pr",
+			"state": "open", "html_url": "https://github.com/org/repo/pull/17",
+			"pull_request": map[string]any{
+				"html_url": "https://github.com/org/repo/pull/17",
+				"url":      "https://api.github.com/repos/org/repo/pulls/17",
+			},
+			"user":      map[string]any{"id": 71, "login": "author1"},
+			"labels":    []map[string]any{},
+			"assignees": []map[string]any{{"id": 1, "login": "owner"}},
+		},
+		"comment": map[string]any{
+			"id": 50001, "body": "请修正空值处理并补充对应测试。",
+			"html_url": "https://github.com/org/repo/pull/17#issuecomment-50001",
+			"user":     map[string]any{"id": 1, "login": "owner"},
+		},
+		"repository": map[string]any{
+			"id": 72573381, "full_name": "org/repo",
+			"clone_url": "https://github.com/org/repo.git", "default_branch": "main",
 		},
 	}
 	encoded, _ := json.Marshal(payload)

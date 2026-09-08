@@ -2,12 +2,15 @@ package registeredrepo
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"sdlc-coordinator/internal/adapters/gitea"
 	"sdlc-coordinator/internal/adapters/gitlab"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
+
+	"gorm.io/gorm"
 )
 
 func openResolverTestDB(t *testing.T) *Store {
@@ -112,5 +115,38 @@ func TestCodeHostClientRejectsUnknownProvider(t *testing.T) {
 	}
 	if _, err := CodeHostClient("gitlab", "", "token-a", nil); err == nil {
 		t.Fatal("empty base_url must fail closed")
+	}
+}
+
+func TestResolveMergeRequestReaderDispatchesPerRepositoryPlatform(t *testing.T) {
+	repoStore := openResolverTestDB(t)
+	ctx := context.Background()
+	if err := repoStore.Create(ctx, platformRepoFixture("repo_gh", "github", "https://github.com", "72573381", "octo-org/external")); err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewCodeHostResolver(repoStore, nil)
+
+	reader, err := resolver.ResolveMergeRequestReader(ctx, "repo_gh")
+	if err != nil || reader == nil {
+		t.Fatalf("expected reader, got %v %v", reader, err)
+	}
+	_, err = resolver.ResolveMergeRequestReader(ctx, "missing")
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected record not found, got %v", err)
+	}
+}
+
+func TestResolveMergeRequestReaderFailsClosedForDisabledRepository(t *testing.T) {
+	repoStore := openResolverTestDB(t)
+	repo := platformRepoFixture("repo_disabled", "github", "https://github.com", "42", "octo-org/x")
+	repo.Status = StatusDisabled
+	if err := repoStore.Create(context.Background(), repo); err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewCodeHostResolver(repoStore, nil)
+
+	_, err := resolver.ResolveMergeRequestReader(context.Background(), "repo_disabled")
+	if err == nil || err.Error() != "repository_not_enabled" {
+		t.Fatalf("expected repository_not_enabled, got %v", err)
 	}
 }

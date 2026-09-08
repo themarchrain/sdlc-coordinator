@@ -23,6 +23,13 @@ func (o *Orchestrator) StartOrResumeMergeRequestRework(ctx context.Context, requ
 	// Gitea 等平台的评论载荷不携带 MR 分支;coordinator 自建 MR 的写回请求
 	// 是分支信息的权威来源,先补齐再校验。
 	request = enrichReworkRequestFromWriteback(request, writeback)
+	// GitHub 的 PR 评论载荷连标记对象都不带分支,外部 PR 无写回记录可查,
+	// 缺口只能回源平台 API 补(fail-closed,见 enrichReworkRequestFromPlatform)。
+	var enrichErr error
+	request, enrichErr = o.enrichReworkRequestFromPlatform(ctx, request)
+	if enrichErr != nil {
+		return nil, enrichErr
+	}
 	if err := validateMergeRequestReworkRequest(request); err != nil {
 		return nil, err
 	}
@@ -351,6 +358,50 @@ func reviewContext(writeback *model.Writeback) (map[string]any, error) {
 func repoNameFromPath(projectPath string) string {
 	parts := strings.Split(strings.Trim(projectPath, "/"), "/")
 	return parts[len(parts)-1]
+}
+
+// reworkMergeRequestFetchTimeout 限制 rework 分支补链的出网调用:webhook 处理
+// 在请求栈内同步执行,不能让平台 API 抖动拖住整个入站链路。
+const reworkMergeRequestFetchTimeout = 10 * time.Second
+
+// enrichReworkRequestFromPlatform 补写回记录也提供不了的分支信息。GitHub 的
+// issue_comment(PR)载荷不携带 head/base(平台设计差异),外部 PR 又没有写回
+// 记录,只能回源平台 API;仅 GitHub 且仅补缺(不覆盖非空字段),Gitea 载荷
+// 直读与 coordinator 自建 PR 写回路径零额外出网。API 失败 fail-closed:返回
+// 错误让请求照旧被拒(inbound event 留痕),不静默放行、不重试。
+func (o *Orchestrator) enrichReworkRequestFromPlatform(ctx context.Context, request model.MergeRequestReworkRequest) (model.MergeRequestReworkRequest, error) {
+	if !strings.EqualFold(strings.TrimSpace(request.Source), "github") {
+		return request, nil
+	}
+	if strings.TrimSpace(request.SourceBranch) != "" && strings.TrimSpace(request.TargetBranch) != "" {
+		return request, nil
+	}
+	if o.mergeRequestReaderResolver == nil {
+		return request, errors.New("merge request reader resolver is required to enrich github rework branches")
+	}
+	if request.RepositoryID == nil || strings.TrimSpace(*request.RepositoryID) == "" {
+		return request, errors.New("repository id is required to enrich github rework branches")
+	}
+	reader, err := o.mergeRequestReaderResolver.ResolveMergeRequestReader(ctx, *request.RepositoryID)
+	if err != nil {
+		return request, fmt.Errorf("resolve github client for rework enrichment: %w", err)
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, o.reworkMergeRequestFetchTimeout)
+	defer cancel()
+	mergeRequest, err := reader.GetMergeRequest(fetchCtx, request.ProjectPath, request.MergeRequestIID)
+	if err != nil {
+		return request, fmt.Errorf("fetch github pull request %s#%d for rework enrichment: %w", request.ProjectPath, request.MergeRequestIID, err)
+	}
+	if strings.TrimSpace(request.SourceBranch) == "" {
+		request.SourceBranch = strings.TrimSpace(mergeRequest.SourceBranch)
+	}
+	if strings.TrimSpace(request.TargetBranch) == "" {
+		request.TargetBranch = strings.TrimSpace(mergeRequest.TargetBranch)
+	}
+	if strings.TrimSpace(request.ExpectedHeadSHA) == "" {
+		request.ExpectedHeadSHA = strings.TrimSpace(mergeRequest.HeadSHA)
+	}
+	return request, nil
 }
 
 func normalizedReworkProjectPath(value string) string {

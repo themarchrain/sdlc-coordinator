@@ -118,8 +118,10 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	}
 	// 平台身份按仓行解析:resolver 与写回探针按任务所属仓的 provider/base_url
 	// 分派。全局 codehost 配置只作为注册表单默认值与空列回填来源,运行时不读取。
+	codeHostResolver := registeredrepo.NewCodeHostResolver(repoStore, nil)
 	opts = append(opts,
-		orchestrator.WithCodeHostBackendResolver(registeredrepo.NewCodeHostResolver(repoStore, nil)),
+		orchestrator.WithCodeHostBackendResolver(codeHostResolver),
+		orchestrator.WithMergeRequestReaderResolver(codeHostResolver),
 		orchestrator.WithWritebackAuthHandler(registeredrepo.NewWritebackAuthHandler(repoStore, nil)),
 	)
 	peopleService, peopleLookup, err := newPeopleDirectory(db)

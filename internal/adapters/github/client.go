@@ -56,6 +56,18 @@ type noteResponse struct {
 	Body string `json:"body"`
 }
 
+type pullResponse struct {
+	Number  int           `json:"number"`
+	HTMLURL string        `json:"html_url"`
+	Head    pullBranchRef `json:"head"`
+	Base    pullBranchRef `json:"base"`
+}
+
+type pullBranchRef struct {
+	Ref string `json:"ref"`
+	SHA string `json:"sha"`
+}
+
 const apiVersion = "2022-11-28"
 
 func (c *Client) CreateIssue(ctx context.Context, repo string, req codehost.CreateIssueRequest) (*codehost.Issue, error) {
@@ -129,6 +141,26 @@ func (c *Client) AddMergeRequestLabels(ctx context.Context, repo string, mrIID i
 		return nil, err
 	}
 	return &codehost.MergeRequest{IID: mrIID}, nil
+}
+
+// GetMergeRequest 读取 PR 详情(分支与 HEAD;pulls API 的 head/base 是对象,
+// 取 ref/sha);与 gitea/gitlab 客户端同名方法形态一致。
+func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	var pr pullResponse
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), mrIID), nil, &pr); err != nil {
+		return nil, err
+	}
+	return &codehost.MergeRequest{
+		IID:          pr.Number,
+		WebURL:       pr.HTMLURL,
+		SourceBranch: strings.TrimSpace(pr.Head.Ref),
+		TargetBranch: strings.TrimSpace(pr.Base.Ref),
+		HeadSHA:      strings.TrimSpace(pr.Head.SHA),
+	}, nil
 }
 
 func splitRepo(repo string) (string, string, error) {

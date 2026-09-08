@@ -25,6 +25,14 @@ type IssueStateReader interface {
 	GetIssueState(ctx context.Context, projectID string, iid int) (IssueState, error)
 }
 
+// MergeRequestReader 读取单个 MR 详情(分支与 HEAD);可选能力接口,与
+// IssueStateReader 同模式,不并入 Backend,避免破坏既有实现与 mock。
+// repo 参数按平台惯例:GitLab 传 project id 或 path-with-namespace,
+// Gitea/GitHub 传 owner/repo。
+type MergeRequestReader interface {
+	GetMergeRequest(ctx context.Context, repo string, mrIID int) (*MergeRequest, error)
+}
+
 type MergeRequestLabelAdder interface {
 	AddMergeRequestLabels(context.Context, string, int, SetLabelsRequest) (*MergeRequest, error)
 }
@@ -85,8 +93,11 @@ type Issue struct {
 }
 
 type MergeRequest struct {
-	IID    int    `json:"iid"`
-	WebURL string `json:"web_url"`
+	IID          int    `json:"iid"`
+	WebURL       string `json:"web_url"`
+	SourceBranch string `json:"source_branch,omitempty"`
+	TargetBranch string `json:"target_branch,omitempty"`
+	HeadSHA      string `json:"sha,omitempty"`
 }
 
 type Note struct {

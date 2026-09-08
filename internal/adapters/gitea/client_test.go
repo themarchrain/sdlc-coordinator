@@ -604,3 +604,32 @@ func TestReconcileWritebackFindsNoteAcrossPages(t *testing.T) {
 		t.Fatalf("expected exactly two pages scanned, got %d", requests)
 	}
 }
+
+func TestGetMergeRequestMapsPullBranches(t *testing.T) {
+	var seenPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"number": 23,
+			"html_url": "https://gitea.example/octo-org/external/pulls/23",
+			"head": {"name": "legacy-head", "ref": "feature/external-pr", "sha": "cccccccccccccccccccccccccccccccccccccccc"},
+			"base": {"name": "main"}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	mergeRequest, err := client.GetMergeRequest(context.Background(), "octo-org/external", 23)
+	if err != nil {
+		t.Fatalf("get merge request: %v", err)
+	}
+	if seenPath != "/api/v1/repos/octo-org/external/pulls/23" {
+		t.Fatalf("unexpected path %s", seenPath)
+	}
+	if mergeRequest.IID != 23 || mergeRequest.WebURL != "https://gitea.example/octo-org/external/pulls/23" ||
+		mergeRequest.SourceBranch != "feature/external-pr" || mergeRequest.TargetBranch != "main" ||
+		mergeRequest.HeadSHA != "cccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("unexpected merge request: %#v", mergeRequest)
+	}
+}

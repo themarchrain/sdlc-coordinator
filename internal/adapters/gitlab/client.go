@@ -122,6 +122,16 @@ func (c *Client) CreateMergeRequest(ctx context.Context, projectID string, req c
 	return &mr, nil
 }
 
+// GetMergeRequest 读取 MR 详情(分支与 HEAD);repo 传 project id 或
+// path-with-namespace,与 github/gitea 客户端同名方法形态一致。
+func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+	var mergeRequest codehost.MergeRequest
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v4/projects/%s/merge_requests/%d", url.PathEscape(repo), mrIID), nil, &mergeRequest); err != nil {
+		return nil, err
+	}
+	return &mergeRequest, nil
+}
+
 func (c *Client) CreateIssueNote(ctx context.Context, projectID string, issueIID int, req codehost.CreateNoteRequest) (*codehost.Note, error) {
 	var note codehost.Note
 	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v4/projects/%s/issues/%d/notes", url.PathEscape(projectID), issueIID), map[string]any{
