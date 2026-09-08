@@ -2,6 +2,7 @@ package registeredrepo
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,3 +75,48 @@ func TestWritebackAuthHandlerDegradesOnGitHubCredentialError(t *testing.T) {
 		t.Fatalf("expected configuring status, got %s", updated.Status)
 	}
 }
+
+// 注册行配 github.com 网页域时,探活请求自动派生到 REST API 域。
+func TestGitHubHTTPProbeDerivesAPIHost(t *testing.T) {
+	var seenHost string
+	var seenPath string
+	transport := roundTripStub(func(r *http.Request) (*http.Response, error) {
+		seenHost = r.URL.Host
+		seenPath = r.URL.Path
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"id":1,"full_name":"org/repo","default_branch":"main"}`)), Header: make(http.Header)}, nil
+	})
+	probe := GitHubHTTPProbe{HTTP: &http.Client{Transport: transport}}
+	ident, err := probe.GetProject(context.Background(), "https://github.com", "repo-token", "org/repo")
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if seenHost != "api.github.com" || seenPath != "/repos/org/repo" {
+		t.Fatalf("unexpected target %s%s", seenHost, seenPath)
+	}
+	if ident.ID != "1" {
+		t.Fatalf("unexpected identity: %#v", ident)
+	}
+}
+
+// 非 github.com 的地址原样透传(GHE 与测试 server 不受派生影响)。
+func TestGitHubHTTPProbePassesOtherHostsThrough(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/org/repo" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":2,"full_name":"org/repo","default_branch":"main"}`))
+	}))
+	defer server.Close()
+
+	probe := GitHubHTTPProbe{HTTP: server.Client()}
+	if _, err := probe.GetProject(context.Background(), server.URL, "t", "org/repo"); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func roundTripStub(fn roundTripFunc) http.RoundTripper { return fn }

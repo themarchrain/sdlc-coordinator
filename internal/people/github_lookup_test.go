@@ -3,8 +3,10 @@ package people
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -88,3 +90,33 @@ func TestGitHubLookupReportsAuthFailures(t *testing.T) {
 		t.Fatalf("expected auth failure sentinel, got %v", err)
 	}
 }
+
+// 注册行配 github.com 网页域时,身份查询自动派生到 REST API 域。
+func TestGitHubLookupDerivesAPIHost(t *testing.T) {
+	var seenHost string
+	var seenPath string
+	transport := roundTripStub(func(r *http.Request) (*http.Response, error) {
+		seenHost = r.URL.Host
+		seenPath = r.URL.EscapedPath()
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"id":5823,"login":"octocat","name":"The Octocat"}`)), Header: make(http.Header)}, nil
+	})
+	lookup := NewGitHubLookupClient(&http.Client{Transport: transport})
+	result, err := lookup.Lookup(context.Background(), LookupRequest{
+		Provider: "github", BaseURL: "https://github.com", Token: "repo-token", Username: "octocat",
+	})
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if seenHost != "api.github.com" || seenPath != "/users/octocat" {
+		t.Fatalf("unexpected target %s%s", seenHost, seenPath)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("expected one candidate, got %#v", result)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func roundTripStub(fn roundTripFunc) http.RoundTripper { return fn }

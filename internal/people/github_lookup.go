@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"sdlc-coordinator/internal/adapters/github"
 )
 
 // GitHub 平台身份在线查询:/users/{username}(仓库 token 即可查公开身份)。
@@ -34,7 +36,7 @@ func (client *githubLookupClient) Lookup(ctx context.Context, request LookupRequ
 	requestCtx, cancel := context.WithTimeout(ctx, client.timeout)
 	defer cancel()
 
-	endpoint := strings.TrimRight(baseURL, "/") + "/users/" + url.PathEscape(username)
+	endpoint := github.APIBaseURL(strings.TrimRight(baseURL, "/")) + "/users/" + url.PathEscape(username)
 	httpRequest, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return LookupResult{}, fmt.Errorf("%w: request", ErrInvalidGitHubLookup)

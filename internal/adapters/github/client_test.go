@@ -230,3 +230,11 @@ func TestGetMergeRequestMapsPullBranches(t *testing.T) {
 		t.Fatalf("unexpected merge request: %#v", mergeRequest)
 	}
 }
+
+// github.com 仓库在注册行里配网页域,REST 客户端构造时派生 API 域。
+func TestNewClientDerivesAPIHost(t *testing.T) {
+	client := NewClient("https://github.com", "test-token")
+	if client.baseURL != "https://api.github.com" {
+		t.Fatalf("baseURL = %q, want https://api.github.com", client.baseURL)
+	}
+}

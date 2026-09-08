@@ -15,8 +15,9 @@ import (
 	"sdlc-coordinator/internal/adapters/codehost"
 )
 
-// Client 走 GitHub REST API;github.com 配 https://api.github.com,
-// GHE 配 https://{host}/api/v3,base URL 之外不做路径加工。
+// Client 走 GitHub REST API;github.com 的仓库直接配网页域 https://github.com,
+// REST 侧经 APIBaseURL 派生 API 域(GHE 仍配 https://{host}/api/v3),
+// base URL 之外不做路径加工。
 type Client struct {
 	baseURL    string
 	token      string
@@ -33,7 +34,7 @@ func WithHTTPClient(httpClient *http.Client) Option {
 
 func NewClient(baseURL, token string, opts ...Option) *Client {
 	client := &Client{
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    APIBaseURL(baseURL),
 		token:      token,
 		httpClient: http.DefaultClient,
 	}

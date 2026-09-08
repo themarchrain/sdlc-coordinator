@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"sdlc-coordinator/internal/adapters/github"
 	"sdlc-coordinator/internal/adapters/gitlab"
 )
 
@@ -128,7 +129,7 @@ func NewGitHubHTTPProbe(httpClient *http.Client) GitHubHTTPProbe {
 }
 
 func (probe GitHubHTTPProbe) GetProject(ctx context.Context, baseURL, token, pathWithNamespace string) (ProjectIdentity, error) {
-	endpoint := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/repos/" + strings.Trim(pathWithNamespace, "/")
+	endpoint := github.APIBaseURL(strings.TrimRight(strings.TrimSpace(baseURL), "/")) + "/repos/" + strings.Trim(pathWithNamespace, "/")
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return ProjectIdentity{}, fmt.Errorf("create github probe request: %w", err)
