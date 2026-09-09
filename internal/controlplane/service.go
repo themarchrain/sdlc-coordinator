@@ -215,6 +215,11 @@ func (service *Service) DisableTenant(ctx context.Context, actor *Actor, tenantI
 		if err := service.repo(ctx).ClearSupportForTenant(ctx, tenant.ID); err != nil {
 			return nil, err
 		}
+		// 冻结数据面：删掉该组织的路由索引行，webhook 立即失去租户路由
+		//（引擎层另有停用状态门兜底）；调度扫描不再纳入该组织。
+		if err := service.repo(ctx).DeleteRepoRouteIndexForTenant(ctx, tenant.ID); err != nil {
+			return nil, err
+		}
 		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.disabled", "slug="+tenant.Slug); err != nil {
 			return nil, err
 		}

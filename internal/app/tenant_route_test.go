@@ -75,7 +75,8 @@ func TestReconcileRepoRouteIndexAlignsWithTenantStores(t *testing.T) {
 }
 
 // webhook 租户路由：索引命中 → 租户库仓行 secret；索引未命中回退
-// 平台库仓行（存量部署过渡期）；两处皆未命中返回错误由调用方 fail-closed。
+// 平台库仓行（存量部署过渡期）；未注册返回空串（401），基础设施抖动
+// 返回错误（调用方 5xx 重试），索引指认租户后不再回落平台库。
 func TestTenantRouteSecretLookup(t *testing.T) {
 	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
 	ctx := context.Background()
@@ -107,9 +108,20 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 
 	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver, platform: platformRepoStore}
 
-	// 索引未命中 + 平台库未命中 → fail-closed。
-	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/missing"); err == nil || secret != "" {
-		t.Fatalf("unknown repo must fail closed, got secret=%q err=%v", secret, err)
+	// 索引未命中 + 平台库未命中 → 空串无错误（未注册，调用方 401）。
+	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/missing"); err != nil || secret != "" {
+		t.Fatalf("unknown repo must be empty-without-error, got secret=%q err=%v", secret, err)
+	}
+
+	// 索引命中但租户库无仓行（索引漂移）→ 同未注册处理，不再回落平台库。
+	if err := cpRepo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "acme/gone",
+		TenantID: tenant.ID, RepoFingerprint: "repo-gone",
+	}); err != nil {
+		t.Fatalf("seed drifted index: %v", err)
+	}
+	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/gone"); err != nil || secret != "" {
+		t.Fatalf("drifted index must be empty-without-error (no platform fallback), got secret=%q err=%v", secret, err)
 	}
 
 	// 索引未命中 → 平台库兜底（存量部署过渡期）。

@@ -111,10 +111,10 @@ func TestWebhookSecretByPathReturnsTrimmedSecret(t *testing.T) {
 	if secret != "hook-secret-a" {
 		t.Fatalf("secret=%q", secret)
 	}
-	if _, err := repoStore.WebhookSecretByPath(ctx, "gitlab", "group/missing"); err == nil {
-		t.Fatal("expected not found for unregistered path")
+	if secret, err := repoStore.WebhookSecretByPath(ctx, "gitlab", "group/missing"); err != nil || secret != "" {
+		t.Fatalf("unregistered path must be empty-without-error, got secret=%q err=%v", secret, err)
 	}
-	if _, err := repoStore.WebhookSecretByPath(ctx, "gitea", "group/repo-a"); err == nil {
-		t.Fatal("provider scope must isolate path lookup")
+	if secret, err := repoStore.WebhookSecretByPath(ctx, "gitea", "group/repo-a"); err != nil || secret != "" {
+		t.Fatalf("provider scope must isolate path lookup, got secret=%q err=%v", secret, err)
 	}
 }

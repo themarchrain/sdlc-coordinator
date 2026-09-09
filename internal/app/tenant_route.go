@@ -70,8 +70,10 @@ func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, pr
 
 // tenantRouteSecretLookup 是 webhook 验签的租户路由解析：
 // 最小身份 (provider, path) → 控制面索引 → 打开租户库取仓行 secret。
-// 索引未命中回退平台库仓行（存量部署过渡期：平台库仓行仍存活）；
-// 两处皆未命中返回错误，由调用方按既有语义 fail-closed（401）。
+// 错误语义：err 非 nil = 基础设施抖动（索引查询失败/租户库句柄不可用），
+// 调用方回 5xx 让代码托管重试；空串 = 未注册（fail-closed 401）。
+// 索引未命中（tenantID=0）回退平台库仓行（存量部署过渡期），其余情形
+// 不再回落平台库——索引已指认租户却验平台副本，等于把事件放进错误的库。
 type tenantRouteSecretLookup struct {
 	index    *controlplane.Repository
 	resolver tenantdb.Resolver
@@ -84,17 +86,20 @@ func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provi
 		return "", err
 	}
 	if tenantID != 0 {
-		if store, handleErr := l.resolver.Handle(ctx, tenantID); handleErr == nil {
-			repo, getErr := registeredrepo.NewStore(store.DB).GetByPath(ctx, provider, path)
-			if getErr == nil {
-				return strings.TrimSpace(repo.WebhookSecret), nil
-			}
+		store, handleErr := l.resolver.Handle(ctx, tenantID)
+		if handleErr != nil {
+			return "", fmt.Errorf("tenant store unavailable for tenant %d: %w", tenantID, handleErr)
 		}
-		// 租户库未命中或句柄不可用 → 落到平台库兜底。
+		repo, getErr := registeredrepo.NewStore(store.DB).GetByPath(ctx, provider, path)
+		if getErr == nil {
+			return strings.TrimSpace(repo.WebhookSecret), nil
+		}
+		// 租户库无此仓行（索引漂移）：按未注册拒绝，等对账清理索引。
+		return "", nil
 	}
 	repo, err := l.platform.GetByPath(ctx, provider, path)
 	if err != nil {
-		return "", err
+		return "", nil
 	}
 	return strings.TrimSpace(repo.WebhookSecret), nil
 }
@@ -112,6 +117,10 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 	claimant := make(map[string]uint)
 	conflicted := make(map[string]bool)
 	for _, tenant := range tenants {
+		if tenant.Status != controlplane.TenantStatusActive {
+			// 停用组织的仓不参与对账：索引行已在停用时删除，这里不再重建。
+			continue
+		}
 		store, err := resolver.Handle(ctx, tenant.ID)
 		if err != nil {
 			continue

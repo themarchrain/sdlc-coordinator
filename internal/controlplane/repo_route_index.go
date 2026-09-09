@@ -106,3 +106,11 @@ func (repository *Repository) DeleteRepoRouteIndex(ctx context.Context, identity
 			identity.Provider, identity.BaseURL, identity.PathWithNamespace).
 		Delete(&RepoRouteIndex{}).Error
 }
+
+// DeleteRepoRouteIndexForTenant 删除某租户的全部路由索引行：停用组织时
+// 立即切断其 webhook 租户路由；恢复后由低频对账在周期内重建。
+func (repository *Repository) DeleteRepoRouteIndexForTenant(ctx context.Context, tenantID uint) error {
+	return repository.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Delete(&RepoRouteIndex{}).Error
+}

@@ -150,3 +150,60 @@ func TestEnginePoolForTenantIDIsSingletonUnderConcurrency(t *testing.T) {
 		}
 	}
 }
+
+
+// 停用组织即时失去引擎（状态门逐调用生效，缓存命中也不例外）；恢复后
+// 引擎回归。停用同时删除路由索引行，webhook 租户路由随之失联。
+func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
+	ctx := context.Background()
+	db := openAppTestDB(t)
+	cfg := withTestControlPlane(t, config.Config{HTTPAddr: ":0"})
+	application, err := New(cfg, zap.NewNop(), db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
+			resolver.Close()
+		}
+	})
+	actor := &controlplane.Actor{ID: 1, Username: "root"}
+	tenant, err := application.ControlPlane.CreateTenant(ctx, actor, controlplane.TenantInput{
+		Slug: "frozen", DisplayName: "冻结验证",
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if application.pool.forTenantID(ctx, tenant.ID) == nil {
+		t.Fatal("active tenant must get an engine")
+	}
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/repo",
+		TenantID: tenant.ID, RepoFingerprint: "repo-frozen",
+	}); err != nil {
+		t.Fatalf("seed route index: %v", err)
+	}
+
+	if _, err := application.ControlPlane.DisableTenant(ctx, actor, tenant.ID); err != nil {
+		t.Fatalf("disable tenant: %v", err)
+	}
+	if application.pool.forTenantID(ctx, tenant.ID) != nil {
+		t.Fatal("disabled tenant must lose its engine even when cached")
+	}
+	if view := application.pool.MCPEngineForTenant(tenant.ID); view.Channel != nil {
+		t.Fatal("disabled tenant must have no MCP engine view")
+	}
+	if _, err := application.ControlPlane.Repository().GetRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/repo",
+	}); err == nil {
+		t.Fatal("disable must remove the tenant's route index rows")
+	}
+
+	if _, err := application.ControlPlane.RestoreTenant(ctx, actor, tenant.ID); err != nil {
+		t.Fatalf("restore tenant: %v", err)
+	}
+	if application.pool.forTenantID(ctx, tenant.ID) == nil {
+		t.Fatal("restored tenant must get its engine back")
+	}
+}

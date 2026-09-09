@@ -24,7 +24,8 @@ type AdminEffectLookup interface {
 }
 
 // AdminOperationEngines 按请求会话的租户作用域选择操作引擎与 effect 查询；
-// 未注入或返回 nil 时回落构造期默认（单库形态/测试）。
+// 注入后返回 nil 即「租户引擎不可用」（503），不得回落构造期默认——那会
+// 把租户作用域操作写进平台库。未注入端口才用构造期默认（单库形态/测试）。
 type AdminOperationEngines interface {
 	OperationsFor(c *gin.Context) AdminOperations
 	EffectsFor(c *gin.Context) AdminEffectLookup
@@ -47,22 +48,18 @@ func NewAdminOperationHandler(operations AdminOperations, effects AdminEffectLoo
 	return handler
 }
 
-// operationsFor 取本请求的操作引擎：会话租户引擎优先，回落构造期默认。
+// operationsFor 取本请求的操作引擎：注入引擎端口时 nil 即不可用（503）。
 func (handler *AdminOperationHandler) operationsFor(c *gin.Context) AdminOperations {
 	if handler.engines != nil {
-		if operations := handler.engines.OperationsFor(c); operations != nil {
-			return operations
-		}
+		return handler.engines.OperationsFor(c)
 	}
 	return handler.operations
 }
 
-// effectsFor 取本请求的 effect 查询：会话租户库优先，回落构造期默认。
+// effectsFor 取本请求的 effect 查询：注入引擎端口时 nil 即不可用（503）。
 func (handler *AdminOperationHandler) effectsFor(c *gin.Context) AdminEffectLookup {
 	if handler.engines != nil {
-		if effects := handler.engines.EffectsFor(c); effects != nil {
-			return effects
-		}
+		return handler.engines.EffectsFor(c)
 	}
 	return handler.effects
 }

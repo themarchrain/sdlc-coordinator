@@ -113,7 +113,12 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed gitlab webhook payload"})
 		return
 	}
-	if !h.authorizeGitLabWebhook(c.Request.Context(), path, c.GetHeader("X-Gitlab-Token")) {
+	authorized, authErr := h.authorizeGitLabWebhook(c.Request.Context(), path, c.GetHeader("X-Gitlab-Token"))
+	if authErr != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook secret lookup unavailable"})
+		return
+	}
+	if !authorized {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
 		return
 	}
@@ -171,7 +176,12 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed gitea webhook payload"})
 		return
 	}
-	if !h.authorizeCodeHostWebhook(c.Request.Context(), providerGitea, path, c.GetHeader("X-Gitea-Signature"), raw, "") {
+	authorized, authErr := h.authorizeCodeHostWebhook(c.Request.Context(), providerGitea, path, c.GetHeader("X-Gitea-Signature"), raw, "")
+	if authErr != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook secret lookup unavailable"})
+		return
+	}
+	if !authorized {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
 		return
 	}
@@ -229,7 +239,12 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed github webhook payload"})
 		return
 	}
-	if !h.authorizeCodeHostWebhook(c.Request.Context(), providerGitHub, path, c.GetHeader("X-Hub-Signature-256"), raw, "sha256=") {
+	authorized, authErr := h.authorizeCodeHostWebhook(c.Request.Context(), providerGitHub, path, c.GetHeader("X-Hub-Signature-256"), raw, "sha256=")
+	if authErr != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook secret lookup unavailable"})
+		return
+	}
+	if !authorized {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
 		return
 	}
@@ -269,55 +284,61 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 	c.JSON(http.StatusAccepted, resp)
 }
 
-// repoWebhookSecret 解析仓 secret;任何 error(未注册/仓储抖动)一律按空 secret
-// 处理,由调用方 fail-closed。
-func (h *EventHandler) repoWebhookSecret(ctx context.Context, provider, path string) string {
+// repoWebhookSecret 解析仓 secret；err 非 nil 表示基础设施抖动（如租户库
+// 句柄不可用），调用方回 5xx 让代码托管重试，不与「未注册」（空串）混淆。
+func (h *EventHandler) repoWebhookSecret(ctx context.Context, provider, path string) (string, error) {
 	if h == nil || h.webhookSecrets == nil {
-		return ""
+		return "", nil
 	}
 	secret, err := h.webhookSecrets.WebhookSecretByPath(ctx, provider, path)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(secret)
+	return strings.TrimSpace(secret), nil
 }
 
-func (h *EventHandler) authorizeGitLabWebhook(ctx context.Context, path, received string) bool {
-	expected := h.repoWebhookSecret(ctx, providerGitLab, path)
+func (h *EventHandler) authorizeGitLabWebhook(ctx context.Context, path, received string) (bool, error) {
+	expected, err := h.repoWebhookSecret(ctx, providerGitLab, path)
+	if err != nil {
+		return false, err
+	}
 	// 该仓未注册或未配置 secret 一律拒绝(fail-closed):未验证流量不得进入事件库。
 	if expected == "" {
-		return false
+		return false, nil
 	}
 	actual := strings.TrimSpace(received)
 	if actual == "" || len(actual) != len(expected) {
-		return false
+		return false, nil
 	}
-	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
+	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1, nil
 }
 
 // authorizeCodeHostWebhook 验证 HMAC 签名(Gitea 与 GitHub 共用,差异只在
 // provider 作用域与 signaturePrefix:Gitea 裸 hex,GitHub 带 "sha256=" 前缀)。
-func (h *EventHandler) authorizeCodeHostWebhook(ctx context.Context, provider, path, receivedSignature string, body []byte, signaturePrefix string) bool {
-	expected := h.repoWebhookSecret(ctx, provider, path)
+func (h *EventHandler) authorizeCodeHostWebhook(ctx context.Context, provider, path, receivedSignature string, body []byte, signaturePrefix string) (bool, error) {
+	expected, err := h.repoWebhookSecret(ctx, provider, path)
+	if err != nil {
+		return false, err
+	}
 	// 该仓未注册或未配置 secret 一律拒绝(fail-closed):未验证流量不得进入事件库。
 	if expected == "" {
-		return false
+		return false, nil
 	}
 	received := strings.TrimSpace(receivedSignature)
 	if signaturePrefix != "" {
 		// GitHub 固定发送前缀;前缀缺失或类型不符直接拒绝。
 		if !strings.HasPrefix(strings.ToLower(received), signaturePrefix) {
-			return false
+			return false, nil
 		}
 		received = received[len(signaturePrefix):]
 	}
 	if received == "" {
-		return false
+		return false, nil
 	}
 	mac := hmac.New(sha256.New, []byte(expected))
 	mac.Write(body)
 	expectedMAC := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(received), []byte(expectedMAC))
+	return hmac.Equal([]byte(received), []byte(expectedMAC)), nil
 }
 
 // gitLabRepoPath 最小解析 project.path_with_namespace;只读取这一个字段用于

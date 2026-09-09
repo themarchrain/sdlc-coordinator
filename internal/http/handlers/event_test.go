@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"sdlc-coordinator/internal/registeredrepo"
 
 	"github.com/gin-gonic/gin"
 )
@@ -41,7 +40,8 @@ func (f *fakeSecretLookup) WebhookSecretByPath(_ context.Context, provider, path
 	f.lookups = append(f.lookups, key)
 	secret, ok := f.secrets[key]
 	if !ok {
-		return "", registeredrepo.ErrNotFound
+		// 与真实实现对齐：未注册 = 空串无错误（401）；err 保留给基础设施抖动。
+		return "", nil
 	}
 	return secret, nil
 }
@@ -242,12 +242,13 @@ func TestGitHubWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 }
 
 // TestWebhookSecretLookupFailureIsFailClosed 锁定枚举防护:lookup 出错(仓储抖动)
-// 与未注册、空 secret 一样一律拒绝,不得放行。
+// 不得放行、不得落库；基础设施故障与「未注册」(401) 区分为 5xx，让代码
+// 托管按可重试处理。
 func TestWebhookSecretLookupFailureIsFailClosed(t *testing.T) {
 	router, _ := newEventRouter(&failingSecretLookup{})
 	resp := performEvent(t, router, http.MethodPost, "/api/events/gitlab", `{"project":{"path_with_namespace":"group/repo-a"}}`, map[string]string{"X-Gitlab-Token": "secret-a"})
-	if resp.Code != http.StatusUnauthorized {
-		t.Fatalf("lookup failure must be 401, got %d", resp.Code)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("lookup failure must be 503 (retryable, still unauthorized), got %d", resp.Code)
 	}
 }
 
