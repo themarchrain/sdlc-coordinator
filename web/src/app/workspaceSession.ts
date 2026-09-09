@@ -10,10 +10,12 @@ export type WorkspaceSessionValue = {
   superAdmin: boolean
 }
 
+// Provider 外误用按最低权限处理（fail-closed）：默认视为普通成员，
+// 不再让缺省上下文 fail-open 成超管。
 const WorkspaceSessionContext = createContext<WorkspaceSessionValue>({
   session: null,
-  role: 'super_admin',
-  superAdmin: true,
+  role: 'member',
+  superAdmin: false,
 })
 
 export function WorkspaceSessionProvider({
