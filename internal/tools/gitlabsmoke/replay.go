@@ -24,32 +24,14 @@ type Options struct {
 	InstanceURL string
 	DryRun      bool
 	Output      io.Writer
-	Tick        TickOptions
 	HTTPClient  *http.Client
-}
-
-type TickOptions struct {
-	Enabled       bool
-	DispatchLimit int
-	PollLimit     int
-	RecoveryLimit int
-	EffectLimit   int
 }
 
 type Result struct {
 	EventUUID           string
 	WebhookStatusCode   int
 	WebhookResponseBody string
-	TickStatusCode      int
-	TickResponseBody    string
 	DryRun              bool
-}
-
-type tickRequest struct {
-	DispatchLimit int `json:"dispatch_limit,omitempty"`
-	PollLimit     int `json:"poll_limit,omitempty"`
-	RecoveryLimit int `json:"recovery_limit,omitempty"`
-	EffectLimit   int `json:"effect_limit,omitempty"`
 }
 
 func Run(ctx context.Context, opts Options) (*Result, error) {
@@ -69,7 +51,6 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	webhookURL := baseURL + "/api/events/gitlab"
-	tickURL := baseURL + "/api/scheduler/tick"
 	headers := webhookHeaders(opts, eventUUID)
 	result := &Result{
 		EventUUID: eventUUID,
@@ -77,7 +58,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	if opts.DryRun {
-		if err := renderDryRun(opts.output(), webhookURL, tickURL, headers, payload, opts.Tick); err != nil {
+		if err := renderDryRun(opts.output(), webhookURL, headers, payload); err != nil {
 			return nil, err
 		}
 		return result, nil
@@ -93,19 +74,6 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	result.WebhookResponseBody = body
 	if err != nil {
 		return result, fmt.Errorf("gitlab webhook replay failed: %w", err)
-	}
-
-	if opts.Tick.Enabled {
-		rawTick, err := json.Marshal(buildTickRequest(opts.Tick))
-		if err != nil {
-			return result, fmt.Errorf("marshal scheduler tick payload: %w", err)
-		}
-		status, body, err := postJSON(ctx, client, tickURL, rawTick, map[string]string{"Content-Type": "application/json"})
-		result.TickStatusCode = status
-		result.TickResponseBody = body
-		if err != nil {
-			return result, fmt.Errorf("scheduler tick replay failed: %w", err)
-		}
 	}
 
 	return result, nil
@@ -154,15 +122,6 @@ func webhookHeaders(opts Options, eventUUID string) map[string]string {
 	return headers
 }
 
-func buildTickRequest(tick TickOptions) tickRequest {
-	return tickRequest{
-		DispatchLimit: tick.DispatchLimit,
-		PollLimit:     tick.PollLimit,
-		RecoveryLimit: tick.RecoveryLimit,
-		EffectLimit:   tick.EffectLimit,
-	}
-}
-
 func postJSON(ctx context.Context, client *http.Client, url string, body []byte, headers map[string]string) (int, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -189,7 +148,7 @@ func postJSON(ctx context.Context, client *http.Client, url string, body []byte,
 	return resp.StatusCode, responseBody, nil
 }
 
-func renderDryRun(out io.Writer, webhookURL, tickURL string, headers map[string]string, payload []byte, tick TickOptions) error {
+func renderDryRun(out io.Writer, webhookURL string, headers map[string]string, payload []byte) error {
 	redactedHeaders := make(map[string]string, len(headers))
 	for key, value := range headers {
 		if strings.EqualFold(key, "X-Gitlab-Token") {
@@ -207,13 +166,6 @@ func renderDryRun(out io.Writer, webhookURL, tickURL string, headers map[string]
 			"headers":       redactedHeaders,
 			"payload_bytes": len(payload),
 		},
-	}
-	if tick.Enabled {
-		doc["tick_request"] = map[string]any{
-			"method": http.MethodPost,
-			"url":    tickURL,
-			"body":   buildTickRequest(tick),
-		}
 	}
 
 	encoder := json.NewEncoder(out)

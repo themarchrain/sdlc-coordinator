@@ -207,11 +207,6 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	router.GET("/admin", adminHandler)
 	router.GET("/admin/*path", adminHandler)
 
-	taskHandler := handlers.NewTaskHandler(orch)
-	runHandler := handlers.NewRunHandler(orch)
-	schedulerHandler := handlers.NewSchedulerHandler(orch)
-	effectHandler := handlers.NewEffectHandler(orch)
-
 	runtimeGate := handlers.ConfigurationGate(options.RuntimeMode)
 
 	api := router.Group("/api")
@@ -269,14 +264,13 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 			adminConnectorHandler := handlers.NewAdminConnectorHandler(options.ConnectorService)
 			adminConnectorHandler.RegisterRoutes(adminAPI)
 		}
+		// 未认证的 runtime 内部 API（POST /api/tasks、GET /api/tasks/:id、
+		// claim、GET /api/runs/:id、effects/retry、scheduler/tick）已整体
+		// 移除：它们此前只挂 ConfigurationGate，公网部署下等于无认证读写
+		// 业务数据。人工触发调度/重试走 /api/admin 等价路由（会话+矩阵）；
+		// webhook 验签通道不受影响。
 		runtimeAPI := api.Group("")
 		runtimeAPI.Use(runtimeGate)
-		runtimeAPI.POST("/tasks", taskHandler.Create)
-		runtimeAPI.GET("/tasks/:task_id", taskHandler.Get)
-		runtimeAPI.POST("/tasks/:task_id/claim", taskHandler.Claim)
-		runtimeAPI.GET("/runs/:run_id", runHandler.Get)
-		runtimeAPI.POST("/effects/retry", effectHandler.Retry)
-		runtimeAPI.POST("/scheduler/tick", schedulerHandler.Tick)
 		if eventProcessor != nil {
 			eventHandler := handlers.NewEventHandler(eventProcessor,
 				handlers.WithWebhookSecretLookup(options.WebhookSecretLookup),

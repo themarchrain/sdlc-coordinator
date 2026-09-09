@@ -2,12 +2,56 @@ package handlers
 
 import (
 	"strings"
+	"time"
 
 	"sdlc-coordinator/internal/admin"
 	"sdlc-coordinator/internal/model"
 
 	"github.com/gin-gonic/gin"
 )
+
+// TaskResponse 是任务在 admin 操作与 webhook 响应里的序列化形态。
+type TaskResponse struct {
+	TaskID             string           `json:"task_id"`
+	DedupeKey          string           `json:"dedupe_key"`
+	Type               string           `json:"type"`
+	Role               string           `json:"role"`
+	SourceRepo         string           `json:"source_repo,omitempty"`
+	TargetRepo         string           `json:"target_repo,omitempty"`
+	Objective          string           `json:"objective"`
+	AcceptanceCriteria string           `json:"acceptance_criteria,omitempty"`
+	Status             model.TaskStatus `json:"status"`
+	LeaseUntil         *time.Time       `json:"lease_until,omitempty"`
+	AttemptCount       int              `json:"attempt_count"`
+	CurrentRunID       *string          `json:"current_run_id,omitempty"`
+	ContextJSON        string           `json:"context_json,omitempty"`
+	CallbackURL        string           `json:"callback_url,omitempty"`
+	LastError          string           `json:"last_error,omitempty"`
+	CreatedAt          time.Time        `json:"created_at"`
+	UpdatedAt          time.Time        `json:"updated_at"`
+}
+
+func taskResponse(task *model.Task) TaskResponse {
+	return TaskResponse{
+		TaskID:             task.TaskID,
+		DedupeKey:          task.DedupeKey,
+		Type:               task.Type,
+		Role:               task.Role,
+		SourceRepo:         task.SourceRepo,
+		TargetRepo:         task.TargetRepo,
+		Objective:          task.Objective,
+		AcceptanceCriteria: task.AcceptanceCriteria,
+		Status:             task.Status,
+		LeaseUntil:         task.LeaseUntil,
+		AttemptCount:       task.AttemptCount,
+		CurrentRunID:       task.CurrentRunID,
+		ContextJSON:        task.ContextJSON,
+		CallbackURL:        task.CallbackURL,
+		LastError:          task.LastError,
+		CreatedAt:          task.CreatedAt,
+		UpdatedAt:          task.UpdatedAt,
+	}
+}
 
 func runSummary(run model.Run) gin.H {
 	return gin.H{"run_id": run.RunID, "task_id": run.TaskID, "worker_role": run.WorkerRole, "status": run.Status,
