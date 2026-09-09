@@ -159,3 +159,41 @@ func TestResultChannelSurfacesSubmitterConflictsAsFailed(t *testing.T) {
 		t.Fatalf("conflict cause must be preserved: %v", outcome.Err)
 	}
 }
+
+func TestResultChannelAcceptsChangeReadyWithEmptyValueShapes(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"wrote readme and verified","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"docs: add readme","description":"records commit time"},"defect":{},"blocker_reason":"null"}`)
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, raw)
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelAccepted {
+		t.Fatalf("empty-value shapes must be treated as absent, got %#v problems=%v", outcome, outcome.Problems)
+	}
+	if f.submitter.calls != 1 {
+		t.Fatalf("submitter must be called once, calls=%d", f.submitter.calls)
+	}
+	for _, path := range []string{"defect", "blocker_reason"} {
+		if !strings.Contains(f.submitter.request.NormalizationTrail, `"path":"`+path+`"`) {
+			t.Fatalf("normalization trail missing drop record for %s: %q", path, f.submitter.request.NormalizationTrail)
+		}
+	}
+}
+
+func TestResultChannelRejectsNullLiteralsInsideRequiredFields(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"done","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"null","description":"records commit time"}}`)
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, raw)
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelRejected {
+		t.Fatalf(`"null" in a required field must be rejected as missing, got %#v`, outcome)
+	}
+	if !strings.Contains(outcome.Problems[0].Problem, "merge_request title is required") {
+		t.Fatalf("rejection must name the required-field violation instead of shipping a literal null title: %s", outcome.Problems[0].Problem)
+	}
+	if f.submitter.calls != 0 {
+		t.Fatalf("rejected results must not reach the submitter, calls=%d", f.submitter.calls)
+	}
+}

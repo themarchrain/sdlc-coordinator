@@ -222,3 +222,119 @@ func TestNormalizeInputRejectsTrailingJSON(t *testing.T) {
 		t.Fatal("trailing JSON value must error like strict decode")
 	}
 }
+
+func TestNormalizeInputDropsLiteralNullStringsAsAbsent(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"done","blocker_reason":" null "}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	repairs := repairsOf(result)
+	if repair, ok := repairs["blocker_reason"]; !ok || repair.Op != "drop_empty" {
+		t.Fatalf("missing drop_empty repair for literal null string in %#v", result.Repairs)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode normalized payload: %v", err)
+	}
+	if _, ok := payload["blocker_reason"]; ok {
+		t.Fatalf(`literal "null" blocker_reason must be dropped: %s`, result.Payload)
+	}
+}
+
+func TestNormalizeInputDropsBlankStringsAsAbsent(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"done","blocker_reason":"   "}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	if repair, ok := repairsOf(result)["blocker_reason"]; !ok || repair.Op != "drop_empty" {
+		t.Fatalf("blank blocker_reason must be dropped: %#v", result.Repairs)
+	}
+}
+
+func TestNormalizeInputKeepsRealContentStringsUntouched(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"fix_failed","summary":"blocked by flaky ci","blocker_reason":"nullish coverage gate"}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	if !result.Clean() {
+		t.Fatalf("real content must not be rewritten: %#v", result.Repairs)
+	}
+}
+
+func TestNormalizeInputDropsEmptyObjectsAsAbsent(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"done","defect":{}}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	if repair, ok := repairsOf(result)["defect"]; !ok || repair.Op != "drop_empty" {
+		t.Fatalf("empty defect object must be dropped: %#v", result.Repairs)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode normalized payload: %v", err)
+	}
+	if _, ok := payload["defect"]; ok {
+		t.Fatalf("empty defect object must be dropped: %s", result.Payload)
+	}
+}
+
+func TestNormalizeInputKeepsEmptyArraysUntouched(t *testing.T) {
+	// 空数组解码为 nil 切片，len() 类契约校验视同缺键——删它没有收益，
+	// 只会把合法的显式空清单（如 reviewer approved 的 findings:[]）
+	// 污染成归一修复（回归锁定）。
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"done","tests":[]}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	if !result.Clean() {
+		t.Fatalf("empty arrays must pass through untouched: %#v", result.Repairs)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode normalized payload: %v", err)
+	}
+	if string(payload["tests"]) != "[]" {
+		t.Fatalf("empty array must survive byte-identical, got %s", payload["tests"])
+	}
+}
+
+func TestNormalizeInputCollapsesAllEmptyFieldsToObjectDrop(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"done","defect":{"repository":"null","title":"","description":"NULL"}}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	repairs := repairsOf(result)
+	if _, ok := repairs["defect"]; !ok || repairs["defect"].Op != "drop_empty" {
+		t.Fatalf("all-empty defect must collapse to a key drop: %#v", result.Repairs)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode normalized payload: %v", err)
+	}
+	if _, ok := payload["defect"]; ok {
+		t.Fatalf("all-empty defect must be dropped: %s", result.Payload)
+	}
+}
+
+func TestNormalizeInputDropsEmptyRequiredStringForAccurateRejection(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"fix_failed","summary":"null"}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	if repair, ok := repairsOf(result)["summary"]; !ok || repair.Op != "drop_empty" {
+		t.Fatalf(`"null" summary must be dropped for the required check to reject: %#v`, result.Repairs)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode normalized payload: %v", err)
+	}
+	if _, ok := payload["summary"]; ok {
+		t.Fatalf(`"null" summary must not survive into strict decoding: %s`, result.Payload)
+	}
+}
+
+func TestNormalizeInputKeepsPartlyEmptyObjectsIntact(t *testing.T) {
+	raw := `{"task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"done","merge_request":{"title":"real title","description":""}}`
+	result := mustNormalize(t, NewDeveloperAgentContract().InputSchema(), raw)
+	var payload struct {
+		MergeRequest struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+		} `json:"merge_request"`
+	}
+	if err := json.Unmarshal(result.Payload, &payload); err != nil {
+		t.Fatalf("decode normalized payload: %v", err)
+	}
+	if payload.MergeRequest.Title != "real title" {
+		t.Fatalf("real title must survive: %s", result.Payload)
+	}
+	if payload.MergeRequest.Description != "" {
+		t.Fatalf("blank description should decode as empty, got %q: %s", payload.MergeRequest.Description, result.Payload)
+	}
+}

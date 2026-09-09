@@ -10,7 +10,8 @@ import (
 )
 
 // Repair records one whitelist normalization applied to an agent result
-// payload before strict decoding. Ops: rename_key, coerce_scalar, drop_null.
+// payload before strict decoding. Ops: rename_key, coerce_scalar, drop_null,
+// drop_empty.
 type Repair struct {
 	Op     string `json:"op"`
 	Path   string `json:"path"`
@@ -29,9 +30,11 @@ func (r NormalizationResult) Clean() bool { return len(r.Repairs) == 0 }
 
 // NormalizeInput applies the shared-entry thin normalization: known-key alias
 // renaming (taskId→task_id), string scalar coercion toward schema types
-// ("true"→true, "9"→9), and null treated as absent. Values outside the schema
-// key domain are never rewritten, invented or dropped — strict decoding stays
-// the only authority for rejecting unknown fields.
+// ("true"→true, "9"→9), null treated as absent, and empty-value shapes
+// (blank or literal "null" strings, objects left empty after recursion)
+// treated as absent. Values outside the schema key domain are never
+// rewritten, invented or dropped — strict decoding stays the only authority
+// for rejecting unknown fields.
 func NormalizeInput(schema map[string]any, raw json.RawMessage) (NormalizationResult, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -129,6 +132,11 @@ func normalizeObject(schema map[string]any, object map[string]any, path string) 
 		if err != nil {
 			return nil, nil, err
 		}
+		if repair, empty := dropEmpty(converted, keyPath); empty {
+			repairs = append(repairs, itemRepairs...)
+			repairs = append(repairs, repair)
+			continue
+		}
 		if coerced, repair := coerceScalar(schemaNode, item, keyPath); repair.Op != "" {
 			converted, itemRepairs = coerced, append(itemRepairs, repair)
 		}
@@ -136,6 +144,31 @@ func normalizeObject(schema map[string]any, object map[string]any, path string) 
 		repairs = append(repairs, itemRepairs...)
 	}
 	return normalized, repairs, nil
+}
+
+// dropEmpty treats empty-value shapes as absent: blank or literal "null"
+// strings (case-insensitive, whitespace-padded), and objects that ended up
+// empty after recursive normalization. These shapes are semantically
+// indistinguishable from an omitted key — models commonly emit them for
+// optional fields they lack — while real content never matches. A required
+// field emptied here is rejected by the contract's own required checks, which
+// beats letting a literal "null" flow downstream (e.g. into an MR title).
+// Deletion is key-level only: empty arrays pass through — they decode to nil
+// slices, which len()-based contract checks treat identically to an omitted
+// key, so dropping them would only pollute clean payloads with repairs.
+func dropEmpty(value any, path string) (Repair, bool) {
+	switch typed := value.(type) {
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" || strings.EqualFold(text, "null") {
+			return Repair{Op: "drop_empty", Path: path, Before: jsonQuoteString(typed)}, true
+		}
+	case map[string]any:
+		if len(typed) == 0 {
+			return Repair{Op: "drop_empty", Path: path, Before: "{}"}, true
+		}
+	}
+	return Repair{}, false
 }
 
 // coerceScalar rewrites string leaves toward the schema-declared type. Only
