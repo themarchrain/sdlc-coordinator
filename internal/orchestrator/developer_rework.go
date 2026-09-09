@@ -364,16 +364,17 @@ func repoNameFromPath(projectPath string) string {
 // 在请求栈内同步执行,不能让平台 API 抖动拖住整个入站链路。
 const reworkMergeRequestFetchTimeout = 10 * time.Second
 
-// enrichReworkRequestFromPlatform 补写回记录也提供不了的分支信息。GitHub 的
-// issue_comment(PR)载荷不携带 head/base(平台设计差异),外部 PR 又没有写回
-// 记录,只能回源平台 API;仅 GitHub 且仅补缺(不覆盖非空字段),Gitea 载荷
-// 直读与 coordinator 自建 PR 写回路径零额外出网。API 失败 fail-closed:返回
+// enrichReworkRequestFromPlatform 补写回记录也提供不了的信息。GitHub 的
+// issue_comment(PR)载荷不携带 head/base/sha(平台设计差异),外部 PR 没有写回
+// 记录,coordinator 自建 PR 的写回 intent 也不含 sha(创建请求非响应,评论时刻
+// 的当前 head 只能回源平台取)。仅 GitHub 且仅补缺(不覆盖非空字段),分支与
+// sha 全齐才免出网;Gitea 载荷直读路径零额外出网。API 失败 fail-closed:返回
 // 错误让请求照旧被拒(inbound event 留痕),不静默放行、不重试。
 func (o *Orchestrator) enrichReworkRequestFromPlatform(ctx context.Context, request model.MergeRequestReworkRequest) (model.MergeRequestReworkRequest, error) {
 	if !strings.EqualFold(strings.TrimSpace(request.Source), "github") {
 		return request, nil
 	}
-	if strings.TrimSpace(request.SourceBranch) != "" && strings.TrimSpace(request.TargetBranch) != "" {
+	if strings.TrimSpace(request.SourceBranch) != "" && strings.TrimSpace(request.TargetBranch) != "" && strings.TrimSpace(request.ExpectedHeadSHA) != "" {
 		return request, nil
 	}
 	if o.mergeRequestReaderResolver == nil {

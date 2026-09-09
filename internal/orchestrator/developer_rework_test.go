@@ -533,8 +533,9 @@ func TestStartMergeRequestReworkInheritsRepositoryIDFromOrigin(t *testing.T) {
 }
 
 // Gitea 评论载荷不携带 MR 分支;coordinator 自建 MR 的写回请求是分支信息
-// 的权威来源,orchestrator 需先补齐再校验。评论时刻的 head 无法回溯,
-// expected_head_sha 是提示性字段,允许为空。
+// 的权威来源,orchestrator 需先补齐再校验。写回 intent 不含 head sha:
+// 真实链路里 GitLab/Gitea 载荷原生携带,GitHub 由平台回源补齐——派发侧
+// 对 sha 是硬校验,不是可空的提示性字段。
 func TestStartMergeRequestReworkEnrichesBranchesFromManagedWriteback(t *testing.T) {
 	orch, tasks, writebacks := newDeveloperReworkFixture(t)
 	ctx := context.Background()
@@ -740,13 +741,21 @@ func seedManagedGitHubMergeRequest(t *testing.T, ctx context.Context, tasks *rep
 	}
 }
 
-// TestStartMergeRequestReworkSkipsPlatformEnrichmentWhenWritebackProvidesBranches
-// coordinator 自建 GitHub PR:分支来自写回记录,补链 API 零调用。
-func TestStartMergeRequestReworkSkipsPlatformEnrichmentWhenWritebackProvidesBranches(t *testing.T) {
+// TestStartMergeRequestReworkEnrichesHeadSHAWhenWritebackProvidesBranches
+// coordinator 自建 GitHub PR:分支可来自写回记录,但写回 intent 不含 head sha
+// (派发侧硬校验必需),仍须回源平台 API 取评论时刻的当前 head;回源值仅补缺,
+// 不覆盖写回分支。
+func TestStartMergeRequestReworkEnrichesHeadSHAWhenWritebackProvidesBranches(t *testing.T) {
 	orch, tasks, writebacks := newDeveloperReworkFixture(t)
 	ctx := context.Background()
 	seedManagedGitHubMergeRequest(t, ctx, tasks, writebacks)
-	stub := &stubMergeRequestReader{err: errors.New("platform enrichment must not be called")}
+	stub := &stubMergeRequestReader{mergeRequest: &codehost.MergeRequest{
+		IID:          17,
+		WebURL:       "https://github.com/octo-org/external/pull/17",
+		SourceBranch: "platform/should-not-override",
+		TargetBranch: "platform-base",
+		HeadSHA:      "dddddddddddddddddddddddddddddddddddddddd",
+	}}
 	orch.mergeRequestReaderResolver = &stubMergeRequestReaderResolver{reader: stub}
 
 	created, err := orch.StartOrResumeMergeRequestRework(ctx, externalGitHubReworkRequest())
@@ -756,8 +765,20 @@ func TestStartMergeRequestReworkSkipsPlatformEnrichmentWhenWritebackProvidesBran
 	if created == nil || created.Status != model.TaskStatusPending || created.DeliveryBranch != "feature/managed-pr" {
 		t.Fatalf("unexpected rework task: %#v", created)
 	}
-	if stub.calls != 0 {
-		t.Fatalf("expected zero platform API calls for writeback-enriched rework, got %d", stub.calls)
+	if stub.calls != 1 {
+		t.Fatalf("expected exactly one platform API call to fetch head sha, got %d", stub.calls)
+	}
+
+	var taskContext map[string]any
+	if err := json.Unmarshal([]byte(created.ContextJSON), &taskContext); err != nil {
+		t.Fatalf("decode rework context: %v", err)
+	}
+	mergeRequest := taskContext["merge_request"].(map[string]any)
+	if mergeRequest["source_branch"] != "feature/managed-pr" || mergeRequest["target_branch"] != "main" {
+		t.Fatalf("expected writeback branches to win over platform values, got %#v", mergeRequest)
+	}
+	if mergeRequest["expected_head_sha"] != "dddddddddddddddddddddddddddddddddddddddd" {
+		t.Fatalf("expected platform head sha in context, got %#v", mergeRequest)
 	}
 }
 
