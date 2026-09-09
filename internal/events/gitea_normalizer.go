@@ -74,8 +74,10 @@ func (n GiteaNormalizer) Receipt(raw []byte, metadata WebhookMetadata) WebhookRe
 }
 
 type giteaWebhookPayload struct {
-	Action      string            `json:"action"`
-	Number      int               `json:"number"`
+	Action string `json:"action"`
+	Number int    `json:"number"`
+	// synchronized 交付若带顶层 before,即为增量审查起点(上一版源分支头)。
+	Before      string            `json:"before"`
 	Issue       *giteaIssue       `json:"issue"`
 	PullRequest *giteaPullRequest `json:"pull_request"`
 	Comment     *giteaComment     `json:"comment"`
@@ -223,11 +225,28 @@ func (n GiteaNormalizer) normalizeGiteaPullRequest(payload giteaWebhookPayload) 
 		return nil, err
 	}
 
+	// 平台动作词归一到跨平台词表(与 GitLab 对齐):下游按 update+base_sha 判
+	// 增量审查。Gitea 的 synchronized 交付通常不带 before,缺增量起点时
+	// base_sha 为空,任务工厂自动回落完整审查(优雅降级)。
+	eventAction := strings.ToLower(strings.TrimSpace(payload.Action))
+	incrementBase := ""
+	metadata := map[string]any{
+		"author_name":     giteaDisplayName(pr.User),
+		"author_username": giteaUserName(pr.User),
+		"author_email":    strings.TrimSpace(giteaUserEmail(pr.User)),
+		"assignee_ids":    giteaUserIDs(pr.Assignees),
+	}
+	if eventAction == "synchronized" {
+		eventAction = "update"
+		incrementBase = strings.TrimSpace(payload.Before)
+		metadata["raw_action"] = strings.TrimSpace(payload.Action)
+	}
+
 	return &NormalizationResult{Event: &NormalizedEvent{
 		Source:        "gitea",
 		Kind:          EventKindChangeRequestUpdated,
 		EventType:     "pull_request",
-		EventAction:   payload.Action,
+		EventAction:   eventAction,
 		ProjectID:     projectID,
 		ProjectPath:   repo.FullName,
 		RepositoryURL: repo.CloneURL,
@@ -238,15 +257,10 @@ func (n GiteaNormalizer) normalizeGiteaPullRequest(payload giteaWebhookPayload) 
 		SourceBranch:  pr.Head.Ref,
 		TargetBranch:  pr.Base.Ref,
 		HeadSHA:       strings.TrimSpace(pr.Head.SHA),
-		BaseSHA:       strings.TrimSpace(pr.Base.SHA),
+		BaseSHA:       incrementBase,
 		Version:       strings.TrimSpace(pr.UpdatedAt),
 		DedupeKey:     fmt.Sprintf("gitea:mr-review:%s:%d:%s", projectID, pr.Number, strings.TrimSpace(pr.Head.SHA)),
-		Metadata: map[string]any{
-			"author_name":     giteaDisplayName(pr.User),
-			"author_username": giteaUserName(pr.User),
-			"author_email":    strings.TrimSpace(giteaUserEmail(pr.User)),
-			"assignee_ids":    giteaUserIDs(pr.Assignees),
-		},
+		Metadata:      metadata,
 	}}, nil
 }
 
@@ -260,12 +274,18 @@ func (n GiteaNormalizer) normalizeGiteaPullRequestLifecycle(payload giteaWebhook
 	if pr.Merged {
 		state = "merged"
 	}
+	// Gitea 合并与关闭共用动作词 closed;归一到下游 switch 认的
+	// merge/close(与 GitLab 词表一致),原始动作词留档 metadata。
+	eventAction := "close"
+	if pr.Merged {
+		eventAction = "merge"
+	}
 	projectID := strconv.FormatInt(repo.ID, 10)
 	return &NormalizationResult{Event: &NormalizedEvent{
 		Source:        "gitea",
 		Kind:          EventKindMergeRequestLifecycleChanged,
 		EventType:     "pull_request",
-		EventAction:   payload.Action,
+		EventAction:   eventAction,
 		ProjectID:     projectID,
 		ProjectPath:   repo.FullName,
 		RepositoryURL: repo.CloneURL,
@@ -279,6 +299,7 @@ func (n GiteaNormalizer) normalizeGiteaPullRequestLifecycle(payload giteaWebhook
 		DedupeKey: fmt.Sprintf("gitea:mr-rework:%s:%d", projectID, pr.Number),
 		Metadata: map[string]any{
 			"lifecycle_state": state,
+			"raw_action":      strings.TrimSpace(payload.Action),
 			"assignee_ids":    giteaUserIDs(pr.Assignees),
 		},
 	}}, nil

@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -181,8 +182,55 @@ func TestGitHubNormalizerMapsPullRequestClosedLifecycle(t *testing.T) {
 	if metadataString(event.Metadata, "lifecycle_state") != "merged" {
 		t.Fatalf("expected merged lifecycle state, got %#v", event.Metadata)
 	}
+	// 合并与关闭共用动作词 closed;归一为下游 switch 认的 merge/close,
+	// 否则 PR 合并/关闭时 rework 任务终结链会撞 unsupported 错误。
+	if event.EventAction != "merge" {
+		t.Fatalf("expected canonical merge action, got %#v", event)
+	}
+	if metadataString(event.Metadata, "raw_action") != "closed" {
+		t.Fatalf("expected raw action preserved, got %#v", event.Metadata)
+	}
 	if event.DedupeKey != "github:mr-rework:42:12" {
 		t.Fatalf("expected lifecycle dedupe key aligned with rework key, got %q", event.DedupeKey)
+	}
+}
+
+// GitHub 的 synchronize(源分支新 Push)须归一为 update 并以顶层 before 为
+// 增量起点——否则任务工厂判不成 incremental,增量审查退化为重审整个 PR。
+func TestGitHubNormalizerMapsPullRequestSynchronizeToIncrementalReview(t *testing.T) {
+	payload := strings.Replace(githubPROpenedPayload, `"action": "opened"`,
+		`"action": "synchronize", "before": "abc123def", "after": "fed654cba"`, 1)
+	payload = strings.Replace(payload, `"sha": "abc123def"`, `"sha": "fed654cba"`, 1)
+	result, err := GitHubNormalizer{}.Normalize([]byte(payload))
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	event := result.Event
+	if event == nil || event.EventAction != "update" {
+		t.Fatalf("expected canonical update action, got %#v", event)
+	}
+	if event.BaseSHA != "abc123def" || event.HeadSHA != "fed654cba" {
+		t.Fatalf("expected before as increment base and new head, got %#v", event)
+	}
+	if metadataString(event.Metadata, "raw_action") != "synchronize" {
+		t.Fatalf("expected raw action preserved, got %#v", event.Metadata)
+	}
+
+	task, err := NewTaskFactory().BuildTask(*event)
+	if err != nil {
+		t.Fatalf("build review task: %v", err)
+	}
+	var context struct {
+		MergeRequest struct {
+			ReviewMode string `json:"review_mode"`
+			BaseSHA    string `json:"base_sha"`
+		} `json:"merge_request"`
+	}
+	if err := json.Unmarshal([]byte(task.ContextJSON), &context); err != nil {
+		t.Fatalf("decode task context: %v", err)
+	}
+	if context.MergeRequest.ReviewMode != "incremental" || context.MergeRequest.BaseSHA != "abc123def" {
+		t.Fatalf("expected incremental review with before as base, got %#v", context.MergeRequest)
 	}
 }
 

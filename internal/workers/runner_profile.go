@@ -81,7 +81,7 @@ const developerRunnerReworkInstruction = `你是 DeveloperWorker，本轮执行�
 - 原 Issue、MR、最新审查或当前评论不足以确定目标时，输出 outcome=insufficient_context 和具体 blocker_reason。
 - 修改完成且验证通过时只输出 outcome=rework_ready、summary 和全部通过的 tests；不得输出 merge_request 或 defect。tests 至少一条、command 与 summary 必填且 passed=true；纯文档/配置改动也记录一项最小验证（如 "git diff --check"），空 tests 会被拒绝。
 - Git commit 和向原 source branch 的普通 push 由 Coordinator 完成；不得创建新 MR。
-- 不调用 GitLab / Gitea API，不负责 Comment、IM、审查或全局状态流转。`
+- 不调用代码托管平台 API（GitLab / Gitea / GitHub），不负责 Comment、IM、审查或全局状态流转。`
 
 func BuildReviewerRunnerPrompt(pkg agent.TaskPackage) (string, error) {
 	if pkg.Role != "ReviewerWorker" {

@@ -75,8 +75,11 @@ func (n GitHubNormalizer) Receipt(raw []byte, metadata WebhookMetadata) WebhookR
 }
 
 type githubWebhookPayload struct {
-	Action      string             `json:"action"`
-	Number      int                `json:"number"`
+	Action string `json:"action"`
+	Number int    `json:"number"`
+	// synchronize 交付顶层的 before/after:上一版与当前版源分支头,before 是
+	// 增量审查的起点(base.sha 是目标分支 tip,语义不同不可混用)。
+	Before      string             `json:"before"`
 	Label       *githubLabel       `json:"label"`
 	Issue       *githubIssue       `json:"issue"`
 	PullRequest *githubPullRequest `json:"pull_request"`
@@ -224,11 +227,28 @@ func (n GitHubNormalizer) normalizeGitHubPullRequest(payload githubWebhookPayloa
 		return nil, err
 	}
 
+	// 平台动作词归一到跨平台词表(与 GitLab 对齐):下游按 update+base_sha 判
+	// 增量审查。synchronize 的增量起点取顶层 before;缺 before 时 base_sha
+	// 为空,任务工厂自动回落完整审查(优雅降级)。
+	eventAction := strings.ToLower(strings.TrimSpace(payload.Action))
+	incrementBase := ""
+	metadata := map[string]any{
+		"author_name":     githubDisplayName(pr.User),
+		"author_username": githubUserName(pr.User),
+		"author_email":    strings.TrimSpace(githubUserEmail(pr.User)),
+		"assignee_ids":    githubUserIDs(pr.Assignees),
+	}
+	if eventAction == "synchronize" {
+		eventAction = "update"
+		incrementBase = strings.TrimSpace(payload.Before)
+		metadata["raw_action"] = strings.TrimSpace(payload.Action)
+	}
+
 	return &NormalizationResult{Event: &NormalizedEvent{
 		Source:        "github",
 		Kind:          EventKindChangeRequestUpdated,
 		EventType:     "pull_request",
-		EventAction:   payload.Action,
+		EventAction:   eventAction,
 		ProjectID:     projectID,
 		ProjectPath:   repo.FullName,
 		RepositoryURL: repo.CloneURL,
@@ -239,15 +259,10 @@ func (n GitHubNormalizer) normalizeGitHubPullRequest(payload githubWebhookPayloa
 		SourceBranch:  pr.Head.Ref,
 		TargetBranch:  pr.Base.Ref,
 		HeadSHA:       strings.TrimSpace(pr.Head.SHA),
-		BaseSHA:       strings.TrimSpace(pr.Base.SHA),
+		BaseSHA:       incrementBase,
 		Version:       strings.TrimSpace(pr.Head.SHA),
 		DedupeKey:     fmt.Sprintf("github:mr-review:%s:%d:%s", projectID, pr.Number, strings.TrimSpace(pr.Head.SHA)),
-		Metadata: map[string]any{
-			"author_name":     githubDisplayName(pr.User),
-			"author_username": githubUserName(pr.User),
-			"author_email":    strings.TrimSpace(githubUserEmail(pr.User)),
-			"assignee_ids":    githubUserIDs(pr.Assignees),
-		},
+		Metadata:      metadata,
 	}}, nil
 }
 
@@ -261,12 +276,18 @@ func (n GitHubNormalizer) normalizeGitHubPullRequestLifecycle(payload githubWebh
 	if pr.Merged {
 		state = "merged"
 	}
+	// GitHub 合并与关闭共用动作词 closed;归一到下游 switch 认的
+	// merge/close(与 GitLab 词表一致),原始动作词留档 metadata。
+	eventAction := "close"
+	if pr.Merged {
+		eventAction = "merge"
+	}
 	projectID := strconv.FormatInt(repo.ID, 10)
 	return &NormalizationResult{Event: &NormalizedEvent{
 		Source:        "github",
 		Kind:          EventKindMergeRequestLifecycleChanged,
 		EventType:     "pull_request",
-		EventAction:   payload.Action,
+		EventAction:   eventAction,
 		ProjectID:     projectID,
 		ProjectPath:   repo.FullName,
 		RepositoryURL: repo.CloneURL,
@@ -280,6 +301,7 @@ func (n GitHubNormalizer) normalizeGitHubPullRequestLifecycle(payload githubWebh
 		DedupeKey: fmt.Sprintf("github:mr-rework:%s:%d", projectID, pr.Number),
 		Metadata: map[string]any{
 			"lifecycle_state": state,
+			"raw_action":      strings.TrimSpace(payload.Action),
 			"assignee_ids":    githubUserIDs(pr.Assignees),
 		},
 	}}, nil

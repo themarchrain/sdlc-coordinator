@@ -101,8 +101,37 @@ func TestGiteaNormalizerMapsPullRequestOpenedToChangeRequest(t *testing.T) {
 	if !strings.HasPrefix(event.DedupeKey, "gitea:mr-review:42:12:") {
 		t.Fatalf("unexpected dedupe key: %s", event.DedupeKey)
 	}
-	if event.BaseSHA != "def456abc" {
+	// base_sha 语义=增量起点(上一版源分支头);opened 无增量起点为空,
+	// 目标分支 tip(def456abc)不得混入。
+	if event.BaseSHA != "" {
 		t.Fatalf("unexpected base sha: %s", event.BaseSHA)
+	}
+}
+
+// synchronized 是源分支新 Push:动作词归一为 update,顶层 before(若有)是
+// 增量起点;无 before 时优雅降级为空(任务工厂回落完整审查)。
+func TestGiteaNormalizerMapsPullRequestSynchronizedToUpdate(t *testing.T) {
+	withBefore := strings.Replace(giteaPROpenedPayload, `"action": "opened"`,
+		`"action": "synchronized", "before": "old123abc"`, 1)
+	result, err := GiteaNormalizer{}.Normalize([]byte(withBefore))
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	event := result.Event
+	if event == nil || event.EventAction != "update" || event.BaseSHA != "old123abc" {
+		t.Fatalf("expected update action with before as increment base, got %#v", event)
+	}
+	if metadataString(event.Metadata, "raw_action") != "synchronized" {
+		t.Fatalf("expected raw action preserved, got %#v", event.Metadata)
+	}
+
+	withoutBefore := strings.Replace(giteaPROpenedPayload, `"action": "opened"`, `"action": "synchronized"`, 1)
+	result, err = GiteaNormalizer{}.Normalize([]byte(withoutBefore))
+	if err != nil {
+		t.Fatalf("normalize without before: %v", err)
+	}
+	if event = result.Event; event == nil || event.EventAction != "update" || event.BaseSHA != "" {
+		t.Fatalf("expected update action with empty increment base, got %#v", event)
 	}
 }
 
@@ -131,8 +160,12 @@ func TestGiteaNormalizerMapsPullRequestClosedLifecycle(t *testing.T) {
 	if metadataString(event.Metadata, "lifecycle_state") != "merged" {
 		t.Fatalf("expected merged lifecycle state, got %#v", event.Metadata)
 	}
-	if event.EventAction != "closed" || event.HeadSHA != "abc123def" {
+	// 合并与关闭共用动作词 closed;归一为下游 switch 认的 merge/close。
+	if event.EventAction != "merge" || event.HeadSHA != "abc123def" {
 		t.Fatalf("unexpected lifecycle fields: %#v", event)
+	}
+	if metadataString(event.Metadata, "raw_action") != "closed" {
+		t.Fatalf("expected raw action preserved, got %#v", event.Metadata)
 	}
 }
 
