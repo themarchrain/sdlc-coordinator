@@ -23,7 +23,8 @@ func TestAdminAgentObservabilityRoutesExposeSummaryListAndDetail(t *testing.T) {
 	}
 	var summaryBody map[string]any
 	decodeAdminAgentJSON(t, summary, &summaryBody)
-	if summaryBody["total_executions"] != float64(2) || summaryBody["input_tokens"] != float64(242) || summaryBody["turn_count"] != float64(2) {
+	// claude 的 cache_read 折入输入(子集口径):200+150;codex input 已含缓存。
+	if summaryBody["total_executions"] != float64(2) || summaryBody["input_tokens"] != float64(392) || summaryBody["turn_count"] != float64(2) {
 		t.Fatalf("unexpected summary without provider filter: %#v", summaryBody)
 	}
 

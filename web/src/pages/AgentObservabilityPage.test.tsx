@@ -70,6 +70,29 @@ describe('AgentObservabilityPage', () => {
     await waitFor(() => expect(adminApi.listAgentExecutions).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'codex-cli', task_id: 'task-filter' })))
   })
 
+  it('derives drawer tokens from the terminal claude_result when per-turn usage is zero', async () => {
+    const detail: AgentExecutionDetail = {
+      execution_id: 'run-relay', run_id: 'run-relay', task_id: 'task-relay', task_type: 'develop_from_issue', role: 'DeveloperWorker', repository: 'octo-org/external', provider: 'claude-cli', status: 'succeeded', model: 'glm-5.3-flash', effort: 'high', request_hash: 'hash', duration_seconds: 68, created_at: '2026-09-09T12:10:30Z',
+      events: [
+        { seq: 1, type: 'claude_session', occurred_at: '2026-09-09T12:10:30Z', payload: { model: 'glm-5.3-flash' } },
+        { seq: 2, type: 'claude_usage', occurred_at: '2026-09-09T12:10:40Z', payload: { model: 'glm-5.3-flash', usage: { input_tokens: 0, output_tokens: 0 } } },
+        { seq: 3, type: 'claude_result', occurred_at: '2026-09-09T12:11:38Z', payload: { subtype: 'success', total_cost_usd: 0.0987, usage: { input_tokens: 7061, output_tokens: 1749, cache_creation_input_tokens: 0, cache_read_input_tokens: 39360 } } },
+      ],
+    }
+    vi.spyOn(adminApi, 'getAgentExecution').mockResolvedValue(detail)
+    vi.spyOn(adminApi, 'listAgentExecutions').mockResolvedValue({
+      items: [
+        { execution_id: 'run-relay', run_id: 'run-relay', task_id: 'task-relay', task_type: 'develop_from_issue', role: 'DeveloperWorker', repository: 'octo-org/external', provider: 'claude-cli', status: 'succeeded', model: 'glm-5.3-flash', effort: 'high', request_hash: 'hash', duration_seconds: 68, created_at: '2026-09-09T12:10:30Z' },
+      ],
+      page: 1, page_size: 10, total: 1,
+    })
+    render(<MemoryRouter><AgentObservabilityPage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByText('run-relay'))
+    expect(await screen.findByText(/输入 46,421 · 其中缓存 39,360 · 输出 1,749/)).toBeInTheDocument()
+    expect(screen.getByText('$0.0987')).toBeInTheDocument()
+  })
+
   it('colors error and usage events from both providers and defaults unknown to info', () => {
     const slots = THEMES.default.slots.eventType
     expect(eventTypeColor('codex_error', slots)).toBe(slots.error)

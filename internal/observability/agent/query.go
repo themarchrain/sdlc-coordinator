@@ -122,20 +122,15 @@ func (q *Query) ExecutionSummary(ctx context.Context, filter ExecutionFilter) (E
 	}
 	if len(executionIDs) > 0 {
 		var events []model.AgentExecutionEvent
-		if err := q.db.WithContext(ctx).Where("execution_id IN ? AND type IN ?", executionIDs, usageEventTypes).Find(&events).Error; err != nil {
+		types := append([]string{claudeResultEventType}, usageEventTypes...)
+		if err := q.db.WithContext(ctx).Where("execution_id IN ? AND type IN ?", executionIDs, types).Find(&events).Error; err != nil {
 			return ExecutionSummary{}, fmt.Errorf("list agent usage events: %w", err)
 		}
-		for _, event := range events {
-			var payload map[string]any
-			if err := json.Unmarshal([]byte(event.PayloadJSON), &payload); err != nil {
-				continue
-			}
-			input, cached, output := usageTotals(payload)
-			summary.InputTokens += input
-			summary.CachedInputTokens += cached
-			summary.OutputTokens += output
-			summary.TurnCount++
-		}
+		input, cached, output, turns := accumulateUsage(events)
+		summary.InputTokens += input
+		summary.CachedInputTokens += cached
+		summary.OutputTokens += output
+		summary.TurnCount += turns
 	}
 	if summary.InputTokens > 0 {
 		ratio := float64(summary.CachedInputTokens) / float64(summary.InputTokens)
@@ -188,18 +183,73 @@ func (q *Query) GetExecution(ctx context.Context, executionID string) (*Executio
 	return &ExecutionDetail{ExecutionRecord: item, Events: events}, nil
 }
 
-// usageEventTypes covers both providers: codex_usage is flat, claude_usage nests
-// the usage object one level down (see usageTotals).
+// usageEventTypes covers per-turn usage events for both providers:
+// codex_usage is flat, claude_usage nests the usage object (see usageTotals).
 var usageEventTypes = []string{"codex_usage", "claude_usage"}
 
+// claudeResultEventType 终态事件携带整个会话的累计 usage。部分兼容中转不在
+// 流式中间消息上回报 usage(每条 claude_usage 都是零),真值只出现在这里。
+const claudeResultEventType = "claude_result"
+
+// accumulateUsage aggregates token usage across executions' events. A claude
+// execution's terminal claude_result carries session-wide totals, so once it
+// is counted its per-turn claude_usage events must not be summed again (that
+// would double-count native runs and add relay zeros); they only feed the
+// turn count. Executions without a terminal result keep the per-turn sum
+// (codex, and claude fallback).
+func accumulateUsage(events []model.AgentExecutionEvent) (input, cached, output, turns int64) {
+	terminal := make(map[string]bool)
+	for _, event := range events {
+		if event.Type != claudeResultEventType || terminal[event.ExecutionID] {
+			continue
+		}
+		var payload map[string]any
+		if json.Unmarshal([]byte(event.PayloadJSON), &payload) != nil {
+			continue
+		}
+		if _, ok := payload["usage"].(map[string]any); !ok {
+			continue
+		}
+		eventInput, eventCached, eventOutput := usageTotals(payload)
+		input += eventInput
+		cached += eventCached
+		output += eventOutput
+		terminal[event.ExecutionID] = true
+	}
+	for _, event := range events {
+		if event.Type == claudeResultEventType {
+			continue
+		}
+		turns++
+		if terminal[event.ExecutionID] {
+			continue
+		}
+		var payload map[string]any
+		if json.Unmarshal([]byte(event.PayloadJSON), &payload) != nil {
+			continue
+		}
+		eventInput, eventCached, eventOutput := usageTotals(payload)
+		input += eventInput
+		cached += eventCached
+		output += eventOutput
+	}
+	return input, cached, output, turns
+}
+
+// usageTotals reads one usage event payload. Claude usage follows Anthropic
+// semantics (cache reads/creations are disjoint from input_tokens) while the
+// summary presents cached tokens as a subset of input ("其中缓存"), so they
+// fold into the input total; codex usage is OpenAI-shaped with cached tokens
+// already inside input_tokens.
 func usageTotals(payload map[string]any) (input, cached, output int64) {
 	source := payload
 	if usage, ok := payload["usage"].(map[string]any); ok {
 		source = usage
+		cacheRead := number(source["cache_read_input_tokens"])
+		cacheCreation := number(source["cache_creation_input_tokens"])
+		return number(source["input_tokens"]) + cacheRead + cacheCreation, cacheRead + number(source["cached_input_tokens"]), number(source["output_tokens"])
 	}
-	return number(source["input_tokens"]),
-		number(source["cached_input_tokens"]) + number(source["cache_read_input_tokens"]),
-		number(source["output_tokens"])
+	return number(source["input_tokens"]), number(source["cached_input_tokens"]), number(source["output_tokens"])
 }
 
 func executionJoin(db *gorm.DB) *gorm.DB {

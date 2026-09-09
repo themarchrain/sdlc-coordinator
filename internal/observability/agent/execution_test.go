@@ -26,10 +26,12 @@ func TestExecutionQuerySummarizesUsageAcrossProviders(t *testing.T) {
 	if summary.AverageDurationSeconds != 45 || summary.P50DurationSeconds != 30 || summary.P90DurationSeconds != 60 {
 		t.Fatalf("unexpected durations: %#v", summary)
 	}
-	if summary.InputTokens != 350 || summary.CachedInputTokens != 250 || summary.OutputTokens != 70 || summary.TurnCount != 3 {
+	// claude usage folds cache reads/creations into input ("其中缓存" 子集口径):
+	// 200+150+10=360;codex input 已含 cached。
+	if summary.InputTokens != 510 || summary.CachedInputTokens != 250 || summary.OutputTokens != 70 || summary.TurnCount != 3 {
 		t.Fatalf("unexpected usage: %#v", summary)
 	}
-	if summary.CacheHitRatio == nil || *summary.CacheHitRatio < 0.714 || *summary.CacheHitRatio > 0.715 {
+	if summary.CacheHitRatio == nil || *summary.CacheHitRatio < 0.490 || *summary.CacheHitRatio > 0.491 {
 		t.Fatalf("unexpected cache ratio: %#v", summary.CacheHitRatio)
 	}
 	if summary.ErrorCount != 1 || summary.TimeoutCount != 1 {
@@ -77,7 +79,7 @@ func TestExecutionQueryFiltersByProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claude summary: %v", err)
 	}
-	if claudeSummary.TotalExecutions != 1 || claudeSummary.InputTokens != 200 || claudeSummary.CachedInputTokens != 150 || claudeSummary.OutputTokens != 40 || claudeSummary.TurnCount != 1 {
+	if claudeSummary.TotalExecutions != 1 || claudeSummary.InputTokens != 360 || claudeSummary.CachedInputTokens != 150 || claudeSummary.OutputTokens != 40 || claudeSummary.TurnCount != 1 {
 		t.Fatalf("unexpected claude summary: %#v", claudeSummary)
 	}
 }
@@ -113,6 +115,49 @@ func TestExecutionQueryListsCorrelatedExecutionsAndDetailEvents(t *testing.T) {
 	}
 	if claudeDetail.Provider != "claude-cli" || len(claudeDetail.Events) != 2 || claudeDetail.Events[0].Type != "claude_session" || claudeDetail.Events[1].Type != "claude_usage" {
 		t.Fatalf("claude detail must expose only its own provider's events: %#v", claudeDetail)
+	}
+}
+
+// TestExecutionQueryPrefersTerminalClaudeResultUsage 复刻兼容中转形态:
+// 每条 claude_usage 都是零,真值只在终态 claude_result.usage;此时逐回合
+// 事件只计回合数,不得把零值或缺终态的双计混进 token 总量。
+func TestExecutionQueryPrefersTerminalClaudeResultUsage(t *testing.T) {
+	db := newExecutionQueryTestDB(t)
+	started := time.Date(2026, 9, 9, 12, 10, 30, 0, time.UTC)
+	finished := started.Add(68 * time.Second)
+	entities := []any{
+		&model.Task{TaskID: "task-relay", DedupeKey: "task-relay", Type: "develop_from_issue", Role: "DeveloperWorker", TargetRepo: "octo-org/external", Status: model.TaskStatusSucceeded},
+		&model.Run{RunID: "run-relay", TaskID: "task-relay", WorkerRole: "DeveloperWorker", Status: model.RunStatusSucceeded, StartedAt: &started, CompletedAt: &finished},
+		&model.AgentExecution{RunID: "run-relay", ExecutionID: "run-relay", Provider: "claude-cli", ProviderModel: "glm-5.3-flash", Status: model.AgentExecutionStatusSucceeded, RequestHash: "hash-relay", StartedAt: &started, FinishedAt: &finished},
+		&model.AgentExecutionEvent{ExecutionID: "run-relay", RunID: "run-relay", Provider: "claude-cli", Seq: 2, Type: "claude_usage", OccurredAt: started, PayloadJSON: `{"model":"glm-5.3-flash","usage":{"input_tokens":0,"output_tokens":0}}`},
+		&model.AgentExecutionEvent{ExecutionID: "run-relay", RunID: "run-relay", Provider: "claude-cli", Seq: 3, Type: "claude_usage", OccurredAt: started, PayloadJSON: `{"model":"glm-5.3-flash","usage":{"input_tokens":0,"output_tokens":0}}`},
+		&model.AgentExecutionEvent{ExecutionID: "run-relay", RunID: "run-relay", Provider: "claude-cli", Seq: 4, Type: "claude_result", OccurredAt: finished, PayloadJSON: `{"subtype":"success","total_cost_usd":0.0987,"usage":{"input_tokens":7061,"output_tokens":1749,"cache_creation_input_tokens":0,"cache_read_input_tokens":39360}}`},
+		// 同库再放一个有真值逐回合事件的 claude 执行:有终态时逐回合不得叠加。
+		&model.Task{TaskID: "task-native", DedupeKey: "task-native", Type: "review_mr", Role: "ReviewerWorker", TargetRepo: "octo-org/external", Status: model.TaskStatusSucceeded},
+		&model.Run{RunID: "run-native", TaskID: "task-native", WorkerRole: "ReviewerWorker", Status: model.RunStatusSucceeded, StartedAt: &started, CompletedAt: &finished},
+		&model.AgentExecution{RunID: "run-native", ExecutionID: "run-native", Provider: "claude-cli", ProviderModel: "claude-alpha", Status: model.AgentExecutionStatusSucceeded, RequestHash: "hash-native", StartedAt: &started, FinishedAt: &finished},
+		&model.AgentExecutionEvent{ExecutionID: "run-native", RunID: "run-native", Provider: "claude-cli", Seq: 1, Type: "claude_usage", OccurredAt: started, PayloadJSON: `{"model":"claude-alpha","usage":{"input_tokens":100,"output_tokens":10}}`},
+		&model.AgentExecutionEvent{ExecutionID: "run-native", RunID: "run-native", Provider: "claude-cli", Seq: 2, Type: "claude_result", OccurredAt: finished, PayloadJSON: `{"subtype":"success","usage":{"input_tokens":500,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`},
+	}
+	for _, entity := range entities {
+		if err := db.Create(entity).Error; err != nil {
+			t.Fatalf("seed %T: %v", entity, err)
+		}
+	}
+
+	summary, err := NewQuery(db).ExecutionSummary(context.Background(), ExecutionFilter{})
+	if err != nil {
+		t.Fatalf("query summary: %v", err)
+	}
+	// relay: 7061+39360=46421/39360/1749;native 终态 500/0/50,逐回合 100/10 不叠加。
+	if summary.InputTokens != 46921 || summary.CachedInputTokens != 39360 || summary.OutputTokens != 1799 {
+		t.Fatalf("unexpected usage totals: %#v", summary)
+	}
+	if summary.TurnCount != 3 {
+		t.Fatalf("unexpected turn count: %#v", summary)
+	}
+	if summary.CacheHitRatio == nil || *summary.CacheHitRatio < 0.838 || *summary.CacheHitRatio > 0.839 {
+		t.Fatalf("unexpected cache ratio: %#v", summary.CacheHitRatio)
 	}
 }
 

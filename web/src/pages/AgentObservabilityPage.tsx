@@ -3,7 +3,7 @@ import { Button, Descriptions, Drawer, Form, Input, Select, Space, Table, Timeli
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
-import type { AgentExecution, AgentExecutionDetail, Query } from '../api/types'
+import type { AgentExecution, AgentExecutionDetail, AgentExecutionEvent, Query } from '../api/types'
 import { patchSearchParams } from '../app/searchParams'
 import { PageHeading } from '../components/PageHeading'
 import { ErrorState, LoadingState } from '../components/PageState'
@@ -118,6 +118,7 @@ function AgentExecutionDrawer({ executionID, onClose }: { executionID?: string; 
 
 function ExecutionDetailBody({ data }: { data: AgentExecutionDetail }) {
   const { theme } = useTheme()
+  const usage = executionUsage(data.events)
   return <div className="drawer-stack">
     <div className="detail-actions"><Link to={`/tasks?task_id=${encodeURIComponent(data.task_id)}`}>查看 Task</Link><Link to={`/explorer?entity=runs&run_id=${encodeURIComponent(data.run_id)}`}>查看 Run</Link></div>
     <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} items={[
@@ -128,6 +129,8 @@ function ExecutionDetailBody({ data }: { data: AgentExecutionDetail }) {
       { key: 'effort', label: '推理强度', children: data.effort || '—' },
       { key: 'repository', label: '仓库', span: { xs: 1, sm: 2 }, children: <span className="mono">{data.repository || '—'}</span> },
       { key: 'duration', label: '耗时', children: formatDuration(data.duration_seconds) },
+      { key: 'tokens', label: 'Token 消耗', span: { xs: 1, sm: 2 }, children: usage ? `输入 ${formatNumber(usage.input)} · 其中缓存 ${formatNumber(usage.cached)} · 输出 ${formatNumber(usage.output)}` : '—' },
+      { key: 'cost', label: '估算费用', children: usage?.cost === undefined ? '—' : `$${usage.cost.toFixed(4)}` },
       { key: 'error', label: '错误', children: data.error_code || '—' },
     ]} />
     <section><div className="section-label">执行事件</div><Timeline items={data.events.map((event) => ({
@@ -155,6 +158,42 @@ function formatPayloadValue(value: unknown) {
 }
 
 function formatNumber(value: number) { return new Intl.NumberFormat('zh-CN').format(value ?? 0) }
+
+type ExecutionUsage = { input: number; cached: number; output: number; cost?: number }
+
+// claude 的终态 claude_result 携带整会话累计 usage（部分兼容中转的中间
+// claude_usage 全是零）；有终态取终态，否则累加逐回合事件（codex 与兜底）。
+// claude 口径与汇总页一致：缓存读/写在 Anthropic 语义里与 input_tokens
+// 互斥，折入输入总数使「其中缓存」呈子集关系；codex 的 input 已含缓存。
+function executionUsage(events: AgentExecutionEvent[]): ExecutionUsage | undefined {
+  const result = [...events].reverse().find((event) => event.type === 'claude_result')
+  const resultUsage = result && isRecord(result.payload.usage) ? result.payload.usage : undefined
+  if (result && resultUsage) {
+    return {
+      input: toNumber(resultUsage.input_tokens) + toNumber(resultUsage.cache_read_input_tokens) + toNumber(resultUsage.cache_creation_input_tokens),
+      cached: toNumber(resultUsage.cache_read_input_tokens),
+      output: toNumber(resultUsage.output_tokens),
+      cost: toNumber(result.payload.total_cost_usd) || undefined,
+    }
+  }
+  const turnEvents = events.filter((event) => event.type === 'codex_usage' || event.type === 'claude_usage')
+  if (!turnEvents.length) return undefined
+  return turnEvents.reduce<ExecutionUsage>((total, event) => {
+    const usage = isRecord(event.payload.usage) ? event.payload.usage : event.payload
+    total.input += toNumber(usage.input_tokens) + toNumber(usage.cache_read_input_tokens) + toNumber(usage.cache_creation_input_tokens)
+    total.cached += toNumber(usage.cache_read_input_tokens) + toNumber(usage.cached_input_tokens)
+    total.output += toNumber(usage.output_tokens)
+    return total
+  }, { input: 0, cached: 0, output: 0 })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function toNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
 function formatPercent(value: number | null) { return value === null ? '—' : `${(value * 100).toFixed(1)}%` }
 function formatDuration(value?: number) { return value === undefined || value === null ? '—' : value < 60 ? `${value.toFixed(1)} 秒` : `${(value / 60).toFixed(1)} 分钟` }
 function formatTime(value?: string) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—' }
