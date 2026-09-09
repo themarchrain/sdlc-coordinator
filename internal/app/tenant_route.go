@@ -36,6 +36,24 @@ func (c *controlPlaneRouteIndex) Delete(ctx context.Context, entry registeredrep
 	})
 }
 
+// resolveTenantByPath 按 (provider, path) 经控制面路由索引解析租户 id：
+// 唯一行 → 该租户；跨 base_url 多行 → error（fail-closed）；未命中 → 0
+// （由调用方决定平台库兜底语义）。webhook 验签与事件处理器路由共用。
+func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, provider, path string) (uint, error) {
+	routes, err := index.GetRepoRouteIndexByPath(ctx, provider, path)
+	if err != nil {
+		return 0, err
+	}
+	if len(routes) > 1 {
+		// 跨 base_url 同 path 多行：路由歧义，fail-closed。
+		return 0, fmt.Errorf("ambiguous repo route for %s/%s", provider, path)
+	}
+	if len(routes) == 1 {
+		return routes[0].TenantID, nil
+	}
+	return 0, nil
+}
+
 // tenantRouteSecretLookup 是 webhook 验签的租户路由解析：
 // 最小身份 (provider, path) → 控制面索引 → 打开租户库取仓行 secret。
 // 索引未命中回退平台库仓行（存量部署过渡期：平台库仓行仍存活）；
@@ -47,17 +65,12 @@ type tenantRouteSecretLookup struct {
 }
 
 func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provider, path string) (string, error) {
-	routes, err := l.index.GetRepoRouteIndexByPath(ctx, provider, path)
+	tenantID, err := resolveTenantByPath(ctx, l.index, provider, path)
 	if err != nil {
 		return "", err
 	}
-	if len(routes) > 1 {
-		// 跨 base_url 同 path 多行：路由歧义，fail-closed。
-		return "", fmt.Errorf("ambiguous repo route for %s/%s", provider, path)
-	}
-	if len(routes) == 1 {
-		store, handleErr := l.resolver.Handle(ctx, routes[0].TenantID)
-		if handleErr == nil {
+	if tenantID != 0 {
+		if store, handleErr := l.resolver.Handle(ctx, tenantID); handleErr == nil {
 			repo, getErr := registeredrepo.NewStore(store.DB).GetByPath(ctx, provider, path)
 			if getErr == nil {
 				return strings.TrimSpace(repo.WebhookSecret), nil

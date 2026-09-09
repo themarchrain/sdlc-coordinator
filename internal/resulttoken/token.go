@@ -27,6 +27,7 @@ type Claims struct {
 	TaskID    string        `json:"task_id"`
 	RunID     string        `json:"run_id"`
 	Role      string        `json:"role"`
+	TenantID  uint          `json:"tenant,omitempty"`
 	IssuedAt  int64         `json:"iat"`
 	ExpiresAt int64         `json:"exp"`
 	TTL       time.Duration `json:"-"`

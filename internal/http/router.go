@@ -39,6 +39,9 @@ type RouterOptions struct {
 	ControlPlaneService  *controlplane.Service
 	TenantStores         tenantdb.Resolver
 	RouteIndexSync       registeredrepo.RouteIndexSync
+	// 写路径租户化端口（均可空：空时行为与单库形态一致）。
+	EventProcessorFactory handlers.ProcessorFactory
+	AdminOperationEngines handlers.AdminOperationEngines
 }
 
 // WithRouteIndexSync 注入控制面路由索引写穿端口。
@@ -147,6 +150,21 @@ func WithTenantStoreResolver(resolver tenantdb.Resolver) RouterOption {
 	}
 }
 
+// WithEventProcessorFactory 注入按仓路由的事件处理器工厂（webhook 写路径
+// 租户化）；nil 处理器回落 args 中扫描到的平台处理器。
+func WithEventProcessorFactory(factory handlers.ProcessorFactory) RouterOption {
+	return func(options *RouterOptions) {
+		options.EventProcessorFactory = factory
+	}
+}
+
+// WithAdminOperationEngines 注入按会话租户选择操作引擎与 effect 查询的端口。
+func WithAdminOperationEngines(engines handlers.AdminOperationEngines) RouterOption {
+	return func(options *RouterOptions) {
+		options.AdminOperationEngines = engines
+	}
+}
+
 func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	var eventProcessor *events.Processor
 	options := RouterOptions{RuntimeMode: configuration.ModeReady}
@@ -222,7 +240,7 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 		if options.AgentObservability != nil {
 			handlers.NewAdminAgentObservabilityHandler(options.AgentObservability).RegisterRoutes(adminAPI)
 		}
-		adminOperationHandler := handlers.NewAdminOperationHandler(adminOperations, adminEffects, options.TickDefaults)
+		adminOperationHandler := handlers.NewAdminOperationHandler(adminOperations, adminEffects, options.TickDefaults, options.AdminOperationEngines)
 		adminOperationHandler.RegisterRoutes(adminAPI, runtimeGate)
 		if options.ConfigurationService != nil {
 			adminConfigurationHandler := handlers.NewAdminConfigurationHandler(options.ConfigurationService, options.ShutdownRequester)
@@ -263,6 +281,7 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 			eventHandler := handlers.NewEventHandler(eventProcessor,
 				handlers.WithWebhookSecretLookup(options.WebhookSecretLookup),
 				handlers.WithReworkAllowedUserIDs(options.ReworkAllowedUserIDs),
+				handlers.WithProcessorFactory(options.EventProcessorFactory),
 			)
 			runtimeAPI.POST("/events/gitlab", eventHandler.GitLab)
 			runtimeAPI.POST("/events/gitea", eventHandler.Gitea)

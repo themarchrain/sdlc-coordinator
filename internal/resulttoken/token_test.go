@@ -134,3 +134,39 @@ func TestNewSecretIsRandom(t *testing.T) {
 		t.Fatal("degenerate secret")
 	}
 }
+
+// 租户声明随 token 往返；存量无租户声明的 token 验证后解析为 0（平台兜底）。
+func TestClaimsTenantIDRoundTripAndLegacyFallback(t *testing.T) {
+	secret := []byte("tenant-round-trip-secret")
+	now := time.Now()
+	signed, err := Issue(secret, Claims{
+		TaskID: "task-1", RunID: "run-1", Role: "DeveloperWorker", TenantID: 7,
+		TTL: time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	claims, err := Verify(secret, signed, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if claims.TenantID != 7 {
+		t.Fatalf("tenant claim = %d, want 7", claims.TenantID)
+	}
+
+	// 旧形态 token（无 tenant 字段，手搓 claims 编码）验证后回落 0。
+	legacy, err := issueClaims(secret, Claims{
+		TaskID: "task-2", RunID: "run-2", Role: "DeveloperWorker",
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("issue legacy: %v", err)
+	}
+	legacyClaims, err := Verify(secret, legacy, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("verify legacy: %v", err)
+	}
+	if legacyClaims.TenantID != 0 {
+		t.Fatalf("legacy tenant claim = %d, want 0", legacyClaims.TenantID)
+	}
+}

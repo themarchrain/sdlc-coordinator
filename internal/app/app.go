@@ -18,7 +18,6 @@ import (
 	"sdlc-coordinator/internal/connectors"
 	"sdlc-coordinator/internal/controlplane"
 	effectexec "sdlc-coordinator/internal/effects"
-	"sdlc-coordinator/internal/events"
 	api "sdlc-coordinator/internal/http"
 	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
@@ -28,14 +27,11 @@ import (
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
 	"sdlc-coordinator/internal/resulttoken"
-	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/runnerpool"
 	"sdlc-coordinator/internal/scheduler"
 	"sdlc-coordinator/internal/store"
-	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
 	"sdlc-coordinator/internal/tenantmigration"
-	"sdlc-coordinator/internal/workspace"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -93,37 +89,10 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		}
 	}()
 
-	taskRepo := repository.NewTaskRepository(db)
-	runRepo := repository.NewRunRepository(db)
-	agentExecutionRepo := repository.NewAgentExecutionRepository(db)
-	artifactRepo := repository.NewArtifactRepository(db)
-	dependencyRepo := repository.NewDependencyRepository(db)
-	writebackRepo := repository.NewWritebackRepository(db)
-	effectRepo := repository.NewEffectRepository(db)
-	inboundEventRepo := repository.NewInboundEventRepository(db)
-	resultSubmissionRepo := repository.NewResultSubmissionRepository(db)
-	connectorRemote := connectors.NewHTTPClient()
-	connectorService := connectors.NewService(connectors.NewConnectorRepository(db), connectorRemote)
-	opts := []orchestrator.Option{
-		orchestrator.WithArtifactRepository(artifactRepo),
-		orchestrator.WithDependencyRepository(dependencyRepo),
-		orchestrator.WithWritebackRepository(writebackRepo),
-		orchestrator.WithEffectRepository(effectRepo),
-		orchestrator.WithResultSubmissionRepository(resultSubmissionRepo),
-		orchestrator.WithDeveloperClarificationIMTarget(""),
-		orchestrator.WithReviewerIMMentions(cfg.ReviewerIMMentions),
-	}
-	imBackend, err := newIMBackend(cfg)
-	if err != nil {
-		return nil, err
-	}
-	if imBackend != nil {
-		opts = append(opts, orchestrator.WithEffectExecutor(effectexec.NewExecutor(imBackend)))
-	}
-	repoStore := registeredrepo.NewStore(db)
-	// 平台身份回填与作用域唯一索引。无 provider/base_url 的仓行用全局配置补齐。
-	// 顺序固定 Migrate → BackfillIdentity → Ensure。
-	if backfilled, err := repoStore.BackfillIdentity(context.Background(), cfg.CodeHostProvider, cfg.CodeHostBaseURL); err != nil {
+	// 平台库仓行的身份回填与作用域唯一索引（引擎装配前置；无 provider/
+	// base_url 的仓行用全局配置补齐）。顺序固定 Migrate → BackfillIdentity → Ensure。
+	platformRepoStore := registeredrepo.NewStore(db)
+	if backfilled, err := platformRepoStore.BackfillIdentity(context.Background(), cfg.CodeHostProvider, cfg.CodeHostBaseURL); err != nil {
 		return nil, fmt.Errorf("backfill repository platform identity: %w", err)
 	} else if backfilled > 0 {
 		// 计数语义为「填充的身份列数」(provider 与 base_url 各计一次),不是仓数。
@@ -132,91 +101,25 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if cfg.CodeHostBaseURL == "" {
 		logger.Warn("global codehost base url is empty; repository rows without platform identity were not backfilled")
 	}
-	if err := repoStore.EnsureIdentityIndexes(); err != nil {
+	if err := platformRepoStore.EnsureIdentityIndexes(); err != nil {
 		return nil, err
 	}
-	// 平台身份按仓行解析:resolver 与写回探针按任务所属仓的 provider/base_url
-	// 分派。全局 codehost 配置只作为注册表单默认值与空列回填来源,运行时不读取。
-	codeHostResolver := registeredrepo.NewCodeHostResolver(repoStore, nil)
-	opts = append(opts,
-		orchestrator.WithCodeHostBackendResolver(codeHostResolver),
-		orchestrator.WithMergeRequestReaderResolver(codeHostResolver),
-		orchestrator.WithWritebackAuthHandler(registeredrepo.NewWritebackAuthHandler(repoStore, nil)),
-	)
-	peopleService, peopleLookup, err := newPeopleDirectory(db)
+
+	imBackend, err := newIMBackend(cfg)
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, orchestrator.WithAssigneeMentionDirectory(newPeopleMentionDirectory(peopleService, repoStore)))
-	// 事件必须命中注册仓,任务必须绑定注册仓。写回凭据取该仓 Token。
-	opts = append(opts, orchestrator.WithRepositoryLookup(repoStore))
-	// Agent Runner 执行层：reviewer/developer 都经 agent-runner 派发 CLI 子进程。
-	runnerClient := agentrunner.NewClient(cfg.AgentRunner.ServiceURL, nil)
-	providerHeaders := make(map[string]string, len(cfg.AgentRunner.CustomHeaders))
-	for name, value := range cfg.AgentRunner.CustomHeaders {
-		providerHeaders[name] = value
+	var effectExecutor *effectexec.Executor
+	if imBackend != nil {
+		effectExecutor = effectexec.NewExecutor(imBackend)
 	}
-	runnerSettings := orchestrator.ReviewerRunnerSettings{
-		WorkspaceRoot: cfg.AgentRunner.WorkspaceRoot,
-		TaskTimeout:   cfg.AgentRunner.TaskTimeout,
-		Provider: runner.ProviderConfig{
-			Name: cfg.AgentRunner.Provider, Revision: int64(cfg.AgentRunner.ProviderConfigRevision),
-			BaseURL: cfg.AgentRunner.ProviderBaseURL, APIKey: cfg.AgentRunner.APIKey,
-			Headers: providerHeaders, Model: cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort,
-		},
-		ResolveRepository: runnerRepositoryResolver(repoStore),
-	}
-	var orch *orchestrator.Orchestrator
-	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
-		return orch.SubmitResult(ctx, request)
-	})
-	reviewerRunnerCoordinator := orchestrator.NewReviewerRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), runnerClient,
-		orchSubmitter,
-	)
-	developerRunnerCoordinator := orchestrator.NewDeveloperRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewDeveloperPreparer(), workspace.NewDeveloperFinalizer(), runnerClient,
-		orchSubmitter,
-		runnerSettings,
-	)
-	opts = append(opts,
-		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
-		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
-		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
-		orchestrator.WithRunnerArtifactStore(runnerClient),
-	)
-	// MCP 结果回传通道：签名密钥仅存内存（重启即失效，在途 agent 落入文本
+	// MCP 结果回传通道签名密钥仅存内存（重启即失效，在途 agent 落入文本
 	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
 	// 缺省未配置时通道保持关闭（纯文本模式）。
 	resultTokenSecret, err := resulttoken.NewSecret()
 	if err != nil {
 		return nil, fmt.Errorf("generate result channel secret: %w", err)
 	}
-	ingressIssuer := orchestrator.RunTokenIssuerFunc(func(taskID, runID, role string) (string, error) {
-		return resulttoken.Issue(resultTokenSecret, resulttoken.Claims{
-			TaskID: taskID, RunID: runID, Role: role,
-			TTL: cfg.AgentRunner.TaskTimeout + resultTokenTTLGrace,
-		}, time.Now())
-	})
-	mcpChannel := orchestrator.NewResultChannelCoordinator(
-		workspace.NewDeveloperFinalizer(),
-		orchSubmitter,
-		runnerSettings, "mcp",
-	)
-	mcpHandler := handlers.NewMCPHandler(
-		mcpChannel, resultTokenSecret, taskRepo, runRepo,
-		repository.NewResultRejectionRepository(db), resultSubmissionMaxRejections,
-	)
-	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, cfg.Scheduler.TickRequest.CallbackBaseURL))
-	orch = orchestrator.New(taskRepo, runRepo, opts...)
-	eventProcessor := events.NewProcessor(inboundEventRepo, orch, events.WithCodeHostReworkAllowedUserIDs(reworkAllowedUserIDs))
-	eventProcessor.SetRepositoryLookup(repoStore)
-	repositoryService := newRepositoryDirectory(db)
-	requirementsService := requirements.NewService(
-		requirements.NewStore(db), repoStore,
-		requirements.NewProviderClientFactory(nil),
-	)
-	requirementsSyncRunner := requirements.NewRunner(requirements.SyncInterval, requirementsService.SyncOnce, logger)
 	// 控制面与 ready/bootstrap 共用装配：DSN 与种子超管缺失时显式失败。
 	controlPlaneService, err := newControlPlane(cfg.ControlPlane, logger)
 	if err != nil {
@@ -239,32 +142,59 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if err := migrateTenantStores(context.Background(), controlPlaneService, tenantStores); err != nil {
 		return nil, err
 	}
-	// 租户 runner 池：先对已存在的指派行做启动校验（fail-fast，空表
-	// 放行），再把池路由接入 reviewer/developer 派发协调器（结构先行，
-	// 当前的 TaskTenantResolver 恒无租户 → 全部派发仍落默认池，行为等价）。
+	// 租户 runner 池：先对已存在的指派行做启动校验（fail-fast，空表放行）。
 	if err := validateRunnerAssignments(context.Background(), controlPlaneService); err != nil {
 		return nil, err
 	}
+
+	// 引擎池：平台引擎处理索引未命中的存量仓行与无租户 token 兜底，
+	// 各租户引擎承接该组织仓行的全部写路径（事件→任务→派发→回传→写回）。
 	defaultRunnerEndpoint := strings.TrimRight(strings.TrimSpace(cfg.AgentRunner.ServiceURL), "/")
-	// 任务→租户解析切真实现（仓行→路由索引，fail-closed），替换
-	// StaticTenantResolver 占位；派发按真租户过滤池。
-	tenantRunnerRouter := runnerpool.NewRouter(
-		&indexTaskTenantResolver{index: controlPlaneService.Repository(), repos: repoStore},
-		runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
-		func(endpoint string) orchestrator.ReviewerRunnerClient {
+	shared := engineShared{
+		cfg:                  cfg,
+		logger:               logger,
+		reworkAllowedUserIDs: reworkAllowedUserIDs,
+		effectExecutor:       effectExecutor,
+		poolSource:           runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
+		defaultRunner:        agentrunner.NewClient(cfg.AgentRunner.ServiceURL, nil),
+		runnerClientFactory: func(endpoint string) orchestrator.ReviewerRunnerClient {
 			return agentrunner.NewClient(endpoint, nil)
 		},
-	)
-	// 装配期接入（Run 启动后台派发前完成）：reviewer/developer 共用同一路由。
-	reviewerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
-	developerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
+		resultTokenSecret: resultTokenSecret,
+	}
+	platformEngine, err := buildTenantEngine(db, 0, shared)
+	if err != nil {
+		return nil, fmt.Errorf("build platform engine: %w", err)
+	}
+	pool := newEnginePool(platformEngine, tenantStores, controlPlaneService, shared, logger)
 
+	// 以下为 router 兜底层（会话未绑定租户时的默认服务，全部平台库句柄；
+	// 租户作用域请求在 handler 层按 BindTenantStore 重建对应版本）。
+	peopleService, peopleLookup, err := newPeopleDirectory(db)
+	if err != nil {
+		return nil, err
+	}
+	repositoryService := newRepositoryDirectory(db)
+	requirementsService := requirements.NewService(
+		requirements.NewStore(db), platformRepoStore,
+		requirements.NewProviderClientFactory(nil),
+	)
+	connectorService := connectors.NewService(connectors.NewConnectorRepository(db), connectors.NewHTTPClient())
+	mcpHandler := handlers.NewMCPHandler(
+		platformEngine.mcpView.Channel, resultTokenSecret, platformEngine.mcpView.Tasks, platformEngine.mcpView.Runs,
+		platformEngine.mcpView.Rejections, resultSubmissionMaxRejections,
+		handlers.WithMCPEngineSource(pool),
+	)
 	routerOptions := []any{
 		// webhook 验签租户路由：索引命中 → 租户库仓行 secret；
 		// 未命中回退平台库仓行（存量过渡期）；皆未命中由 handler fail-closed。
 		api.WithWebhookSecretLookup(&tenantRouteSecretLookup{
-			index: controlPlaneService.Repository(), resolver: tenantStores, platform: repoStore,
+			index: controlPlaneService.Repository(), resolver: tenantStores, platform: platformRepoStore,
 		}),
+		// 事件处理器按 (provider, path) 路由到所属租户引擎（写路径租户化）。
+		api.WithEventProcessorFactory(pool.engineForPath),
+		// 管理台操作（手动 tick/重试/重绑）按会话租户选择引擎。
+		api.WithAdminOperationEngines(pool),
 		// 注册/改仓写穿路由索引（租户作用域请求按会话租户）。
 		api.WithRouteIndexSync(&controlPlaneRouteIndex{repo: controlPlaneService.Repository()}),
 		api.WithReworkAllowedUserIDs(reworkAllowedUserIDs),
@@ -283,14 +213,15 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
 	}
-	routerArgs := []any{eventProcessor}
+	routerArgs := []any{platformEngine.processor}
 	routerArgs = append(routerArgs, routerOptions...)
-	router := api.NewRouter(orch, routerArgs...)
+	router := api.NewRouter(platformEngine.orch, routerArgs...)
 	server := api.NewServer(cfg.HTTPAddr, router)
 	var schedulerRunner *scheduler.Runner
 	if cfg.Scheduler.Enabled {
-		schedulerRunner = scheduler.New(cfg.Scheduler.Interval, cfg.Scheduler.TickRequest, orch.Tick, logger)
+		schedulerRunner = scheduler.New(cfg.Scheduler.Interval, cfg.Scheduler.TickRequest, pool.tickAll, logger)
 	}
+	requirementsSyncRunner := requirements.NewRunner(requirements.SyncInterval, pool.requirementsSyncAll, logger)
 	closeTenantStores = false
 	return &App{
 		Config:           cfg,
@@ -298,7 +229,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		DB:               db,
 		Router:           router,
 		Server:           server,
-		Orch:             orch,
+		Orch:             platformEngine.orch,
 		Scheduler:        schedulerRunner,
 		RequirementsSync: requirementsSyncRunner,
 		ControlPlane:     controlPlaneService,

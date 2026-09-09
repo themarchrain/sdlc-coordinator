@@ -22,14 +22,48 @@ type AdminEffectLookup interface {
 	GetEffect(context.Context, string) (*model.Effect, error)
 }
 
+// AdminOperationEngines 按请求会话的租户作用域选择操作引擎与 effect 查询；
+// 未注入或返回 nil 时回落构造期默认（单库形态/测试）。
+type AdminOperationEngines interface {
+	OperationsFor(c *gin.Context) AdminOperations
+	EffectsFor(c *gin.Context) AdminEffectLookup
+}
+
 type AdminOperationHandler struct {
 	operations AdminOperations
 	effects    AdminEffectLookup
+	engines    AdminOperationEngines
 	defaults   orchestrator.TickRequest
 }
 
-func NewAdminOperationHandler(operations AdminOperations, effects AdminEffectLookup, defaults orchestrator.TickRequest) *AdminOperationHandler {
-	return &AdminOperationHandler{operations: operations, effects: effects, defaults: defaults}
+func NewAdminOperationHandler(operations AdminOperations, effects AdminEffectLookup, defaults orchestrator.TickRequest, engines ...AdminOperationEngines) *AdminOperationHandler {
+	handler := &AdminOperationHandler{operations: operations, effects: effects, defaults: defaults}
+	for _, engine := range engines {
+		if engine != nil {
+			handler.engines = engine
+		}
+	}
+	return handler
+}
+
+// operationsFor 取本请求的操作引擎：会话租户引擎优先，回落构造期默认。
+func (handler *AdminOperationHandler) operationsFor(c *gin.Context) AdminOperations {
+	if handler.engines != nil {
+		if operations := handler.engines.OperationsFor(c); operations != nil {
+			return operations
+		}
+	}
+	return handler.operations
+}
+
+// effectsFor 取本请求的 effect 查询：会话租户库优先，回落构造期默认。
+func (handler *AdminOperationHandler) effectsFor(c *gin.Context) AdminEffectLookup {
+	if handler.engines != nil {
+		if effects := handler.engines.EffectsFor(c); effects != nil {
+			return effects
+		}
+	}
+	return handler.effects
 }
 
 func (handler *AdminOperationHandler) RegisterRoutes(group *gin.RouterGroup, middleware ...gin.HandlerFunc) {
@@ -44,7 +78,8 @@ func (handler *AdminOperationHandler) TickDefaults(c *gin.Context) {
 }
 
 func (handler *AdminOperationHandler) Tick(c *gin.Context) {
-	if handler.operations == nil {
+	operations := handler.operationsFor(c)
+	if operations == nil {
 		writeAdminError(c, http.StatusServiceUnavailable, "operations_unavailable", "Scheduler 操作不可用")
 		return
 	}
@@ -52,7 +87,7 @@ func (handler *AdminOperationHandler) Tick(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &request) {
 		return
 	}
-	result, err := handler.operations.Tick(c.Request.Context(), request)
+	result, err := operations.Tick(c.Request.Context(), request)
 	if err != nil {
 		writeAdminError(c, statusFromError(err), "scheduler_tick_failed", err.Error())
 		return
@@ -61,11 +96,13 @@ func (handler *AdminOperationHandler) Tick(c *gin.Context) {
 }
 
 func (handler *AdminOperationHandler) RetryEffect(c *gin.Context) {
-	if handler.operations == nil || handler.effects == nil {
+	operations := handler.operationsFor(c)
+	effects := handler.effectsFor(c)
+	if operations == nil || effects == nil {
 		writeAdminError(c, http.StatusServiceUnavailable, "operations_unavailable", "Effect 重试操作不可用")
 		return
 	}
-	effect, err := handler.effects.GetEffect(c.Request.Context(), c.Param("effect_id"))
+	effect, err := effects.GetEffect(c.Request.Context(), c.Param("effect_id"))
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeAdminError(c, http.StatusNotFound, "not_found", "Effect 不存在")
@@ -74,7 +111,7 @@ func (handler *AdminOperationHandler) RetryEffect(c *gin.Context) {
 		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Effect 失败")
 		return
 	}
-	retried, err := handler.operations.RetryEffect(c.Request.Context(), effect.DedupeKey)
+	retried, err := operations.RetryEffect(c.Request.Context(), effect.DedupeKey)
 	if err != nil {
 		if errors.Is(err, orchestrator.ErrEffectNotRetryable) {
 			writeAdminError(c, http.StatusConflict, "effect_not_retryable", "Effect 当前状态不可重试")
@@ -91,7 +128,8 @@ type RebindTaskRequest struct {
 }
 
 func (handler *AdminOperationHandler) RebindTask(c *gin.Context) {
-	if handler.operations == nil {
+	operations := handler.operationsFor(c)
+	if operations == nil {
 		writeAdminError(c, http.StatusServiceUnavailable, "operations_unavailable", "Scheduler 操作不可用")
 		return
 	}
@@ -99,7 +137,7 @@ func (handler *AdminOperationHandler) RebindTask(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &request) {
 		return
 	}
-	task, err := handler.operations.RebindTask(c.Request.Context(), c.Param("task_id"), request.RepositoryID)
+	task, err := operations.RebindTask(c.Request.Context(), c.Param("task_id"), request.RepositoryID)
 	if err != nil {
 		writeAdminError(c, statusFromError(err), "task_rebind_failed", err.Error())
 		return

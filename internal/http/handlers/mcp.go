@@ -19,6 +19,20 @@ import (
 
 const mcpProtocolFallbackVersion = "2025-06-18"
 
+// MCPEngineView 是一个引擎（平台或租户）内回传通道所需的全部依赖。
+type MCPEngineView struct {
+	Channel    *orchestrator.ResultChannelCoordinator
+	Tasks      orchestrator.TaskRepository
+	Runs       orchestrator.RunRepository
+	Rejections *repository.ResultRejectionRepository
+}
+
+// MCPEngineSource 按 token 中的租户声明选择引擎视图；0（存量 token 无租户）
+// 或未命中时由实现方回落平台视图。
+type MCPEngineSource interface {
+	MCPEngineForTenant(tenantID uint) MCPEngineView
+}
+
 // MCPHandler serves the agent result submission channel: a stateless
 // Streamable-HTTP MCP endpoint at /mcp. Requests authenticate with the
 // per-run bearer token issued at dispatch; correction attempts are counted
@@ -29,8 +43,20 @@ type MCPHandler struct {
 	tasks       orchestrator.TaskRepository
 	runs        orchestrator.RunRepository
 	rejections  *repository.ResultRejectionRepository
+	engines     MCPEngineSource
 	maxAttempts int
 	now         func() time.Time
+}
+
+// MCPHandlerOption 定制 MCPHandler 装配。
+type MCPHandlerOption func(*MCPHandler)
+
+// WithMCPEngineSource 注入按租户引擎选择器；每个请求在 token 验证后按
+// claims 里的租户取依赖，未注入时恒用构造期默认视图（单库形态/测试）。
+func WithMCPEngineSource(source MCPEngineSource) MCPHandlerOption {
+	return func(h *MCPHandler) {
+		h.engines = source
+	}
 }
 
 func NewMCPHandler(
@@ -40,14 +66,30 @@ func NewMCPHandler(
 	runs orchestrator.RunRepository,
 	rejections *repository.ResultRejectionRepository,
 	maxAttempts int,
+	options ...MCPHandlerOption,
 ) *MCPHandler {
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultMaxCorrectionAttempts
 	}
-	return &MCPHandler{
+	handler := &MCPHandler{
 		channel: channel, secret: secret, tasks: tasks, runs: runs,
 		rejections: rejections, maxAttempts: maxAttempts, now: time.Now,
 	}
+	for _, option := range options {
+		option(handler)
+	}
+	return handler
+}
+
+// engineView 按 claims 解析本请求的引擎依赖：选择器命中优先，否则构造期
+// 默认视图（0 = 平台兜底，覆盖存量无租户 token 的兼容窗口）。
+func (h *MCPHandler) engineView(claims resulttoken.Claims) MCPEngineView {
+	if h.engines != nil {
+		if view := h.engines.MCPEngineForTenant(claims.TenantID); view.Channel != nil {
+			return view
+		}
+	}
+	return MCPEngineView{Channel: h.channel, Tasks: h.tasks, Runs: h.runs, Rejections: h.rejections}
 }
 
 type mcpRequest struct {
@@ -145,7 +187,7 @@ func (h *MCPHandler) Handle(c *gin.Context) {
 	case "tools/list":
 		c.JSON(http.StatusOK, mcpResultResponse(request.ID, gin.H{"tools": h.toolsForRole(claims.Role)}))
 	case "tools/call":
-		if response, errResp := h.callTool(c, claims, request); errResp != nil {
+		if response, errResp := h.callTool(c, claims, h.engineView(claims), request); errResp != nil {
 			c.JSON(http.StatusOK, errResp)
 		} else if response != nil {
 			c.JSON(http.StatusOK, response)
@@ -220,7 +262,7 @@ func workerRoleLabel(role string) string {
 }
 
 // callTool 返回 (toolResult 响应, 错误响应)，两者恰有一个非 nil。
-func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request mcpRequest) (gin.H, gin.H) {
+func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, view MCPEngineView, request mcpRequest) (gin.H, gin.H) {
 	toolName, _, ok := contractForWorkerRole(claims.Role)
 	if !ok || toolName != request.Params.Name {
 		// 角色越界（如 developer token 调 reviewer 工具）：直接 403，不计数。
@@ -235,7 +277,7 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 		}), nil
 	}
 
-	run, err := h.runs.GetByRunID(c.Request.Context(), claims.RunID)
+	run, err := view.Runs.GetByRunID(c.Request.Context(), claims.RunID)
 	if err != nil {
 		if !errors.Is(err, repository.ErrNotFound) {
 			return nil, h.internalError(c, request.ID, err)
@@ -255,7 +297,7 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 			NextStep: "本 run 已按先前提交终态化；不要再调用本工具，直接停止。",
 		}), nil
 	}
-	rejected, err := h.rejections.CountByRun(c.Request.Context(), run.RunID)
+	rejected, err := view.Rejections.CountByRun(c.Request.Context(), run.RunID)
 	if err != nil {
 		return nil, h.internalError(c, request.ID, err)
 	}
@@ -263,7 +305,7 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 		return h.handoffWithProblems(request.ID, run, rejected, nil), nil
 	}
 
-	task, err := h.tasks.GetByTaskID(c.Request.Context(), run.TaskID)
+	task, err := view.Tasks.GetByTaskID(c.Request.Context(), run.TaskID)
 	if err != nil {
 		if !errors.Is(err, repository.ErrNotFound) {
 			return nil, h.internalError(c, request.ID, err)
@@ -271,7 +313,7 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 		return mcpErrorResponse(request.ID, jsonrpcInvalidParams, "Invalid params", "task for this token does not exist"), nil
 	}
 
-	outcome, err := h.channel.SubmitAgentResult(c.Request.Context(), task, run, request.Params.Name, request.Params.Arguments)
+	outcome, err := view.Channel.SubmitAgentResult(c.Request.Context(), task, run, request.Params.Name, request.Params.Arguments)
 	if err != nil {
 		return nil, h.internalError(c, request.ID, err)
 	}
@@ -286,7 +328,7 @@ func (h *MCPHandler) callTool(c *gin.Context, claims resulttoken.Claims, request
 		return toolResultResponse(request.ID, false, payload), nil
 	case orchestrator.ChannelRejected:
 		attempt := rejected + 1
-		if err := h.rejections.Record(c.Request.Context(), &model.ResultSubmissionRejection{
+		if err := view.Rejections.Record(c.Request.Context(), &model.ResultSubmissionRejection{
 			RunID: run.RunID, TaskID: task.TaskID, ToolName: request.Params.Name, Role: run.WorkerRole,
 			ProblemsJSON: encodeProblems(outcome.Problems),
 		}); err != nil {
