@@ -37,6 +37,7 @@ type RouterOptions struct {
 	RepositoryService    *registeredrepo.Service
 	RequirementsService  *requirements.Service
 	ControlPlaneService  *controlplane.Service
+	PortalCookieSecure   *bool
 	TenantStores         tenantdb.Resolver
 	RouteIndexSync       registeredrepo.RouteIndexSync
 	// 写路径租户化端口（均可空：空时行为与单库形态一致）。
@@ -158,6 +159,14 @@ func WithEventProcessorFactory(factory handlers.ProcessorFactory) RouterOption {
 	}
 }
 
+// WithPortalCookieSecure 覆写门户会话 cookie 的 Secure 属性（默认 true；
+// 供明文 http 部署显式关闭）。
+func WithPortalCookieSecure(secure bool) RouterOption {
+	return func(options *RouterOptions) {
+		options.PortalCookieSecure = &secure
+	}
+}
+
 // WithAdminOperationEngines 注入按会话租户选择操作引擎与 effect 查询的端口。
 func WithAdminOperationEngines(engines handlers.AdminOperationEngines) RouterOption {
 	return func(options *RouterOptions) {
@@ -215,6 +224,9 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 		if options.ControlPlaneService != nil {
 			controlPlaneHandler = handlers.NewControlPlaneHandler(options.ControlPlaneService)
 			controlPlaneHandler.SetAdminRoutePolicy(adminMatrixPolicy{})
+			if options.PortalCookieSecure != nil {
+				controlPlaneHandler.SetCookieSecure(*options.PortalCookieSecure)
+			}
 		}
 		var adminMiddleware []gin.HandlerFunc
 		if controlPlaneHandler != nil {
