@@ -151,7 +151,6 @@ func TestEnginePoolForTenantIDIsSingletonUnderConcurrency(t *testing.T) {
 	}
 }
 
-
 // 停用组织即时失去引擎（状态门逐调用生效，缓存命中也不例外）；恢复后
 // 引擎回归。停用同时删除路由索引行，webhook 租户路由随之失联。
 func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {

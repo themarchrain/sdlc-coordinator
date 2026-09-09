@@ -146,7 +146,6 @@ func TestLoginRateLimiterCapsTrackedKeys(t *testing.T) {
 	}
 }
 
-
 // 停用组织须连带删除其路由索引行：webhook 立即失去租户路由，引擎层的
 // 停用状态门是第二道防线。
 func TestDisableTenantRemovesRepoRouteIndexRows(t *testing.T) {

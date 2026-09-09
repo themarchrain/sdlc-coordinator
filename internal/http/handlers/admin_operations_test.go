@@ -174,7 +174,6 @@ func TestAdminOperationRebindRoutesToOperations(t *testing.T) {
 	}
 }
 
-
 type unavailableEngines struct{}
 
 func (unavailableEngines) OperationsFor(*gin.Context) AdminOperations { return nil }

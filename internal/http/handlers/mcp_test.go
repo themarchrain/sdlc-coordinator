@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -374,7 +374,6 @@ func TestMCPSessionAndUnknownMethods(t *testing.T) {
 		t.Fatalf("unknown method must be -32601: %#v", response)
 	}
 }
-
 
 type stubMCPEngineSource struct {
 	view MCPEngineView

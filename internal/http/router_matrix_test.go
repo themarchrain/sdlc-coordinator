@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-
 // TestLegacyAuthRoutesAreRemovedFromGinAndCatalog 与下面的 runtime 移除
 // 守卫同型：删除优于废弃标志。
 func TestLegacyAuthRoutesAreRemovedFromGinAndCatalog(t *testing.T) {
@@ -175,7 +174,6 @@ func TestSPAPageMatrixCoversKnownAdminPages(t *testing.T) {
 		t.Fatalf("SPA matrix missing pages: %s", strings.Join(missing, ", "))
 	}
 }
-
 
 func TestAdminClassCurrentMiddlewareMatchesTarget(t *testing.T) {
 	for _, row := range HTTPRouteMatrix() {
