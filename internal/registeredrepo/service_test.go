@@ -605,3 +605,71 @@ func TestEnableCompletesWhenIdentityProbePasses(t *testing.T) {
 		t.Fatalf("unexpected enabled view: %+v", view)
 	}
 }
+
+type fakeRouteIndexSync struct {
+	ownerTenantID uint
+	found         bool
+	lookupErr     error
+}
+
+func (f *fakeRouteIndexSync) Upsert(context.Context, uint, RouteIndexEntry) error { return nil }
+func (f *fakeRouteIndexSync) Delete(context.Context, RouteIndexEntry) error       { return nil }
+func (f *fakeRouteIndexSync) Lookup(context.Context, RouteIndexEntry) (uint, bool, error) {
+	return f.ownerTenantID, f.found, f.lookupErr
+}
+
+func validCreateRequest() CreateRequest {
+	return CreateRequest{
+		PathWithNamespace:  "group/a",
+		Provider:           "gitlab",
+		BaseURL:            "https://gitlab.example.com",
+		Token:              "token-a",
+		TokenScopeAttested: true,
+		WebhookSecret:      "hook-secret-a",
+	}
+}
+
+// 路由身份被其他租户占用时注册必须显式拒绝，且拒绝发生在租户库写入之前。
+func TestCreateRejectsRouteIdentityClaimedByAnotherTenant(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	svc.SetRouteIndexSync(&fakeRouteIndexSync{ownerTenantID: 7, found: true}, 2)
+
+	_, err := svc.Create(context.Background(), validCreateRequest())
+	if !errors.Is(err, ErrRouteIdentityClaimed) {
+		t.Fatalf("expected route identity claimed error, got %v", err)
+	}
+	repos, listErr := svc.List(context.Background())
+	if listErr != nil || len(repos) != 0 {
+		t.Fatalf("rejected create must not write the tenant row: repos=%d err=%v", len(repos), listErr)
+	}
+}
+
+// 本租户重复认领同一身份（改 secret 等再注册场景）必须放行。
+func TestCreateAllowsReclaimingOwnRouteIdentity(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	svc.SetRouteIndexSync(&fakeRouteIndexSync{ownerTenantID: 2, found: true}, 2)
+
+	view, err := svc.Create(context.Background(), validCreateRequest())
+	if err != nil {
+		t.Fatalf("same-tenant identity must pass: %v", err)
+	}
+	if view.PathWithNamespace != "group/a" {
+		t.Fatalf("unexpected view: %#v", view)
+	}
+}
+
+// 改仓换身份同样预检：占用方为其他租户时拒绝，不写租户库。
+func TestPatchRejectsRouteIdentityClaimedByAnotherTenant(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	view, err := svc.Create(context.Background(), validCreateRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetRouteIndexSync(&fakeRouteIndexSync{ownerTenantID: 7, found: true}, 2)
+
+	newPath := "group/other"
+	_, err = svc.Patch(context.Background(), view.RepositoryID, PatchRequest{PathWithNamespace: &newPath})
+	if !errors.Is(err, ErrRouteIdentityClaimed) {
+		t.Fatalf("expected route identity claimed error, got %v", err)
+	}
+}

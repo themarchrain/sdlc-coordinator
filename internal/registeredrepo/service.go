@@ -29,6 +29,10 @@ var (
 	// ErrInvalidPlatformIdentity 表示注册/更新提交的平台身份不合法(provider
 	// 枚举外或 base_url 非 http(s) origin)。
 	ErrInvalidPlatformIdentity = errors.New("invalid_platform_identity")
+	// ErrRouteIdentityClaimed 表示 (provider, base_url, path) 路由身份已被
+	// 其他组织占用：跨租户抢占会劫持/打死对方的 webhook 路由，注册与改仓
+	// 必须显式拒绝。
+	ErrRouteIdentityClaimed = errors.New("route_identity_claimed")
 )
 
 // NormalizeProvider/ValidProvider 是 provider 的统一规范与枚举;仓行、事件
@@ -127,6 +131,8 @@ type RouteIndexEntry struct {
 type RouteIndexSync interface {
 	Upsert(ctx context.Context, tenantID uint, entry RouteIndexEntry) error
 	Delete(ctx context.Context, entry RouteIndexEntry) error
+	// Lookup 返回路由身份当前的占用租户；found=false 表示身份未被占用。
+	Lookup(ctx context.Context, entry RouteIndexEntry) (tenantID uint, found bool, err error)
 }
 
 // SetRouteIndexSync 注入写穿端口与租户上下文（租户作用域 handler 装配期调用）。
@@ -152,6 +158,23 @@ func (s *Service) syncUpsertRoute(ctx context.Context, repo *RegisteredRepositor
 		return
 	}
 	_ = s.routeIndex.Upsert(ctx, s.routeTenantID, s.indexEntry(repo))
+}
+
+// ensureRouteIdentityAvailable 在写入租户库前预检路由身份占用：身份已被
+// 其他租户注册时显式拒绝，而不是让写穿/对账在事后翻转或打死对方路由。
+// 查询失败按 best-effort 放行（与写穿同语义），由对账层守卫兜底。
+func (s *Service) ensureRouteIdentityAvailable(ctx context.Context, repo *RegisteredRepository) error {
+	if s == nil || s.routeIndex == nil {
+		return nil
+	}
+	owner, found, err := s.routeIndex.Lookup(ctx, s.indexEntry(repo))
+	if err != nil || !found {
+		return nil
+	}
+	if owner != s.routeTenantID {
+		return fmt.Errorf("%w: %s/%s", ErrRouteIdentityClaimed, repo.Provider, repo.PathWithNamespace)
+	}
+	return nil
 }
 
 // NewService 构造注册服务:探针按仓行的 provider/base_url 构造(平台身份按仓),
@@ -220,6 +243,9 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 	}
 	if repo.DisplayName == "" {
 		repo.DisplayName = path
+	}
+	if err := s.ensureRouteIdentityAvailable(ctx, repo); err != nil {
+		return nil, err
 	}
 	if err := s.store.Create(ctx, repo); err != nil {
 		return nil, err
@@ -371,6 +397,11 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 	}
 	if request.ReviewerMentions != nil {
 		repo.ReviewerMentions = *request.ReviewerMentions
+	}
+	if pathChanged || providerChanged || baseURLChanged {
+		if err := s.ensureRouteIdentityAvailable(ctx, repo); err != nil {
+			return nil, err
+		}
 	}
 	repo.Status = StatusConfiguring
 	if err := s.store.Update(ctx, repo); err != nil {

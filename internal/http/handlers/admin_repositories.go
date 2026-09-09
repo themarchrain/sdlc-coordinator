@@ -194,6 +194,8 @@ func writeAdminRepositoryError(c *gin.Context, err error) {
 		writeAdminError(c, http.StatusBadRequest, "platform_identity_required", "请补齐该仓库的平台身份（平台与平台地址），启用前必须配置")
 	case errors.Is(err, registeredrepo.ErrInvalidPlatformIdentity):
 		writeAdminError(c, http.StatusBadRequest, "invalid_platform_identity", "平台必须是 gitlab、gitea 或 github，平台地址必须是 http(s) 地址")
+	case errors.Is(err, registeredrepo.ErrRouteIdentityClaimed):
+		writeAdminError(c, http.StatusConflict, "route_identity_claimed", "该仓库身份已被其他组织注册占用；路由按先注册方归属，请联系管理员裁决")
 	case errors.Is(err, registeredrepo.ErrRepositoryBusy):
 		writeAdminError(c, http.StatusConflict, "repository_busy", "仓库仍有活动任务，无法停用")
 	case errors.Is(err, registeredrepo.ErrMustDisableFirst):

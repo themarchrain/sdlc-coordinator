@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -56,7 +57,7 @@ func TestReconcileRepoRouteIndexAlignsWithTenantStores(t *testing.T) {
 		t.Fatalf("seed phantom index: %v", err)
 	}
 
-	if err := reconcileRepoRouteIndex(ctx, cpRepo, resolver); err != nil {
+	if err := reconcileRepoRouteIndex(ctx, cpRepo, resolver, nil); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
@@ -148,4 +149,62 @@ func openPlatformStoreDB(t *testing.T) *gorm.DB {
 		}
 	})
 	return db
+}
+
+// 对账冲突：同身份被两个租户同时声称时保留现状——不翻转、不删除、
+// 指纹不动，交由人工裁决。
+func TestReconcileRepoRouteIndexKeepsAssignmentOnCrossTenantConflict(t *testing.T) {
+	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
+	ctx := context.Background()
+	owner := &controlplane.Tenant{Slug: "owner-org", DisplayName: "Owner"}
+	rival := &controlplane.Tenant{Slug: "rival-org", DisplayName: "Rival"}
+	if err := cpRepo.CreateTenant(ctx, owner); err != nil {
+		t.Fatalf("seed owner tenant: %v", err)
+	}
+	if err := cpRepo.CreateTenant(ctx, rival); err != nil {
+		t.Fatalf("seed rival tenant: %v", err)
+	}
+
+	root := t.TempDir()
+	resolver := tenantdb.NewSqliteFileResolver(nil, root, 0)
+	t.Cleanup(resolver.Close)
+
+	identity := controlplane.RepoRouteIdentity{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "shared/repo",
+	}
+	for _, tenantID := range []uint{owner.ID, rival.ID} {
+		tenantStore, err := resolver.Handle(ctx, tenantID)
+		if err != nil {
+			t.Fatalf("open tenant store %d: %v", tenantID, err)
+		}
+		repoStore := registeredrepo.NewStore(tenantStore.DB)
+		if err := repoStore.Migrate(); err != nil {
+			t.Fatalf("migrate repo store: %v", err)
+		}
+		if err := repoStore.Create(ctx, &registeredrepo.RegisteredRepository{
+			RepositoryID: fmt.Sprintf("repo-%d", tenantID), DisplayName: "Shared", Provider: identity.Provider,
+			BaseURL: identity.BaseURL, PathWithNamespace: identity.PathWithNamespace,
+		}); err != nil {
+			t.Fatalf("seed tenant repo %d: %v", tenantID, err)
+		}
+	}
+
+	if err := cpRepo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: identity.Provider, BaseURL: identity.BaseURL, PathWithNamespace: identity.PathWithNamespace,
+		TenantID: owner.ID, RepoFingerprint: "repo-owner",
+	}); err != nil {
+		t.Fatalf("seed index: %v", err)
+	}
+
+	if err := reconcileRepoRouteIndex(ctx, cpRepo, resolver, nil); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	route, err := cpRepo.GetRepoRouteIndex(ctx, identity)
+	if err != nil {
+		t.Fatalf("conflicted route must survive: %v", err)
+	}
+	if route.TenantID != owner.ID || route.RepoFingerprint != "repo-owner" {
+		t.Fatalf("conflicted identity must stay with its owner untouched, got tenant=%d fingerprint=%s",
+			route.TenantID, route.RepoFingerprint)
+	}
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -34,6 +35,19 @@ func (c *controlPlaneRouteIndex) Delete(ctx context.Context, entry registeredrep
 	return c.repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
 		Provider: entry.Provider, BaseURL: entry.BaseURL, PathWithNamespace: entry.PathWithNamespace,
 	})
+}
+
+func (c *controlPlaneRouteIndex) Lookup(ctx context.Context, entry registeredrepo.RouteIndexEntry) (uint, bool, error) {
+	row, err := c.repo.GetRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
+		Provider: entry.Provider, BaseURL: entry.BaseURL, PathWithNamespace: entry.PathWithNamespace,
+	})
+	if errors.Is(err, controlplane.ErrRepoRouteNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return row.TenantID, true, nil
 }
 
 // resolveTenantByPath 按 (provider, path) 经控制面路由索引解析租户 id：
@@ -86,13 +100,17 @@ func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provi
 }
 
 // reconcileRepoRouteIndex 以租户库为权威对账路由索引：租户库中
-// 的仓决定索引应有的行；指派错租户的行修正，索引多出的行删除。
-func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository, resolver tenantdb.Resolver) error {
+// 的仓决定索引应有的行；指派错租户的行修正（先删后建，Upsert 拒绝跨
+// 租户换主），索引多出的行删除。同身份被多个租户同时声称时视为冲突：
+// 保留现状不翻转、不删除，告警交由人工裁决。
+func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository, resolver tenantdb.Resolver, logger *zap.Logger) error {
 	tenants, err := repo.ListTenantSummaries(ctx)
 	if err != nil {
 		return fmt.Errorf("list tenants: %w", err)
 	}
 	want := make(map[string]controlplane.RepoRouteIndex)
+	claimant := make(map[string]uint)
+	conflicted := make(map[string]bool)
 	for _, tenant := range tenants {
 		store, err := resolver.Handle(ctx, tenant.ID)
 		if err != nil {
@@ -105,10 +123,22 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 		for i := range rows {
 			row := &rows[i]
 			key := strings.Join([]string{row.Provider, row.BaseURL, row.PathWithNamespace}, "\x00")
+			if prev, ok := claimant[key]; ok && prev != tenant.ID {
+				conflicted[key] = true
+				continue
+			}
+			claimant[key] = tenant.ID
 			want[key] = controlplane.RepoRouteIndex{
 				Provider: row.Provider, BaseURL: row.BaseURL, PathWithNamespace: row.PathWithNamespace,
 				TenantID: tenant.ID, RepoFingerprint: row.RepositoryID,
 			}
+		}
+	}
+	for key := range conflicted {
+		delete(want, key)
+		if logger != nil {
+			logger.Warn("repo route identity claimed by multiple tenants; keeping current assignment",
+				zap.String("route", strings.ReplaceAll(key, "\x00", " ")))
 		}
 	}
 	existing, err := repo.ListRepoRouteIndex(ctx, 0)
@@ -122,13 +152,24 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 	}
 	for key, row := range want {
 		if current, ok := existingKeys[key]; !ok || current.TenantID != row.TenantID || current.RepoFingerprint != row.RepoFingerprint {
+			if ok {
+				// 指派错租户的漂移修正：先删旧行再建（Upsert 拒绝跨租户换主）。
+				if err := repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
+					Provider: row.Provider, BaseURL: row.BaseURL, PathWithNamespace: row.PathWithNamespace,
+				}); err != nil {
+					return fmt.Errorf("reconcile route index delete: %w", err)
+				}
+			}
 			if err := repo.UpsertRepoRouteIndex(ctx, row); err != nil {
+				if errors.Is(err, controlplane.ErrRepoRouteIdentityClaimed) {
+					continue
+				}
 				return fmt.Errorf("reconcile route index upsert: %w", err)
 			}
 		}
 	}
 	for key, row := range existingKeys {
-		if _, ok := want[key]; !ok {
+		if _, ok := want[key]; !ok && !conflicted[key] {
 			if err := repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
 				Provider: row.Provider, BaseURL: row.BaseURL, PathWithNamespace: row.PathWithNamespace,
 			}); err != nil {
@@ -153,7 +194,7 @@ func (a *App) runRepoIndexReconciler(ctx context.Context) {
 			return
 		case <-ticker.C:
 			reconcileCtx, cancel := context.WithTimeout(ctx, time.Minute)
-			if err := reconcileRepoRouteIndex(reconcileCtx, a.ControlPlane.Repository(), a.TenantStores); err != nil && a.Logger != nil {
+			if err := reconcileRepoRouteIndex(reconcileCtx, a.ControlPlane.Repository(), a.TenantStores, a.Logger); err != nil && a.Logger != nil {
 				a.Logger.Warn("repo route index reconciliation failed", zap.Error(err))
 			}
 			cancel()
