@@ -324,14 +324,27 @@ func (p *enginePool) engineForSession(c *gin.Context) *tenantEngine {
 	return p.forTenantID(context.Background(), tenantID)
 }
 
-// tickAll 串行执行各引擎的 Tick 并合并结果；单引擎失败记日志继续。
+// tenantEngineSweepTimeout 限制单引擎一次全租户扫描的占用：引擎内最长的
+// git 交付已有 3 分钟上限（developerFinalizeTimeout），取 5 分钟既容纳合法
+// 长操作，又防单个卡死引擎串行拖垮全局调度节奏。
+const tenantEngineSweepTimeout = 5 * time.Minute
+
+// tickAll 串行执行各引擎的 Tick 并合并结果；单引擎失败或超预算记日志继续。
 // 串行为正确性优先：各引擎内部仍有实例级单飞锁，跨引擎并发留给后续按需放开。
 func (p *enginePool) tickAll(ctx context.Context, request orchestrator.TickRequest) (*orchestrator.TickResult, error) {
 	merged := &orchestrator.TickResult{}
 	for _, engine := range p.all(ctx) {
-		result, err := engine.orch.Tick(ctx, request)
+		engineCtx, cancel := context.WithTimeout(ctx, tenantEngineSweepTimeout)
+		result, err := engine.orch.Tick(engineCtx, request)
+		timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(engineCtx.Err(), context.DeadlineExceeded)
+		cancel()
 		if err != nil {
 			if errors.Is(err, orchestrator.ErrTickInProgress) {
+				continue
+			}
+			if timedOut {
+				p.logger.Warn("tenant engine tick exceeded sweep budget",
+					zap.Uint("tenant_id", engine.tenantID), zap.Duration("budget", tenantEngineSweepTimeout))
 				continue
 			}
 			p.logger.Warn("tenant engine tick failed", zap.Uint("tenant_id", engine.tenantID), zap.Error(err))
@@ -352,13 +365,22 @@ func (p *enginePool) tickAll(ctx context.Context, request orchestrator.TickReque
 	return merged, nil
 }
 
-// requirementsSyncAll 串行同步各引擎的租户库需求；单引擎失败记日志继续。
+// requirementsSyncAll 串行同步各引擎的租户库需求；单引擎失败或超预算记
+// 日志继续（预算与 tickAll 共用同一常量）。
 func (p *enginePool) requirementsSyncAll(ctx context.Context) (requirements.SyncResult, error) {
 	var merged requirements.SyncResult
 	for _, engine := range p.all(ctx) {
-		result, err := engine.requirements.SyncOnce(ctx)
+		engineCtx, cancel := context.WithTimeout(ctx, tenantEngineSweepTimeout)
+		result, err := engine.requirements.SyncOnce(engineCtx)
+		timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(engineCtx.Err(), context.DeadlineExceeded)
+		cancel()
 		if err != nil {
 			if errors.Is(err, requirements.ErrSyncInProgress) {
+				continue
+			}
+			if timedOut {
+				p.logger.Warn("tenant requirements sync exceeded sweep budget",
+					zap.Uint("tenant_id", engine.tenantID), zap.Duration("budget", tenantEngineSweepTimeout))
 				continue
 			}
 			p.logger.Warn("tenant requirements sync failed", zap.Uint("tenant_id", engine.tenantID), zap.Error(err))
