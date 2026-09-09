@@ -193,7 +193,7 @@ func Validate(cfg RuntimeConfig) ValidationErrors {
 	}
 	requireAbsoluteHTTPURL(errs, "codehost.base_url", cfg.CodeHost.BaseURL, true)
 	for _, id := range cfg.CodeHost.ReworkAllowedUserIDs {
-		if !isValidPlatformUserID(id) {
+		if !IsValidPlatformUserID(id) {
 			errs["codehost.rework_allowed_user_ids"] = "用户 ID 必须为正整数字符串"
 			break
 		}

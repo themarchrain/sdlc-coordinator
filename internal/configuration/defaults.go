@@ -175,9 +175,9 @@ func encodeStringMap(source map[string]string) string {
 	return string(encoded)
 }
 
-// isValidPlatformUserID 校验平台用户 ID 的字符串形态:非空、纯数字、非零。
+// IsValidPlatformUserID 校验平台用户 ID 的字符串形态:非空、纯数字、非零。
 // 三平台数值域不同,配置面统一以字符串承载。
-func isValidPlatformUserID(value string) bool {
+func IsValidPlatformUserID(value string) bool {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || trimmed == "0" {
 		return false
