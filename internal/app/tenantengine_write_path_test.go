@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"sdlc-coordinator/internal/config"
@@ -28,6 +29,7 @@ func TestTenantWebhookCreatesTaskInTenantStore(t *testing.T) {
 	}
 	// Windows 下租户库句柄不显式关闭会阻塞 TempDir 清理。
 	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
 		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
 			resolver.Close()
 		}
@@ -99,5 +101,52 @@ func assertTenantRowCount(t *testing.T, db *gorm.DB, table string, want int) {
 	}
 	if count != int64(want) {
 		t.Fatalf("table %s: want %d rows, got %d", table, want, count)
+	}
+}
+
+// forTenantID 并发下同租户恒返回同一引擎实例（double-check 先建者胜出）。
+func TestEnginePoolForTenantIDIsSingletonUnderConcurrency(t *testing.T) {
+	ctx := context.Background()
+	db := openAppTestDB(t)
+	cfg := withTestControlPlane(t, config.Config{HTTPAddr: ":0"})
+	application, err := New(cfg, zap.NewNop(), db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
+			resolver.Close()
+		}
+	})
+	tenant, err := application.ControlPlane.CreateTenant(ctx, &controlplane.Actor{ID: 1, Username: "root"}, controlplane.TenantInput{
+		Slug: "singleton", DisplayName: "并发单实例",
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	const workers = 16
+	engines := make([]*tenantEngine, workers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(slot int) {
+			defer wg.Done()
+			<-start
+			engines[slot] = application.pool.forTenantID(ctx, tenant.ID)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, engine := range engines {
+		if engine == nil {
+			t.Fatalf("worker %d got nil engine", i)
+		}
+		if engine != engines[0] {
+			t.Fatalf("worker %d got a different engine instance (double-check violated)", i)
+		}
 	}
 }

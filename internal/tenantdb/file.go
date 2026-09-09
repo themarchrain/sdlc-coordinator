@@ -97,6 +97,28 @@ func (resolver *SqliteFileResolver) Handle(_ context.Context, tenantID uint) (*S
 	return store, nil
 }
 
+// OpenUnmanaged 打开一个不参与 LRU 缓存与淘汰的独立租户句柄：生命周期
+// 归调用方（引擎池长持句柄专用——缓存通道的淘汰/Invalidate/Close 会
+// 截断长持者的连接，独立句柄不受影响；调用方自行管理关闭，随进程退出
+// 由 OS 释放亦安全）。目录与 DSN 语义与 Handle 一致。
+func (resolver *SqliteFileResolver) OpenUnmanaged(tenantID uint) (*Store, error) {
+	if tenantID == 0 {
+		return nil, ErrInvalidTenantID
+	}
+	if resolver == nil || resolver.root == "" {
+		return nil, fmt.Errorf("tenant data dir is not configured: %w", ErrInvalidTenantID)
+	}
+	dir := filepath.Join(resolver.root, strconv.FormatUint(uint64(tenantID), 10))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create tenant data dir: %w", err)
+	}
+	db, err := store.Open("file:" + filepath.ToSlash(filepath.Join(dir, "db.sqlite")) + "?_busy_timeout=5000")
+	if err != nil {
+		return nil, fmt.Errorf("open tenant database: %w", err)
+	}
+	return &Store{DB: db}, nil
+}
+
 func (resolver *SqliteFileResolver) Invalidate(tenantID uint) {
 	if resolver == nil || tenantID == 0 {
 		return

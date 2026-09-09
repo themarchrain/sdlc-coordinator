@@ -52,6 +52,7 @@ type App struct {
 	Router           *gin.Engine
 	Server           *api.Server
 	Orch             *orchestrator.Orchestrator
+	pool             *enginePool
 	Scheduler        *scheduler.Runner
 	RequirementsSync *requirements.Runner
 	ControlPlane     *controlplane.Service
@@ -230,6 +231,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		Router:           router,
 		Server:           server,
 		Orch:             platformEngine.orch,
+		pool:             pool,
 		Scheduler:        schedulerRunner,
 		RequirementsSync: requirementsSyncRunner,
 		ControlPlane:     controlPlaneService,

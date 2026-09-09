@@ -193,7 +193,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 type enginePool struct {
 	mu       sync.Mutex
 	engines  map[uint]*tenantEngine
-	resolver tenantdb.Resolver
+	resolver *tenantdb.SqliteFileResolver
 	control  *controlplane.Service
 	index    *controlplane.Repository
 	shared   engineShared
@@ -202,7 +202,7 @@ type enginePool struct {
 }
 
 // newEnginePool 固定平台引擎（构造失败即装配失败）并准备租户惰性构造。
-func newEnginePool(platform *tenantEngine, resolver tenantdb.Resolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
+func newEnginePool(platform *tenantEngine, resolver *tenantdb.SqliteFileResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
 	return &enginePool{
 		engines:  map[uint]*tenantEngine{0: platform},
 		resolver: resolver,
@@ -216,30 +216,52 @@ func newEnginePool(platform *tenantEngine, resolver tenantdb.Resolver, control *
 
 // forTenantID 返回该租户的引擎（0=平台）；未缓存则打开租户库并构造。
 // 打开或构造失败返回 nil（调用方按场景兜底或放弃）。
+//
+// 句柄走 OpenUnmanaged（不参与 resolver 的 LRU 淘汰）：引擎与句柄同为
+// 进程生命周期，缓存通道的淘汰 Close 会截断在用连接。
+//
+// 构造全程持锁：引擎构造含 schema 迁移（DDL），并发构造同一租户库会在
+// sqlite 写锁上互踩（实测 16 并发构造即触发 BUSY 失败）；首建仅在缓存
+// miss 时发生一次，串行化代价可接受，换来「同租户恒同一实例」的无竞态
+// 保证（实例级 tickMu 单飞锁因此不分裂）。持锁做 IO 是有意取舍。
 func (p *enginePool) forTenantID(ctx context.Context, tenantID uint) *tenantEngine {
 	if tenantID == 0 {
 		return p.platform
 	}
 	p.mu.Lock()
-	engine, ok := p.engines[tenantID]
-	p.mu.Unlock()
-	if ok {
+	defer p.mu.Unlock()
+	if engine, ok := p.engines[tenantID]; ok {
 		return engine
 	}
-	store, err := p.resolver.Handle(ctx, tenantID)
+	store, err := p.resolver.OpenUnmanaged(tenantID)
 	if err != nil {
 		p.logger.Warn("open tenant store for engine failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		return nil
 	}
-	engine, err = buildTenantEngine(store.DB, tenantID, p.shared)
+	engine, err := buildTenantEngine(store.DB, tenantID, p.shared)
 	if err != nil {
 		p.logger.Warn("build tenant engine failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		return nil
 	}
-	p.mu.Lock()
 	p.engines[tenantID] = engine
-	p.mu.Unlock()
 	return engine
+}
+
+// CloseTenantEngines 关闭全部租户引擎持有的独立句柄并清空缓存（平台
+// 引擎的库句柄归装配层，不在范围）。引擎句柄不经 resolver 缓存通道，
+// 优雅停机与测试清理需经此显式释放。
+func (p *enginePool) CloseTenantEngines() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for id, engine := range p.engines {
+		if id == 0 || engine == nil || engine.db == nil {
+			continue
+		}
+		if sqlDB, err := engine.db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+		delete(p.engines, id)
+	}
 }
 
 // all 返回平台引擎与当前全部租户引擎（租户清单动态拉取；拉取失败仅平台）。

@@ -101,3 +101,44 @@ func TestSqliteFileResolverExposesPlatformMainStore(t *testing.T) {
 		t.Fatalf("Main must return the platform store")
 	}
 }
+
+// OpenUnmanaged 的独立句柄不受 LRU 淘汰与 Close 影响——引擎池长持句柄
+// 的生命周期保证。
+func TestOpenUnmanagedSurvivesEvictionAndClose(t *testing.T) {
+	resolver := NewSqliteFileResolver(nil, t.TempDir(), 1)
+	t.Cleanup(resolver.Close)
+
+	if _, err := resolver.Handle(context.Background(), 7); err != nil {
+		t.Fatalf("open cached tenant 7: %v", err)
+	}
+	unmanaged, err := resolver.OpenUnmanaged(7)
+	if err != nil {
+		t.Fatalf("open unmanaged tenant 7: %v", err)
+	}
+	// Windows 下句柄不显式关闭会阻塞 TempDir 清理（独立句柄生命周期归调用方）。
+	t.Cleanup(func() { closeStore(unmanaged) })
+	if err := unmanaged.DB.Exec("CREATE TABLE marker_unmanaged (id INTEGER)").Error; err != nil {
+		t.Fatalf("seed unmanaged: %v", err)
+	}
+
+	// LRU 淘汰只关缓存通道句柄，独立句柄存活。
+	if _, err := resolver.Handle(context.Background(), 8); err != nil {
+		t.Fatalf("open tenant 8 to force eviction: %v", err)
+	}
+	if resolver.Has(7) {
+		t.Fatalf("tenant 7 cached handle should have been evicted (capacity 1)")
+	}
+	if !unmanaged.DB.Migrator().HasTable("marker_unmanaged") {
+		t.Fatalf("unmanaged handle must survive LRU eviction")
+	}
+
+	// Close 全缓存通道也不触碰独立句柄。
+	resolver.Close()
+	if !unmanaged.DB.Migrator().HasTable("marker_unmanaged") {
+		t.Fatalf("unmanaged handle must survive resolver Close")
+	}
+
+	if _, err := resolver.OpenUnmanaged(0); err == nil {
+		t.Fatalf("tenant 0 must be rejected")
+	}
+}
