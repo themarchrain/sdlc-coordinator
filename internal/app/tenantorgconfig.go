@@ -85,11 +85,11 @@ func tenantReviewerMentionsProvider(provider *orgconfig.Provider, logger *zap.Lo
 	}
 }
 
-// tenantReworkAllowlistLookup 产出接续开发白名单的动态来源（GitLab 侧经
-// 处理器构造期选项挂入，每个 webhook 现取）。
-func tenantReworkAllowlistLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func() []int {
-	return func() []int {
-		config, err := provider.Get(context.Background())
+// tenantReworkAllowlistLookup 产出接续开发白名单的动态来源（处理器在每次
+// GitLab webhook 投递时以请求 ctx 现取，组织段配置保存即生效）。
+func tenantReworkAllowlistLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) []int {
+	return func(ctx context.Context) []int {
+		config, err := provider.Get(ctx)
 		if err != nil && logger != nil {
 			logger.Warn("load tenant runtime config for allowlist failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		}

@@ -273,7 +273,7 @@ func TestGitLabNormalizerAllowsConfiguredMergeRequestReworkRequester(t *testing.
 	raw := mutatedGitLabFixture(t, "merge_request_resume_note_created.json", func(payload map[string]any) {
 		payload["user"].(map[string]any)["id"] = float64(99)
 	})
-	result, err := NewGitLabNormalizer(WithGitLabReworkAllowedUserIDsLookup(func() []int { return []int{99} })).Normalize(raw)
+	result, err := NewGitLabNormalizer(WithGitLabReworkAllowedUserIDs([]int{99})).Normalize(raw)
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestGitLabNormalizerAllowsResumeForPlatformAllowlist(t *testing.T) {
 	raw := mutatedGitLabFixture(t, "issue_resume_note_created.json", func(payload map[string]any) {
 		payload["user"].(map[string]any)["id"] = float64(999)
 	})
-	result, err := NewGitLabNormalizer(WithGitLabReworkAllowedUserIDsLookup(func() []int { return []int{999} })).Normalize(raw)
+	result, err := NewGitLabNormalizer(WithGitLabReworkAllowedUserIDs([]int{999})).Normalize(raw)
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}

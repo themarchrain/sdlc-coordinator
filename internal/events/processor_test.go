@@ -348,8 +348,8 @@ func TestProcessorAppliesGitLabReworkRequesterAllowlist(t *testing.T) {
 	processor := NewProcessor(
 		repository.NewInboundEventRepository(db),
 		handler,
-		WithGitLabReworkAllowedUserIDsLookup(func() []int { return []int{99} }),
 	)
+	processor.SetGitLabReworkLookup(func(context.Context) []int { return []int{99} })
 	raw := readGitLabFixture(t, "merge_request_resume_note_created.json")
 	raw = []byte(strings.Replace(string(raw), `"id": 42`, `"id": 99`, 1))
 
@@ -638,8 +638,8 @@ func TestProcessorDefersUnenabledEventThenReplaysAfterEnable(t *testing.T) {
 // 供给,组织段配置变更后同处理器的下一个事件即按新白名单判定。
 func TestProcessorGitLabAllowlistLookupHotReloads(t *testing.T) {
 	allowed := []int{77}
-	processor, _, taskRepo := newProcessorFixtureWithNormalizerOptions(t,
-		WithGitLabReworkAllowedUserIDsLookup(func() []int { return allowed }))
+	processor, _, taskRepo := newProcessorFixtureWithNormalizerOptions(t)
+	processor.SetGitLabReworkLookup(func(context.Context) []int { return allowed })
 	ctx := context.Background()
 
 	created, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_opened_developer_agent.json"))

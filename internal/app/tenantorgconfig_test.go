@@ -135,7 +135,7 @@ func TestTenantReworkAllowlistLookupFollowsConfigSaves(t *testing.T) {
 	db := newOrgConfigTestDB(t)
 	lookup := tenantReworkAllowlistLookup(orgconfig.NewProvider(db), zap.NewNop(), 1)
 
-	if ids := lookup(); len(ids) != 0 {
+	if ids := lookup(context.Background()); len(ids) != 0 {
 		t.Fatalf("allowlist must be empty without org config: %#v", ids)
 	}
 
@@ -145,7 +145,7 @@ func TestTenantReworkAllowlistLookupFollowsConfigSaves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save org config: %v", err)
 	}
-	ids := lookup()
+	ids := lookup(context.Background())
 	if len(ids) != 2 || ids[0] != 7 || ids[1] != 9 {
 		t.Fatalf("allowlist did not observe the save: %#v", ids)
 	}

@@ -163,7 +163,8 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
-	processor := events.NewProcessor(inboundEventRepo, orch, events.WithGitLabReworkAllowedUserIDsLookup(tenantReworkAllowlistLookup(orgConfig, shared.logger, tenantID)))
+	processor := events.NewProcessor(inboundEventRepo, orch)
+	processor.SetGitLabReworkLookup(tenantReworkAllowlistLookup(orgConfig, shared.logger, tenantID))
 	processor.SetRepositoryLookup(repoStore)
 	requirementsService := requirements.NewService(
 		requirements.NewStore(db), repoStore,

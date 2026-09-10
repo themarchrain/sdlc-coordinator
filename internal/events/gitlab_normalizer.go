@@ -16,17 +16,18 @@ type GitLabNormalizer struct {
 
 type GitLabNormalizerOption func(*GitLabNormalizer)
 
-// WithGitLabReworkAllowedUserIDsLookup 以查找函数提供接续开发白名单:
-// normalizer 在每次 webhook 处理时重新物化,组织段配置保存后的下一个
-// 事件即用新白名单(热生效)。
-func WithGitLabReworkAllowedUserIDsLookup(lookup func() []int) GitLabNormalizerOption {
+// WithGitLabReworkAllowedUserIDs 设置接续开发白名单(平台 user id),
+// 非正数 id 静默忽略——与 Gitea/GitHub 侧同名选项语义一致。动态来源由
+// 处理器按投递现取后经本选项物化(见 WithGitLabReworkLookup)。
+func WithGitLabReworkAllowedUserIDs(ids []int) GitLabNormalizerOption {
 	return func(normalizer *GitLabNormalizer) {
-		ids := lookup()
 		if normalizer.reworkAllowedUserIDs == nil {
 			normalizer.reworkAllowedUserIDs = map[int]struct{}{}
 		}
 		for _, id := range ids {
-			normalizer.reworkAllowedUserIDs[id] = struct{}{}
+			if id > 0 {
+				normalizer.reworkAllowedUserIDs[id] = struct{}{}
+			}
 		}
 	}
 }
