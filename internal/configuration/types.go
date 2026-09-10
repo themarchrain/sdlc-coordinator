@@ -3,7 +3,6 @@ package configuration
 import (
 	"encoding/json"
 	"fmt"
-	"net/mail"
 	"net/url"
 	"sort"
 	"strconv"
@@ -229,10 +228,4 @@ func validateNonNegative(errs ValidationErrors, field string, value int) {
 	if value < 0 {
 		errs[field] = "不能小于 0"
 	}
-}
-
-func validEmail(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	parsed, err := mail.ParseAddress(raw)
-	return err == nil && parsed.Address == raw && strings.Contains(raw, "@")
 }

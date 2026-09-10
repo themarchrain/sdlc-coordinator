@@ -222,26 +222,3 @@ func applySecretChange(target *string, replacement *string, clear bool) {
 		*target = *replacement
 	}
 }
-
-func cloneIntSlice(input []int) []int {
-	result := make([]int, len(input))
-	copy(result, input)
-	return result
-}
-
-func cloneStringMap(source map[string]string) map[string]string {
-	if source == nil {
-		return nil
-	}
-	cloned := make(map[string]string, len(source))
-	for key, value := range source {
-		cloned[key] = value
-	}
-	return cloned
-}
-
-func cloneStringSlice(input []string) []string {
-	result := make([]string, len(input))
-	copy(result, input)
-	return result
-}

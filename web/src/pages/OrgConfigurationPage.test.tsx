@@ -104,6 +104,54 @@ describe('OrgConfigurationPage', () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 3 }))
   })
 
+  it('renders an error state when the initial load fails', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockRejectedValue(new Error('读取组织配置失败'))
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+
+    expect(await screen.findByText('读取组织配置失败')).toBeInTheDocument()
+  })
+
+  it('rejects a save that sets both a clear flag and a replacement token', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue({ ...view, secrets: { telegram_bot_token_configured: true, feishu_secret_configured: false } })
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue(view)
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'IM 通知渠道' }))
+    fireEvent.click(await screen.findByText('Telegram'))
+    fireEvent.change(screen.getByPlaceholderText('留空保留当前值；输入新值进行替换'), { target: { value: 'new-token' } })
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    expect(await screen.findByText('「明确清除」与新值不能同时提交：请取消勾选或清空新值')).toBeInTheDocument()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('clears the secret subform after a successful save', async () => {
+    const configured: TenantConfigurationView = {
+      ...view,
+      config: { ...view.config, im: { ...view.config.im, provider: 'telegram', telegram: {} } },
+      secrets: { telegram_bot_token_configured: true, feishu_secret_configured: false },
+    }
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(configured)
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue(configured)
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(await screen.findByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    expect(await screen.findByText('组织配置已保存并生效')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('checkbox', { hidden: true })).not.toBeChecked())
+  })
+
   it('surfaces field errors when validation rejects the payload', async () => {
     vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
     vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: false, field_errors: { 'codehost.base_url': '必须是完整的 http 或 https 地址' } })

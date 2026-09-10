@@ -348,7 +348,7 @@ func TestProcessorAppliesGitLabReworkRequesterAllowlist(t *testing.T) {
 	processor := NewProcessor(
 		repository.NewInboundEventRepository(db),
 		handler,
-		WithCodeHostReworkAllowedUserIDs([]int{99}),
+		WithGitLabReworkAllowedUserIDsLookup(func() []int { return []int{99} }),
 	)
 	raw := readGitLabFixture(t, "merge_request_resume_note_created.json")
 	raw = []byte(strings.Replace(string(raw), `"id": 42`, `"id": 99`, 1))

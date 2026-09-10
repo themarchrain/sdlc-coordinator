@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,21 +37,15 @@ type Config struct {
 }
 
 // ReworkAllowedIDs 把白名单字符串转为三平台 normalizer 消费的数值 id；
-// 校验保证为正整数字符串，解析失败项静默跳过（防御旧数据）。
+// 校验保证为正整数字符串，解析失败项（含超长溢出）静默跳过（防御旧数据）。
 func (c Config) ReworkAllowedIDs() []int {
 	ids := make([]int, 0, len(c.CodeHost.ReworkAllowedUserIDs))
 	for _, raw := range c.CodeHost.ReworkAllowedUserIDs {
-		value := 0
-		for _, r := range raw {
-			if r < '0' || r > '9' {
-				value = -1
-				break
-			}
-			value = value*10 + int(r-'0')
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || value <= 0 {
+			continue
 		}
-		if value > 0 {
-			ids = append(ids, value)
-		}
+		ids = append(ids, int(value))
 	}
 	return ids
 }

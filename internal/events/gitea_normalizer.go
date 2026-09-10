@@ -20,7 +20,7 @@ type GiteaNormalizer struct {
 type GiteaNormalizerOption func(*GiteaNormalizer)
 
 // WithGiteaReworkAllowedUserIDs 配置平台级 rework 白名单(平台 user id),
-// 语义与 GitLab 侧 WithCodeHostReworkAllowedUserIDs 一致。
+// 语义与 GitLab 侧 WithGitLabReworkAllowedUserIDsLookup 一致。
 func WithGiteaReworkAllowedUserIDs(ids []int) GiteaNormalizerOption {
 	return func(n *GiteaNormalizer) {
 		if n.reworkAllowedUserIDs == nil {

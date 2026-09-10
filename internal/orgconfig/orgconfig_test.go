@@ -98,6 +98,16 @@ func TestStoreSaveRejectsStaleRevision(t *testing.T) {
 	}
 }
 
+func TestReworkAllowedIDsSkipsInvalidAndOverflowEntries(t *testing.T) {
+	config := Config{CodeHost: configuration.CodeHostConfig{
+		ReworkAllowedUserIDs: []string{"7", "abc", "-3", "0", "99999999999999999999"},
+	}}
+	ids := config.ReworkAllowedIDs()
+	if len(ids) != 1 || ids[0] != 7 {
+		t.Fatalf("only the valid id must survive (overflow skips instead of wrapping), got %v", ids)
+	}
+}
+
 func TestValidateRejectsBadShapes(t *testing.T) {
 	cases := []struct {
 		name   string

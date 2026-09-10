@@ -76,7 +76,15 @@ export function OrgConfigurationPage() {
     setFieldErrors({})
     try {
       const values = await form.validateFields()
-      const request = toUpdateRequest(values, people, view.revision)
+      const secrets = values.secrets || {}
+      const clearWithNewValue =
+        (secrets.clear_telegram_bot_token && secrets.telegram_bot_token) ||
+        (secrets.clear_feishu_secret && secrets.feishu_secret)
+      if (clearWithNewValue) {
+        message.error('「明确清除」与新值不能同时提交：请取消勾选或清空新值')
+        return
+      }
+      const request = toUpdateRequest(values, people, view?.revision ?? 0)
       const validation: ConfigurationValidationResult = await adminApi.validateTenantConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
@@ -85,6 +93,9 @@ export function OrgConfigurationPage() {
       }
       const updated = await adminApi.updateTenantConfiguration(request)
       setView(updated)
+      // 密钥子树整体重置：已勾选的「明确清除」与残留输入若不重置，会在
+      // 下一次保存被深合并保留，导致新密钥被 clear 优先级静默吞掉。
+      form.resetFields([['secrets']])
       form.setFieldsValue(toFormValues(updated, people))
       message.success('组织配置已保存并生效')
     } catch (reason) {

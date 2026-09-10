@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
 	"sdlc-coordinator/internal/orgconfig"
@@ -111,8 +110,7 @@ func decodeTenantConfigurationUpdate(c *gin.Context) (orgconfig.UpdateRequest, b
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求 JSON 不符合组织配置契约")
 		return orgconfig.UpdateRequest{}, false
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	if err := ensureConfigurationJSONEOF(decoder); err != nil {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求只能包含一个 JSON 对象")
 		return orgconfig.UpdateRequest{}, false
 	}

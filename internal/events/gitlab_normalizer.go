@@ -16,8 +16,6 @@ type GitLabNormalizer struct {
 
 type GitLabNormalizerOption func(*GitLabNormalizer)
 
-// WithCodeHostReworkAllowedUserIDs 配置平台级 rework 白名单(平台 user id)。
-// 白名单语义为 codehost 通用,三平台 normalizer 共用同一份配置。
 // WithGitLabReworkAllowedUserIDsLookup 以查找函数提供接续开发白名单:
 // normalizer 在每次 webhook 处理时重新物化,组织段配置保存后的下一个
 // 事件即用新白名单(热生效)。
@@ -29,16 +27,6 @@ func WithGitLabReworkAllowedUserIDsLookup(lookup func() []int) GitLabNormalizerO
 		}
 		for _, id := range ids {
 			normalizer.reworkAllowedUserIDs[id] = struct{}{}
-		}
-	}
-}
-
-func WithCodeHostReworkAllowedUserIDs(ids []int) GitLabNormalizerOption {
-	return func(normalizer *GitLabNormalizer) {
-		for _, id := range ids {
-			if id > 0 {
-				normalizer.reworkAllowedUserIDs[id] = struct{}{}
-			}
 		}
 	}
 }
