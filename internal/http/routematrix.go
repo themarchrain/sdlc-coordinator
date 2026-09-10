@@ -124,6 +124,7 @@ var routeMatrixCatalog = concatMatrix(
 	adminAgentRows,
 	adminOperationRows,
 	adminConfigurationRows,
+	adminTenantConfigurationRows,
 	adminPeopleRows,
 	adminRepositoryRows,
 	adminRequirementRows,
@@ -218,6 +219,12 @@ var adminConfigurationRows = []MatrixRow{
 	mr("POST", "/api/admin/configuration/validate", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
 	mr("PUT", "/api/admin/configuration", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
 	mr("POST", "/api/admin/configuration/restart", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
+}
+
+var adminTenantConfigurationRows = []MatrixRow{
+	mr("GET", "/api/admin/tenant-configuration", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "组织段运行配置视图；组织管理员"),
+	mr("POST", "/api/admin/tenant-configuration/validate", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "组织段配置预校验"),
+	mr("PUT", "/api/admin/tenant-configuration", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "组织段配置保存，热生效无重启"),
 }
 
 var adminPeopleRows = []MatrixRow{

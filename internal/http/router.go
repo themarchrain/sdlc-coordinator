@@ -238,6 +238,8 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 			adminConfigurationHandler := handlers.NewAdminConfigurationHandler(options.ConfigurationService, options.ShutdownRequester)
 			adminConfigurationHandler.RegisterRoutes(adminAPI)
 		}
+		// 组织段运行配置:按会话组织作用域读写租户库,保存即热生效。
+		handlers.NewAdminTenantConfigurationHandler().RegisterRoutes(adminAPI)
 		if options.PeopleService != nil {
 			adminPeopleHandler := handlers.NewAdminPeopleHandler(options.PeopleService, options.PeopleLookup)
 			adminPeopleHandler.RegisterRoutes(adminAPI)

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/controlplane"
@@ -213,5 +214,39 @@ func TestAdminAPIStillServesPortalAuthWithPortalCookie(t *testing.T) {
 	session := world.portalDo(t, http.MethodGet, "/api/portal/auth/session", token, nil)
 	if session.Code != http.StatusOK {
 		t.Fatalf("portal session = %d body=%s", session.Code, session.Body.String())
+	}
+}
+
+// 组织段运行配置三端点的矩阵行为:member 403、tenant_admin 可读写、
+// 未支持访问的超管 403、支持访问中放行。
+func TestAdminAPITenantConfigurationMatrix(t *testing.T) {
+	world := newFullyWiredWorld(t)
+	tenantID := world.seedTenant(t, "acme")
+	adminToken := world.seedUserWithRole(t, tenantID, "t3-admin", controlplane.RoleTenantAdmin)
+	memberToken := world.seedUserWithRole(t, tenantID, "t3-member", controlplane.RoleMember)
+	superToken := world.loginSuperAdmin(t)
+
+	member := world.portalDo(t, http.MethodGet, "/api/admin/tenant-configuration", memberToken, nil)
+	if member.Code != http.StatusForbidden {
+		t.Fatalf("member get tenant configuration = %d, want 403 body=%s", member.Code, member.Body.String())
+	}
+
+	admin := world.portalDo(t, http.MethodGet, "/api/admin/tenant-configuration", adminToken, nil)
+	if admin.Code != http.StatusOK || !strings.Contains(admin.Body.String(), `"configured":false`) {
+		t.Fatalf("tenant_admin get tenant configuration = %d body=%s", admin.Code, admin.Body.String())
+	}
+
+	super := world.portalDo(t, http.MethodGet, "/api/admin/tenant-configuration", superToken, nil)
+	if super.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support get tenant configuration = %d, want 403", super.Code)
+	}
+
+	ctx := context.Background()
+	if err := world.ControlPlane.EnterSupportAccess(ctx, superToken, tenantID, "组织配置排障"); err != nil {
+		t.Fatalf("enter support access: %v", err)
+	}
+	superSupported := world.portalDo(t, http.MethodGet, "/api/admin/tenant-configuration", superToken, nil)
+	if superSupported.Code != http.StatusOK {
+		t.Fatalf("super_admin with support get tenant configuration = %d body=%s", superSupported.Code, superSupported.Body.String())
 	}
 }
