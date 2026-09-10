@@ -634,7 +634,6 @@ func TestProcessorDefersUnenabledEventThenReplaysAfterEnable(t *testing.T) {
 	}
 }
 
-
 // TestProcessorGitLabAllowlistLookupHotReloads 锁定:GitLab 白名单经查找函数
 // 供给,组织段配置变更后同处理器的下一个事件即按新白名单判定。
 func TestProcessorGitLabAllowlistLookupHotReloads(t *testing.T) {

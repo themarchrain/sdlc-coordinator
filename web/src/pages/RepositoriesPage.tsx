@@ -129,13 +129,13 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
   const [form] = Form.useForm<RepositoryCreateInput>()
   const [saving, setSaving] = useState(false)
   const creating = repository === 'new'
-  const configuration = useRemote(() => adminApi.configuration(), [])
+  const configuration = useRemote(() => adminApi.tenantConfiguration(), [])
   const provider = Form.useWatch('provider', form) || 'gitlab'
   const initialValues = creating
     ? { display_name: '', path_with_namespace: '', provider: 'gitlab', base_url: '', token: '', token_scope_attested: false, webhook_secret: '' }
     : { display_name: repository.display_name, path_with_namespace: repository.path_with_namespace, provider: repository.provider, base_url: repository.base_url, token: '', token_scope_attested: false, webhook_secret: '' }
 
-  // 全局 codehost 配置降级为注册表单默认值:仅创建时注入,运行时不再消费。
+  // 组织段 codehost 配置作为注册表单默认值:仅创建时注入,运行时不再消费。
   useEffect(() => {
     if (creating && configuration.data?.config?.codehost) {
       form.setFieldsValue({

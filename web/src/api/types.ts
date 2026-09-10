@@ -306,6 +306,26 @@ export interface EditableRuntimeConfiguration {
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     task_timeout: string
   }
+  scheduler: {
+    enabled: boolean
+    interval: string
+    callback_base_url: string
+    workspace_root: string
+    dispatch_limit: number
+    poll_limit: number
+    reconciliation_limit: number
+    finalization_limit: number
+    recovery_limit: number
+    effect_limit: number
+  }
+}
+
+export interface ConfigurationSecretStatus {
+  agent_runner_api_key_configured: boolean
+  agent_runner_custom_headers_configured: boolean
+}
+
+export interface TenantConfigurationConfig {
   codehost: {
     provider: 'gitlab' | 'gitea' | 'github'
     base_url: string
@@ -324,25 +344,30 @@ export interface EditableRuntimeConfiguration {
     }
     reviewer_mentions: string[]
   }
-  scheduler: {
-    enabled: boolean
-    interval: string
-    callback_base_url: string
-    workspace_root: string
-    dispatch_limit: number
-    poll_limit: number
-    reconciliation_limit: number
-    finalization_limit: number
-    recovery_limit: number
-    effect_limit: number
-  }
 }
 
-export interface ConfigurationSecretStatus {
-  agent_runner_api_key_configured: boolean
-  agent_runner_custom_headers_configured: boolean
+export interface TenantConfigurationSecretStatus {
   telegram_bot_token_configured: boolean
   feishu_secret_configured: boolean
+}
+
+export interface TenantConfigurationView {
+  config: TenantConfigurationConfig
+  secrets: TenantConfigurationSecretStatus
+  revision: number
+  configured: boolean
+}
+
+export interface TenantConfigurationSecretChanges {
+  telegram_bot_token?: string
+  feishu_secret?: string
+  clear_telegram_bot_token?: boolean
+  clear_feishu_secret?: boolean
+}
+
+export interface TenantConfigurationUpdateRequest {
+  config: TenantConfigurationConfig
+  secrets?: TenantConfigurationSecretChanges
 }
 
 export interface ConfigurationView {
@@ -353,12 +378,8 @@ export interface ConfigurationView {
 export interface ConfigurationSecretChanges {
   agent_runner_api_key?: string
   agent_runner_custom_headers_json?: string
-  telegram_bot_token?: string
-  feishu_secret?: string
   clear_agent_runner_api_key?: boolean
   clear_agent_runner_custom_headers_json?: boolean
-  clear_telegram_bot_token?: boolean
-  clear_feishu_secret?: boolean
 }
 
 export interface ConfigurationUpdateRequest {

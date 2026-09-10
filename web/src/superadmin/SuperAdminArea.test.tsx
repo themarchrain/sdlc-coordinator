@@ -242,6 +242,6 @@ describe('portal gate for super admins', () => {
         <App />
       </MemoryRouter>,
     )
-    expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
+    expect(await screen.findByText('组织信息')).toBeInTheDocument()
   })
 })

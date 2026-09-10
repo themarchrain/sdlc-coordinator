@@ -40,9 +40,15 @@ base_url: 'https://gitlab.example.com',
 
 function renderPage(items = repositories) {
   vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({ items })
-  vi.spyOn(adminApi, 'configuration').mockResolvedValue({
-    config: { codehost: { provider: 'gitea', base_url: 'https://gitea.example.com', rework_allowed_user_ids: [] } },
-  } as never)
+  vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue({
+    config: {
+      codehost: { provider: 'gitea', base_url: 'https://gitea.example.com', rework_allowed_user_ids: [] },
+      im: { provider: '', telegram: {}, feishu: {}, reviewer_mentions: [] },
+    },
+    secrets: { telegram_bot_token_configured: false, feishu_secret_configured: false },
+    revision: 1,
+    configured: true,
+  })
   return render(<MemoryRouter><RepositoriesPage /></MemoryRouter>)
 }
 

@@ -9,16 +9,14 @@ import {
   InputNumber,
   message,
   Select,
-  Space,
   Steps,
   Switch,
   Tag,
-  Typography,
 } from 'antd'
 import type { FormInstance } from 'antd'
 
 type SecretFieldName = string | (string | number)[]
-import { CheckCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
@@ -29,26 +27,21 @@ import type {
   ConfigurationUpdateRequest,
   ConfigurationView,
   EditableRuntimeConfiguration,
-  Person,
 } from '../api/types'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import { AppearancePanel } from '../components/AppearancePanel'
-import { buildRuntimePeopleFields, loadAllPeople, personCodeHostIdentity, personLabel, resolveConfigurationPeople, type ConfigurationPeopleSelection } from './configurationPeople'
 
 type ConfigurationFormValues = Omit<EditableRuntimeConfiguration, 'agent_runner'> & {
   agent_runner: Omit<EditableRuntimeConfiguration['agent_runner'], 'task_timeout'> & {
     task_timeout_minutes: number
   }
-  people: ConfigurationPeopleSelection
   secrets: ConfigurationSecretChanges
 }
 
 const stepItems = [
   { title: '运行边界' },
   { title: 'Agent Runner' },
-  { title: '代码仓库' },
-  { title: '通知' },
   { title: '调度' },
   { title: '保存启用' },
 ]
@@ -59,7 +52,6 @@ export function ConfigurationPage() {
   const [form] = Form.useForm<ConfigurationFormValues>()
   const [status, setStatus] = useState<ConfigurationStatus>()
   const [view, setView] = useState<ConfigurationView>()
-  const [people, setPeople] = useState<Person[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>()
   const [step, setStep] = useState(0)
@@ -69,12 +61,11 @@ export function ConfigurationPage() {
   const isSetup = location.pathname === '/setup'
 
   useEffect(() => {
-    Promise.all([adminApi.configurationStatus(), adminApi.configuration(), loadAllPeople()])
-      .then(([nextStatus, nextView, allPeople]) => {
+    Promise.all([adminApi.configurationStatus(), adminApi.configuration()])
+      .then(([nextStatus, nextView]) => {
         setStatus(nextStatus)
         setView(nextView)
-        setPeople(allPeople)
-        form.setFieldsValue(toFormValues(nextView, allPeople))
+        form.setFieldsValue(toFormValues(nextView))
       })
       .catch(setError)
       .finally(() => setLoading(false))
@@ -104,7 +95,7 @@ export function ConfigurationPage() {
     setFieldErrors({})
     try {
       const values = await form.validateFields()
-      const request = toUpdateRequest(values, people)
+      const request = toUpdateRequest(values)
       const validation = await adminApi.validateConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
@@ -154,10 +145,8 @@ export function ConfigurationPage() {
         <Form form={form} layout="vertical" requiredMark="optional" className="configuration-form">
           <div hidden={step !== 0}><RuntimeBoundaryStep status={status} /></div>
           <div hidden={step !== 1}><AgentRunnerStep secrets={view.secrets} /></div>
-          <div hidden={step !== 2}><CodeHostStep secrets={view.secrets} people={people} onManagePeople={() => navigate('/people', { state: { returnTo: location.pathname } })} /></div>
-          <div hidden={step !== 3}><NotificationStep secrets={view.secrets} people={people} /></div>
-          <div hidden={step !== 4}><RuntimeSettingsStep /></div>
-          <div hidden={step !== 5}><SummaryStep form={form} fieldErrors={fieldErrors} /></div>
+          <div hidden={step !== 2}><RuntimeSettingsStep /></div>
+          <div hidden={step !== 3}><SummaryStep form={form} fieldErrors={fieldErrors} /></div>
         </Form>
 
         <div className="configuration-actions">
@@ -196,14 +185,14 @@ function RuntimeBoundaryStep({ status }: { status: ConfigurationStatus }) {
           type="info"
           showIcon
           message="系统尚未初始化，请完成以下配置后启用。"
-          description="请依次完成 Agent Runner、代码仓库、通知和调度设置。最后一步点击“保存并启用”后，系统会保存完整配置并自动重启；重启完成后自动化能力才会开始运行。"
+          description="请依次完成 Agent Runner 和调度设置。最后一步点击“保存并启用”后，系统会保存完整配置并自动重启；重启完成后自动化能力才会开始运行。组织级配置（代码仓库默认值、通知）由组织管理员在组织工作台维护。"
         />
       : <Alert
           className="configuration-init-status"
           type={status.mode === 'configuration_error' ? 'error' : 'info'}
           showIcon
           message="系统已初始化，点击“下一步”开始更新配置，手动确认后，将重启并应用。"
-          description="请依次完成 Agent Runner、代码仓库、通知和调度设置。最后一步点击“保存并启用”后，系统会用本次填写的完整配置覆盖当前运行配置，并自动重启；重启完成后新配置才会生效。"
+          description="请依次完成 Agent Runner 和调度设置。最后一步点击“保存并启用”后，系统会用本次填写的完整配置覆盖当前运行配置，并自动重启；重启完成后新配置才会生效。组织级配置（代码仓库默认值、通知）由组织管理员在组织工作台维护。"
         />}
     {importedLegacy ? <Alert type="success" showIcon message="旧环境变量已完成一次性导入；请确认后保存，后续以 SQLite 配置为准。" /> : null}
   </div>
@@ -234,57 +223,6 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
   </div>
 }
 
-function CodeHostStep({ secrets, people, onManagePeople }: { secrets: ConfigurationView['secrets']; people: Person[]; onManagePeople: () => void }) {
-  const provider = Form.useWatch(['codehost', 'provider']) || 'gitlab'
-  const baseURL = Form.useWatch(['codehost', 'base_url']) || ''
-  
-  const selectedRework: string[] = Form.useWatch(['people', 'rework_person_ids']) || []
-  const codeHostOptions = people.filter((person) => {
-    const identity = personCodeHostIdentity(person, provider, baseURL)
-    return identity && Number.isInteger(Number(identity.external_user_id)) && Number(identity.external_user_id) > 0 && (person.enabled || selectedRework.includes(person.person_id))
-  }).map((person) => ({ value: person.person_id, label: personLabel(person, provider, baseURL), disabled: !person.enabled }))
-  return <div>
-    <div className="configuration-form-grid">
-      <Form.Item name={['codehost', 'provider']} label="代码托管平台" rules={[{ required: true }]}><Select aria-label="代码托管平台" options={[{ value: 'gitlab', label: 'GitLab' }, { value: 'gitea', label: 'Gitea' }, { value: 'github', label: 'GitHub' }]} /></Form.Item>
-      <Form.Item name={['codehost', 'base_url']} label="平台地址" rules={[{ required: true }, { validator: validateHTTPURL }]}><Input placeholder="https://gitlab.example.com" /></Form.Item>
-      <p className="form-note">此处的平台与地址作为新增仓库表单的默认值；每个仓库可在仓库管理中单独指定平台与地址。</p>
-      <Form.Item name={['people', 'rework_person_ids']} label="额外允许接续开发的人员" extra="从人员资产选择；MR 作者、负责人和 Reviewer 无需重复填写。"><Select mode="multiple" options={codeHostOptions} placeholder="选择人员" /></Form.Item>
-    </div>
-    <div className="configuration-inline-title"><Typography.Text type="secondary">额外允许人员按平台身份解析;无匹配时接续开发授权退化为作者 ∪ 白名单。</Typography.Text><Button icon={<PlusOutlined />} onClick={onManagePeople}>管理人员资产</Button></div>
-    <LegacyIDValues />
-  </div>
-}
-
-function NotificationStep({ secrets, people }: { secrets: ConfigurationView['secrets']; people: Person[] }) {
-  const selected: string[] = Form.useWatch(['people', 'reviewer_person_ids']) || []
-  const options = people.filter((person) => person.enabled || selected.includes(person.person_id)).map((person) => ({ value: person.person_id, label: personLabel(person), disabled: !person.enabled }))
-  const provider = Form.useWatch(['im', 'provider']) || ''
-  return <div className="configuration-form-grid">
-    <Form.Item name={['im', 'provider']} label="IM 通知渠道" extra="不配置则跳过所有 IM 通知。">
-      <Select aria-label="IM 通知渠道" allowClear options={[{ value: 'telegram', label: 'Telegram' }, { value: 'feishu', label: '飞书' }]} placeholder="选择通知渠道" />
-    </Form.Item>
-    {provider === 'telegram' ? <>
-      <SecretField name={['secrets', 'telegram_bot_token']} clearName="clear_telegram_bot_token" label="Telegram Bot Token" configured={secrets.telegram_bot_token_configured} />
-      <Form.Item name={['im', 'telegram', 'default_chat_id']} label="默认 Chat ID" extra="支持负数的群组 ID。"><Input className="mono" placeholder="-100123456789" /></Form.Item>
-      <Form.Item name={['im', 'telegram', 'api_base']} label="API 地址（可选）" extra="自托管 bot-api server 时填写。"><Input className="mono" placeholder="https://api.telegram.org" /></Form.Item>
-    </> : null}
-    {provider === 'feishu' ? <>
-      <Form.Item name={['im', 'feishu', 'webhook_url']} label="飞书群机器人 Webhook" rules={[{ validator: validateHTTPURL }]}><Input className="mono" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." /></Form.Item>
-      <SecretField name={['secrets', 'feishu_secret']} clearName="clear_feishu_secret" label="签名 Secret（可选）" configured={secrets.feishu_secret_configured} />
-    </> : null}
-    <Form.Item name={['people', 'reviewer_person_ids']} label="审查完成后固定提醒人" extra="从人员资产选择;保存为人员显示名,供 IM 提及渲染。"><Select mode="multiple" options={options} placeholder="选择提醒人" /></Form.Item>
-    <LegacyReviewerValues />
-  </div>
-}
-
-function LegacyIDValues() {
-  return <Form.List name={['people', 'legacy_rework_user_ids']}>{(fields, { remove }) => fields.length ? <div className="configuration-legacy-values"><span>历史未关联接续开发 ID（默认保留）</span>{fields.map((field, index) => <Form.Item noStyle shouldUpdate key={field.key}>{({ getFieldValue }) => { const value = getFieldValue(['people', 'legacy_rework_user_ids', index]); return <Tag closable aria-label={`移除历史接续开发 ID ${value}`} onClose={() => remove(field.name)}>{value}</Tag> }}</Form.Item>)}</div> : null}</Form.List>
-}
-
-function LegacyReviewerValues() {
-  return <Form.List name={['people', 'legacy_reviewer_mentions']}>{(fields, { remove }) => fields.length ? <div className="configuration-legacy-values"><span>历史未关联提醒人（默认保留）</span>{fields.map((field, index) => <Form.Item noStyle shouldUpdate key={field.key}>{({ getFieldValue }) => { const value = getFieldValue(['people', 'legacy_reviewer_mentions', index]); return <Tag closable aria-label={`移除历史提醒邮箱 ${value}`} onClose={() => remove(field.name)}>{value}</Tag> }}</Form.Item>)}</div> : null}</Form.List>
-}
-
 function RuntimeSettingsStep() {
   const limits = [
     ['dispatch_limit', '派发'], ['poll_limit', '轮询'], ['reconciliation_limit', '写回对账'],
@@ -308,10 +246,9 @@ function SummaryStep({ form, fieldErrors }: { form: FormInstance<ConfigurationFo
     <p>新版本会原子写入 SQLite。当前进程不会热替换已有 Client；收到重启请求后先返回响应，再执行优雅关闭。</p>
     <div className="configuration-summary-grid">
       <div><span>Agent Runner</span><strong>{values?.agent_runner?.model ? `${values.agent_runner.model} / ${values.agent_runner.service_url}` : '未填写'}</strong></div>
-      <div><span>代码仓库</span><strong>{values?.codehost?.base_url || '未填写'}</strong></div>
       <div><span>Scheduler</span><strong>{values?.scheduler?.enabled ? `每 ${values.scheduler.interval}` : '停用'}</strong></div>
     </div>
-    {Object.keys(fieldErrors).length > 0 ? <Alert type="error" showIcon message="以下字段未通过校验" description={<ul>{Object.entries(fieldErrors).map(([field, detail]) => <li key={field}><code>{field}</code>：{detail}</li>)}</ul>} /> : null}
+    {Object.keys(fieldErrors).length > 0 ? <Alert type="error" showIcon message="以下字段未通过校验" description={<ul>{Object.entries(fieldErrors).map(([field, detail]) => <li key={field}><code>{field}</code>：{detail}</li>)}</ul> } /> : null}
   </div>
 }
 
@@ -323,7 +260,7 @@ function SecretField({ name, clearName, label, configured, optional = false }: {
   </div>
 }
 
-function toFormValues(view: ConfigurationView, people: Person[]): ConfigurationFormValues {
+function toFormValues(view: ConfigurationView): ConfigurationFormValues {
   const { task_timeout, ...agentRunner } = view.config.agent_runner
   return {
     ...view.config,
@@ -331,15 +268,11 @@ function toFormValues(view: ConfigurationView, people: Person[]): ConfigurationF
       ...agentRunner,
       task_timeout_minutes: durationMinutes(task_timeout),
     },
-    codehost: { ...view.config.codehost, rework_allowed_user_ids: view.config.codehost.rework_allowed_user_ids || [] },
-    im: { ...view.config.im, reviewer_mentions: view.config.im.reviewer_mentions || [] },
-    people: resolveConfigurationPeople(view, people),
     secrets: {},
   }
 }
 
-function toUpdateRequest(values: ConfigurationFormValues, people: Person[]): ConfigurationUpdateRequest {
-  const resolved = buildRuntimePeopleFields(values.people, people, values.codehost.provider, values.codehost.base_url)
+function toUpdateRequest(values: ConfigurationFormValues): ConfigurationUpdateRequest {
   const { task_timeout_minutes, ...agentRunner } = values.agent_runner
   return {
     config: {
@@ -347,11 +280,6 @@ function toUpdateRequest(values: ConfigurationFormValues, people: Person[]): Con
         ...agentRunner,
         task_timeout: `${task_timeout_minutes}m`,
       },
-      codehost: {
-        ...values.codehost,
-        rework_allowed_user_ids: resolved.rework_allowed_user_ids,
-      },
-      im: { ...values.im, reviewer_mentions: resolved.reviewer_mentions },
       scheduler: values.scheduler,
     },
     secrets: values.secrets || {},

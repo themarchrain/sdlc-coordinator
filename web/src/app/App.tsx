@@ -8,6 +8,7 @@ import { MemberHomePage } from '../pages/MemberHomePage'
 import { OperationsPage } from '../pages/OperationsPage'
 import { OverviewPage } from '../pages/OverviewPage'
 import { OrgManagementPage } from '../portal/OrgManagementPage'
+import { OrgConfigurationPage } from '../pages/OrgConfigurationPage'
 import { PeoplePage } from '../pages/PeoplePage'
 import { RepositoriesPage } from '../pages/RepositoriesPage'
 import { RequirementsPage } from '../pages/RequirementsPage'
@@ -65,6 +66,8 @@ function AdminRoutes() {
           <Route path="people" element={<RoleGate min="tenant_admin"><SupportOnlyGate><PeoplePage /></SupportOnlyGate></RoleGate>} />
           {/* 组织管理内嵌工作台：菜单直达 /org；portal 区只留无壳页。 */}
           <Route path="org" element={<RoleGate min="tenant_admin"><OrgManagementPage /></RoleGate>} />
+          {/* 组织段运行配置（代码仓库默认值+通知）：组织管理员向导，保存热生效。 */}
+          <Route path="org/settings" element={<RoleGate min="tenant_admin"><OrgConfigurationPage /></RoleGate>} />
           <Route path="requirements" element={<SupportOnlyGate><RequirementsPage /></SupportOnlyGate>} />
           <Route path="repositories" element={<RoleGate min="tenant_admin"><SupportOnlyGate><RepositoriesPage /></SupportOnlyGate></RoleGate>} />
           <Route path="tasks" element={<SupportOnlyGate><TasksPage /></SupportOnlyGate>} />

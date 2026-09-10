@@ -1,5 +1,5 @@
 import { adminApi } from '../api/client'
-import type { ConfigurationView, Person } from '../api/types'
+import type { Person, TenantConfigurationView } from '../api/types'
 
 export interface ConfigurationPeopleSelection {
   rework_person_ids: string[]
@@ -13,7 +13,7 @@ export interface RuntimePeopleFields {
   reviewer_mentions: string[]
 }
 
-export function resolveConfigurationPeople(view: ConfigurationView, people: Person[]): ConfigurationPeopleSelection {
+export function resolveTenantConfigurationPeople(view: TenantConfigurationView, people: Person[]): ConfigurationPeopleSelection {
   const provider = view.config.codehost.provider
   const baseURL = normalizeBaseURL(view.config.codehost.base_url)
   const reworkPersonIDs: string[] = []

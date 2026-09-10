@@ -39,7 +39,6 @@ func (lookup staticRepositoryLookup) Get(_ context.Context, repositoryID string)
 	return &registeredrepo.RegisteredRepository{RepositoryID: id, Status: registeredrepo.StatusEnabled}, nil
 }
 
-
 func TestReviewerMentionsFollowProviderChanges(t *testing.T) {
 	repoID := "repo_a"
 	current := []string{"alice"}

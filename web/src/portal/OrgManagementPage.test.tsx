@@ -41,7 +41,7 @@ describe('OrgManagementPage', () => {
     vi.spyOn(portalApi, 'listInviteCodes').mockResolvedValue({ invite_codes: inviteCodes })
 
     renderPage()
-    expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
+    expect(await screen.findByText('组织信息')).toBeInTheDocument()
     expect(screen.getByText('org-admin')).toBeInTheDocument()
     expect(screen.getByText('plain-member')).toBeInTheDocument()
     expect(await screen.findByText('邀请码管理')).toBeInTheDocument()
@@ -82,7 +82,7 @@ describe('OrgManagementPage', () => {
     const revoke = vi.spyOn(portalApi, 'revokeInviteCode').mockResolvedValue({ ok: true })
 
     renderPage()
-    await screen.findByText('Acme 组织')
+    await screen.findByText('组织信息')
     const revokeButtons = await screen.findAllByRole('button', { name: /吊\s*销/ })
     await user.click(revokeButtons[0])
     // Popconfirm 二次确认（测试环境未配 zhCN，按钮文案为 OK）

@@ -232,7 +232,7 @@ func TestStartupLeavesLegacyRepositoryRowsUntouched(t *testing.T) {
 	}
 
 	application, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
+		HTTPAddr: ":0",
 	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -252,7 +252,7 @@ func TestStartupLeavesLegacyRepositoryRowsUntouched(t *testing.T) {
 
 	// 重启幂等:第二次启动回填零行、索引 IF NOT EXISTS,仓行与状态不变。
 	if _, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
+		HTTPAddr: ":0",
 	}), zap.NewNop(), db); err != nil {
 		t.Fatalf("second startup must be idempotent: %v", err)
 	}
