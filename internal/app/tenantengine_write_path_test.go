@@ -206,3 +206,63 @@ func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 		t.Fatal("restored tenant must get its engine back")
 	}
 }
+
+// engineForPath 三态：索引指认的租户打不开引擎 → 错误（5xx，不回落
+// 平台库）；索引未命中 → 平台处理器（存量过渡期兜底）；正常租户 →
+// 该租户引擎的处理器。
+func TestEngineForPathDistinguishesMissFromUnavailable(t *testing.T) {
+	ctx := context.Background()
+	db := openAppTestDB(t)
+	cfg := withTestControlPlane(t, config.Config{HTTPAddr: ":0"})
+	application, err := New(cfg, zap.NewNop(), db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
+			resolver.Close()
+		}
+	})
+	tenant, err := application.ControlPlane.CreateTenant(ctx, &controlplane.Actor{ID: 1, Username: "root"}, controlplane.TenantInput{
+		Slug: "routed", DisplayName: "路由验证",
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := registeredrepo.NewStore(tenantStore.DB).Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: "repo-ok", DisplayName: "正常仓", Provider: "gitea", BaseURL: "https://gitea.example",
+		PathWithNamespace: "routed/ok", WebhookSecret: "secret-ok", TokenScopeAttested: true,
+		Status: registeredrepo.StatusEnabled,
+	}); err != nil {
+		t.Fatalf("seed tenant repository: %v", err)
+	}
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitea", BaseURL: "https://gitea.example", PathWithNamespace: "routed/ok",
+		TenantID: tenant.ID, RepoFingerprint: "repo-ok",
+	}); err != nil {
+		t.Fatalf("seed route index: %v", err)
+	}
+	// 索引指向不存在的租户：引擎解析必然失败，必须上抛错误。
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitea", BaseURL: "https://gitea.example", PathWithNamespace: "ghost/repo",
+		TenantID: 424242, RepoFingerprint: "repo-ghost",
+	}); err != nil {
+		t.Fatalf("seed ghost index: %v", err)
+	}
+
+	if _, err := application.pool.engineForPath(ctx, "gitea", "ghost/repo"); err == nil {
+		t.Fatal("engine for a routed but unavailable tenant must surface an error")
+	}
+	processor, err := application.pool.engineForPath(ctx, "gitea", "nowhere/repo")
+	if err != nil || processor != application.pool.platform.processor {
+		t.Fatalf("unrouted repo must fall back to the platform processor, got proc=%v err=%v", processor, err)
+	}
+	if processor, err := application.pool.engineForPath(ctx, "gitea", "routed/ok"); err != nil || processor == nil {
+		t.Fatalf("routed active tenant must yield its engine processor, got proc=%v err=%v", processor, err)
+	}
+}

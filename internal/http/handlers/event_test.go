@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"sdlc-coordinator/internal/events"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -255,4 +257,52 @@ type failingSecretLookup struct{}
 
 func (failingSecretLookup) WebhookSecretByPath(context.Context, string, string) (string, error) {
 	return "", errors.New("db down")
+}
+
+// 工厂三态语义:命中用工厂产物;未命中回落构造期平台处理器(存量过渡期
+// 兜底);路由已指认租户但引擎不可用则上抛错误,绝不回落平台库。
+func TestResolveProcessorDistinguishesMissFromUnavailable(t *testing.T) {
+	platform := &events.Processor{}
+	miss := NewEventHandler(platform, WithProcessorFactory(func(context.Context, string, string) (*events.Processor, error) {
+		return nil, nil
+	}))
+	if proc, err := miss.resolveProcessor(context.Background(), providerGitLab, "group/repo-a"); err != nil || proc != platform {
+		t.Fatalf("miss must fall back to the platform processor, got proc=%v err=%v", proc, err)
+	}
+	down := NewEventHandler(platform, WithProcessorFactory(func(context.Context, string, string) (*events.Processor, error) {
+		return nil, errors.New("tenant engine unavailable")
+	}))
+	if proc, err := down.resolveProcessor(context.Background(), providerGitLab, "group/repo-a"); err == nil || proc != nil {
+		t.Fatalf("unavailable engine must surface an error without a processor, got proc=%v err=%v", proc, err)
+	}
+	hit := &events.Processor{}
+	targeted := NewEventHandler(platform, WithProcessorFactory(func(context.Context, string, string) (*events.Processor, error) {
+		return hit, nil
+	}))
+	if proc, err := targeted.resolveProcessor(context.Background(), providerGitLab, "group/repo-a"); err != nil || proc != hit {
+		t.Fatalf("factory hit must win, got proc=%v err=%v", proc, err)
+	}
+}
+
+// 已验签的 webhook 在租户引擎不可用时必须 503(代码托管会重试),即便
+// 构造期存在平台处理器也不得回落写库。
+func TestGiteaWebhookFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewEventHandler(&events.Processor{},
+		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
+			{provider: "gitea", path: "group/repo-a"}: "secret-gitea-a",
+		}}),
+		WithProcessorFactory(func(context.Context, string, string) (*events.Processor, error) {
+			return nil, errors.New("tenant engine unavailable")
+		}))
+	router.POST("/api/events/gitea", handler.Gitea)
+
+	body := `{"action":"opened","repository":{"full_name":"group/repo-a"}}`
+	response := performEvent(t, router, http.MethodPost, "/api/events/gitea", body, map[string]string{
+		"X-Gitea-Signature": hmacSignature("secret-gitea-a", []byte(body)),
+	})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("engine unavailable must fail closed with 503, got %d: %s", response.Code, response.Body.String())
+	}
 }

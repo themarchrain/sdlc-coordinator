@@ -12,6 +12,7 @@ import (
 	"sdlc-coordinator/internal/tenantdb"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // repoIndexReconcileInterval 是路由索引对账周期（默认保守 10 分钟；
@@ -70,10 +71,11 @@ func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, pr
 
 // tenantRouteSecretLookup 是 webhook 验签的租户路由解析：
 // 最小身份 (provider, path) → 控制面索引 → 打开租户库取仓行 secret。
-// 错误语义：err 非 nil = 基础设施抖动（索引查询失败/租户库句柄不可用），
-// 调用方回 5xx 让代码托管重试；空串 = 未注册（fail-closed 401）。
-// 索引未命中（tenantID=0）回退平台库仓行（存量部署过渡期），其余情形
-// 不再回落平台库——索引已指认租户却验平台副本，等于把事件放进错误的库。
+// 错误语义：err 非 nil = 基础设施抖动（索引查询失败/租户库句柄不可用/
+// 仓行查询故障），调用方回 5xx 让代码托管重试；空串 = 未注册
+// （fail-closed 401）。索引未命中（tenantID=0）回退平台库仓行（存量
+// 部署过渡期），其余情形不再回落平台库——索引已指认租户却验平台副本，
+// 等于把事件放进错误的库。
 type tenantRouteSecretLookup struct {
 	index    *controlplane.Repository
 	resolver tenantdb.Resolver
@@ -94,12 +96,18 @@ func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provi
 		if getErr == nil {
 			return strings.TrimSpace(repo.WebhookSecret), nil
 		}
-		// 租户库无此仓行（索引漂移）：按未注册拒绝，等对账清理索引。
-		return "", nil
+		if errors.Is(getErr, gorm.ErrRecordNotFound) {
+			// 租户库无此仓行（索引漂移）：按未注册拒绝，等对账清理索引。
+			return "", nil
+		}
+		return "", fmt.Errorf("tenant repo lookup failed for tenant %d: %w", tenantID, getErr)
 	}
 	repo, err := l.platform.GetByPath(ctx, provider, path)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("platform repo lookup failed: %w", err)
 	}
 	return strings.TrimSpace(repo.WebhookSecret), nil
 }

@@ -163,6 +163,49 @@ func openPlatformStoreDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// 基础设施故障（租户库/平台库查询失败）必须上抛错误（调用方 5xx 让代码
+// 托管重试），不得折叠成「未注册」的 401——401 不会被代码托管重试，
+// 故障窗口内的事件会被永久丢弃。
+func TestTenantRouteSecretLookupSurfacesStoreFailures(t *testing.T) {
+	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
+	ctx := context.Background()
+	tenant := &controlplane.Tenant{Slug: "acme-dying", DisplayName: "Dying"}
+	if err := cpRepo.CreateTenant(ctx, tenant); err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	root := t.TempDir()
+	resolver := tenantdb.NewSqliteFileResolver(nil, root, 0)
+	t.Cleanup(resolver.Close)
+	tenantStore, err := resolver.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := cpRepo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "acme/down",
+		TenantID: tenant.ID, RepoFingerprint: "repo-down",
+	}); err != nil {
+		t.Fatalf("seed index: %v", err)
+	}
+	platformDB := openPlatformStoreDB(t)
+	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver, platform: registeredrepo.NewStore(platformDB)}
+
+	// 索引已指认租户，但租户库句柄失效：查询故障必须上抛（5xx 语义）。
+	if sqlDB, err := tenantStore.DB.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/down"); err == nil {
+		t.Fatal("tenant store failure must surface an error, not an empty 401 secret")
+	}
+
+	// 索引未命中的平台兜底查询失败：同样必须上抛。
+	if sqlDB, err := platformDB.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/unknown"); err == nil {
+		t.Fatal("platform store failure must surface an error, not an empty 401 secret")
+	}
+}
+
 // 对账冲突：同身份被两个租户同时声称时保留现状——不翻转、不删除、
 // 指纹不动，交由人工裁决。
 func TestReconcileRepoRouteIndexKeepsAssignmentOnCrossTenantConflict(t *testing.T) {

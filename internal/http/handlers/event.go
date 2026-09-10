@@ -25,15 +25,20 @@ const (
 )
 
 // WebhookSecretLookup 按 provider + 仓路径解析该仓的 webhook secret(webhook
-// secret 按仓持有,无全局回退)。返回任何 error(含未注册)或空串都由验签方统一
-// fail-closed 拒绝,响应不区分原因(枚举防护)。
+// secret 按仓持有,无全局回退)。返回空串表示未注册(调用方 401 拒绝);
+// 返回 error 表示基础设施抖动(索引查询失败/租户库句柄不可用/仓行查询
+// 故障,调用方 5xx 让代码托管重试)。两类失败都 fail-closed,未验证流量
+// 不得进入事件库。
 type WebhookSecretLookup interface {
 	WebhookSecretByPath(ctx context.Context, provider, path string) (string, error)
 }
 
-// ProcessorFactory 按 (provider, path) 解析该仓所属租户的事件处理器;
-// 返回 nil 表示未命中,回落构造期的平台处理器(存量过渡期兜底)。
-type ProcessorFactory func(ctx context.Context, provider, path string) *events.Processor
+// ProcessorFactory 按 (provider, path) 解析该仓所属租户的事件处理器。
+// 返回处理器非 nil 表示命中;处理器与 error 均为零值表示未命中(回落
+// 构造期的平台处理器,存量过渡期兜底);error 非 nil 表示路由已指认租户
+// 但引擎不可用(组织停用/租户库打开失败),调用方 fail-closed 回 5xx 让
+// 代码托管重试,不得回落平台库。
+type ProcessorFactory func(ctx context.Context, provider, path string) (*events.Processor, error)
 
 type EventHandler struct {
 	processor        *events.Processor
@@ -63,21 +68,28 @@ func WithReworkAllowedUserIDs(ids []int) EventHandlerOption {
 }
 
 // WithProcessorFactory 注入按仓路由的处理器工厂;每个 webhook 请求在验签
-// 通过后按 (provider, path) 选择处理器实例(租户引擎或平台兜底)。
+// 通过后按 (provider, path) 选择处理器实例(租户引擎;未命中回落平台兜底,
+// 引擎不可用则拒绝)。
 func WithProcessorFactory(factory ProcessorFactory) EventHandlerOption {
 	return func(h *EventHandler) {
 		h.processorFactory = factory
 	}
 }
 
-// resolveProcessor 选取本请求的事件处理器:工厂命中优先,否则回落构造期实例。
-func (h *EventHandler) resolveProcessor(ctx context.Context, provider, path string) *events.Processor {
+// resolveProcessor 选取本请求的事件处理器:工厂命中用租户处理器;路由已
+// 指认租户但引擎不可用则上抛错误(调用方 5xx 让代码托管重试,不回落
+// 平台库);仅未命中回落构造期平台实例(存量过渡期兜底)。
+func (h *EventHandler) resolveProcessor(ctx context.Context, provider, path string) (*events.Processor, error) {
 	if h.processorFactory != nil {
-		if processor := h.processorFactory(ctx, provider, path); processor != nil {
-			return processor
+		processor, err := h.processorFactory(ctx, provider, path)
+		if err != nil {
+			return nil, err
+		}
+		if processor != nil {
+			return processor, nil
 		}
 	}
-	return h.processor
+	return h.processor, nil
 }
 
 type GitLabEventResponse struct {
@@ -122,7 +134,11 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
 		return
 	}
-	processor := h.resolveProcessor(c.Request.Context(), providerGitLab, path)
+	processor, err := h.resolveProcessor(c.Request.Context(), providerGitLab, path)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
+		return
+	}
 	if h == nil || processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
@@ -185,7 +201,11 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
 		return
 	}
-	processor := h.resolveProcessor(c.Request.Context(), providerGitea, path)
+	processor, err := h.resolveProcessor(c.Request.Context(), providerGitea, path)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
+		return
+	}
 	if h == nil || processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
@@ -248,7 +268,11 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
 		return
 	}
-	processor := h.resolveProcessor(c.Request.Context(), providerGitHub, path)
+	processor, err := h.resolveProcessor(c.Request.Context(), providerGitHub, path)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
+		return
+	}
 	if h == nil || processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return

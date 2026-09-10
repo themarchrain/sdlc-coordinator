@@ -294,20 +294,29 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 	return result
 }
 
+// errTenantEngineUnavailable 表示路由索引已指认租户,但其引擎当前不可用
+// (组织停用、租户库打开或构造失败)。webhook 处理器据此 fail-closed 回
+// 5xx 让代码托管重试,不回落平台库。
+var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
+
 // engineForPath 按 (provider, path) 的路由索引解析事件处理器：索引唯一
-// 行 → 该租户引擎的处理器；未命中、停用租户或引擎不可用 → nil（fail
-// closed，由 handler 报处理器未配置）——不再回落平台引擎，故障瞬间的
-// 事件宁可 5xx 让代码托管重试，也不写进平台库死数据区。索引歧义同样
-// nil（验签层已 fail-closed，此处防御性兜底）。
-func (p *enginePool) engineForPath(ctx context.Context, provider, path string) *events.Processor {
+// 行 → 该租户引擎的处理器；未命中 → 平台处理器（存量过渡期兜底）；
+// 索引指认租户但引擎不可用 → 错误（fail closed，调用方 5xx 让代码托管
+// 重试），故障瞬间的事件宁可被重试也不写进平台库。索引歧义同样返回
+// 错误（验签层已 fail-closed，此处防御性兜底）。
+func (p *enginePool) engineForPath(ctx context.Context, provider, path string) (*events.Processor, error) {
 	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	if engine := p.forTenantID(ctx, tenantID); engine != nil {
-		return engine.processor
+	if tenantID == 0 {
+		return p.platform.processor, nil
 	}
-	return nil
+	engine := p.forTenantID(ctx, tenantID)
+	if engine == nil {
+		return nil, errTenantEngineUnavailable
+	}
+	return engine.processor, nil
 }
 
 // engineForSession 按请求会话的组织作用域解析引擎；无作用域会话（超管
