@@ -50,6 +50,10 @@ type ControlPlaneSettings struct {
 	SuperAdminUsername string
 	SuperAdminPassword string
 	SuperAdminReset    bool
+	// PortalCookieSecure 控制门户会话 cookie 的 Secure 属性。nil（未设置
+	// PORTAL_COOKIE_SECURE，或值不合法）按安全默认 true；明文 http 部署
+	// 可显式设 0/false 关闭。
+	PortalCookieSecure *bool
 }
 
 func (s ControlPlaneSettings) Validate() error {
@@ -113,7 +117,22 @@ func loadControlPlaneSettings() ControlPlaneSettings {
 		SuperAdminUsername: strings.ToLower(strings.TrimSpace(getEnv("CONTROL_PLANE_SUPERADMIN_USERNAME", ""))),
 		SuperAdminPassword: getEnv("CONTROL_PLANE_SUPERADMIN_PASSWORD", ""),
 		SuperAdminReset:    getEnvBool("CONTROL_PLANE_SUPERADMIN_RESET", false),
+		PortalCookieSecure: getEnvOptionalBool("PORTAL_COOKIE_SECURE"),
 	}
+}
+
+// getEnvOptionalBool 返回 nil 表示环境变量未设置或值不合法（消费方取
+// 安全默认，不让坏配置静默放宽）。
+func getEnvOptionalBool(key string) *bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil
+	}
+	return &value
 }
 
 func parseStringMap(raw string) map[string]string {

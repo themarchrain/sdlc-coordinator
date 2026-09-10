@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
@@ -23,7 +24,8 @@ type AdminEffectLookup interface {
 }
 
 // AdminOperationEngines 按请求会话的租户作用域选择操作引擎与 effect 查询；
-// 未注入或返回 nil 时回落构造期默认（单库形态/测试）。
+// 注入后返回 nil 即「租户引擎不可用」（503），不得回落构造期默认——那会
+// 把租户作用域操作写进平台库。未注入端口才用构造期默认（单库形态/测试）。
 type AdminOperationEngines interface {
 	OperationsFor(c *gin.Context) AdminOperations
 	EffectsFor(c *gin.Context) AdminEffectLookup
@@ -46,22 +48,18 @@ func NewAdminOperationHandler(operations AdminOperations, effects AdminEffectLoo
 	return handler
 }
 
-// operationsFor 取本请求的操作引擎：会话租户引擎优先，回落构造期默认。
+// operationsFor 取本请求的操作引擎：注入引擎端口时 nil 即不可用（503）。
 func (handler *AdminOperationHandler) operationsFor(c *gin.Context) AdminOperations {
 	if handler.engines != nil {
-		if operations := handler.engines.OperationsFor(c); operations != nil {
-			return operations
-		}
+		return handler.engines.OperationsFor(c)
 	}
 	return handler.operations
 }
 
-// effectsFor 取本请求的 effect 查询：会话租户库优先，回落构造期默认。
+// effectsFor 取本请求的 effect 查询：注入引擎端口时 nil 即不可用（503）。
 func (handler *AdminOperationHandler) effectsFor(c *gin.Context) AdminEffectLookup {
 	if handler.engines != nil {
-		if effects := handler.engines.EffectsFor(c); effects != nil {
-			return effects
-		}
+		return handler.engines.EffectsFor(c)
 	}
 	return handler.effects
 }
@@ -143,4 +141,55 @@ func (handler *AdminOperationHandler) RebindTask(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, taskResponse(task))
+}
+
+// statusFromError 把仓库/编排错误映射到 HTTP 状态码。
+func statusFromError(err error) int {
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, repository.ErrTaskNotClaimable),
+		errors.Is(err, orchestrator.ErrInvalidTransition),
+		errors.Is(err, orchestrator.ErrTickInProgress):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+// EffectResponse 是 effect 在 admin 操作响应里的序列化形态。
+type EffectResponse struct {
+	EffectID     string             `json:"effect_id"`
+	TaskID       string             `json:"task_id"`
+	RunID        string             `json:"run_id"`
+	DedupeKey    string             `json:"dedupe_key"`
+	Kind         string             `json:"kind"`
+	Target       string             `json:"target"`
+	Critical     bool               `json:"critical"`
+	Status       model.EffectStatus `json:"status"`
+	AttemptCount int                `json:"attempt_count"`
+	RequestJSON  string             `json:"request_json,omitempty"`
+	ResponseJSON string             `json:"response_json,omitempty"`
+	ErrorMessage string             `json:"error_message,omitempty"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func effectResponse(effect *model.Effect) EffectResponse {
+	return EffectResponse{
+		EffectID:     effect.EffectID,
+		TaskID:       effect.TaskID,
+		RunID:        effect.RunID,
+		DedupeKey:    effect.DedupeKey,
+		Kind:         effect.Kind,
+		Target:       effect.Target,
+		Critical:     effect.Critical,
+		Status:       effect.Status,
+		AttemptCount: effect.AttemptCount,
+		RequestJSON:  effect.RequestJSON,
+		ResponseJSON: effect.ResponseJSON,
+		ErrorMessage: effect.ErrorMessage,
+		CreatedAt:    effect.CreatedAt,
+		UpdatedAt:    effect.UpdatedAt,
+	}
 }

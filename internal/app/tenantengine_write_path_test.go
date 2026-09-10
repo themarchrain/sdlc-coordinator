@@ -150,3 +150,144 @@ func TestEnginePoolForTenantIDIsSingletonUnderConcurrency(t *testing.T) {
 		}
 	}
 }
+
+// 停用组织即时失去引擎（状态门逐调用生效，缓存命中也不例外）；路由认领
+// 保留不删，停用期间已验签的 webhook 按可重试拒绝（引擎不可用 5xx），
+// 平台库保持零写入；恢复后引擎回归、路由立即可用。
+func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
+	ctx := context.Background()
+	db := openAppTestDB(t)
+	cfg := withTestControlPlane(t, config.Config{HTTPAddr: ":0"})
+	application, err := New(cfg, zap.NewNop(), db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	// Windows 下租户库句柄不显式关闭会阻塞 TempDir 清理。
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
+			resolver.Close()
+		}
+	})
+	actor := &controlplane.Actor{ID: 1, Username: "root"}
+	tenant, err := application.ControlPlane.CreateTenant(ctx, actor, controlplane.TenantInput{
+		Slug: "frozen", DisplayName: "冻结验证",
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if application.pool.forTenantID(ctx, tenant.ID) == nil {
+		t.Fatal("active tenant must get an engine")
+	}
+	// 租户库仓行使停用期间的验签仍可解析（行与认领都保留）。
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := registeredrepo.NewStore(tenantStore.DB).Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: "repo-frozen", DisplayName: "冻结仓", Provider: "gitlab", BaseURL: "https://gitlab.example.com",
+		CodeHostProjectID: "6600", PathWithNamespace: "frozen/repo",
+		Token: "token-frozen", WebhookSecret: "secret-frozen", TokenScopeAttested: true,
+		Status: registeredrepo.StatusEnabled,
+	}); err != nil {
+		t.Fatalf("seed tenant repository: %v", err)
+	}
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/repo",
+		TenantID: tenant.ID, RepoFingerprint: "repo-frozen",
+	}); err != nil {
+		t.Fatalf("seed route index: %v", err)
+	}
+
+	if _, err := application.ControlPlane.DisableTenant(ctx, actor, tenant.ID); err != nil {
+		t.Fatalf("disable tenant: %v", err)
+	}
+	if application.pool.forTenantID(ctx, tenant.ID) != nil {
+		t.Fatal("disabled tenant must lose its engine even when cached")
+	}
+	if view := application.pool.MCPEngineForTenant(tenant.ID); view.Channel != nil {
+		t.Fatal("disabled tenant must have no MCP engine view")
+	}
+	if _, err := application.ControlPlane.Repository().GetRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/repo",
+	}); err != nil {
+		t.Fatal("disable must keep the tenant's route index claims")
+	}
+
+	// 停用期间已验签的 webhook：引擎不可用 → 5xx（可重试），不写平台库。
+	payload := []byte(`{"project":{"path_with_namespace":"frozen/repo"},"object_kind":"issue"}`)
+	frozen := performAppRawJSONWithHeaders(t, application.Router, http.MethodPost, "/api/events/gitlab", payload,
+		map[string]string{"X-Gitlab-Token": "secret-frozen"})
+	if frozen.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled tenant webhook must fail closed with 503, got %d: %s", frozen.Code, frozen.Body.String())
+	}
+	assertTenantRowCount(t, db, "inbound_events", 0)
+	assertTenantRowCount(t, tenantStore.DB, "inbound_events", 0)
+
+	if _, err := application.ControlPlane.RestoreTenant(ctx, actor, tenant.ID); err != nil {
+		t.Fatalf("restore tenant: %v", err)
+	}
+	if application.pool.forTenantID(ctx, tenant.ID) == nil {
+		t.Fatal("restored tenant must get its engine back")
+	}
+}
+
+// engineViewForPath 三态：索引指认的租户打不开引擎 → 错误（5xx，不回落
+// 平台库）；索引未命中 → 平台视图（存量过渡期兜底）；正常租户 →
+// 该租户引擎的视图。
+func TestEngineViewForPathDistinguishesMissFromUnavailable(t *testing.T) {
+	ctx := context.Background()
+	db := openAppTestDB(t)
+	cfg := withTestControlPlane(t, config.Config{HTTPAddr: ":0"})
+	application, err := New(cfg, zap.NewNop(), db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
+			resolver.Close()
+		}
+	})
+	tenant, err := application.ControlPlane.CreateTenant(ctx, &controlplane.Actor{ID: 1, Username: "root"}, controlplane.TenantInput{
+		Slug: "routed", DisplayName: "路由验证",
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := registeredrepo.NewStore(tenantStore.DB).Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: "repo-ok", DisplayName: "正常仓", Provider: "gitea", BaseURL: "https://gitea.example",
+		PathWithNamespace: "routed/ok", WebhookSecret: "secret-ok", TokenScopeAttested: true,
+		Status: registeredrepo.StatusEnabled,
+	}); err != nil {
+		t.Fatalf("seed tenant repository: %v", err)
+	}
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitea", BaseURL: "https://gitea.example", PathWithNamespace: "routed/ok",
+		TenantID: tenant.ID, RepoFingerprint: "repo-ok",
+	}); err != nil {
+		t.Fatalf("seed route index: %v", err)
+	}
+	// 索引指向不存在的租户：引擎解析必然失败，必须上抛错误。
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitea", BaseURL: "https://gitea.example", PathWithNamespace: "ghost/repo",
+		TenantID: 424242, RepoFingerprint: "repo-ghost",
+	}); err != nil {
+		t.Fatalf("seed ghost index: %v", err)
+	}
+
+	if _, err := application.pool.engineViewForPath(ctx, "gitea", "ghost/repo", ""); err == nil {
+		t.Fatal("engine for a routed but unavailable tenant must surface an error")
+	}
+	view, err := application.pool.engineViewForPath(ctx, "gitea", "nowhere/repo", "")
+	if err != nil || view == nil || view.Processor != application.pool.platform.processor {
+		t.Fatalf("unrouted repo must fall back to the platform view, got view=%v err=%v", view, err)
+	}
+	if view, err := application.pool.engineViewForPath(ctx, "gitea", "routed/ok", ""); err != nil || view == nil || view.Processor == nil {
+		t.Fatalf("routed active tenant must yield its engine view, got view=%v err=%v", view, err)
+	}
+}

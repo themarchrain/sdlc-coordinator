@@ -77,8 +77,10 @@ func TestNewBootstrapDoesNotAssembleRuntimeWorkersAndGatesWrites(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{"dedupe_key":"must-not-run"}`))
 	request.Header.Set("Content-Type", "application/json")
 	application.Router.ServeHTTP(response, request)
-	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "configuration_required") {
-		t.Fatalf("unexpected bootstrap write response %d: %s", response.Code, response.Body.String())
+	// 未认证 runtime 写 API 已整体移除：bootstrap 模式下路由不存在（404），
+	// 叠加运行时组件未装配，无认证写面不存在。
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unauthenticated runtime write API must not exist, got %d: %s", response.Code, response.Body.String())
 	}
 }
 

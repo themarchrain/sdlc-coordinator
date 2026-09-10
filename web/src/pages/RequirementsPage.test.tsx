@@ -62,7 +62,13 @@ beforeEach(() => {
 })
 
 function renderPage() {
-  return render(<MemoryRouter><RequirementsPage /></MemoryRouter>)
+  return render(
+    <MemoryRouter>
+      <WorkspaceSessionProvider value={{ session: null, role: 'tenant_admin', superAdmin: false }}>
+        <RequirementsPage />
+      </WorkspaceSessionProvider>
+    </MemoryRouter>,
+  )
 }
 
 describe('RequirementsPage', () => {

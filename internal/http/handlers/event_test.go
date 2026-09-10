@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"sdlc-coordinator/internal/registeredrepo"
+	"sdlc-coordinator/internal/events"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +29,7 @@ func githubSignatureHeader(secret string, body []byte) string {
 type secretLookupKey struct {
 	provider string
 	path     string
+	repoURL  string
 }
 
 type fakeSecretLookup struct {
@@ -36,12 +37,15 @@ type fakeSecretLookup struct {
 	lookups []secretLookupKey
 }
 
-func (f *fakeSecretLookup) WebhookSecretByPath(_ context.Context, provider, path string) (string, error) {
-	key := secretLookupKey{provider: provider, path: path}
-	f.lookups = append(f.lookups, key)
-	secret, ok := f.secrets[key]
+// WebhookSecretByPath 按 (provider, path) 命中 secret（repoURL 不参与，
+// 与真实实现一致——仅多行路由时消费）；repoURL 随每次调用记录，供
+// 贯穿断言核对 handler 是否把载荷完整链接传到了查找端。
+func (f *fakeSecretLookup) WebhookSecretByPath(_ context.Context, provider, path, repoURL string) (string, error) {
+	f.lookups = append(f.lookups, secretLookupKey{provider: provider, path: path, repoURL: repoURL})
+	secret, ok := f.secrets[secretLookupKey{provider: provider, path: path}]
 	if !ok {
-		return "", registeredrepo.ErrNotFound
+		// 与真实实现对齐：未注册 = 空串无错误（401）；err 保留给基础设施抖动。
+		return "", nil
 	}
 	return secret, nil
 }
@@ -79,7 +83,7 @@ func performEvent(t *testing.T, router http.Handler, method, path, body string, 
 
 func TestGitLabWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 	router, _ := newEventRouter(nil)
-	payload := `{"project":{"path_with_namespace":"group/repo-a"},"object_kind":"merge_request"}`
+	payload := `{"project":{"path_with_namespace":"group/repo-a","web_url":"https://gitlab.example.com/group/repo-a"},"object_kind":"merge_request"}`
 
 	// 本仓 secret:验签通过,到达业务层(processor 未配置 500),不被鉴权拦截。
 	accepted := performEvent(t, router, http.MethodPost, "/api/events/gitlab", payload, map[string]string{"X-Gitlab-Token": "secret-a"})
@@ -107,7 +111,7 @@ func TestGitLabWebhookRejectsWhenEngineViewFactoryFails(t *testing.T) {
 		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
 			{provider: "gitlab", path: "group/repo-a"}: "secret-a",
 		}}),
-		WithEngineViewFactory(func(context.Context, string, string) (*WebhookEngineView, error) {
+		WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
 			return nil, errors.New("tenant runtime config unavailable")
 		}),
 	)
@@ -122,12 +126,12 @@ func TestGitLabWebhookRejectsWhenEngineViewFactoryFails(t *testing.T) {
 
 func TestGitLabWebhookRejectsUnregisteredRepo(t *testing.T) {
 	router, lookup := newEventRouter(nil)
-	payload := `{"project":{"path_with_namespace":"group/unknown"},"object_kind":"push"}`
+	payload := `{"project":{"path_with_namespace":"group/unknown","web_url":"https://gitlab.example.com/group/unknown"},"object_kind":"push"}`
 	resp := performEvent(t, router, http.MethodPost, "/api/events/gitlab", payload, map[string]string{"X-Gitlab-Token": "anything"})
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("unregistered repo must be 401, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if lookup.lookups[len(lookup.lookups)-1] != (secretLookupKey{provider: "gitlab", path: "group/unknown"}) {
+	if lookup.lookups[len(lookup.lookups)-1] != (secretLookupKey{provider: "gitlab", path: "group/unknown", repoURL: "https://gitlab.example.com/group/unknown"}) {
 		t.Fatalf("lookup=%+v", lookup.lookups[len(lookup.lookups)-1])
 	}
 }
@@ -136,8 +140,8 @@ func TestGitLabWebhookRejectsUnregisteredRepo(t *testing.T) {
 // 仓各持各的 secret,A 平台 endpoint 用 B 平台同 path 仓的 secret 必须拒绝。
 func TestWebhookSecretLookupIsProviderScoped(t *testing.T) {
 	router, _ := newEventRouter(nil)
-	gitlabPayload := `{"project":{"path_with_namespace":"group/repo-a"},"object_kind":"merge_request"}`
-	codeHostPayload := `{"action":"opened","repository":{"full_name":"group/repo-a"}}`
+	gitlabPayload := `{"project":{"path_with_namespace":"group/repo-a","web_url":"https://gitlab.example.com/group/repo-a"},"object_kind":"merge_request"}`
+	codeHostPayload := `{"action":"opened","repository":{"full_name":"group/repo-a","html_url":"https://gitea.example.com/group/repo-a"}}`
 
 	crossFromGitea := performEvent(t, router, http.MethodPost, "/api/events/gitlab", gitlabPayload, map[string]string{"X-Gitlab-Token": "secret-gitea-a"})
 	if crossFromGitea.Code != http.StatusUnauthorized {
@@ -165,7 +169,7 @@ func TestWebhookSecretLookupIsProviderScoped(t *testing.T) {
 
 func TestGitLabWebhookRejectsRepoWithoutSecret(t *testing.T) {
 	router, _ := newEventRouter(nil)
-	payload := `{"project":{"path_with_namespace":"group/empty"},"object_kind":"push"}`
+	payload := `{"project":{"path_with_namespace":"group/empty","web_url":"https://gitlab.example.com/group/empty"},"object_kind":"push"}`
 	resp := performEvent(t, router, http.MethodPost, "/api/events/gitlab", payload, map[string]string{"X-Gitlab-Token": "secret-a"})
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("repo without secret must be 401 (fail-closed), got %d", resp.Code)
@@ -182,7 +186,7 @@ func TestGitLabWebhookRejectsMalformedPayload(t *testing.T) {
 
 func TestGiteaWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 	router, _ := newEventRouter(nil)
-	payload := `{"action":"opened","repository":{"full_name":"group/repo-a"}}`
+	payload := `{"action":"opened","repository":{"full_name":"group/repo-a","html_url":"https://gitea.example.com/group/repo-a"}}`
 
 	accepted := performEvent(t, router, http.MethodPost, "/api/events/gitea", payload, map[string]string{
 		"X-Gitea-Signature": hmacSignature("secret-gitea-a", []byte(payload)),
@@ -209,7 +213,7 @@ func TestGiteaWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 
 func TestGiteaWebhookRejectsUnregisteredRepoAndMalformedPayload(t *testing.T) {
 	router, _ := newEventRouter(nil)
-	unregisteredBody := `{"repository":{"full_name":"group/unknown"}}`
+	unregisteredBody := `{"repository":{"full_name":"group/unknown","html_url":"https://gitea.example.com/group/unknown"}}`
 	unregistered := performEvent(t, router, http.MethodPost, "/api/events/gitea", unregisteredBody, map[string]string{
 		"X-Gitea-Signature": hmacSignature("anything", []byte(unregisteredBody)),
 	})
@@ -227,7 +231,7 @@ func TestGiteaWebhookRejectsUnregisteredRepoAndMalformedPayload(t *testing.T) {
 
 func TestGitHubWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 	router, _ := newEventRouter(nil)
-	payload := `{"action":"opened","repository":{"full_name":"group/repo-a"}}`
+	payload := `{"action":"opened","repository":{"full_name":"group/repo-a","html_url":"https://github.com/group/repo-a"}}`
 
 	accepted := performEvent(t, router, http.MethodPost, "/api/events/github", payload, map[string]string{
 		"X-Hub-Signature-256": githubSignatureHeader("secret-github-a", []byte(payload)),
@@ -244,7 +248,7 @@ func TestGitHubWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 	}
 
 	// secret 为空的仓:即使签名出自其他有效 secret 也拒绝。
-	emptyBody := `{"repository":{"full_name":"group/empty"}}`
+	emptyBody := `{"repository":{"full_name":"group/empty","html_url":"https://github.com/group/empty"}}`
 	empty := performEvent(t, router, http.MethodPost, "/api/events/github", emptyBody, map[string]string{
 		"X-Hub-Signature-256": githubSignatureHeader("secret-a", []byte(emptyBody)),
 	})
@@ -262,17 +266,153 @@ func TestGitHubWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 }
 
 // TestWebhookSecretLookupFailureIsFailClosed 锁定枚举防护:lookup 出错(仓储抖动)
-// 与未注册、空 secret 一样一律拒绝,不得放行。
+// 不得放行、不得落库；基础设施故障与「未注册」(401) 区分为 5xx，让代码
+// 托管按可重试处理。
 func TestWebhookSecretLookupFailureIsFailClosed(t *testing.T) {
 	router, _ := newEventRouter(&failingSecretLookup{})
-	resp := performEvent(t, router, http.MethodPost, "/api/events/gitlab", `{"project":{"path_with_namespace":"group/repo-a"}}`, map[string]string{"X-Gitlab-Token": "secret-a"})
-	if resp.Code != http.StatusUnauthorized {
-		t.Fatalf("lookup failure must be 401, got %d", resp.Code)
+	resp := performEvent(t, router, http.MethodPost, "/api/events/gitlab", `{"project":{"path_with_namespace":"group/repo-a","web_url":"https://gitlab.example.com/group/repo-a"}}`, map[string]string{"X-Gitlab-Token": "secret-a"})
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("lookup failure must be 503 (retryable, still unauthorized), got %d", resp.Code)
 	}
 }
 
 type failingSecretLookup struct{}
 
-func (failingSecretLookup) WebhookSecretByPath(context.Context, string, string) (string, error) {
+func (failingSecretLookup) WebhookSecretByPath(context.Context, string, string, string) (string, error) {
 	return "", errors.New("db down")
+}
+
+// 工厂三态语义:命中用工厂产物;未命中回落构造期平台处理器(存量过渡期
+// 兜底);路由已指认租户但引擎不可用则上抛错误,绝不回落平台库。
+func TestResolveProcessorDistinguishesMissFromUnavailable(t *testing.T) {
+	platform := &events.Processor{}
+	miss := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+		return nil, nil
+	}))
+	if view, err := miss.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view != miss.platformView {
+		t.Fatalf("miss must fall back to the platform view, got view=%v err=%v", view, err)
+	}
+	down := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+		return nil, errors.New("tenant engine unavailable")
+	}))
+	if view, err := down.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err == nil || view != nil {
+		t.Fatalf("unavailable engine must surface an error without a view, got view=%v err=%v", view, err)
+	}
+	hit := &events.Processor{}
+	targeted := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+		return &WebhookEngineView{Processor: hit}, nil
+	}))
+	if view, err := targeted.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view.Processor != hit {
+		t.Fatalf("factory hit must win, got view=%v err=%v", view, err)
+	}
+}
+
+// 已验签的 webhook 在租户引擎不可用时必须 503(代码托管会重试),即便
+// 构造期存在平台处理器也不得回落写库。
+func TestGiteaWebhookFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewEventHandler(&events.Processor{},
+		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
+			{provider: "gitea", path: "group/repo-a"}: "secret-gitea-a",
+		}}),
+		WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+			return nil, errors.New("tenant engine unavailable")
+		}))
+	router.POST("/api/events/gitea", handler.Gitea)
+
+	body := `{"action":"opened","repository":{"full_name":"group/repo-a","html_url":"https://gitea.example.com/group/repo-a"}}`
+	response := performEvent(t, router, http.MethodPost, "/api/events/gitea", body, map[string]string{
+		"X-Gitea-Signature": hmacSignature("secret-gitea-a", []byte(body)),
+	})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("engine unavailable must fail closed with 503, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+// TestDeriveInstanceBaseURL 锁定实例地址推导：完整链接必须是
+// 实例地址 + "/" + 仓路径 的拼接形态，后缀不匹配或链接为空都推导失败
+// （调用方维持歧义拒绝，不猜不兜底）。
+func TestDeriveInstanceBaseURL(t *testing.T) {
+	cases := []struct {
+		name     string
+		repoURL  string
+		repoPath string
+		want     string
+		ok       bool
+	}{
+		{name: "plain suffix", repoURL: "https://gitlab.example.com/group/repo-a", repoPath: "group/repo-a", want: "https://gitlab.example.com", ok: true},
+		{name: "nested group path", repoURL: "https://gitea.internal/team/sub/repo", repoPath: "team/sub/repo", want: "https://gitea.internal", ok: true},
+		{name: "explicit default port", repoURL: "https://gitlab.example.com:443/group/repo-a", repoPath: "group/repo-a", want: "https://gitlab.example.com:443", ok: true},
+		{name: "suffix mismatch", repoURL: "https://other.example.com/other/repo", repoPath: "group/repo-a", want: "", ok: false},
+		{name: "empty url", repoURL: "", repoPath: "group/repo-a", want: "", ok: false},
+		{name: "blank url", repoURL: "   ", repoPath: "group/repo-a", want: "", ok: false},
+		{name: "url without path suffix", repoURL: "https://gitlab.example.com", repoPath: "group/repo-a", want: "", ok: false},
+	}
+	for _, tc := range cases {
+		got, ok := DeriveInstanceBaseURL(tc.repoURL, tc.repoPath)
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("%s: DeriveInstanceBaseURL(%q, %q)=(%q, %v), want (%q, %v)",
+				tc.name, tc.repoURL, tc.repoPath, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// TestPayloadRepoURLParsing 锁定三个平台载荷的完整链接解析：真实载荷
+// 必带该字段，缺失/载荷非法时返回空串（消歧侧据此维持 fail-closed）。
+func TestPayloadRepoURLParsing(t *testing.T) {
+	gitLab := gitLabRepoWebURL([]byte(`{"project":{"path_with_namespace":"group/repo-a","web_url":"https://gitlab.example.com/group/repo-a"}}`))
+	if gitLab != "https://gitlab.example.com/group/repo-a" {
+		t.Fatalf("gitlab web_url=%q", gitLab)
+	}
+	if got := gitLabRepoWebURL([]byte(`{"project":{"path_with_namespace":"group/repo-a"}}`)); got != "" {
+		t.Fatalf("missing web_url must yield empty, got %q", got)
+	}
+	if got := gitLabRepoWebURL([]byte(`not json`)); got != "" {
+		t.Fatalf("malformed payload must yield empty, got %q", got)
+	}
+	codeHost := codeHostRepoHTMLURL([]byte(`{"repository":{"full_name":"group/repo-a","html_url":"https://gitea.example.com/group/repo-a"}}`))
+	if codeHost != "https://gitea.example.com/group/repo-a" {
+		t.Fatalf("codehost html_url=%q", codeHost)
+	}
+	if got := codeHostRepoHTMLURL([]byte(`{"repository":{"full_name":"group/repo-a"}}`)); got != "" {
+		t.Fatalf("missing html_url must yield empty, got %q", got)
+	}
+	if got := codeHostRepoHTMLURL([]byte(`not json`)); got != "" {
+		t.Fatalf("malformed payload must yield empty, got %q", got)
+	}
+}
+
+// TestWebhookForwardsRepoURLToFactory 锁定贯穿链：载荷里的仓库完整链接
+// 必须原样到达处理器工厂（多行路由消歧的消费端），与 secret 查找端同参。
+func TestWebhookForwardsRepoURLToFactory(t *testing.T) {
+	var seen struct {
+		provider string
+		path     string
+		repoURL  string
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewEventHandler(nil,
+		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
+			{provider: "github", path: "group/repo-a"}: "secret-github-a",
+		}}),
+		WithEngineViewFactory(func(_ context.Context, provider, path, repoURL string) (*WebhookEngineView, error) {
+			seen.provider, seen.path, seen.repoURL = provider, path, repoURL
+			// 返回不可用错误：工厂已被调用即可断参，503 收尾避免依赖
+			// 平台处理器的完整装配。
+			return nil, errors.New("captured")
+		}))
+	router.POST("/api/events/github", handler.GitHub)
+
+	body := `{"action":"opened","repository":{"full_name":"group/repo-a","html_url":"https://github.com/group/repo-a"}}`
+	response := performEvent(t, router, http.MethodPost, "/api/events/github", body, map[string]string{
+		"X-Hub-Signature-256": githubSignatureHeader("secret-github-a", []byte(body)),
+	})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("factory call must conclude with the unavailable status, got %d: %s", response.Code, response.Body.String())
+	}
+	if seen.provider != "github" || seen.path != "group/repo-a" || seen.repoURL != "https://github.com/group/repo-a" {
+		t.Fatalf("factory must receive the payload repo url, got %+v", seen)
+	}
 }

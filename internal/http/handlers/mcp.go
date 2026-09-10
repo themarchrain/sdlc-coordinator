@@ -27,8 +27,9 @@ type MCPEngineView struct {
 	Rejections *repository.ResultRejectionRepository
 }
 
-// MCPEngineSource 按 token 中的租户声明选择引擎视图；0（存量 token 无租户）
-// 或未命中时由实现方回落平台视图。
+// MCPEngineSource 按 token 中的租户声明选择引擎视图；0（存量 token 无
+// 租户）走平台兜底视图，其余未命中返回零值视图（消费端 fail-closed 回
+// 503，不回落平台库）。
 type MCPEngineSource interface {
 	MCPEngineForTenant(tenantID uint) MCPEngineView
 }
@@ -81,15 +82,23 @@ func NewMCPHandler(
 	return handler
 }
 
-// engineView 按 claims 解析本请求的引擎依赖：选择器命中优先，否则构造期
-// 默认视图（0 = 平台兜底，覆盖存量无租户 token 的兼容窗口）。
-func (h *MCPHandler) engineView(claims resulttoken.Claims) MCPEngineView {
+// errTenantEngineUnavailable 表示 token 声明的租户引擎当前不可用（库句柄
+// 打不开、组织停用）：fail-closed，不回落平台视图。
+var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
+
+// engineView 按 claims 解析本请求的引擎依赖：选择器命中优先；租户引擎
+// 不可用时返回错误（503），仅 0（存量无租户 token）走平台兜底视图。
+func (h *MCPHandler) engineView(claims resulttoken.Claims) (MCPEngineView, error) {
 	if h.engines != nil {
-		if view := h.engines.MCPEngineForTenant(claims.TenantID); view.Channel != nil {
-			return view
+		view := h.engines.MCPEngineForTenant(claims.TenantID)
+		if view.Channel != nil {
+			return view, nil
+		}
+		if claims.TenantID != 0 {
+			return MCPEngineView{}, errTenantEngineUnavailable
 		}
 	}
-	return MCPEngineView{Channel: h.channel, Tasks: h.tasks, Runs: h.runs, Rejections: h.rejections}
+	return MCPEngineView{Channel: h.channel, Tasks: h.tasks, Runs: h.runs, Rejections: h.rejections}, nil
 }
 
 type mcpRequest struct {
@@ -187,7 +196,12 @@ func (h *MCPHandler) Handle(c *gin.Context) {
 	case "tools/list":
 		c.JSON(http.StatusOK, mcpResultResponse(request.ID, gin.H{"tools": h.toolsForRole(claims.Role)}))
 	case "tools/call":
-		if response, errResp := h.callTool(c, claims, h.engineView(claims), request); errResp != nil {
+		view, viewErr := h.engineView(claims)
+		if viewErr != nil {
+			c.JSON(http.StatusServiceUnavailable, mcpErrorResponse(request.ID, jsonrpcInternalErr, "tenant engine unavailable", "tools/call"))
+			return
+		}
+		if response, errResp := h.callTool(c, claims, view, request); errResp != nil {
 			c.JSON(http.StatusOK, errResp)
 		} else if response != nil {
 			c.JSON(http.StatusOK, response)

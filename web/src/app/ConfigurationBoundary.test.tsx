@@ -19,7 +19,9 @@ describe('ConfigurationBoundary', () => {
 
     render(
       <MemoryRouter initialEntries={['/tasks']}>
-        <ConfigurationBoundary><LocationProbe /></ConfigurationBoundary>
+        <WorkspaceSessionProvider value={{ session: null, role: 'super_admin', superAdmin: true }}>
+          <ConfigurationBoundary><LocationProbe /></ConfigurationBoundary>
+        </WorkspaceSessionProvider>
       </MemoryRouter>,
     )
 
@@ -31,7 +33,9 @@ describe('ConfigurationBoundary', () => {
 
     render(
       <MemoryRouter initialEntries={['/setup']}>
-        <ConfigurationBoundary><LocationProbe /></ConfigurationBoundary>
+        <WorkspaceSessionProvider value={{ session: null, role: 'super_admin', superAdmin: true }}>
+          <ConfigurationBoundary><LocationProbe /></ConfigurationBoundary>
+        </WorkspaceSessionProvider>
       </MemoryRouter>,
     )
 

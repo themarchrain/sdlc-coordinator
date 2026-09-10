@@ -3,7 +3,6 @@ package gitlabsmoke
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -138,56 +137,6 @@ func TestRunDryRunDoesNotSendRequestAndRedactsSecret(t *testing.T) {
 	}
 	if !strings.Contains(text, "<configured>") {
 		t.Fatalf("expected redacted configured marker, got %s", text)
-	}
-}
-
-func TestRunCanTriggerSchedulerTickAfterWebhook(t *testing.T) {
-	var paths []string
-	var tickBody map[string]any
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.Path)
-		switch r.URL.Path {
-		case "/api/events/gitlab":
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"event_id":"evt-1"}`))
-		case "/api/scheduler/tick":
-			if err := json.NewDecoder(r.Body).Decode(&tickBody); err != nil {
-				t.Fatalf("decode tick body: %v", err)
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"dispatched_tasks":[]}`))
-		default:
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	result, err := Run(context.Background(), Options{
-		BaseURL:    server.URL,
-		RawPayload: []byte(`{"object_kind":"merge_request"}`),
-		EventName:  "Merge Request Hook",
-		HTTPClient: server.Client(),
-		Tick: TickOptions{
-			Enabled:       true,
-			DispatchLimit: 3,
-			PollLimit:     4,
-			RecoveryLimit: 5,
-			EffectLimit:   2,
-		},
-	})
-	if err != nil {
-		t.Fatalf("run replay with tick: %v", err)
-	}
-
-	if strings.Join(paths, ",") != "/api/events/gitlab,/api/scheduler/tick" {
-		t.Fatalf("expected webhook then tick, got %#v", paths)
-	}
-	if tickBody["dispatch_limit"] != float64(3) || tickBody["poll_limit"] != float64(4) || tickBody["recovery_limit"] != float64(5) || tickBody["effect_limit"] != float64(2) {
-		t.Fatalf("unexpected tick limits: %#v", tickBody)
-	}
-	if result.TickStatusCode != http.StatusOK {
-		t.Fatalf("expected tick status %d, got %d", http.StatusOK, result.TickStatusCode)
 	}
 }
 

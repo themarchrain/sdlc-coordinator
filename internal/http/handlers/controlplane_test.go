@@ -358,3 +358,34 @@ func TestPortalRateLimitedLoginReturns429(t *testing.T) {
 		t.Fatalf("expected 429, got %d body=%s", limited.Code, limited.Body.String())
 	}
 }
+
+// 门户会话 cookie 的 Secure 属性默认开启；明文 http 部署可显式关闭。
+func TestPortalSessionCookieSecureFlag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	assertSecure := func(t *testing.T, handler *ControlPlaneHandler, wantSecure bool) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		handler.setPortalSessionCookie(ctx, "token-x")
+		cookies := recorder.Result().Cookies()
+		if len(cookies) != 1 {
+			t.Fatalf("expected one session cookie, got %#v", cookies)
+		}
+		if cookies[0].Name != PortalSessionCookieName || !cookies[0].HttpOnly {
+			t.Fatalf("expected HttpOnly portal session cookie, got %#v", cookies[0])
+		}
+		if cookies[0].Secure != wantSecure {
+			t.Fatalf("expected Secure=%v, got %#v", wantSecure, cookies[0])
+		}
+	}
+
+	t.Run("defaults to secure", func(t *testing.T) {
+		assertSecure(t, NewControlPlaneHandler(nil), true)
+	})
+	t.Run("can be disabled for plain http deployments", func(t *testing.T) {
+		handler := NewControlPlaneHandler(nil)
+		handler.SetCookieSecure(false)
+		assertSecure(t, handler, false)
+	})
+}

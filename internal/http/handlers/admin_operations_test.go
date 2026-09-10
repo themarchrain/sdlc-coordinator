@@ -173,3 +173,26 @@ func TestAdminOperationRebindRoutesToOperations(t *testing.T) {
 		t.Fatalf("unexpected rebind delegation: %#v", operations)
 	}
 }
+
+type unavailableEngines struct{}
+
+func (unavailableEngines) OperationsFor(*gin.Context) AdminOperations { return nil }
+func (unavailableEngines) EffectsFor(*gin.Context) AdminEffectLookup  { return nil }
+
+// 引擎端口返回 nil = 租户库不可用：503，不得回落构造期默认（那会把租户
+// 作用域操作写进平台库）。
+func TestAdminOperationFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	NewAdminOperationHandler(&fakeAdminOperations{}, &fakeEffectLookup{},
+		orchestrator.TickRequest{}, unavailableEngines{}).RegisterRoutes(router.Group("/api/admin"))
+
+	tick := performAdminOperationRequest(router, http.MethodPost, "/api/admin/scheduler/tick", orchestrator.TickRequest{})
+	if tick.Code != http.StatusServiceUnavailable {
+		t.Fatalf("tick must 503 when the engine port reports unavailable, got %d: %s", tick.Code, tick.Body.String())
+	}
+	retry := performAdminOperationRequest(router, http.MethodPost, "/api/admin/effects/effect-1/retry", nil)
+	if retry.Code != http.StatusServiceUnavailable {
+		t.Fatalf("effect retry must 503 when the engine port reports unavailable, got %d: %s", retry.Code, retry.Body.String())
+	}
+}

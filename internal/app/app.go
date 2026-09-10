@@ -185,6 +185,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		api.WithTenantStoreResolver(tenantStores),
 		api.WithControlPlaneService(controlPlaneService),
 	}
+	if cfg.ControlPlane.PortalCookieSecure != nil {
+		routerOptions = append(routerOptions, api.WithPortalCookieSecure(*cfg.ControlPlane.PortalCookieSecure))
+	}
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
 	}
@@ -241,15 +244,18 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 		return nil, err
 	}
 	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
-	router := api.NewRouter(
-		nil,
+	bootstrapRouterOptions := []any{
 		api.WithConfigurationService(configurationService, shutdown),
 		api.WithRuntimeMode(mode),
 		api.WithPeopleService(peopleService, peopleLookup),
 		api.WithRepositoryService(repositoryService),
 		api.WithControlPlaneService(controlPlaneService),
 		api.WithTenantStoreResolver(tenantStores),
-	)
+	}
+	if bootstrap.ControlPlane.PortalCookieSecure != nil {
+		bootstrapRouterOptions = append(bootstrapRouterOptions, api.WithPortalCookieSecure(*bootstrap.ControlPlane.PortalCookieSecure))
+	}
+	router := api.NewRouter(nil, bootstrapRouterOptions...)
 	return &App{
 		Config: config.Config{
 			HTTPAddr: bootstrap.HTTPAddr, DatabaseDSN: bootstrap.DatabaseDSN,

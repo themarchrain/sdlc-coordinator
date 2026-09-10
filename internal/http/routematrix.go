@@ -117,7 +117,6 @@ const (
 var routeMatrixCatalog = concatMatrix(
 	healthRows,
 	spaShellRows,
-	runtimeRows,
 	webhookRows,
 	mcpRows,
 	adminQueryRows,
@@ -155,15 +154,6 @@ var healthRows = []MatrixRow{
 var spaShellRows = []MatrixRow{
 	mr("GET", "/admin", ClassWeb, allow, allow, allow, allow, ChannelPublic, false, mwNone, mwNone, "SPA 入口；鉴权在前端"),
 	mr("GET", "/admin/*path", ClassWeb, allow, allow, allow, allow, ChannelPublic, false, mwNone, mwNone, "SPA catch-all；逻辑页见 spa 表"),
-}
-
-var runtimeRows = []MatrixRow{
-	mr("POST", "/api/tasks", ClassRuntime, na, na, na, na, ChannelRuntimeInternal, true, mwRuntimeGate, mwRuntimeGate, "冻结：调度/runner 内部创建任务"),
-	mr("GET", "/api/tasks/:task_id", ClassRuntime, na, na, na, na, ChannelRuntimeInternal, true, mwRuntimeGate, mwRuntimeGate, "冻结"),
-	mr("POST", "/api/tasks/:task_id/claim", ClassRuntime, na, na, na, na, ChannelRuntimeInternal, true, mwRuntimeGate, mwRuntimeGate, "冻结：runner 领任务"),
-	mr("GET", "/api/runs/:run_id", ClassRuntime, na, na, na, na, ChannelRuntimeInternal, true, mwRuntimeGate, mwRuntimeGate, "冻结"),
-	mr("POST", "/api/effects/retry", ClassRuntime, na, na, na, na, ChannelRuntimeInternal, true, mwRuntimeGate, mwRuntimeGate, "冻结：内部 effect 重试"),
-	mr("POST", "/api/scheduler/tick", ClassRuntime, na, na, na, na, ChannelRuntimeInternal, true, mwRuntimeGate, mwRuntimeGate, "冻结：scheduler tick"),
 }
 
 var webhookRows = []MatrixRow{

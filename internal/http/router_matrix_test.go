@@ -10,9 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-
-// TestHTTPRouteMatrixCoversEveryRegisteredRoute 锁定完备性红线：现役 HTTP
-// 路由必须有矩阵行；漏登即红。
+// TestLegacyAuthRoutesAreRemovedFromGinAndCatalog 与下面的 runtime 移除
+// 守卫同型：删除优于废弃标志。
 func TestLegacyAuthRoutesAreRemovedFromGinAndCatalog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := newFullyWiredRouter(t)
@@ -36,6 +35,35 @@ func TestLegacyAuthRoutesAreRemovedFromGinAndCatalog(t *testing.T) {
 	for _, row := range HTTPRouteMatrix() {
 		if strings.HasPrefix(row.Path, "/api/auth") {
 			t.Errorf("catalog still lists %s %s", row.Method, row.Path)
+		}
+	}
+}
+
+// TestUnauthenticatedRuntimeAPIRoutesAreRemoved 锁定 runtime 内部 API 的
+// 移除：这组路由曾只挂 ConfigurationGate、无任何认证，公网部署下等于
+// 无认证读写业务数据（建任务可被真实派发）。等价能力走 /api/admin 路由。
+func TestUnauthenticatedRuntimeAPIRoutesAreRemoved(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := newFullyWiredRouter(t)
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/api/tasks"},
+		{http.MethodGet, "/api/tasks/task-1"},
+		{http.MethodPost, "/api/tasks/task-1/claim"},
+		{http.MethodGet, "/api/runs/run-1"},
+		{http.MethodPost, "/api/effects/retry"},
+		{http.MethodPost, "/api/scheduler/tick"},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s = %d, want 404 (unauthenticated runtime API removed)", route.method, route.path, rec.Code)
+		}
+	}
+	for _, row := range HTTPRouteMatrix() {
+		if row.NonHuman == ChannelRuntimeInternal {
+			t.Errorf("catalog still lists runtime route %s %s", row.Method, row.Path)
 		}
 	}
 }
@@ -146,7 +174,6 @@ func TestSPAPageMatrixCoversKnownAdminPages(t *testing.T) {
 		t.Fatalf("SPA matrix missing pages: %s", strings.Join(missing, ", "))
 	}
 }
-
 
 func TestAdminClassCurrentMiddlewareMatchesTarget(t *testing.T) {
 	for _, row := range HTTPRouteMatrix() {

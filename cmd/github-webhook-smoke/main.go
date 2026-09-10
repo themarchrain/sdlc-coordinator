@@ -1,5 +1,5 @@
 // github-webhook-smoke 向本机 coordinator 回放一个带 HMAC 签名的 GitHub
-// issue webhook,用于联调入站链路;配合 /api/scheduler/tick 驱动任务创建。
+// issue webhook,用于联调入站链路;派发由协调器调度循环或管理台安全操作页驱动。
 package main
 
 import (

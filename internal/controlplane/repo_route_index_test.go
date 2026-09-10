@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -27,19 +28,31 @@ func TestRepoRouteIndexCRUD(t *testing.T) {
 		t.Fatalf("get route: route=%#v err=%v", route, err)
 	}
 
-	// 同身份再写 = 更新（改租户/指纹），不产生重复行。
+	// 同租户再写 = 更新指纹，不产生重复行。
 	if err := repository.UpsertRepoRouteIndex(ctx, RepoRouteIndex{
 		Provider: identity.Provider, BaseURL: identity.BaseURL, PathWithNamespace: identity.PathWithNamespace,
-		TenantID: 9, RepoFingerprint: "repo-1b",
+		TenantID: 7, RepoFingerprint: "repo-1b",
 	}); err != nil {
 		t.Fatalf("re-upsert index: %v", err)
 	}
 	route, err = repository.GetRepoRouteIndex(ctx, identity)
-	if err != nil || route.TenantID != 9 {
-		t.Fatalf("re-upsert must overwrite: route=%#v err=%v", route, err)
+	if err != nil || route.TenantID != 7 || route.RepoFingerprint != "repo-1b" {
+		t.Fatalf("re-upsert must refresh fingerprint: route=%#v err=%v", route, err)
 	}
 
-	rows, err := repository.ListRepoRouteIndex(ctx, 9)
+	// 跨租户改写 = 拒绝：索引行是 webhook 路由所有权，不得静默换主。
+	if err := repository.UpsertRepoRouteIndex(ctx, RepoRouteIndex{
+		Provider: identity.Provider, BaseURL: identity.BaseURL, PathWithNamespace: identity.PathWithNamespace,
+		TenantID: 9, RepoFingerprint: "repo-9",
+	}); !errors.Is(err, ErrRepoRouteIdentityClaimed) {
+		t.Fatalf("cross-tenant upsert must be rejected, got %v", err)
+	}
+	route, err = repository.GetRepoRouteIndex(ctx, identity)
+	if err != nil || route.TenantID != 7 || route.RepoFingerprint != "repo-1b" {
+		t.Fatalf("rejected upsert must leave owner intact: route=%#v err=%v", route, err)
+	}
+
+	rows, err := repository.ListRepoRouteIndex(ctx, 7)
 	if err != nil || len(rows) != 1 || rows[0].PathWithNamespace != "acme/app" {
 		t.Fatalf("list by tenant: rows=%#v err=%v", rows, err)
 	}

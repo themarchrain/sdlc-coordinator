@@ -34,16 +34,24 @@ type RepoRouteIdentity struct {
 
 var ErrRepoRouteNotFound = errors.New("repo route not found")
 
+// ErrRepoRouteIdentityClaimed 表示路由身份已被其他租户占用。索引行是
+// webhook 的租户路由锚点，静默换主等于把占用方的流量改道或打死，因此
+// 跨租户改写一律拒绝；确属漂移的修正走「先删后建」（见对账循环）。
+var ErrRepoRouteIdentityClaimed = errors.New("repo route identity claimed by another tenant")
+
 func (repository *Repository) UpsertRepoRouteIndex(ctx context.Context, row RepoRouteIndex) error {
 	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing RepoRouteIndex
 		err := tx.Where("provider = ? AND base_url = ? AND path_with_namespace = ?",
 			row.Provider, row.BaseURL, row.PathWithNamespace).First(&existing).Error
 		if err == nil {
+			if existing.TenantID != row.TenantID {
+				return ErrRepoRouteIdentityClaimed
+			}
 			row.ID = existing.ID
 			row.CreatedAt = existing.CreatedAt
 			return tx.Model(&RepoRouteIndex{}).Where("id = ?", existing.ID).Updates(map[string]any{
-				"tenant_id": row.TenantID, "repo_fingerprint": row.RepoFingerprint,
+				"repo_fingerprint": row.RepoFingerprint,
 			}).Error
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
