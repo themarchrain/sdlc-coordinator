@@ -38,7 +38,13 @@ func (p *Provider) Get(ctx context.Context) (Config, error) {
 	var record Record
 	err := p.db.WithContext(ctx).First(&record, 1).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		p.cached.Store(&snapshot{})
+		// 行不存在也经 publish 发布零值快照(而非直接 Store):并发下
+		// 「读到不存在」与「读到新建行」乱序时,publish 的防回退比较
+		// 保证零值条目不会覆盖更新的有效配置。稳态(行持续不存在,
+		// 缓存已是零值键)跳过发布,未配置租户的热路径零分配。
+		if current := p.cached.Load(); current == nil || current.revision != 0 || !current.updatedAt.IsZero() {
+			p.publish(Record{}, Config{})
+		}
 		return Config{}, nil
 	}
 	if err != nil {

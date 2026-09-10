@@ -111,6 +111,12 @@ func (s *Store) Save(ctx context.Context, config Config, expectedRevision int64)
 			}
 			record := Record{ID: 1, Revision: 1, PayloadJSON: string(payload)}
 			if err := tx.Create(&record).Error; err != nil {
+				// 并发首次保存双双落 Create 时,输家收到主键唯一约束冲突:
+				// 语义是「行已被别人抢先建好」的保存冲突,映射为同一哨兵,
+				// 调用方统一 409 提示刷新重试(SQLite 文本稳定,方言固定)。
+				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+					return ErrConfigConflict
+				}
 				return fmt.Errorf("create tenant runtime config: %w", err)
 			}
 			revision = 1
@@ -183,6 +189,10 @@ func Validate(config Config) configuration.ValidationErrors {
 	if strings.EqualFold(strings.TrimSpace(config.IM.Provider), "feishu") && strings.TrimSpace(config.IM.Feishu.WebhookURL) == "" {
 		errs["im.feishu.webhook_url"] = "启用飞书通知时必须填写群机器人 Webhook 地址"
 	}
+	// 出网地址可空(空=渠道官方默认/必填由上面分支管),非空时必须是完整
+	// http(s) 地址:配置面通过校验的值,运行期才能直接消费。
+	optionalAbsoluteHTTPURL(errs, "im.telegram.api_base", config.IM.Telegram.APIBase)
+	optionalAbsoluteHTTPURL(errs, "im.feishu.webhook_url", config.IM.Feishu.WebhookURL)
 	for _, mention := range config.IM.ReviewerMentions {
 		if strings.TrimSpace(mention) == "" {
 			errs["im.reviewer_mentions"] = "提醒人不能为空"
@@ -198,7 +208,7 @@ func Merge(current Config, request UpdateRequest) Config {
 		CodeHost: configuration.CodeHostConfig{
 			Provider:             request.Config.CodeHost.Provider,
 			BaseURL:              request.Config.CodeHost.BaseURL,
-			ReworkAllowedUserIDs: append([]string(nil), request.Config.CodeHost.ReworkAllowedUserIDs...),
+			ReworkAllowedUserIDs: cloneStringSlice(request.Config.CodeHost.ReworkAllowedUserIDs),
 		},
 		IM: configuration.IMConfig{
 			Provider: request.Config.IM.Provider,
@@ -213,11 +223,19 @@ func Merge(current Config, request UpdateRequest) Config {
 				Secret:     current.IM.Feishu.Secret,
 				MentionMap: cloneStringMap(request.Config.IM.Feishu.MentionMap),
 			},
-			ReviewerMentions: append([]string(nil), request.Config.IM.ReviewerMentions...),
+			ReviewerMentions: cloneStringSlice(request.Config.IM.ReviewerMentions),
 		},
 	}
 	applySecretChange(&result.IM.Telegram.BotToken, request.Secrets.TelegramBotToken, request.Secrets.ClearTelegramBotToken)
 	applySecretChange(&result.IM.Feishu.Secret, request.Secrets.FeishuSecret, request.Secrets.ClearFeishuSecret)
+	return result
+}
+
+// cloneStringSlice 空输入返回空切片(非 nil):集合字段编码为 [] 而非
+// null,与系统段 API 契约一致(前端类型声明为非可选数组)。
+func cloneStringSlice(input []string) []string {
+	result := make([]string, len(input))
+	copy(result, input)
 	return result
 }
 
@@ -228,7 +246,7 @@ func Mask(config Config) View {
 			CodeHost: configuration.EditableCodeHostConfig{
 				Provider:             config.CodeHost.Provider,
 				BaseURL:              config.CodeHost.BaseURL,
-				ReworkAllowedUserIDs: append([]string(nil), config.CodeHost.ReworkAllowedUserIDs...),
+				ReworkAllowedUserIDs: cloneStringSlice(config.CodeHost.ReworkAllowedUserIDs),
 			},
 			IM: configuration.EditableIMConfig{
 				Provider: config.IM.Provider,
@@ -241,7 +259,7 @@ func Mask(config Config) View {
 					WebhookURL: config.IM.Feishu.WebhookURL,
 					MentionMap: cloneStringMap(config.IM.Feishu.MentionMap),
 				},
-				ReviewerMentions: append([]string(nil), config.IM.ReviewerMentions...),
+				ReviewerMentions: cloneStringSlice(config.IM.ReviewerMentions),
 			},
 		},
 		Secrets: SecretStatus{
@@ -282,4 +300,12 @@ func requireAbsoluteHTTPURL(errs configuration.ValidationErrors, field, value st
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		errs[field] = "必须是完整的 http 或 https 地址"
 	}
+}
+
+// optionalAbsoluteHTTPURL 空值合法(字段可选),非空时须为完整 http(s) 地址。
+func optionalAbsoluteHTTPURL(errs configuration.ValidationErrors, field, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	requireAbsoluteHTTPURL(errs, field, value)
 }

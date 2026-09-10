@@ -2,8 +2,10 @@ package orgconfig
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/configuration"
@@ -190,5 +192,41 @@ func TestMaskViewHidesSecrets(t *testing.T) {
 	}
 	if view.Config.IM.Feishu.WebhookURL != "https://example.com/hook" {
 		t.Fatalf("mask dropped non-secret webhook: %+v", view)
+	}
+}
+
+// 空集合必须编码为 [] 而非 null:前端类型契约声明为非可选数组,与系统段
+// 掩码视图的历史契约一致。
+func TestMaskEncodesEmptyCollectionsAsArrays(t *testing.T) {
+	raw, err := json.Marshal(Mask(Config{}))
+	if err != nil {
+		t.Fatalf("marshal mask: %v", err)
+	}
+	for _, fragment := range []string{`"rework_allowed_user_ids":[]`, `"reviewer_mentions":[]`, `"configured":false`} {
+		if !strings.Contains(string(raw), fragment) {
+			t.Fatalf("masked view must encode %s, got %s", fragment, raw)
+		}
+	}
+}
+
+func TestValidateChecksIMOutboundURLs(t *testing.T) {
+	base := Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}
+
+	emptyAllowed := Validate(base)
+	if _, ok := emptyAllowed["im.telegram.api_base"]; ok {
+		t.Fatalf("empty api_base must pass, got %v", emptyAllowed)
+	}
+
+	badAPIBase := base
+	badAPIBase.IM.Telegram.APIBase = "not-a-url"
+	if errs := Validate(badAPIBase); errs["im.telegram.api_base"] == "" {
+		t.Fatalf("non-http api_base must be rejected, got %v", errs)
+	}
+
+	badWebhook := base
+	badWebhook.IM.Provider = "feishu"
+	badWebhook.IM.Feishu.WebhookURL = "file:///etc/passwd"
+	if errs := Validate(badWebhook); errs["im.feishu.webhook_url"] == "" {
+		t.Fatalf("non-http webhook_url must be rejected, got %v", errs)
 	}
 }

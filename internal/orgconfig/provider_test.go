@@ -136,3 +136,31 @@ func TestProviderRereadsWhenRowRecreatedWithSameRevision(t *testing.T) {
 		t.Fatalf("provider must reread recreated row, got %+v err=%v", config, err)
 	}
 }
+
+// 行被删(手工干预)后 NotFound 分支不得把缓存打回零值:防回退保护覆盖
+// 「从有到无」窗口,读失败时的降级来源仍是最后已知配置。
+func TestProviderNotFoundKeepsLastKnownSnapshot(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	store := NewStore(db)
+	provider := NewProvider(db)
+
+	if _, err := store.Save(ctx, Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}, 0); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	config, err := provider.Get(ctx)
+	if err != nil || config.CodeHost.Provider != "gitlab" {
+		t.Fatalf("provider must read saved config, got %+v err=%v", config, err)
+	}
+
+	if err := db.Exec("DELETE FROM tenant_runtime_config").Error; err != nil {
+		t.Fatalf("delete row: %v", err)
+	}
+	config, err = provider.Get(ctx)
+	if err != nil || config.CodeHost.Provider != "" {
+		t.Fatalf("row gone must yield zero config, got %+v err=%v", config, err)
+	}
+	if cached := provider.cached.Load(); cached == nil || cached.revision != 1 {
+		t.Fatalf("notfound must not regress the cached snapshot, got %+v", cached)
+	}
+}
