@@ -91,7 +91,6 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 	return results, nil
 }
 
-
 // RecoverStaleEffects 把停留 running 超过阈值的效果回收为 failed。
 // 返回的 EffectExecutionResult 供 tick 结果观测;无回收时返回空切片。
 func (o *Orchestrator) RecoverStaleEffects(ctx context.Context, limit int) ([]EffectExecutionResult, error) {
@@ -124,7 +123,6 @@ func (o *Orchestrator) RecoverStaleEffects(ctx context.Context, limit int) ([]Ef
 	}
 	return results, nil
 }
-
 
 // conditionalEffectExecutor 允许执行器在运行期申报「未启用」:效果保留在
 // 队列,等待渠道配置后重放,与未装配执行器语义一致。

@@ -40,7 +40,7 @@ type RouterOptions struct {
 	TenantStores         tenantdb.Resolver
 	RouteIndexSync       registeredrepo.RouteIndexSync
 	// 写路径租户化端口（均可空：空时行为与单库形态一致）。
-	EventProcessorFactory handlers.ProcessorFactory
+	EngineViewFactory     handlers.EngineViewFactory
 	AdminOperationEngines handlers.AdminOperationEngines
 }
 
@@ -57,14 +57,6 @@ type RouterOption func(*RouterOptions)
 func WithWebhookSecretLookup(lookup handlers.WebhookSecretLookup) RouterOption {
 	return func(options *RouterOptions) {
 		options.WebhookSecretLookup = lookup
-	}
-}
-
-// WithReworkAllowedUserIDs 注入平台级 rework 白名单(平台 user id),
-// 三平台 normalizer 共用同一份配置。
-func WithReworkAllowedUserIDs(ids []int) RouterOption {
-	return func(options *RouterOptions) {
-		options.ReworkAllowedUserIDs = ids
 	}
 }
 
@@ -150,11 +142,11 @@ func WithTenantStoreResolver(resolver tenantdb.Resolver) RouterOption {
 	}
 }
 
-// WithEventProcessorFactory 注入按仓路由的事件处理器工厂（webhook 写路径
-// 租户化）；nil 处理器回落 args 中扫描到的平台处理器。
-func WithEventProcessorFactory(factory handlers.ProcessorFactory) RouterOption {
+// WithEngineViewFactory 注入按仓路由的引擎视图工厂（webhook 写路径租户化，
+// 视图内 normalizer 按组织段配置构建）；nil 视图回落构造期平台视图。
+func WithEngineViewFactory(factory handlers.EngineViewFactory) RouterOption {
 	return func(options *RouterOptions) {
-		options.EventProcessorFactory = factory
+		options.EngineViewFactory = factory
 	}
 }
 
@@ -280,8 +272,7 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 		if eventProcessor != nil {
 			eventHandler := handlers.NewEventHandler(eventProcessor,
 				handlers.WithWebhookSecretLookup(options.WebhookSecretLookup),
-				handlers.WithReworkAllowedUserIDs(options.ReworkAllowedUserIDs),
-				handlers.WithProcessorFactory(options.EventProcessorFactory),
+				handlers.WithEngineViewFactory(options.EngineViewFactory),
 			)
 			runtimeAPI.POST("/events/gitlab", eventHandler.GitLab)
 			runtimeAPI.POST("/events/gitea", eventHandler.Gitea)

@@ -60,11 +60,11 @@ type MergeRequestReworkHandler interface {
 }
 
 type Processor struct {
-	events                 InboundEventStore
-	taskCreator            TaskCreator
+	events                  InboundEventStore
+	taskCreator             TaskCreator
 	gitlabNormalizerOptions []GitLabNormalizerOption
-	taskFactory            TaskFactory
-	repos                  RepositoryLookup
+	taskFactory             TaskFactory
+	repos                   RepositoryLookup
 }
 
 type RepositoryLookup interface {

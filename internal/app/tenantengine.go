@@ -15,6 +15,7 @@ import (
 	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
+	"sdlc-coordinator/internal/orgconfig"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
 	"sdlc-coordinator/internal/resulttoken"
@@ -47,6 +48,8 @@ type engineShared struct {
 type tenantEngine struct {
 	tenantID     uint
 	db           *gorm.DB
+	logger       *zap.Logger
+	orgConfig    *orgconfig.Provider
 	orch         *orchestrator.Orchestrator
 	processor    *events.Processor
 	requirements *requirements.Service
@@ -87,6 +90,14 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithResultSubmissionRepository(resultSubmissionRepo),
 		orchestrator.WithDeveloperClarificationIMTarget(""),
 	}
+
+	// 组织段配置（租户库持有）驱动的三个动态消费点：IM 执行器、提醒人、
+	// 接续开发白名单。全部经 Provider 读通解析，保存即热生效。
+	orgConfig := orgconfig.NewProvider(db)
+	opts = append(opts,
+		orchestrator.WithEffectExecutor(newTenantEffectExecutor(orgConfig, shared.logger)),
+		orchestrator.WithReviewerIMMentionsProvider(tenantReviewerMentionsProvider(orgConfig, shared.logger, tenantID)),
+	)
 	// 平台身份按仓行解析:resolver 与写回探针按任务所属仓的 provider/base_url
 	// 分派。全局 codehost 配置只作为注册表单默认值与空列回填来源,运行时不读取。
 	codeHostResolver := registeredrepo.NewCodeHostResolver(repoStore, nil)
@@ -151,7 +162,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
-	processor := events.NewProcessor(inboundEventRepo, orch)
+	processor := events.NewProcessor(inboundEventRepo, orch, events.WithGitLabReworkAllowedUserIDsLookup(tenantReworkAllowlistLookup(orgConfig, shared.logger, tenantID)))
 	processor.SetRepositoryLookup(repoStore)
 	requirementsService := requirements.NewService(
 		requirements.NewStore(db), repoStore,
@@ -170,6 +181,8 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	return &tenantEngine{
 		tenantID:     tenantID,
 		db:           db,
+		logger:       shared.logger,
+		orgConfig:    orgConfig,
 		orch:         orch,
 		processor:    processor,
 		requirements: requirementsService,
@@ -276,19 +289,19 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 	return result
 }
 
-// engineForPath 按 (provider, path) 的路由索引解析事件处理器：索引唯一
-// 行 → 该租户引擎的处理器；未命中或引擎不可用 → 平台引擎处理器（与
-// webhook 验签的平台兜底对称）；索引歧义 → nil（验签层已 fail-closed，
-// 此处防御性返回 nil 交由 handler 报未配置）。
-func (p *enginePool) engineForPath(ctx context.Context, provider, path string) *events.Processor {
+// engineViewForPath 按 (provider, path) 的路由索引解析引擎视图（处理器+
+// 按组织段配置构建的 Gitea/GitHub normalizer）：索引未命中、引擎不可用
+// 或索引歧义 → 平台引擎视图（与 webhook 验签的平台兜底对称；歧义时验签
+// 层已 fail-closed，平台视图是防御性兜底）。
+func (p *enginePool) engineViewForPath(ctx context.Context, provider, path string) *handlers.WebhookEngineView {
 	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path)
 	if err != nil {
-		return nil
+		return p.platform.tenantWebhookView(ctx)
 	}
 	if engine := p.forTenantID(ctx, tenantID); engine != nil {
-		return engine.processor
+		return engine.tenantWebhookView(ctx)
 	}
-	return p.platform.processor
+	return p.platform.tenantWebhookView(ctx)
 }
 
 // engineForSession 按请求会话的组织作用域解析引擎；无作用域会话用平台引擎。

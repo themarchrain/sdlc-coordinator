@@ -31,16 +31,23 @@ type WebhookSecretLookup interface {
 	WebhookSecretByPath(ctx context.Context, provider, path string) (string, error)
 }
 
-// ProcessorFactory 按 (provider, path) 解析该仓所属租户的事件处理器;
-// 返回 nil 表示未命中,回落构造期的平台处理器(存量过渡期兜底)。
-type ProcessorFactory func(ctx context.Context, provider, path string) *events.Processor
+// WebhookEngineView 一次 webhook 请求所需的引擎件:处理器与按当前组织段
+// 配置构建的平台 normalizer(GitLab normalizer 由处理器按构造期选项现建,
+// 不在本视图内)。
+type WebhookEngineView struct {
+	Processor        *events.Processor
+	GiteaNormalizer  events.GiteaNormalizer
+	GitHubNormalizer events.GitHubNormalizer
+}
+
+// EngineViewFactory 按 (provider, path) 解析该仓所属租户的引擎视图;
+// 返回 nil 表示未命中,回落构造期的平台视图(存量过渡期兜底)。
+type EngineViewFactory func(ctx context.Context, provider, path string) *WebhookEngineView
 
 type EventHandler struct {
-	processor        *events.Processor
-	processorFactory ProcessorFactory
-	webhookSecrets   WebhookSecretLookup
-	giteaNormalizer  events.GiteaNormalizer
-	githubNormalizer events.GitHubNormalizer
+	platformView      *WebhookEngineView
+	engineViewFactory EngineViewFactory
+	webhookSecrets    WebhookSecretLookup
 }
 
 type EventHandlerOption func(*EventHandler)
@@ -53,31 +60,24 @@ func WithWebhookSecretLookup(lookup WebhookSecretLookup) EventHandlerOption {
 	}
 }
 
-// WithReworkAllowedUserIDs 注入平台级 rework 白名单(平台 user id),
-// gitea/github normalizer 与 GitLab 侧共用同一份配置。
-func WithReworkAllowedUserIDs(ids []int) EventHandlerOption {
+// WithEngineViewFactory 注入按仓路由的引擎视图工厂;每个 webhook 请求在验签
+// 通过后按 (provider, path) 选择视图实例(租户引擎或平台兜底),视图内的
+// normalizer 按当前组织段配置构建,白名单热生效。
+func WithEngineViewFactory(factory EngineViewFactory) EventHandlerOption {
 	return func(h *EventHandler) {
-		h.giteaNormalizer = events.NewGiteaNormalizer(events.WithGiteaReworkAllowedUserIDs(ids))
-		h.githubNormalizer = events.NewGitHubNormalizer(events.WithGitHubReworkAllowedUserIDs(ids))
+		h.engineViewFactory = factory
 	}
 }
 
-// WithProcessorFactory 注入按仓路由的处理器工厂;每个 webhook 请求在验签
-// 通过后按 (provider, path) 选择处理器实例(租户引擎或平台兜底)。
-func WithProcessorFactory(factory ProcessorFactory) EventHandlerOption {
-	return func(h *EventHandler) {
-		h.processorFactory = factory
-	}
-}
-
-// resolveProcessor 选取本请求的事件处理器:工厂命中优先,否则回落构造期实例。
-func (h *EventHandler) resolveProcessor(ctx context.Context, provider, path string) *events.Processor {
-	if h.processorFactory != nil {
-		if processor := h.processorFactory(ctx, provider, path); processor != nil {
-			return processor
+// resolveEngineView 选取本请求的引擎视图:工厂命中优先,否则回落构造期
+// 平台视图(空组织段配置,白名单为空)。
+func (h *EventHandler) resolveEngineView(ctx context.Context, provider, path string) *WebhookEngineView {
+	if h.engineViewFactory != nil {
+		if view := h.engineViewFactory(ctx, provider, path); view != nil {
+			return view
 		}
 	}
-	return h.processor
+	return h.platformView
 }
 
 type GitLabEventResponse struct {
@@ -90,7 +90,11 @@ type GitLabEventResponse struct {
 }
 
 func NewEventHandler(processor *events.Processor, opts ...EventHandlerOption) *EventHandler {
-	handler := &EventHandler{processor: processor}
+	handler := &EventHandler{platformView: &WebhookEngineView{
+		Processor:        processor,
+		GiteaNormalizer:  events.NewGiteaNormalizer(),
+		GitHubNormalizer: events.NewGitHubNormalizer(),
+	}}
 	for _, opt := range opts {
 		opt(handler)
 	}
@@ -117,13 +121,13 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
 		return
 	}
-	processor := h.resolveProcessor(c.Request.Context(), providerGitLab, path)
-	if h == nil || processor == nil {
+	view := h.resolveEngineView(c.Request.Context(), providerGitLab, path)
+	if h == nil || view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
 
-	result, err := processor.ProcessGitLabWebhook(c.Request.Context(), raw, events.WithGitLabWebhookMetadata(events.GitLabWebhookMetadata{
+	result, err := view.Processor.ProcessGitLabWebhook(c.Request.Context(), raw, events.WithGitLabWebhookMetadata(events.GitLabWebhookMetadata{
 		EventName:   c.GetHeader("X-Gitlab-Event"),
 		EventUUID:   c.GetHeader("X-Gitlab-Event-UUID"),
 		WebhookUUID: c.GetHeader("X-Gitlab-Webhook-UUID"),
@@ -175,13 +179,13 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
 		return
 	}
-	processor := h.resolveProcessor(c.Request.Context(), providerGitea, path)
-	if h == nil || processor == nil {
+	view := h.resolveEngineView(c.Request.Context(), providerGitea, path)
+	if h == nil || view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
 
-	result, err := processor.ProcessWebhook(c.Request.Context(), h.giteaNormalizer, raw, events.WebhookMetadata{
+	result, err := view.Processor.ProcessWebhook(c.Request.Context(), view.GiteaNormalizer, raw, events.WebhookMetadata{
 		EventType:   c.GetHeader("X-Gitea-Event"),
 		DeliveryID:  c.GetHeader("X-Gitea-Delivery"),
 		InstanceURL: c.GetHeader("X-Gitea-Instance"),
@@ -233,13 +237,13 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
 		return
 	}
-	processor := h.resolveProcessor(c.Request.Context(), providerGitHub, path)
-	if h == nil || processor == nil {
+	view := h.resolveEngineView(c.Request.Context(), providerGitHub, path)
+	if h == nil || view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
 
-	result, err := processor.ProcessWebhook(c.Request.Context(), h.githubNormalizer, raw, events.WebhookMetadata{
+	result, err := view.Processor.ProcessWebhook(c.Request.Context(), view.GitHubNormalizer, raw, events.WebhookMetadata{
 		EventType:   c.GetHeader("X-GitHub-Event"),
 		DeliveryID:  c.GetHeader("X-GitHub-Delivery"),
 		InstanceURL: c.GetHeader("X-GitHub-Enterprise-Host"),

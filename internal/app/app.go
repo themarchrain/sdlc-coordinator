@@ -20,6 +20,7 @@ import (
 	"sdlc-coordinator/internal/model"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
 	"sdlc-coordinator/internal/orchestrator"
+	"sdlc-coordinator/internal/orgconfig"
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
@@ -127,10 +128,10 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	// 各租户引擎承接该组织仓行的全部写路径（事件→任务→派发→回传→写回）。
 	defaultRunnerEndpoint := strings.TrimRight(strings.TrimSpace(cfg.AgentRunner.ServiceURL), "/")
 	shared := engineShared{
-		cfg:                cfg,
-		logger:             logger,
-		poolSource:         runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
-		defaultRunner:      agentrunner.NewClient(cfg.AgentRunner.ServiceURL, nil),
+		cfg:           cfg,
+		logger:        logger,
+		poolSource:    runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
+		defaultRunner: agentrunner.NewClient(cfg.AgentRunner.ServiceURL, nil),
 		runnerClientFactory: func(endpoint string) orchestrator.ReviewerRunnerClient {
 			return agentrunner.NewClient(endpoint, nil)
 		},
@@ -165,8 +166,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		api.WithWebhookSecretLookup(&tenantRouteSecretLookup{
 			index: controlPlaneService.Repository(), resolver: tenantStores, platform: platformRepoStore,
 		}),
-		// 事件处理器按 (provider, path) 路由到所属租户引擎（写路径租户化）。
-		api.WithEventProcessorFactory(pool.engineForPath),
+		// 事件引擎视图按 (provider, path) 路由到所属租户引擎（写路径租户化，
+		// 视图内 normalizer 按组织段配置构建）。
+		api.WithEngineViewFactory(pool.engineViewForPath),
 		// 管理台操作（手动 tick/重试/重绑）按会话租户选择引擎。
 		api.WithAdminOperationEngines(pool),
 		// 注册/改仓写穿路由索引（租户作用域请求按会话租户）。
@@ -276,7 +278,10 @@ func migrateBusinessStore(db *gorm.DB) error {
 	if err := requirements.NewStore(db).Migrate(); err != nil {
 		return err
 	}
-	return people.NewRepository(db).Migrate()
+	if err := people.NewRepository(db).Migrate(); err != nil {
+		return err
+	}
+	return orgconfig.NewStore(db).Migrate()
 }
 
 // migrateTenantStores 启动时遍历控制面租户，逐库打开并迁移。

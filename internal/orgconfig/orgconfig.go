@@ -20,9 +20,9 @@ import (
 // revision 单调递增，是热生效消费点的版本锚点。密钥内联在载荷里，
 // 与平台快照的持有方式一致。
 type Record struct {
-	ID          uint      `gorm:"primaryKey"`
-	Revision    int64     `gorm:"not null"`
-	PayloadJSON string    `gorm:"type:text;not null"`
+	ID          uint   `gorm:"primaryKey"`
+	Revision    int64  `gorm:"not null"`
+	PayloadJSON string `gorm:"type:text;not null"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
