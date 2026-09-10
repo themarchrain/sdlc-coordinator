@@ -320,3 +320,61 @@ func backdateEffectUpdatedAt(t *testing.T, db *gorm.DB, dedupeKey string) {
 		t.Fatalf("backdate effect %s: %v", dedupeKey, err)
 	}
 }
+
+// 渠道长期未配置期间积压的通知超龄作废:置 skipped 记因,不再补发;
+// 同批新鲜通知照常执行。
+func TestExecutePendingEffectsSkipsStalePendingNotifications(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(testDatabaseDSN(t))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db, &model.Effect{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	effectRepo := repository.NewEffectRepository(db)
+	backdateCreated := func(dedupeKey string) {
+		t.Helper()
+		if err := db.Exec("UPDATE effects SET created_at = ? WHERE dedupe_key = ?", time.Now().Add(-2*effectMaxPendingAge), dedupeKey).Error; err != nil {
+			t.Fatalf("backdate effect %s: %v", dedupeKey, err)
+		}
+	}
+	stale := &model.Effect{
+		TaskID: "task-old", RunID: "run-old", DedupeKey: "effect-old",
+		Kind: "send_im_message", Target: "team-review-group",
+		Status: model.EffectStatusPending, RequestJSON: `{"body":"old news"}`,
+	}
+	if err := effectRepo.Create(ctx, stale); err != nil {
+		t.Fatalf("create stale effect: %v", err)
+	}
+	backdateCreated("effect-old")
+	fresh := &model.Effect{
+		TaskID: "task-new", RunID: "run-new", DedupeKey: "effect-new",
+		Kind: "send_im_message", Target: "team-review-group",
+		Status: model.EffectStatusPending, RequestJSON: `{"body":"fresh"}`,
+	}
+	if err := effectRepo.Create(ctx, fresh); err != nil {
+		t.Fatalf("create fresh effect: %v", err)
+	}
+
+	executor := &fakeEffectExecutor{responses: map[string]string{
+		"effect-new": `{"message_id":"msg-new"}`,
+	}}
+	orch := New(nil, nil, WithEffectRepository(effectRepo), WithEffectExecutor(executor))
+
+	results, err := orch.ExecutePendingEffects(ctx, 10)
+	if err != nil {
+		t.Fatalf("execute pending effects: %v", err)
+	}
+	if len(results) != 2 || results[0].Status != model.EffectStatusSkipped || results[1].Status != model.EffectStatusSucceeded {
+		t.Fatalf("expected [skipped, succeeded], got %+v", results)
+	}
+	if results[0].ErrorMessage == "" || !strings.Contains(results[0].ErrorMessage, "过期") {
+		t.Fatalf("stale skip must record a reason, got %q", results[0].ErrorMessage)
+	}
+	for _, call := range executor.calls {
+		if call == "effect-old" {
+			t.Fatalf("stale effect must not reach the executor, got %v", executor.calls)
+		}
+	}
+}

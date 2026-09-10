@@ -14,6 +14,11 @@ import (
 // 恢复模式对齐。
 const staleEffectRunningTimeout = 15 * time.Minute
 
+// effectMaxPendingAge 是待发效果的时效阈值:渠道长期未配置期间积压的
+// 通知,补发只剩噪音价值,超龄直接作废(skipped 终态记因),配置恢复后
+// 只补发新鲜通知。
+const effectMaxPendingAge = 24 * time.Hour
+
 type EffectExecutionResult struct {
 	EffectID     string             `json:"effect_id"`
 	DedupeKey    string             `json:"dedupe_key"`
@@ -47,6 +52,19 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 	results := make([]EffectExecutionResult, 0, len(effects))
 	for i := range effects {
 		effect := effects[i]
+		if time.Since(effect.CreatedAt) > effectMaxPendingAge {
+			effect.Status = model.EffectStatusSkipped
+			effect.ErrorMessage = fmt.Sprintf("通知已过期跳过（创建超过 %s）", effectMaxPendingAge)
+			if err := o.effects.Update(ctx, &effect); err != nil {
+				return nil, fmt.Errorf("mark effect %s skipped: %w", effect.DedupeKey, err)
+			}
+			results = append(results, EffectExecutionResult{
+				EffectID: effect.EffectID, DedupeKey: effect.DedupeKey, Kind: effect.Kind,
+				Target: effect.Target, Critical: effect.Critical, Status: effect.Status,
+				AttemptCount: effect.AttemptCount, ErrorMessage: effect.ErrorMessage,
+			})
+			continue
+		}
 		result := EffectExecutionResult{
 			EffectID:     effect.EffectID,
 			DedupeKey:    effect.DedupeKey,
