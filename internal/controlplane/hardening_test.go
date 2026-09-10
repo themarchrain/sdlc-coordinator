@@ -146,9 +146,9 @@ func TestLoginRateLimiterCapsTrackedKeys(t *testing.T) {
 	}
 }
 
-// 停用组织须连带删除其路由索引行：webhook 立即失去租户路由，引擎层的
-// 停用状态门是第二道防线。
-func TestDisableTenantRemovesRepoRouteIndexRows(t *testing.T) {
+// 停用组织保留其路由索引认领：数据面由引擎层的停用状态门即时切断，
+// 行不删——停用窗口内身份不被其他组织抢注，恢复后立即可路由。
+func TestDisableTenantKeepsRepoRouteIndexRows(t *testing.T) {
 	service := newTestService(t)
 	ctx := context.Background()
 	tenantID, _ := seedTenantWithAdmin(t, service, "route-freeze")
@@ -164,7 +164,11 @@ func TestDisableTenantRemovesRepoRouteIndexRows(t *testing.T) {
 	if _, err := service.DisableTenant(ctx, &Actor{ID: 1, Username: "root"}, tenantID); err != nil {
 		t.Fatalf("disable tenant: %v", err)
 	}
-	if _, err := service.Repository().GetRepoRouteIndex(ctx, identity); err == nil {
-		t.Fatal("disable must remove the tenant's route index rows")
+	route, err := service.Repository().GetRepoRouteIndex(ctx, identity)
+	if err != nil {
+		t.Fatalf("disable must keep the tenant's route claims: %v", err)
+	}
+	if route.TenantID != tenantID {
+		t.Fatalf("route claim must stay with its tenant, got tenant=%d", route.TenantID)
 	}
 }

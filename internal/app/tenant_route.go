@@ -114,8 +114,10 @@ func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provi
 
 // reconcileRepoRouteIndex 以租户库为权威对账路由索引：租户库中
 // 的仓决定索引应有的行；指派错租户的行修正（先删后建，Upsert 拒绝跨
-// 租户换主），索引多出的行删除。同身份被多个租户同时声称时视为冲突：
-// 保留现状不翻转、不删除，告警交由人工裁决。
+// 租户换主），同租户的指纹漂移原地更新；索引多出的行删除。停用组织
+// 的行冻结保留（身份认领持续占用，防停用窗口被抢注；其数据面已由
+// 引擎层状态门切断）。同身份被多个租户同时声称时视为冲突：保留现状
+// 不翻转、不删除，告警交由人工裁决。
 func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository, resolver tenantdb.Resolver, logger *zap.Logger) error {
 	tenants, err := repo.ListTenantSummaries(ctx)
 	if err != nil {
@@ -124,9 +126,11 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 	want := make(map[string]controlplane.RepoRouteIndex)
 	claimant := make(map[string]uint)
 	conflicted := make(map[string]bool)
+	frozen := make(map[uint]bool)
 	for _, tenant := range tenants {
 		if tenant.Status != controlplane.TenantStatusActive {
-			// 停用组织的仓不参与对账：索引行已在停用时删除，这里不再重建。
+			// 停用组织的仓不参与重建，其既有行冻结保留（见删除循环）。
+			frozen[tenant.ID] = true
 			continue
 		}
 		store, err := resolver.Handle(ctx, tenant.ID)
@@ -169,8 +173,18 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 	}
 	for key, row := range want {
 		if current, ok := existingKeys[key]; !ok || current.TenantID != row.TenantID || current.RepoFingerprint != row.RepoFingerprint {
-			if ok {
-				// 指派错租户的漂移修正：先删旧行再建（Upsert 拒绝跨租户换主）。
+			if ok && current.TenantID != row.TenantID {
+				if frozen[current.TenantID] {
+					// 既有行属于冻结组织：停用不等于放弃身份，按冲突保留
+					// 现状，不翻给活跃认领方。
+					if logger != nil {
+						logger.Warn("repo route identity of a disabled tenant claimed by another tenant; keeping current assignment",
+							zap.String("route", strings.ReplaceAll(key, "\x00", " ")))
+					}
+					continue
+				}
+				// 指派错租户的漂移修正：先删旧行再建（Upsert 拒绝跨租户
+				// 换主）。同租户的指纹漂移不需要删，Upsert 原地更新指纹。
 				if err := repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
 					Provider: row.Provider, BaseURL: row.BaseURL, PathWithNamespace: row.PathWithNamespace,
 				}); err != nil {
@@ -179,6 +193,10 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 			}
 			if err := repo.UpsertRepoRouteIndex(ctx, row); err != nil {
 				if errors.Is(err, controlplane.ErrRepoRouteIdentityClaimed) {
+					if logger != nil {
+						logger.Warn("repo route identity claim lost during reconcile",
+							zap.String("route", strings.ReplaceAll(key, "\x00", " ")))
+					}
 					continue
 				}
 				return fmt.Errorf("reconcile route index upsert: %w", err)
@@ -186,12 +204,17 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 		}
 	}
 	for key, row := range existingKeys {
-		if _, ok := want[key]; !ok && !conflicted[key] {
-			if err := repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
-				Provider: row.Provider, BaseURL: row.BaseURL, PathWithNamespace: row.PathWithNamespace,
-			}); err != nil {
-				return fmt.Errorf("reconcile route index delete: %w", err)
-			}
+		if _, ok := want[key]; ok || conflicted[key] {
+			continue
+		}
+		if frozen[row.TenantID] {
+			// 冻结组织的行保留：恢复后立即可路由，停用窗口内身份持续占用。
+			continue
+		}
+		if err := repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
+			Provider: row.Provider, BaseURL: row.BaseURL, PathWithNamespace: row.PathWithNamespace,
+		}); err != nil {
+			return fmt.Errorf("reconcile route index delete: %w", err)
 		}
 	}
 	return nil

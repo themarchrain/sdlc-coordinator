@@ -151,8 +151,9 @@ func TestEnginePoolForTenantIDIsSingletonUnderConcurrency(t *testing.T) {
 	}
 }
 
-// 停用组织即时失去引擎（状态门逐调用生效，缓存命中也不例外）；恢复后
-// 引擎回归。停用同时删除路由索引行，webhook 租户路由随之失联。
+// 停用组织即时失去引擎（状态门逐调用生效，缓存命中也不例外）；路由认领
+// 保留不删，停用期间已验签的 webhook 按可重试拒绝（引擎不可用 5xx），
+// 平台库保持零写入；恢复后引擎回归、路由立即可用。
 func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 	ctx := context.Background()
 	db := openAppTestDB(t)
@@ -161,6 +162,7 @@ func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
+	// Windows 下租户库句柄不显式关闭会阻塞 TempDir 清理。
 	t.Cleanup(func() {
 		application.pool.CloseTenantEngines()
 		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
@@ -176,6 +178,19 @@ func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 	}
 	if application.pool.forTenantID(ctx, tenant.ID) == nil {
 		t.Fatal("active tenant must get an engine")
+	}
+	// 租户库仓行使停用期间的验签仍可解析（行与认领都保留）。
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := registeredrepo.NewStore(tenantStore.DB).Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: "repo-frozen", DisplayName: "冻结仓", Provider: "gitlab", BaseURL: "https://gitlab.example.com",
+		CodeHostProjectID: "6600", PathWithNamespace: "frozen/repo",
+		Token: "token-frozen", WebhookSecret: "secret-frozen", TokenScopeAttested: true,
+		Status: registeredrepo.StatusEnabled,
+	}); err != nil {
+		t.Fatalf("seed tenant repository: %v", err)
 	}
 	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
 		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/repo",
@@ -195,9 +210,19 @@ func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 	}
 	if _, err := application.ControlPlane.Repository().GetRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
 		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/repo",
-	}); err == nil {
-		t.Fatal("disable must remove the tenant's route index rows")
+	}); err != nil {
+		t.Fatal("disable must keep the tenant's route index claims")
 	}
+
+	// 停用期间已验签的 webhook：引擎不可用 → 5xx（可重试），不写平台库。
+	payload := []byte(`{"project":{"path_with_namespace":"frozen/repo"},"object_kind":"issue"}`)
+	frozen := performAppRawJSONWithHeaders(t, application.Router, http.MethodPost, "/api/events/gitlab", payload,
+		map[string]string{"X-Gitlab-Token": "secret-frozen"})
+	if frozen.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled tenant webhook must fail closed with 503, got %d: %s", frozen.Code, frozen.Body.String())
+	}
+	assertTenantRowCount(t, db, "inbound_events", 0)
+	assertTenantRowCount(t, tenantStore.DB, "inbound_events", 0)
 
 	if _, err := application.ControlPlane.RestoreTenant(ctx, actor, tenant.ID); err != nil {
 		t.Fatalf("restore tenant: %v", err)

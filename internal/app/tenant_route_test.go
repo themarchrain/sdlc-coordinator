@@ -263,3 +263,66 @@ func TestReconcileRepoRouteIndexKeepsAssignmentOnCrossTenantConflict(t *testing.
 			route.TenantID, route.RepoFingerprint)
 	}
 }
+
+// 冻结保留：停用组织的索引行在对账后原样保留；其身份被活跃组织认领时
+// 不翻转（保现状）。
+func TestReconcileRepoRouteIndexKeepsFrozenTenantRows(t *testing.T) {
+	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
+	ctx := context.Background()
+	owner := &controlplane.Tenant{Slug: "frozen-org", DisplayName: "Frozen"}
+	rival := &controlplane.Tenant{Slug: "rival-org", DisplayName: "Rival"}
+	if err := cpRepo.CreateTenant(ctx, owner); err != nil {
+		t.Fatalf("seed owner tenant: %v", err)
+	}
+	if err := cpRepo.CreateTenant(ctx, rival); err != nil {
+		t.Fatalf("seed rival tenant: %v", err)
+	}
+	owner.Status = controlplane.TenantStatusDisabled
+	if err := cpRepo.SaveTenant(ctx, owner); err != nil {
+		t.Fatalf("disable owner: %v", err)
+	}
+
+	root := t.TempDir()
+	resolver := tenantdb.NewSqliteFileResolver(nil, root, 0)
+	t.Cleanup(resolver.Close)
+	rivalStore, err := resolver.Handle(ctx, rival.ID)
+	if err != nil {
+		t.Fatalf("open rival store: %v", err)
+	}
+	rivalRepoStore := registeredrepo.NewStore(rivalStore.DB)
+	if err := rivalRepoStore.Migrate(); err != nil {
+		t.Fatalf("migrate rival repo store: %v", err)
+	}
+	// 活跃组织在租户库里认领冻结组织的身份（绕过注册预检的直写形态）。
+	if err := rivalRepoStore.Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: "repo-rival", DisplayName: "Rival", Provider: "gitlab",
+		BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/shared",
+	}); err != nil {
+		t.Fatalf("seed rival repo: %v", err)
+	}
+
+	claimed := controlplane.RepoRouteIdentity{Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/shared"}
+	orphan := controlplane.RepoRouteIdentity{Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "frozen/orphan"}
+	for _, seed := range []controlplane.RepoRouteIndex{
+		{Provider: claimed.Provider, BaseURL: claimed.BaseURL, PathWithNamespace: claimed.PathWithNamespace,
+			TenantID: owner.ID, RepoFingerprint: "repo-owner"},
+		{Provider: orphan.Provider, BaseURL: orphan.BaseURL, PathWithNamespace: orphan.PathWithNamespace,
+			TenantID: owner.ID, RepoFingerprint: "repo-orphan"},
+	} {
+		if err := cpRepo.UpsertRepoRouteIndex(ctx, seed); err != nil {
+			t.Fatalf("seed index: %v", err)
+		}
+	}
+
+	if err := reconcileRepoRouteIndex(ctx, cpRepo, resolver, nil); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	route, err := cpRepo.GetRepoRouteIndex(ctx, claimed)
+	if err != nil || route.TenantID != owner.ID {
+		t.Fatalf("frozen tenant's claimed identity must stay with the frozen owner, got tenant=%d err=%v", route.TenantID, err)
+	}
+	if _, err := cpRepo.GetRepoRouteIndex(ctx, orphan); err != nil {
+		t.Fatalf("frozen tenant's rows must survive reconciliation, got %v", err)
+	}
+}
