@@ -34,6 +34,10 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 		// 这不是 tick 失败，避免调度循环对合法的"未启用 IM"状态空转报错。
 		return []EffectExecutionResult{}, nil
 	}
+	if probe, ok := o.effectExecutor.(conditionalEffectExecutor); ok && !probe.EffectExecutionEnabled(ctx) {
+		// 执行器运行期申报未启用(组织段未配置 IM 渠道):与无执行器同语义。
+		return []EffectExecutionResult{}, nil
+	}
 
 	effects, err := o.effects.ListPending(ctx, limit)
 	if err != nil {
@@ -119,4 +123,11 @@ func (o *Orchestrator) RecoverStaleEffects(ctx context.Context, limit int) ([]Ef
 		})
 	}
 	return results, nil
+}
+
+
+// conditionalEffectExecutor 允许执行器在运行期申报「未启用」:效果保留在
+// 队列,等待渠道配置后重放,与未装配执行器语义一致。
+type conditionalEffectExecutor interface {
+	EffectExecutionEnabled(ctx context.Context) bool
 }
