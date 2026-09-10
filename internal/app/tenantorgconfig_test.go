@@ -83,6 +83,54 @@ func TestTenantReviewerMentionsProviderFollowsConfigSaves(t *testing.T) {
 	}
 }
 
+func TestTenantWebhookViewRejectsColdConfigReadAndDegradesWhenWarm(t *testing.T) {
+	db := newOrgConfigTestDB(t)
+	ctx := context.Background()
+	engine := &tenantEngine{orgConfig: orgconfig.NewProvider(db), logger: zap.NewNop(), tenantID: 1}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("raw db handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	// 冷启动首读失败:没有可降级的已知配置,必须拒收让平台重试。
+	if _, err := engine.tenantWebhookView(ctx); err == nil {
+		t.Fatalf("cold failed read must reject the view, got nil error")
+	}
+}
+
+func TestTenantWebhookViewDegradesToLastKnownConfigWhenWarm(t *testing.T) {
+	db := newOrgConfigTestDB(t)
+	ctx := context.Background()
+	engine := &tenantEngine{orgConfig: orgconfig.NewProvider(db), logger: zap.NewNop(), tenantID: 1}
+
+	if _, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
+		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com", ReworkAllowedUserIDs: []string{"7"}},
+	}, 0); err != nil {
+		t.Fatalf("save org config: %v", err)
+	}
+	if _, err := engine.orgConfig.Get(ctx); err != nil {
+		t.Fatalf("warm read: %v", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("raw db handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	// 已有已知快照:降级用旧值组装视图,而不是拒收。
+	view, err := engine.tenantWebhookView(ctx)
+	if err != nil || view == nil {
+		t.Fatalf("warm degraded read must still build a view, got %v", err)
+	}
+}
+
 func TestTenantReworkAllowlistLookupFollowsConfigSaves(t *testing.T) {
 	db := newOrgConfigTestDB(t)
 	lookup := tenantReworkAllowlistLookup(orgconfig.NewProvider(db), zap.NewNop(), 1)

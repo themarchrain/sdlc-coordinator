@@ -41,8 +41,10 @@ type WebhookEngineView struct {
 }
 
 // EngineViewFactory 按 (provider, path) 解析该仓所属租户的引擎视图;
-// 返回 nil 表示未命中,回落构造期的平台视图(存量过渡期兜底)。
-type EngineViewFactory func(ctx context.Context, provider, path string) *WebhookEngineView
+// 返回 (nil, nil) 表示未命中,回落构造期的平台视图(存量过渡期兜底);
+// 返回 error 表示租户配置暂不可读(冷启动首读失败),调用方应拒收
+// 让平台重试,而不是按空白名单处理业务事件。
+type EngineViewFactory func(ctx context.Context, provider, path string) (*WebhookEngineView, error)
 
 type EventHandler struct {
 	platformView      *WebhookEngineView
@@ -69,15 +71,20 @@ func WithEngineViewFactory(factory EngineViewFactory) EventHandlerOption {
 	}
 }
 
-// resolveEngineView 选取本请求的引擎视图:工厂命中优先,否则回落构造期
-// 平台视图(空组织段配置,白名单为空)。
-func (h *EventHandler) resolveEngineView(ctx context.Context, provider, path string) *WebhookEngineView {
+// resolveEngineView 选取本请求的引擎视图:工厂命中优先,未命中回落构造期
+// 平台视图(空组织段配置,白名单为空);工厂返回 error 时透传,由调用方
+// 拒收重试。
+func (h *EventHandler) resolveEngineView(ctx context.Context, provider, path string) (*WebhookEngineView, error) {
 	if h.engineViewFactory != nil {
-		if view := h.engineViewFactory(ctx, provider, path); view != nil {
-			return view
+		view, err := h.engineViewFactory(ctx, provider, path)
+		if err != nil {
+			return nil, err
+		}
+		if view != nil {
+			return view, nil
 		}
 	}
-	return h.platformView
+	return h.platformView, nil
 }
 
 type GitLabEventResponse struct {
@@ -121,8 +128,12 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
 		return
 	}
-	view := h.resolveEngineView(c.Request.Context(), providerGitLab, path)
-	if h == nil || view == nil || view.Processor == nil {
+	view, err := h.resolveEngineView(c.Request.Context(), providerGitLab, path)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "tenant configuration unavailable"})
+		return
+	}
+	if view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
@@ -179,8 +190,12 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
 		return
 	}
-	view := h.resolveEngineView(c.Request.Context(), providerGitea, path)
-	if h == nil || view == nil || view.Processor == nil {
+	view, err := h.resolveEngineView(c.Request.Context(), providerGitea, path)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "tenant configuration unavailable"})
+		return
+	}
+	if view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
@@ -237,8 +252,12 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
 		return
 	}
-	view := h.resolveEngineView(c.Request.Context(), providerGitHub, path)
-	if h == nil || view == nil || view.Processor == nil {
+	view, err := h.resolveEngineView(c.Request.Context(), providerGitHub, path)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "tenant configuration unavailable"})
+		return
+	}
+	if view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"sdlc-coordinator/internal/adapters/im"
@@ -98,15 +99,23 @@ func tenantReworkAllowlistLookup(provider *orgconfig.Provider, logger *zap.Logge
 // tenantWebhookView 为一次 webhook 请求组装处理器与 Gitea/GitHub
 // normalizer；normalizer 按当前组织段配置现建，白名单保存即生效。
 // GitLab 侧由处理器自身按构造期 lookup 选项现建，不在本视图内。
-func (e *tenantEngine) tenantWebhookView(ctx context.Context) *handlers.WebhookEngineView {
+// 配置读失败时:已有已知快照则降级用旧值;冷启动首读失败没有降级
+// 来源,返回 error 由 handler 拒收(503)让平台重试,避免把空白名单
+// 当作配置处理业务事件。
+func (e *tenantEngine) tenantWebhookView(ctx context.Context) (*handlers.WebhookEngineView, error) {
 	config, err := e.orgConfig.Get(ctx)
-	if err != nil && e.logger != nil {
-		e.logger.Warn("load tenant runtime config for webhook failed", zap.Uint("tenant_id", e.tenantID), zap.Error(err))
+	if err != nil {
+		if !e.orgConfig.HasSnapshot() {
+			return nil, fmt.Errorf("tenant runtime config unavailable: %w", err)
+		}
+		if e.logger != nil {
+			e.logger.Warn("load tenant runtime config for webhook failed, using last known", zap.Uint("tenant_id", e.tenantID), zap.Error(err))
+		}
 	}
 	ids := config.ReworkAllowedIDs()
 	return &handlers.WebhookEngineView{
 		Processor:        e.processor,
 		GiteaNormalizer:  events.NewGiteaNormalizer(events.WithGiteaReworkAllowedUserIDs(ids)),
 		GitHubNormalizer: events.NewGitHubNormalizer(events.WithGitHubReworkAllowedUserIDs(ids)),
-	}
+	}, nil
 }

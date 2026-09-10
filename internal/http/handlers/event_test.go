@@ -100,6 +100,26 @@ func TestGitLabWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 	}
 }
 
+func TestGitLabWebhookRejectsWhenEngineViewFactoryFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	failing := gin.New()
+	handler := NewEventHandler(nil,
+		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
+			{provider: "gitlab", path: "group/repo-a"}: "secret-a",
+		}}),
+		WithEngineViewFactory(func(context.Context, string, string) (*WebhookEngineView, error) {
+			return nil, errors.New("tenant runtime config unavailable")
+		}),
+	)
+	failing.POST("/api/events/gitlab", handler.GitLab)
+
+	payload := `{"project":{"path_with_namespace":"group/repo-a"},"object_kind":"merge_request"}`
+	response := performEvent(t, failing, http.MethodPost, "/api/events/gitlab", payload, map[string]string{"X-Gitlab-Token": "secret-a"})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("cold config read failure must reject with 503, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
 func TestGitLabWebhookRejectsUnregisteredRepo(t *testing.T) {
 	router, lookup := newEventRouter(nil)
 	payload := `{"project":{"path_with_namespace":"group/unknown"},"object_kind":"push"}`

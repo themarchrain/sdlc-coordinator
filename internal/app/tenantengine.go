@@ -292,8 +292,9 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 // engineViewForPath 按 (provider, path) 的路由索引解析引擎视图（处理器+
 // 按组织段配置构建的 Gitea/GitHub normalizer）：索引未命中、引擎不可用
 // 或索引歧义 → 平台引擎视图（与 webhook 验签的平台兜底对称；歧义时验签
-// 层已 fail-closed，平台视图是防御性兜底）。
-func (p *enginePool) engineViewForPath(ctx context.Context, provider, path string) *handlers.WebhookEngineView {
+// 层已 fail-closed，平台视图是防御性兜底）。租户配置冷读失败时返回
+// error，由 handler 拒收让平台重试。
+func (p *enginePool) engineViewForPath(ctx context.Context, provider, path string) (*handlers.WebhookEngineView, error) {
 	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path)
 	if err != nil {
 		return p.platform.tenantWebhookView(ctx)
