@@ -34,7 +34,7 @@ func NewFeishuBackend(settings FeishuSettings) *FeishuBackend {
 		webhookURL: strings.TrimSpace(settings.WebhookURL),
 		secret:     strings.TrimSpace(settings.Secret),
 		mentions:   settings.Mentions,
-		httpClient: http.DefaultClient,
+		httpClient: sendHTTPClient,
 	}
 }
 
@@ -90,7 +90,8 @@ func (backend *FeishuBackend) SendMessage(ctx context.Context, req SendMessageRe
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	raw := strings.TrimSpace(string(data))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("feishu webhook: %s: %s", resp.Status, raw)
+		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
+		return nil, fmt.Errorf("feishu webhook: %s", resp.Status)
 	}
 
 	var parsed struct {

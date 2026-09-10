@@ -1,6 +1,14 @@
 package im
 
-import "strings"
+import (
+	"net/http"
+	"strings"
+	"time"
+)
+
+// sendHTTPClient 是 IM 出站发送共用的 HTTP 客户端:整体超时上限防止
+// 挂起的远端(接受连接后不响应)把效果执行循环无限拖住。
+var sendHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 // Settings 是 IM 通知层的总配置;Provider 为空、none 或未知值时 NewBackend 返回 nil,
 // 表示本实例不启用 IM 通知。

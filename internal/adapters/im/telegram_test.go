@@ -91,3 +91,20 @@ func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 		t.Fatalf("api error must include description, got %v", err)
 	}
 }
+
+func TestTelegramBackendNon2xxErrorOmitsResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"internal":"secret-body"}`))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("non-2xx must report status, got %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-body") {
+		t.Fatalf("non-2xx error must not carry remote body, got %v", err)
+	}
+}

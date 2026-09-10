@@ -12,7 +12,10 @@ import (
 
 // TelegramSettings 驱动 Telegram Bot API 实现;Mentions 为显示名 -> 数字用户 ID。
 type TelegramSettings struct {
-	BotToken      string
+	BotToken string
+	// TODO: api_base/webhook_url 暂不限制目标网段(内网可用,自托管 bot-api
+	// server 依赖此行为);未来若要拒绝私网目标以收敛出站探测面,须同时为
+	// 自托管场景提供显式放行配置。
 	APIBase       string // 空值用 https://api.telegram.org,自托管 bot-api server 可覆盖
 	DefaultChatID string
 	Mentions      map[string]string
@@ -36,7 +39,7 @@ func NewTelegramBackend(settings TelegramSettings) *TelegramBackend {
 		apiBase:       apiBase,
 		defaultChatID: strings.TrimSpace(settings.DefaultChatID),
 		mentions:      settings.Mentions,
-		httpClient:    http.DefaultClient,
+		httpClient:    sendHTTPClient,
 	}
 }
 
@@ -117,7 +120,8 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	raw := strings.TrimSpace(string(data))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("telegram sendMessage: %s: %s", resp.Status, raw)
+		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
+		return nil, fmt.Errorf("telegram sendMessage: %s", resp.Status)
 	}
 
 	var parsed struct {
