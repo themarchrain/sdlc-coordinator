@@ -191,9 +191,9 @@ func (s *Store) GetByPath(ctx context.Context, provider, path string) (*Register
 }
 
 // WebhookSecretByPath 返回注册仓的按仓 webhook secret(验签专用查找键为
-// provider + path_with_namespace)。契约：未注册=空串无错误(调用方 401)，
-// err 仅表示基础设施抖动(调用方 5xx 重试)——实现 handlers 的
-// WebhookSecretLookup 语义，仓储错误折叠为未注册。
+// provider + path_with_namespace)。未注册与仓储错误一律折叠为空串
+// (调用方按未注册 401 拒绝)；error 恒为 nil，签名仅为对齐 handlers 的
+// WebhookSecretLookup 接口。
 func (s *Store) WebhookSecretByPath(ctx context.Context, provider, path string) (string, error) {
 	repo, err := s.GetByPath(ctx, provider, path)
 	if err != nil {

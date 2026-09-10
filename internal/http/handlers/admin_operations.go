@@ -157,6 +157,7 @@ func statusFromError(err error) int {
 	}
 }
 
+// EffectResponse 是 effect 在 admin 操作响应里的序列化形态。
 type EffectResponse struct {
 	EffectID     string             `json:"effect_id"`
 	TaskID       string             `json:"task_id"`

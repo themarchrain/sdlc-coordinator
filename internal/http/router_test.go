@@ -542,28 +542,6 @@ func newTestRouter(t *testing.T) (http.Handler, *orchestrator.Orchestrator, *rep
 	return NewRouter(orch), orch, runRepo, artifactRepo, dependencyRepo
 }
 
-func newTestRouterWithEffects(t *testing.T) (http.Handler, *repository.EffectRepository) {
-	t.Helper()
-
-	db := openHTTPTestDB(t)
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.Effect{}, &model.ResultSubmission{}); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-
-	taskRepo := repository.NewTaskRepository(db)
-	runRepo := repository.NewRunRepository(db)
-	effectRepo := repository.NewEffectRepository(db)
-	resultSubmissionRepo := repository.NewResultSubmissionRepository(db)
-	orch := orchestrator.New(
-		taskRepo,
-		runRepo,
-		orchestrator.WithEffectRepository(effectRepo),
-		orchestrator.WithResultSubmissionRepository(resultSubmissionRepo),
-	)
-
-	return NewRouter(orch), effectRepo
-}
-
 // seedWebhookRepo 构造按仓验签测试用的注册仓行:webhook secret 按仓持有,
 // 验签凭据来自仓行本身,不存在全局回退。
 func seedWebhookRepo(repositoryID, projectID, path, secret string, status registeredrepo.RepositoryStatus) *registeredrepo.RegisteredRepository {
@@ -661,30 +639,6 @@ func openHTTPTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	return db
-}
-
-func performJSON(t *testing.T, router http.Handler, method, path string, payload any) *httptest.ResponseRecorder {
-	t.Helper()
-
-	var body *bytes.Reader
-	if payload == nil {
-		body = bytes.NewReader(nil)
-	} else {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			t.Fatalf("marshal payload: %v", err)
-		}
-		body = bytes.NewReader(raw)
-	}
-
-	req := httptest.NewRequest(method, path, body)
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-	return rec
 }
 
 func performRawJSON(t *testing.T, router http.Handler, method, path string, raw []byte) *httptest.ResponseRecorder {
