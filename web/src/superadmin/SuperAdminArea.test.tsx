@@ -120,6 +120,8 @@ describe('SuperAdminApp shell', () => {
     expect(orgEntries.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('审计日志')).toBeInTheDocument()
     expect(screen.getByRole('menu')).toBeInTheDocument()
+    // 主题入口与 AppShell 顶栏同源：超管后台头部也提供外观主题按钮。
+    expect(screen.getByRole('button', { name: '外观主题' })).toBeInTheDocument()
   })
 })
 

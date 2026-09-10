@@ -16,6 +16,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons'
 import { NavLink, useSearchParams } from 'react-router-dom'
+import { AppearanceDrawerButton } from '../components/AppearanceDrawer'
 import { PageHeadingHostContext } from '../components/PageHeading'
 import { RepositorySwitcher } from '../components/RepositorySwitcher'
 import { useWorkspaceSession } from './workspaceSession'
@@ -119,6 +120,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="context-bar">
           <div className="context-instance"><span className="context-dot" /> 单实例控制面</div>
           <div className="context-heading-slot" ref={setPageHeadingHost} />
+          {/* 外观主题入口：本地浏览器偏好，对所有登录角色开放（含无 /settings 路由的成员）。 */}
+          <AppearanceDrawerButton />
           <RepositorySwitcher />
         </header>
         <PageHeadingHostContext.Provider value={pageHeadingHost}>

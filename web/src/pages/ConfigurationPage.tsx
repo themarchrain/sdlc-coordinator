@@ -30,7 +30,6 @@ import type {
 } from '../api/types'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
-import { AppearancePanel } from '../components/AppearancePanel'
 
 type ConfigurationFormValues = Omit<EditableRuntimeConfiguration, 'agent_runner'> & {
   agent_runner: Omit<EditableRuntimeConfiguration['agent_runner'], 'task_timeout'> & {
@@ -128,7 +127,7 @@ export function ConfigurationPage() {
     {status.mode === 'configuration_error' ? <Alert className="configuration-alert" type="error" showIcon message="已保存配置无法装配" description={status.configuration_error || '请修正配置并重新启用。'} /> : null}
     {restarting ? <Alert className="configuration-alert" type="info" showIcon icon={<ReloadOutlined spin />} message="服务正在重启" description="页面会持续检查服务状态。Docker 部署会自动拉起；本地 go run 需要手工重新启动。" /> : null}
 
-    <AppearancePanel />
+    {/* 外观主题入口已迁至全局外壳顶栏（AppearanceDrawerButton），本页不再渲染主题块。 */}
 
     <section className="surface-panel configuration-shell">
       <div className="configuration-status-rail">

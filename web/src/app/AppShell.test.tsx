@@ -206,4 +206,24 @@ describe('AppShell', () => {
     expect(container.querySelector('.workspace-canvas')).not.toContainElement(eyebrow)
     expect(screen.queryByRole('heading', { name: '任务轨迹' })).not.toBeInTheDocument()
   })
+
+  it('opens the appearance drawer from the context bar for members too', async () => {
+    // 主题入口迁到外壳顶栏后，没有 /settings 路由的成员也能换本地肤。
+    mockRepositories()
+    const { container } = render(
+      <MemoryRouter>
+        <WorkspaceSessionProvider value={memberWorkspace}>
+          <AppShell><div>成员内容</div></AppShell>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    const trigger = screen.getByRole('button', { name: '外观主题' })
+    expect(container.querySelector('.context-bar')).toContainElement(trigger)
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '外观主题' })).toBeInTheDocument()
+    expect(screen.getByText(/外观主题：默认/)).toBeInTheDocument()
+  })
 })

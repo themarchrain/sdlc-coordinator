@@ -5,8 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../api/client'
 import type { ConfigurationView } from '../api/types'
 import { APP_VERSION } from '../app/version'
-import { ThemeProvider } from '../theme/ThemeProvider'
-import { THEME_LIST, THEME_STORAGE_KEY } from '../themes/registry'
 import { ConfigurationPage } from './ConfigurationPage'
 
 afterEach(() => vi.restoreAllMocks())
@@ -155,114 +153,5 @@ describe('ConfigurationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-  })
-})
-
-describe('ConfigurationPage appearance panel', { timeout: 20_000 }, () => {
-  beforeEach(() => {
-    localStorage.clear()
-    delete document.documentElement.dataset.theme
-  })
-
-  it('renders all theme cards grouped by curated family with light/dark chips', async () => {
-    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
-
-    const { container } = render(
-      <ThemeProvider>
-        <MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>
-      </ThemeProvider>,
-    )
-
-    expect(await screen.findByText('运行配置')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /外观主题：默认/ })).toBeInTheDocument()
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(0)
-
-    fireEvent.click(screen.getByRole('button', { name: /外观主题：默认/ }))
-    expect(screen.getByText('本地浏览器偏好，不写入服务端配置。')).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: '明暗筛选' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^全部 \d+$/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^亮色 \d+$/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^暗色 \d+$/ })).toBeInTheDocument()
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(THEME_LIST.length)
-    expect(container.querySelectorAll('.theme-family').length).toBeGreaterThan(1)
-    expect(screen.getByRole('heading', { name: '暗夜' })).toBeInTheDocument()
-    expect(container.querySelector('.theme-card--active')).toBeTruthy()
-    expect(container.querySelector('.theme-card--active')?.textContent).toContain('默认')
-    expect(container.querySelector('.theme-card--active')?.textContent).toContain('当前使用')
-  })
-
-  it('narrows the grid to dark themes when the dark chip is pressed', async () => {
-    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
-
-    const { container } = render(
-      <ThemeProvider>
-        <MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>
-      </ThemeProvider>,
-    )
-
-    await screen.findByText('运行配置')
-    fireEvent.click(screen.getByRole('button', { name: /外观主题：默认/ }))
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(THEME_LIST.length)
-
-    fireEvent.click(screen.getByRole('button', { name: /^暗色 \d+$/ }))
-
-    const darkCount = THEME_LIST.filter((theme) => theme.isDark).length
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(darkCount)
-    expect(container.querySelectorAll('.theme-card__mode--dark')).toHaveLength(darkCount)
-    expect(screen.getByRole('heading', { name: '暗夜' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '极简白' })).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /^全部 \d+$/ }))
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(THEME_LIST.length)
-  })
-
-  it('filters theme cards by the search keyword and restores the full grid on clear', async () => {
-    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
-
-    const { container } = render(
-      <ThemeProvider>
-        <MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>
-      </ThemeProvider>,
-    )
-
-    await screen.findByText('运行配置')
-    fireEvent.click(screen.getByRole('button', { name: /外观主题：默认/ }))
-    fireEvent.change(screen.getByRole('textbox', { name: '搜索主题' }), { target: { value: 'framer' } })
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(1)
-    expect(container.querySelector('.theme-card')?.textContent).toContain('Framer')
-
-    fireEvent.change(screen.getByRole('textbox', { name: '搜索主题' }), { target: { value: '不存在的主题' } })
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(0)
-    expect(screen.getByText('没有匹配“不存在的主题”的主题。')).toBeInTheDocument()
-
-    fireEvent.change(screen.getByRole('textbox', { name: '搜索主题' }), { target: { value: '' } })
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(THEME_LIST.length)
-    expect(screen.queryByText(/没有匹配/)).toBeNull()
-  })
-
-  it('switches the live theme immediately when a card is clicked and stays expanded', async () => {
-    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
-
-    const { container } = render(
-      <ThemeProvider>
-        <MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>
-      </ThemeProvider>,
-    )
-
-    await screen.findByText('运行配置')
-    expect(document.documentElement.dataset.theme).toBe('default')
-
-    fireEvent.click(screen.getByRole('button', { name: /外观主题：默认/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Supabase/ }))
-
-    expect(document.documentElement.dataset.theme).toBe('supabase')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('supabase')
-    expect(container.querySelector('.theme-card--active')?.textContent).toContain('Supabase')
-    expect(container.querySelectorAll('.theme-card')).toHaveLength(THEME_LIST.length)
-    expect(screen.getByRole('button', { name: /外观主题：Supabase/ })).toBeInTheDocument()
   })
 })

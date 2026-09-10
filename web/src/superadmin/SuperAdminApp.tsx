@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { Spin } from 'antd'
 
 import { portalApi, type PortalSessionPayload } from '../api/portal'
+import { AppearanceDrawerButton } from '../components/AppearanceDrawer'
 import { AuditLogPage } from './AuditLogPage'
 import { TenantDetailPage } from './TenantDetailPage'
 import { TenantsPage } from './TenantsPage'
@@ -72,6 +73,8 @@ function SuperAdminShell() {
           ]}
           style={{ flex: 1, minWidth: 280, borderBottom: 'none' }}
         />
+        {/* 外观主题入口：与 AppShell 顶栏同一入口，超管后台也能换本地肤。 */}
+        <AppearanceDrawerButton />
       </header>
       <main className="flex-1 p-4">
         <Outlet />
