@@ -60,11 +60,11 @@ type MergeRequestReworkHandler interface {
 }
 
 type Processor struct {
-	events           InboundEventStore
-	taskCreator      TaskCreator
-	gitlabNormalizer GitLabNormalizer
-	taskFactory      TaskFactory
-	repos            RepositoryLookup
+	events                 InboundEventStore
+	taskCreator            TaskCreator
+	gitlabNormalizerOptions []GitLabNormalizerOption
+	taskFactory            TaskFactory
+	repos                  RepositoryLookup
 }
 
 type RepositoryLookup interface {
@@ -101,12 +101,14 @@ func WithGitLabWebhookMetadata(metadata GitLabWebhookMetadata) GitLabWebhookOpti
 	}
 }
 
+// NewProcessor 的 normalizer 选项在每次 GitLab webhook 处理时重新物化:
+// 选项里挂接续开发白名单查找函数时,组织段配置保存后的下一个事件即用新值。
 func NewProcessor(events InboundEventStore, taskCreator TaskCreator, normalizerOptions ...GitLabNormalizerOption) *Processor {
 	return &Processor{
-		events:           events,
-		taskCreator:      taskCreator,
-		gitlabNormalizer: NewGitLabNormalizer(normalizerOptions...),
-		taskFactory:      NewTaskFactory(),
+		events:                  events,
+		taskCreator:             taskCreator,
+		gitlabNormalizerOptions: normalizerOptions,
+		taskFactory:             NewTaskFactory(),
 	}
 }
 
@@ -124,7 +126,7 @@ func (p *Processor) ProcessGitLabWebhook(ctx context.Context, raw []byte, opts .
 			opt(&options)
 		}
 	}
-	return p.ProcessWebhook(ctx, p.gitlabNormalizer, raw, WebhookMetadata{
+	return p.ProcessWebhook(ctx, NewGitLabNormalizer(p.gitlabNormalizerOptions...), raw, WebhookMetadata{
 		EventType:   options.metadata.EventName,
 		DeliveryID:  options.metadata.EventUUID,
 		InstanceURL: options.metadata.InstanceURL,
