@@ -95,14 +95,15 @@ func (backend *FeishuBackend) SendMessage(ctx context.Context, req SendMessageRe
 	}
 
 	var parsed struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
+		Code int `json:"code"`
 	}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return nil, fmt.Errorf("decode feishu response: %w", err)
 	}
 	if parsed.Code != 0 {
-		return nil, fmt.Errorf("feishu webhook failed: code %d: %s", parsed.Code, strings.TrimSpace(parsed.Msg))
+		// 业务码失败只报码不抄远端原文:错误消息随效果记录外显,抄录会
+		// 把任意外部响应体带进管理台。
+		return nil, fmt.Errorf("feishu webhook failed: code %d", parsed.Code)
 	}
 	return &Message{RawJSON: raw, Provider: "feishu"}, nil
 }

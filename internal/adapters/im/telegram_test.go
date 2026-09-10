@@ -87,8 +87,9 @@ func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 	}
 
 	apiError := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
-	if _, err := apiError.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || !strings.Contains(err.Error(), "chat not found") {
-		t.Fatalf("api error must include description, got %v", err)
+	_, err := apiError.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err == nil || err.Error() != "telegram sendMessage failed: remote rejected" || strings.Contains(err.Error(), "chat not found") {
+		t.Fatalf("api error must omit the remote description, got %v", err)
 	}
 }
 

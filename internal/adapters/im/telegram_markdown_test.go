@@ -132,8 +132,8 @@ func TestTelegramBackendDoesNotFallbackOnNonParseErrors(t *testing.T) {
 	defer server.Close()
 
 	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
-	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "**x**"}); err == nil || !strings.Contains(err.Error(), "chat not found") {
-		t.Fatalf("chat error must surface directly, got %v", err)
+	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "**x**"}); err == nil || strings.Contains(err.Error(), "chat not found") {
+		t.Fatalf("api error must omit the remote description, got %v", err)
 	}
 	if requests != 1 {
 		t.Fatalf("non-parse error must not trigger fallback, got %d requests", requests)

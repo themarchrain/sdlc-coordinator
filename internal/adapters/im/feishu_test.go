@@ -87,8 +87,8 @@ func TestFeishuBackendReportsBusinessErrorsAndRejectsMissingWebhook(t *testing.T
 	defer server.Close()
 
 	backend := NewFeishuBackend(FeishuSettings{WebhookURL: server.URL})
-	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || !strings.Contains(err.Error(), "sign match fail") {
-		t.Fatalf("business error must include msg, got %v", err)
+	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || err.Error() != "feishu webhook failed: code 19021" || strings.Contains(err.Error(), "sign match fail") {
+		t.Fatalf("business error must carry the code but omit the remote msg, got %v", err)
 	}
 
 	missing := NewFeishuBackend(FeishuSettings{})
