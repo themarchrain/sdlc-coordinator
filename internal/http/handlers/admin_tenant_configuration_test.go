@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/orgconfig"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/tenantdb"
@@ -178,5 +179,33 @@ func TestTenantConfigurationMasksSecrets(t *testing.T) {
 	}
 	if !strings.Contains(put.Body.String(), `"telegram_bot_token_configured":true`) {
 		t.Fatalf("configured flag missing: %s", put.Body.String())
+	}
+}
+
+// 保存/校验请求体必须有大小上限:超大集合载荷在解码前就拒收。
+func TestTenantConfigurationUpdateRejectsOversizedBody(t *testing.T) {
+	router, _ := newTenantConfigurationRouter(t)
+	request := orgconfig.UpdateRequest{
+		Config: orgconfig.EditableConfig{
+			CodeHost: configuration.EditableCodeHostConfig{
+				Provider: "gitlab", BaseURL: "https://gitlab.example.com",
+				// 1 MiB 以上的白名单载荷:内容合法但体积超限。
+				ReworkAllowedUserIDs: []string{strings.Repeat("7", tenantConfigMaxRequestBytes)},
+			},
+		},
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if len(payload) <= tenantConfigMaxRequestBytes {
+		t.Fatalf("test payload must exceed the limit, got %d bytes", len(payload))
+	}
+	httpRequest := httptest.NewRequest(http.MethodPut, "/api/admin/tenant-configuration", bytes.NewReader(payload))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httpRequest)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("oversized body must be rejected with 400, got %d: %s", response.Code, response.Body.String())
 	}
 }

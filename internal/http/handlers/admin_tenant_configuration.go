@@ -102,8 +102,14 @@ func (handler *AdminTenantConfigurationHandler) Update(c *gin.Context) {
 	handler.Get(c)
 }
 
+// tenantConfigMaxRequestBytes 限制组织配置保存/校验请求体积：合法提交
+// 不超过几 KB；上限防的是超大集合载荷(mention map/白名单)自伤式占用
+// 解码内存与 text 列存储。
+const tenantConfigMaxRequestBytes = 1 << 20 // 1 MiB
+
 func decodeTenantConfigurationUpdate(c *gin.Context) (orgconfig.UpdateRequest, bool) {
 	var request orgconfig.UpdateRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, tenantConfigMaxRequestBytes)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
