@@ -10,8 +10,6 @@ import (
 func TestServiceUpdateRetainsReplacesAndExplicitlyClearsSecrets(t *testing.T) {
 	repository := newConfigurationRepositoryTestDB(t)
 	initial := validRuntimeConfig()
-	initial.IM.Telegram.BotToken = "old-bot-token"
-	initial.IM.Provider = "none"
 	initial.AgentRunner.APIKey = "old-runner-key"
 	initial.AgentRunner.CustomHeadersJSON = `{"X-Old":"secret"}`
 	saved, err := repository.Save(context.Background(), StatusReady, SourceUI, initial)
@@ -27,7 +25,6 @@ func TestServiceUpdateRetainsReplacesAndExplicitlyClearsSecrets(t *testing.T) {
 		Secrets: SecretChanges{
 			AgentRunnerAPIKey:                 stringPointer("new-runner-key"),
 			ClearAgentRunnerCustomHeadersJSON: true,
-			ClearTelegramBotToken:             true,
 		},
 	})
 	if err != nil || len(validationErrors) != 0 {
@@ -37,9 +34,6 @@ func TestServiceUpdateRetainsReplacesAndExplicitlyClearsSecrets(t *testing.T) {
 	latest, err := repository.Latest(context.Background())
 	if err != nil {
 		t.Fatalf("load latest snapshot: %v", err)
-	}
-	if latest.Config.IM.Telegram.BotToken != "" {
-		t.Fatal("explicit clear did not clear telegram bot token")
 	}
 	if latest.Config.AgentRunner.APIKey != "new-runner-key" || latest.Config.AgentRunner.CustomHeadersJSON != "" {
 		t.Fatalf("agent runner secret changes were not applied: %#v", latest.Config.AgentRunner)
@@ -98,43 +92,25 @@ func TestServiceViewNeverContainsSecretValues(t *testing.T) {
 
 	view := service.Get()
 
-	if !view.Secrets.AgentRunnerAPIKeyConfigured || !view.Secrets.AgentRunnerCustomHeadersConfigured || !view.Secrets.TelegramBotTokenConfigured {
+	if !view.Secrets.AgentRunnerAPIKeyConfigured || !view.Secrets.AgentRunnerCustomHeadersConfigured {
 		t.Fatalf("configured flags are incomplete: %#v", view.Secrets)
-	}
-	if view.Config.CodeHost.BaseURL == "" {
-		t.Fatalf("non-secret values missing: %#v", view.Config)
 	}
 	if view.Config.AgentRunner.ServiceURL == "" || view.Config.AgentRunner.Model == "" {
 		t.Fatalf("non-secret agent runner values missing: %#v", view.Config.AgentRunner)
 	}
 }
 
-func TestMaskedConfigurationUsesEmptyCollectionsInsteadOfNull(t *testing.T) {
-	runtimeConfig := validRuntimeConfig()
-	runtimeConfig.CodeHost.ReworkAllowedUserIDs = []string{}
-	runtimeConfig.IM.ReviewerMentions = []string{}
-
-	view := MaskRuntimeConfig(runtimeConfig)
-
-	if view.Config.CodeHost.ReworkAllowedUserIDs == nil {
-		t.Fatal("empty rework allowlist must be encoded as [] instead of null")
-	}
-	if view.Config.IM.ReviewerMentions == nil {
-		t.Fatal("empty reviewer mention list must be encoded as [] instead of null")
-	}
-}
-
 func TestServiceRejectsInvalidUpdateWithoutCreatingRevision(t *testing.T) {
 	service := newReadyConfigurationService(t)
 	input := service.Get().Config
-	input.CodeHost.BaseURL = "not-a-url"
+	input.Scheduler.CallbackBaseURL = "not-a-url"
 
 	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input})
 
 	if err != nil {
 		t.Fatalf("invalid request should return field errors, got %v", err)
 	}
-	if result != nil || !validationErrors.Has("codehost.base_url") {
+	if result != nil || !validationErrors.Has("scheduler.callback_base_url") {
 		t.Fatalf("unexpected invalid update result=%#v validation=%#v", result, validationErrors)
 	}
 	status := service.Status()

@@ -69,16 +69,11 @@ type Config struct {
 	ControlPlane ControlPlaneSettings
 	// TenantDataDir 是租户数据根（基础设施配置与 CONTROL_PLANE_* 同级，
 	// 不入运行时快照 schema），env TENANT_DATA_DIR 可覆盖。
-	TenantDataDir                string
-	CodeHostProvider             string
-	CodeHostBaseURL              string
-	CodeHostReworkAllowedUserIDs string
-	IM                           IMSettings
-	ReviewerIMMentions           []string
-	LogLevel                     string
-	LogDir                       string
-	Environment                  string
-	Scheduler                    SchedulerSettings
+	TenantDataDir string
+	LogLevel      string
+	LogDir        string
+	Environment   string
+	Scheduler     SchedulerSettings
 }
 
 // DefaultTenantDataDir 是租户数据根的默认值（相对进程工作目录）。
@@ -86,8 +81,6 @@ const DefaultTenantDataDir = "data/tenants"
 
 func Load() Config {
 	bootstrap := LoadBootstrap()
-	codeHostProvider := strings.ToLower(getEnv("CODEHOST_PROVIDER", ""))
-	codeHostBaseURL := getEnv("CODEHOST_BASE_URL", "")
 	scheduler := loadSchedulerSettings()
 
 	cfg := Config{
@@ -104,30 +97,12 @@ func Load() Config {
 			Effort:          providerEnv("AGENT_PROVIDER_EFFORT", "CLAUDE_PROVIDER_EFFORT", "high"),
 			TaskTimeout:     getEnvDurationBetween("AGENT_RUNNER_TASK_TIMEOUT", defaultAgentRunnerTaskTimeout, minimumAgentRunnerTaskTimeout, maximumAgentRunnerTaskTimeout),
 		},
-		HTTPAddr:                     bootstrap.HTTPAddr,
-		DatabaseDSN:                  bootstrap.DatabaseDSN,
-		CodeHostProvider:             codeHostProvider,
-		CodeHostBaseURL:              codeHostBaseURL,
-		CodeHostReworkAllowedUserIDs: loadReworkAllowedUserIDsEnv(),
-		IM: IMSettings{
-			Provider: strings.ToLower(strings.TrimSpace(getEnv("IM_PROVIDER", ""))),
-			Telegram: IMTelegramSettings{
-				BotToken:      getEnv("IM_TELEGRAM_BOT_TOKEN", ""),
-				APIBase:       getEnv("IM_TELEGRAM_API_BASE", ""),
-				DefaultChatID: getEnv("IM_TELEGRAM_DEFAULT_CHAT_ID", ""),
-				MentionMap:    getEnv("IM_TELEGRAM_MENTION_MAP", ""),
-			},
-			Feishu: IMFeishuSettings{
-				WebhookURL: getEnv("IM_FEISHU_WEBHOOK_URL", ""),
-				Secret:     getEnv("IM_FEISHU_SECRET", ""),
-				MentionMap: getEnv("IM_FEISHU_MENTION_MAP", ""),
-			},
-		},
-		ReviewerIMMentions: parseCommaSeparatedUnique(getEnv("REVIEWER_IM_MENTIONS", "")),
-		LogLevel:           bootstrap.LogLevel,
-		LogDir:             bootstrap.LogDir,
-		Environment:        bootstrap.Environment,
-		Scheduler:          scheduler,
+		HTTPAddr:    bootstrap.HTTPAddr,
+		DatabaseDSN: bootstrap.DatabaseDSN,
+		LogLevel:    bootstrap.LogLevel,
+		LogDir:      bootstrap.LogDir,
+		Environment: bootstrap.Environment,
+		Scheduler:   scheduler,
 	}
 	return cfg
 }
@@ -256,42 +231,6 @@ func parseCommaSeparatedUnique(raw string) []string {
 	return result
 }
 
-func ParseCodeHostReworkAllowedUserIDs(raw string) ([]int, error) {
-	if strings.TrimSpace(raw) == "" {
-		return []int{}, nil
-	}
-
-	parts := strings.Split(raw, ",")
-	result := make([]int, 0, len(parts))
-	seen := make(map[int]struct{}, len(parts))
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		id, err := strconv.Atoi(value)
-		if value == "" || err != nil || id <= 0 {
-			return nil, fmt.Errorf("codehost rework allowed user ids has invalid user id %q", value)
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		result = append(result, id)
-	}
-	return result, nil
-}
-
-// loadReworkAllowedUserIDsEnv 读取平台级 rework 白名单。CODEHOST_REWORK_ALLOWED_USER_IDS
-// 是现行规范名;GITLAB_REWORK_ALLOWED_USER_IDS 为历史名,读到时提示迁移。
-func loadReworkAllowedUserIDsEnv() string {
-	if value := getEnv("CODEHOST_REWORK_ALLOWED_USER_IDS", ""); value != "" {
-		return value
-	}
-	if legacy := getEnv("GITLAB_REWORK_ALLOWED_USER_IDS", ""); legacy != "" {
-		fmt.Fprintln(os.Stderr, "[deprecated] GITLAB_REWORK_ALLOWED_USER_IDS is renamed to CODEHOST_REWORK_ALLOWED_USER_IDS; the legacy value is still applied")
-		return legacy
-	}
-	return ""
-}
-
 func getEnv(key, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -305,24 +244,4 @@ func providerEnv(primary, legacy, fallback string) string {
 		return value
 	}
 	return getEnv(legacy, fallback)
-}
-
-// IMSettings 是 IM 通知层配置;Provider 为空/none 表示禁用通知。
-type IMSettings struct {
-	Provider string
-	Telegram IMTelegramSettings
-	Feishu   IMFeishuSettings
-}
-
-type IMTelegramSettings struct {
-	BotToken      string
-	APIBase       string
-	DefaultChatID string
-	MentionMap    string // JSON: 显示名 -> 数字用户 ID
-}
-
-type IMFeishuSettings struct {
-	WebhookURL string
-	Secret     string
-	MentionMap string // JSON: 显示名 -> open_id
 }

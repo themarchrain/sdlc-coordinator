@@ -28,14 +28,13 @@ func TestAdminConfigurationGetMasksAllSecrets(t *testing.T) {
 		t.Fatalf("unexpected status %d: %s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, secret := range []string{"runner-key", "telegram-bot-secret"} {
+	for _, secret := range []string{"runner-key"} {
 		if strings.Contains(body, secret) {
 			t.Fatalf("configuration API leaked secret %q: %s", secret, body)
 		}
 	}
 	for _, flag := range []string{
 		`"agent_runner_api_key_configured":true`,
-		`"telegram_bot_token_configured":true`,
 	} {
 		if !strings.Contains(body, flag) {
 			t.Fatalf("missing configured flag %s: %s", flag, body)
@@ -64,11 +63,11 @@ func TestAdminConfigurationValidateReturnsFieldErrorsWithoutSaving(t *testing.T)
 	router := gin.New()
 	handler.RegisterRoutes(router.Group("/api/admin"))
 	input := configuration.EditableFromRuntime(configurationHandlerRuntimeConfig())
-	input.CodeHost.BaseURL = "invalid-url"
+	input.Scheduler.CallbackBaseURL = "invalid-url"
 
 	response := performAdminConfigurationRequest(t, router, http.MethodPost, "/api/admin/configuration/validate", configuration.UpdateRequest{Config: input})
 
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "codehost.base_url") || !strings.Contains(response.Body.String(), `"valid":false`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "scheduler.callback_base_url") || !strings.Contains(response.Body.String(), `"valid":false`) {
 		t.Fatalf("unexpected validation response %d: %s", response.Code, response.Body.String())
 	}
 	if service.Status().Revision != 1 || service.Status().Mode != configuration.ModeReady {
@@ -144,14 +143,6 @@ func configurationHandlerRuntimeConfig() configuration.RuntimeConfig {
 		AgentRunner: configuration.AgentRunnerConfig{
 			ServiceURL: "http://agent-runner:8081", WorkspaceRoot: "/app/workspaces", Provider: "claude-cli", ProviderBaseURL: "https://gateway.example",
 			APIKey: "runner-key", Model: "model-a", Effort: "high",
-		},
-		CodeHost: configuration.CodeHostConfig{
-			Provider: "gitlab", BaseURL: "https://gitlab.example.com", ReworkAllowedUserIDs: []string{},
-		},
-		IM: configuration.IMConfig{
-			Provider:         "telegram",
-			Telegram:         configuration.IMTelegramConfig{BotToken: "telegram-bot-secret"},
-			ReviewerMentions: []string{},
 		},
 		Scheduler: configuration.SchedulerConfig{
 			Enabled: true, Interval: "30s",

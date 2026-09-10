@@ -39,7 +39,7 @@ func TestRepositoryMarksSavedRevisionAppliedWithoutChangingPayload(t *testing.T)
 	if latest.Status != StatusReady || latest.AppliedAt == nil || !latest.AppliedAt.Equal(appliedAt) {
 		t.Fatalf("unexpected applied metadata: %#v", latest)
 	}
-	if latest.Config.CodeHost.BaseURL != validRuntimeConfig().CodeHost.BaseURL {
+	if latest.Config.AgentRunner.Model != validRuntimeConfig().AgentRunner.Model {
 		t.Fatal("marking applied changed payload")
 	}
 }
@@ -49,7 +49,7 @@ func TestRepositorySavesIncreasingCompleteSnapshots(t *testing.T) {
 	ctx := context.Background()
 	firstConfig := validRuntimeConfig()
 	secondConfig := validRuntimeConfig()
-	secondConfig.CodeHost.BaseURL = "https://gitlab-2.example.com"
+	secondConfig.AgentRunner.Model = "model-two"
 
 	first, err := repository.Save(ctx, StatusReady, SourceEnvImport, firstConfig)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestRepositorySavesIncreasingCompleteSnapshots(t *testing.T) {
 	if latest.Revision != 2 || latest.Status != StatusRestartRequired || latest.Source != SourceUI {
 		t.Fatalf("unexpected latest metadata: %#v", latest)
 	}
-	if latest.Config.CodeHost.BaseURL != secondConfig.CodeHost.BaseURL || latest.Config.AgentRunner.APIKey != secondConfig.AgentRunner.APIKey {
+	if latest.Config.AgentRunner.Model != secondConfig.AgentRunner.Model || latest.Config.AgentRunner.APIKey != secondConfig.AgentRunner.APIKey {
 		t.Fatalf("latest snapshot is incomplete: %#v", latest.Config)
 	}
 

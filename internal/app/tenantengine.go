@@ -11,7 +11,6 @@ import (
 	"sdlc-coordinator/internal/admin"
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/controlplane"
-	effectexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/events"
 	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
@@ -33,14 +32,12 @@ import (
 // engineShared 汇总跨引擎共享的平台级装配依赖：出网客户端、控制面、
 // 密钥与配置——这些与具体库无关，全部引擎共用一份。
 type engineShared struct {
-	cfg                  config.Config
-	logger               *zap.Logger
-	reworkAllowedUserIDs []int
-	effectExecutor       *effectexec.Executor // nil = 通知链关闭
-	poolSource           *runnerpool.ControlPlanePoolSource
-	defaultRunner        *agentrunner.Client
-	runnerClientFactory  func(endpoint string) orchestrator.ReviewerRunnerClient
-	resultTokenSecret    []byte
+	cfg                 config.Config
+	logger              *zap.Logger
+	poolSource          *runnerpool.ControlPlanePoolSource
+	defaultRunner       *agentrunner.Client
+	runnerClientFactory func(endpoint string) orchestrator.ReviewerRunnerClient
+	resultTokenSecret   []byte
 }
 
 // tenantEngine 是一个业务库（平台主库或租户库）的完整执行引擎：
@@ -89,10 +86,6 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithEffectRepository(effectRepo),
 		orchestrator.WithResultSubmissionRepository(resultSubmissionRepo),
 		orchestrator.WithDeveloperClarificationIMTarget(""),
-		orchestrator.WithReviewerIMMentions(shared.cfg.ReviewerIMMentions),
-	}
-	if shared.effectExecutor != nil {
-		opts = append(opts, orchestrator.WithEffectExecutor(shared.effectExecutor))
 	}
 	// 平台身份按仓行解析:resolver 与写回探针按任务所属仓的 provider/base_url
 	// 分派。全局 codehost 配置只作为注册表单默认值与空列回填来源,运行时不读取。
@@ -158,7 +151,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
-	processor := events.NewProcessor(inboundEventRepo, orch, events.WithCodeHostReworkAllowedUserIDs(shared.reworkAllowedUserIDs))
+	processor := events.NewProcessor(inboundEventRepo, orch)
 	processor.SetRepositoryLookup(repoStore)
 	requirementsService := requirements.NewService(
 		requirements.NewStore(db), repoStore,

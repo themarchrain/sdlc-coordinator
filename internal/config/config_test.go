@@ -61,20 +61,6 @@ func TestLoadSchedulerInvalidValuesFallBackToSafeDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadCodeHostConfig(t *testing.T) {
-	t.Setenv("CODEHOST_PROVIDER", "Gitea")
-	t.Setenv("CODEHOST_BASE_URL", "http://localhost:3000")
-
-	cfg := Load()
-
-	if cfg.CodeHostProvider != "gitea" {
-		t.Fatalf("expected gitea provider, got %q", cfg.CodeHostProvider)
-	}
-	if cfg.CodeHostBaseURL != "http://localhost:3000" {
-		t.Fatalf("expected codehost base url, got %q", cfg.CodeHostBaseURL)
-	}
-}
-
 func TestLoadAgentRunnerLegacyEnvironment(t *testing.T) {
 	t.Setenv("AGENT_RUNNER_SERVICE_URL", "http://runner.internal:8081")
 	t.Setenv("AGENT_RUNNER_WORKSPACE_ROOT", "/srv/workspaces")
@@ -130,44 +116,6 @@ func TestLoadAgentRunnerTaskTimeoutUsesSafeDefault(t *testing.T) {
 	}
 }
 
-func TestLoadIMConfig(t *testing.T) {
-	t.Setenv("IM_PROVIDER", "Telegram")
-	t.Setenv("IM_TELEGRAM_BOT_TOKEN", "bot-token")
-	t.Setenv("IM_TELEGRAM_DEFAULT_CHAT_ID", "-1001")
-	t.Setenv("IM_FEISHU_WEBHOOK_URL", "https://open.feishu.cn/hook/x")
-	t.Setenv("REVIEWER_IM_MENTIONS", "review-owner@example.com, demo.user@example.com, review-owner@example.com")
-
-	cfg := Load()
-
-	if cfg.IM.Provider != "telegram" {
-		t.Fatalf("expected normalized telegram provider, got %q", cfg.IM.Provider)
-	}
-	if cfg.IM.Telegram.BotToken != "bot-token" || cfg.IM.Telegram.DefaultChatID != "-1001" {
-		t.Fatalf("unexpected telegram settings: %#v", cfg.IM.Telegram)
-	}
-	if cfg.IM.Feishu.WebhookURL == "" {
-		t.Fatal("feishu settings must load independently of provider")
-	}
-	if len(cfg.ReviewerIMMentions) != 2 || cfg.ReviewerIMMentions[0] != "review-owner@example.com" || cfg.ReviewerIMMentions[1] != "demo.user@example.com" {
-		t.Fatalf("unexpected reviewer IM mentions: %#v", cfg.ReviewerIMMentions)
-	}
-}
-
-// TestLoadDropsGitLabBaseURLAlias 锁定 GITLAB_BASE_URL 别名通道退役:平台
-// 身份唯一归属注册仓行,全局 env 只认 CODEHOST_* 规范名,别名注入不生效。
-func TestLoadDropsGitLabBaseURLAlias(t *testing.T) {
-	t.Setenv("CODEHOST_PROVIDER", "")
-	t.Setenv("CODEHOST_BASE_URL", "")
-	t.Setenv("GITLAB_BASE_URL", "https://gitlab.example")
-
-	cfg := Load()
-
-	if cfg.CodeHostProvider != "" || cfg.CodeHostBaseURL != "" {
-		t.Fatalf("GITLAB_BASE_URL alias must be retired, got provider=%q base_url=%q",
-			cfg.CodeHostProvider, cfg.CodeHostBaseURL)
-	}
-}
-
 // TestLoadDropsWebhookSecretEnv 锁定全局 secret 通道退役:env 直配
 // (GITLAB_WEBHOOK_SECRET/CODEHOST_WEBHOOK_SECRET)不再被读取,
 // 验签凭据唯一归属注册仓。
@@ -183,61 +131,6 @@ func TestLoadDropsWebhookSecretEnv(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "webhook-secret-1") || strings.Contains(string(encoded), "webhook-secret-2") {
 		t.Fatalf("webhook secret env must be retired, got %s", encoded)
-	}
-}
-
-func TestParseCodeHostReworkAllowedUserIDs(t *testing.T) {
-	ids, err := ParseCodeHostReworkAllowedUserIDs(" 99,42,99 ")
-	if err != nil {
-		t.Fatalf("parse allowed user ids: %v", err)
-	}
-	if len(ids) != 2 || ids[0] != 99 || ids[1] != 42 {
-		t.Fatalf("unexpected allowed user ids: %#v", ids)
-	}
-
-	empty, err := ParseCodeHostReworkAllowedUserIDs(" ")
-	if err != nil || len(empty) != 0 {
-		t.Fatalf("expected empty allowlist, got %#v error=%v", empty, err)
-	}
-}
-
-func TestParseCodeHostReworkAllowedUserIDsRejectsInvalidValues(t *testing.T) {
-	for _, raw := range []string{"0", "-1", "not-a-number", "42,,99"} {
-		if _, err := ParseCodeHostReworkAllowedUserIDs(raw); err == nil {
-			t.Fatalf("expected %q to be rejected", raw)
-		}
-	}
-}
-
-func TestLoadCodeHostReworkAllowedUserIDs(t *testing.T) {
-	t.Setenv("CODEHOST_REWORK_ALLOWED_USER_IDS", "99,42")
-
-	cfg := Load()
-
-	if cfg.CodeHostReworkAllowedUserIDs != "99,42" {
-		t.Fatalf("unexpected raw rework allowlist: %q", cfg.CodeHostReworkAllowedUserIDs)
-	}
-}
-
-func TestLoadCodeHostReworkAllowedUserIDsLegacyEnvFallback(t *testing.T) {
-	t.Setenv("CODEHOST_REWORK_ALLOWED_USER_IDS", "")
-	t.Setenv("GITLAB_REWORK_ALLOWED_USER_IDS", "42")
-
-	cfg := Load()
-
-	if cfg.CodeHostReworkAllowedUserIDs != "42" {
-		t.Fatalf("expected legacy env fallback, got %q", cfg.CodeHostReworkAllowedUserIDs)
-	}
-}
-
-func TestLoadCodeHostReworkAllowedUserIDsPrefersCanonicalEnv(t *testing.T) {
-	t.Setenv("CODEHOST_REWORK_ALLOWED_USER_IDS", "7")
-	t.Setenv("GITLAB_REWORK_ALLOWED_USER_IDS", "42")
-
-	cfg := Load()
-
-	if cfg.CodeHostReworkAllowedUserIDs != "7" {
-		t.Fatalf("expected canonical env to win, got %q", cfg.CodeHostReworkAllowedUserIDs)
 	}
 }
 

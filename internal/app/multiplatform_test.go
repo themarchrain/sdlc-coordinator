@@ -213,9 +213,9 @@ func TestMultiPlatformCoexistence(t *testing.T) {
 	}
 }
 
-// TestLegacyRepositoryRowsAreBackfilledOnStartup 启动时为缺少平台身份的仓行补齐
-// provider/base_url,且不改变 enabled 状态。
-func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
+// TestStartupLeavesLegacyRepositoryRowsUntouched 全局 codehost 配置已随配置
+// 双层化退役:启动不再回填仓行身份,缺身份的存量行原样保留,索引仍照常建立。
+func TestStartupLeavesLegacyRepositoryRowsUntouched(t *testing.T) {
 	db := openAppTestDB(t)
 	repoStore := registeredrepo.NewStore(db)
 	if err := repoStore.Migrate(); err != nil {
@@ -233,8 +233,6 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 
 	application, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
-		CodeHostProvider: "gitlab",
-		CodeHostBaseURL:  "https://gitlab.example.com",
 	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -245,8 +243,8 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload legacy row: %v", err)
 	}
-	if backfilled.Provider != "gitlab" || backfilled.BaseURL != "https://gitlab.example.com" {
-		t.Fatalf("legacy row not backfilled: provider=%q base_url=%q", backfilled.Provider, backfilled.BaseURL)
+	if backfilled.Provider != "" || backfilled.BaseURL != "" {
+		t.Fatalf("startup must not backfill identity anymore: provider=%q base_url=%q", backfilled.Provider, backfilled.BaseURL)
 	}
 	if backfilled.Status != registeredrepo.StatusEnabled {
 		t.Fatalf("backfill must not change status, got %s", backfilled.Status)
@@ -255,8 +253,6 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	// 重启幂等:第二次启动回填零行、索引 IF NOT EXISTS,仓行与状态不变。
 	if _, err := New(withTestControlPlane(t, config.Config{
 		HTTPAddr:         ":0",
-		CodeHostProvider: "gitlab",
-		CodeHostBaseURL:  "https://gitlab.example.com",
 	}), zap.NewNop(), db); err != nil {
 		t.Fatalf("second startup must be idempotent: %v", err)
 	}
@@ -264,7 +260,7 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload after restart: %v", err)
 	}
-	if rerun.Provider != "gitlab" || rerun.BaseURL != "https://gitlab.example.com" || rerun.Status != registeredrepo.StatusEnabled {
+	if rerun.Provider != "" || rerun.BaseURL != "" || rerun.Status != registeredrepo.StatusEnabled {
 		t.Fatalf("restart must not alter repository identity: %+v", rerun)
 	}
 }

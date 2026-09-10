@@ -10,8 +10,6 @@ import (
 
 type EditableRuntimeConfig struct {
 	AgentRunner EditableAgentRunnerConfig `json:"agent_runner"`
-	CodeHost    EditableCodeHostConfig    `json:"codehost"`
-	IM          EditableIMConfig          `json:"im"`
 	Scheduler   SchedulerConfig           `json:"scheduler"`
 }
 
@@ -52,8 +50,6 @@ type EditableIMFeishu struct {
 type SecretStatus struct {
 	AgentRunnerAPIKeyConfigured        bool `json:"agent_runner_api_key_configured"`
 	AgentRunnerCustomHeadersConfigured bool `json:"agent_runner_custom_headers_configured"`
-	TelegramBotTokenConfigured         bool `json:"telegram_bot_token_configured"`
-	FeishuSecretConfigured             bool `json:"feishu_secret_configured"`
 }
 
 type ConfigurationView struct {
@@ -72,13 +68,9 @@ type StatusView struct {
 type SecretChanges struct {
 	AgentRunnerAPIKey            *string `json:"agent_runner_api_key,omitempty"`
 	AgentRunnerCustomHeadersJSON *string `json:"agent_runner_custom_headers_json,omitempty"`
-	TelegramBotToken             *string `json:"telegram_bot_token,omitempty"`
-	FeishuSecret                 *string `json:"feishu_secret,omitempty"`
 
 	ClearAgentRunnerAPIKey            bool `json:"clear_agent_runner_api_key,omitempty"`
 	ClearAgentRunnerCustomHeadersJSON bool `json:"clear_agent_runner_custom_headers_json,omitempty"`
-	ClearTelegramBotToken             bool `json:"clear_telegram_bot_token,omitempty"`
-	ClearFeishuSecret                 bool `json:"clear_feishu_secret,omitempty"`
 }
 
 type UpdateRequest struct {
@@ -168,24 +160,6 @@ func EditableFromRuntime(cfg RuntimeConfig) EditableRuntimeConfig {
 			Provider: cfg.AgentRunner.Provider, ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
 			Model: cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort, TaskTimeout: cfg.AgentRunner.TaskTimeout,
 		},
-		CodeHost: EditableCodeHostConfig{
-			Provider:             cfg.CodeHost.Provider,
-			BaseURL:              cfg.CodeHost.BaseURL,
-			ReworkAllowedUserIDs: cloneStringSlice(cfg.CodeHost.ReworkAllowedUserIDs),
-		},
-		IM: EditableIMConfig{
-			Provider: cfg.IM.Provider,
-			Telegram: EditableIMTelegram{
-				APIBase:       cfg.IM.Telegram.APIBase,
-				DefaultChatID: cfg.IM.Telegram.DefaultChatID,
-				MentionMap:    cloneStringMap(cfg.IM.Telegram.MentionMap),
-			},
-			Feishu: EditableIMFeishu{
-				WebhookURL: cfg.IM.Feishu.WebhookURL,
-				MentionMap: cloneStringMap(cfg.IM.Feishu.MentionMap),
-			},
-			ReviewerMentions: cloneStringSlice(cfg.IM.ReviewerMentions),
-		},
 		Scheduler: cfg.Scheduler,
 	}
 }
@@ -196,8 +170,6 @@ func MaskRuntimeConfig(cfg RuntimeConfig) ConfigurationView {
 		Secrets: SecretStatus{
 			AgentRunnerAPIKeyConfigured:        strings.TrimSpace(cfg.AgentRunner.APIKey) != "",
 			AgentRunnerCustomHeadersConfigured: strings.TrimSpace(cfg.AgentRunner.CustomHeadersJSON) != "",
-			TelegramBotTokenConfigured:         strings.TrimSpace(cfg.IM.Telegram.BotToken) != "",
-			FeishuSecretConfigured:             strings.TrimSpace(cfg.IM.Feishu.Secret) != "",
 		},
 	}
 }
@@ -220,26 +192,6 @@ func mergeUpdate(current RuntimeConfig, request UpdateRequest) RuntimeConfig {
 			APIKey: current.AgentRunner.APIKey, CustomHeadersJSON: current.AgentRunner.CustomHeadersJSON,
 			Model: request.Config.AgentRunner.Model, Effort: request.Config.AgentRunner.Effort, TaskTimeout: request.Config.AgentRunner.TaskTimeout,
 		},
-		CodeHost: CodeHostConfig{
-			Provider:             request.Config.CodeHost.Provider,
-			BaseURL:              request.Config.CodeHost.BaseURL,
-			ReworkAllowedUserIDs: append([]string(nil), request.Config.CodeHost.ReworkAllowedUserIDs...),
-		},
-		IM: IMConfig{
-			Provider: request.Config.IM.Provider,
-			Telegram: IMTelegramConfig{
-				BotToken:      current.IM.Telegram.BotToken,
-				APIBase:       request.Config.IM.Telegram.APIBase,
-				DefaultChatID: request.Config.IM.Telegram.DefaultChatID,
-				MentionMap:    cloneStringMap(request.Config.IM.Telegram.MentionMap),
-			},
-			Feishu: IMFeishuConfig{
-				WebhookURL: request.Config.IM.Feishu.WebhookURL,
-				Secret:     current.IM.Feishu.Secret,
-				MentionMap: cloneStringMap(request.Config.IM.Feishu.MentionMap),
-			},
-			ReviewerMentions: append([]string(nil), request.Config.IM.ReviewerMentions...),
-		},
 		Scheduler: func() SchedulerConfig {
 			// 这两项是必填运行参数；UI 或旧客户端可能整包提交 scheduler 而漏带它们，
 			// 空值时保留当前值，避免合法配置被一次不完整提交打回。
@@ -251,8 +203,6 @@ func mergeUpdate(current RuntimeConfig, request UpdateRequest) RuntimeConfig {
 	}
 	applySecretChange(&result.AgentRunner.APIKey, request.Secrets.AgentRunnerAPIKey, request.Secrets.ClearAgentRunnerAPIKey)
 	applySecretChange(&result.AgentRunner.CustomHeadersJSON, request.Secrets.AgentRunnerCustomHeadersJSON, request.Secrets.ClearAgentRunnerCustomHeadersJSON)
-	applySecretChange(&result.IM.Telegram.BotToken, request.Secrets.TelegramBotToken, request.Secrets.ClearTelegramBotToken)
-	applySecretChange(&result.IM.Feishu.Secret, request.Secrets.FeishuSecret, request.Secrets.ClearFeishuSecret)
 	return ApplyDefaults(result)
 }
 

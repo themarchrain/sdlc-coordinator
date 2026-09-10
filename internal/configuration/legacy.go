@@ -2,21 +2,13 @@ package configuration
 
 import (
 	"encoding/json"
-	"fmt"
-	"strconv"
-	"strings"
 
 	"sdlc-coordinator/internal/config"
 )
 
+// FromLegacyConfig 只搬运系统段（Agent Runner 与调度）；历史环境变量中的
+// 组织段键（代码仓库、IM）已随配置双层化作废，不再导入。
 func FromLegacyConfig(legacy config.Config) (RuntimeConfig, error) {
-	provider := strings.ToLower(strings.TrimSpace(legacy.CodeHostProvider))
-	baseURL := strings.TrimSpace(legacy.CodeHostBaseURL)
-	reworkAllowedInts, reworkErr := config.ParseCodeHostReworkAllowedUserIDs(legacy.CodeHostReworkAllowedUserIDs)
-	reworkAllowed := make([]string, 0, len(reworkAllowedInts))
-	for _, id := range reworkAllowedInts {
-		reworkAllowed = append(reworkAllowed, strconv.Itoa(id))
-	}
 	customHeadersJSON := ""
 	if len(legacy.AgentRunner.CustomHeaders) > 0 {
 		if raw, err := json.Marshal(legacy.AgentRunner.CustomHeaders); err == nil {
@@ -31,14 +23,6 @@ func FromLegacyConfig(legacy config.Config) (RuntimeConfig, error) {
 			APIKey: legacy.AgentRunner.APIKey, CustomHeadersJSON: customHeadersJSON,
 			Model: legacy.AgentRunner.Model, Effort: legacy.AgentRunner.Effort, TaskTimeout: durationString(legacy.AgentRunner.TaskTimeout),
 		},
-		CodeHost: CodeHostConfig{
-			Provider:             provider,
-			BaseURL:              baseURL,
-			ReworkAllowedUserIDs: reworkAllowed,
-		},
-		IM: IMConfig{
-			ReviewerMentions: append([]string(nil), legacy.ReviewerIMMentions...),
-		},
 		Scheduler: SchedulerConfig{
 			Enabled:             legacy.Scheduler.Enabled,
 			Interval:            durationString(legacy.Scheduler.Interval),
@@ -52,11 +36,7 @@ func FromLegacyConfig(legacy config.Config) (RuntimeConfig, error) {
 			EffectLimit:         legacy.Scheduler.TickRequest.EffectLimit,
 		},
 	}
-	runtimeConfig = ApplyDefaults(runtimeConfig)
-	if reworkErr != nil {
-		return runtimeConfig, fmt.Errorf("parse legacy rework allowlist: %w", reworkErr)
-	}
-	return runtimeConfig, nil
+	return ApplyDefaults(runtimeConfig), nil
 }
 
 func durationString(value interface{ String() string }) string {
