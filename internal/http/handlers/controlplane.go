@@ -19,12 +19,20 @@ const PortalSessionCookieName = "coordinator_portal_session"
 // 与 /api/portal/tenant/*（组织作用域管理）。控制面已装配时，
 // /api/admin/* 也走本 handler 的门户会话 + 矩阵 RBAC。
 type ControlPlaneHandler struct {
-	service     *controlplane.Service
-	adminPolicy AdminRoutePolicy
+	service *controlplane.Service
+	// cookieSecure 控制门户会话 cookie 的 Secure 属性，默认 true；
+	// 明文 http 部署可经 PORTAL_COOKIE_SECURE=0 关闭。
+	cookieSecure bool
+	adminPolicy  AdminRoutePolicy
 }
 
 func NewControlPlaneHandler(service *controlplane.Service) *ControlPlaneHandler {
-	return &ControlPlaneHandler{service: service}
+	return &ControlPlaneHandler{service: service, cookieSecure: true}
+}
+
+// SetCookieSecure 覆写门户会话 cookie 的 Secure 属性（装配期调用）。
+func (handler *ControlPlaneHandler) SetCookieSecure(secure bool) {
+	handler.cookieSecure = secure
 }
 
 // AnnotateAuditSourceIP 把 Gin ClientIP（TrustedProxies=nil 时为直连对端）写入
@@ -184,7 +192,7 @@ func (handler *ControlPlaneHandler) Login(c *gin.Context) {
 		writeControlPlaneError(c, err)
 		return
 	}
-	setPortalSessionCookie(c, result.Token)
+	handler.setPortalSessionCookie(c, result.Token)
 	c.JSON(http.StatusOK, portalAuthPayload(result.User, result.Scope, result.Tenants))
 }
 
@@ -205,7 +213,7 @@ func (handler *ControlPlaneHandler) Register(c *gin.Context) {
 		writeControlPlaneError(c, err)
 		return
 	}
-	setPortalSessionCookie(c, result.Token)
+	handler.setPortalSessionCookie(c, result.Token)
 	c.JSON(http.StatusOK, portalAuthPayload(result.User, result.Scope, result.Tenants))
 }
 
@@ -224,7 +232,7 @@ func (handler *ControlPlaneHandler) SelectTenant(c *gin.Context) {
 		writeControlPlaneError(c, err)
 		return
 	}
-	setPortalSessionCookie(c, result.Token)
+	handler.setPortalSessionCookie(c, result.Token)
 	c.JSON(http.StatusOK, portalAuthPayload(result.User, result.Scope, result.Tenants))
 }
 
@@ -249,13 +257,13 @@ func (handler *ControlPlaneHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	// 改密已吊销全部会话：清除本端 cookie，引导重新登录
-	clearPortalSessionCookie(c)
+	handler.clearPortalSessionCookie(c)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (handler *ControlPlaneHandler) Logout(c *gin.Context) {
 	_ = handler.service.Logout(c.Request.Context(), portalCookieToken(c))
-	clearPortalSessionCookie(c)
+	handler.clearPortalSessionCookie(c)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -457,14 +465,14 @@ func portalCookieToken(c *gin.Context) string {
 	return strings.TrimSpace(cookie.Value)
 }
 
-func setPortalSessionCookie(c *gin.Context, token string) {
+func (handler *ControlPlaneHandler) setPortalSessionCookie(c *gin.Context, token string) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(PortalSessionCookieName, token, int(controlplane.DefaultSessionTTL.Seconds()), "/", "", false, true)
+	c.SetCookie(PortalSessionCookieName, token, int(controlplane.DefaultSessionTTL.Seconds()), "/", "", handler.cookieSecure, true)
 }
 
-func clearPortalSessionCookie(c *gin.Context) {
+func (handler *ControlPlaneHandler) clearPortalSessionCookie(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(PortalSessionCookieName, "", -1, "/", "", false, true)
+	c.SetCookie(PortalSessionCookieName, "", -1, "/", "", handler.cookieSecure, true)
 }
 
 const timeRFC3339 = "2006-01-02T15:04:05Z07:00"

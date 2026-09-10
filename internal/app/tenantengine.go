@@ -228,6 +228,17 @@ func (p *enginePool) forTenantID(ctx context.Context, tenantID uint) *tenantEngi
 	if tenantID == 0 {
 		return p.platform
 	}
+	// 停用（或状态异常）租户一律无引擎：webhook/管理操作/MCP 全部落空，
+	// 调用方按各自语义 fail-closed。逐调用查一次控制面（本地 sqlite），
+	// 缓存命中也不例外——停用必须即时生效，不等引擎重建。
+	tenant, err := p.index.GetTenant(ctx, tenantID)
+	if err != nil {
+		p.logger.Warn("lookup tenant for engine failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
+		return nil
+	}
+	if tenant.Status != controlplane.TenantStatusActive {
+		return nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if engine, ok := p.engines[tenantID]; ok {
@@ -273,7 +284,7 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 		return result
 	}
 	for _, tenant := range tenants {
-		if tenant.ID == 0 {
+		if tenant.ID == 0 || tenant.Status != controlplane.TenantStatusActive {
 			continue
 		}
 		if engine := p.forTenantID(ctx, tenant.ID); engine != nil {
@@ -283,41 +294,67 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 	return result
 }
 
+// errTenantEngineUnavailable 表示路由索引已指认租户,但其引擎当前不可用
+// (组织停用、租户库打开或构造失败)。webhook 处理器据此 fail-closed 回
+// 5xx 让代码托管重试,不回落平台库。
+var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
+
 // engineForPath 按 (provider, path) 的路由索引解析事件处理器：索引唯一
-// 行 → 该租户引擎的处理器；未命中或引擎不可用 → 平台引擎处理器（与
-// webhook 验签的平台兜底对称）；索引歧义 → nil（验签层已 fail-closed，
-// 此处防御性返回 nil 交由 handler 报未配置）。
-func (p *enginePool) engineForPath(ctx context.Context, provider, path string) *events.Processor {
-	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path)
+// 行 → 该租户引擎的处理器；未命中 → 平台处理器（存量过渡期兜底）；
+// 索引指认租户但引擎不可用 → 错误（fail closed，调用方 5xx 让代码托管
+// 重试），故障瞬间的事件宁可被重试也不写进平台库。repoURL 是载荷自带
+// 完整链接，仅在同路径多行命中时用于推导实例地址消歧（消歧失败同样
+// 返回错误——验签层已 fail-closed，此处防御性兜底）。
+func (p *enginePool) engineForPath(ctx context.Context, provider, path, repoURL string) (*events.Processor, error) {
+	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path, repoURL)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	if engine := p.forTenantID(ctx, tenantID); engine != nil {
-		return engine.processor
+	if tenantID == 0 {
+		return p.platform.processor, nil
 	}
-	return p.platform.processor
+	engine := p.forTenantID(ctx, tenantID)
+	if engine == nil {
+		return nil, errTenantEngineUnavailable
+	}
+	return engine.processor, nil
 }
 
-// engineForSession 按请求会话的组织作用域解析引擎；无作用域会话用平台引擎。
+// engineForSession 按请求会话的组织作用域解析引擎；无作用域会话（超管
+// 直连）用平台引擎。租户引擎不可用返回 nil——管理操作面据此 503，不再
+// 回落平台库（那会把租户操作写进错误的库）。
 func (p *enginePool) engineForSession(c *gin.Context) *tenantEngine {
 	tenantID := uint(0)
 	if session := handlers.CurrentPortalSession(c); session != nil && session.EffectiveTenant != nil {
 		tenantID = session.EffectiveTenant.ID
 	}
-	if engine := p.forTenantID(context.Background(), tenantID); engine != nil {
-		return engine
+	if tenantID == 0 {
+		return p.platform
 	}
-	return p.platform
+	return p.forTenantID(context.Background(), tenantID)
 }
 
-// tickAll 串行执行各引擎的 Tick 并合并结果；单引擎失败记日志继续。
+// tenantEngineSweepTimeout 限制单引擎一次全租户扫描的占用：引擎内最长的
+// git 交付已有 3 分钟上限（developerFinalizeTimeout），取 5 分钟既容纳合法
+// 长操作，又防单个卡死引擎串行拖垮全局调度节奏。
+const tenantEngineSweepTimeout = 5 * time.Minute
+
+// tickAll 串行执行各引擎的 Tick 并合并结果；单引擎失败或超预算记日志继续。
 // 串行为正确性优先：各引擎内部仍有实例级单飞锁，跨引擎并发留给后续按需放开。
 func (p *enginePool) tickAll(ctx context.Context, request orchestrator.TickRequest) (*orchestrator.TickResult, error) {
 	merged := &orchestrator.TickResult{}
 	for _, engine := range p.all(ctx) {
-		result, err := engine.orch.Tick(ctx, request)
+		engineCtx, cancel := context.WithTimeout(ctx, tenantEngineSweepTimeout)
+		result, err := engine.orch.Tick(engineCtx, request)
+		timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(engineCtx.Err(), context.DeadlineExceeded)
+		cancel()
 		if err != nil {
 			if errors.Is(err, orchestrator.ErrTickInProgress) {
+				continue
+			}
+			if timedOut {
+				p.logger.Warn("tenant engine tick exceeded sweep budget",
+					zap.Uint("tenant_id", engine.tenantID), zap.Duration("budget", tenantEngineSweepTimeout))
 				continue
 			}
 			p.logger.Warn("tenant engine tick failed", zap.Uint("tenant_id", engine.tenantID), zap.Error(err))
@@ -338,13 +375,22 @@ func (p *enginePool) tickAll(ctx context.Context, request orchestrator.TickReque
 	return merged, nil
 }
 
-// requirementsSyncAll 串行同步各引擎的租户库需求；单引擎失败记日志继续。
+// requirementsSyncAll 串行同步各引擎的租户库需求；单引擎失败或超预算记
+// 日志继续（预算与 tickAll 共用同一常量）。
 func (p *enginePool) requirementsSyncAll(ctx context.Context) (requirements.SyncResult, error) {
 	var merged requirements.SyncResult
 	for _, engine := range p.all(ctx) {
-		result, err := engine.requirements.SyncOnce(ctx)
+		engineCtx, cancel := context.WithTimeout(ctx, tenantEngineSweepTimeout)
+		result, err := engine.requirements.SyncOnce(engineCtx)
+		timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(engineCtx.Err(), context.DeadlineExceeded)
+		cancel()
 		if err != nil {
 			if errors.Is(err, requirements.ErrSyncInProgress) {
+				continue
+			}
+			if timedOut {
+				p.logger.Warn("tenant requirements sync exceeded sweep budget",
+					zap.Uint("tenant_id", engine.tenantID), zap.Duration("budget", tenantEngineSweepTimeout))
 				continue
 			}
 			p.logger.Warn("tenant requirements sync failed", zap.Uint("tenant_id", engine.tenantID), zap.Error(err))
@@ -361,20 +407,29 @@ func (p *enginePool) requirementsSyncAll(ctx context.Context) (requirements.Sync
 }
 
 // MCPEngineForTenant 实现 handlers.MCPEngineSource：按 token 租户声明取
-// 引擎视图；未命中回落平台视图（存量 token 兼容窗口）。
+// 引擎视图（0=平台，覆盖存量无租户 token）；租户引擎不可用返回零值视图，
+// 由回传端 fail-closed（503）——不再回落平台视图把回传写进错误的库。
 func (p *enginePool) MCPEngineForTenant(tenantID uint) handlers.MCPEngineView {
 	if engine := p.forTenantID(context.Background(), tenantID); engine != nil {
 		return engine.mcpView
 	}
-	return p.platform.mcpView
+	return handlers.MCPEngineView{}
 }
 
-// OperationsFor 实现 handlers.AdminOperationEngines：按会话租户取引擎编排。
+// OperationsFor 实现 handlers.AdminOperationEngines：按会话租户取引擎编排；
+// 引擎不可用返回 nil（管理操作面 503）。
 func (p *enginePool) OperationsFor(c *gin.Context) handlers.AdminOperations {
-	return p.engineForSession(c).orch
+	if engine := p.engineForSession(c); engine != nil {
+		return engine.orch
+	}
+	return nil
 }
 
-// EffectsFor 实现 handlers.AdminOperationEngines：按会话租户库建 effect 查询。
+// EffectsFor 实现 handlers.AdminOperationEngines：按会话租户库建 effect 查询；
+// 引擎不可用返回 nil（管理操作面 503）。
 func (p *enginePool) EffectsFor(c *gin.Context) handlers.AdminEffectLookup {
-	return admin.NewQueryService(p.engineForSession(c).db)
+	if engine := p.engineForSession(c); engine != nil {
+		return admin.NewQueryService(engine.db)
+	}
+	return nil
 }

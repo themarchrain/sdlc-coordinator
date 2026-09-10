@@ -213,127 +213,38 @@ func TestAdminConnectorRoutesUseInjectedService(t *testing.T) {
 	}
 }
 
-func TestSchedulerTickEndpoint(t *testing.T) {
-	router, orch, _, _, _ := newTestRouter(t)
+func TestTickParksUnboundTask(t *testing.T) {
+	_, orch, _, _, _ := newTestRouter(t)
 
-	createResp := performJSON(t, router, http.MethodPost, "/api/tasks", map[string]any{
-		"dedupe_key":          "scheduler-tick-http-1",
-		"type":                "bugfix",
-		"role":                "TesterWorker",
-		"source_repo":         "test-automates",
-		"target_repo":         "framework",
-		"objective":           "fix framework bug through scheduler tick",
-		"acceptance_criteria": "tests pass",
+	created, err := orch.CreateTask(context.Background(), &model.Task{
+		DedupeKey:          "scheduler-tick-http-1",
+		Type:               "bugfix",
+		Role:               "TesterWorker",
+		SourceRepo:         "test-automates",
+		TargetRepo:         "framework",
+		Objective:          "fix framework bug through scheduler tick",
+		AcceptanceCriteria: "tests pass",
 	})
-	if createResp.Code != http.StatusCreated {
-		t.Fatalf("expected create status %d, got %d: %s", http.StatusCreated, createResp.Code, createResp.Body.String())
+	if err != nil {
+		t.Fatalf("create task: %v", err)
 	}
 
-	var created taskHTTPResponse
-	decodeJSON(t, createResp, &created)
-
-	tickResp := performJSON(t, router, http.MethodPost, "/api/scheduler/tick", map[string]any{
-		"dispatch_limit": 5,
-		"poll_limit":     5,
-		"recovery_limit": 5,
-	})
-	if tickResp.Code != http.StatusOK {
-		t.Fatalf("expected tick status %d, got %d: %s", http.StatusOK, tickResp.Code, tickResp.Body.String())
+	if _, err := orch.Tick(context.Background(), orchestrator.TickRequest{
+		DispatchLimit: 5,
+		PollLimit:     5,
+		RecoveryLimit: 5,
+	}); err != nil {
+		t.Fatalf("tick: %v", err)
 	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(tickResp.Body.Bytes(), &raw); err != nil {
-		t.Fatalf("decode raw tick response: %v; body=%s", err, tickResp.Body.String())
-	}
-	if _, ok := raw["polled_runs"]; !ok {
-		t.Fatalf("expected polled_runs field: %s", tickResp.Body.String())
-	}
-	if _, ok := raw["recoveries"]; !ok {
-		t.Fatalf("expected recoveries field: %s", tickResp.Body.String())
-	}
-	if _, ok := raw["dispatched_tasks"]; !ok {
-		t.Fatalf("expected dispatched_tasks field: %s", tickResp.Body.String())
-	}
-
-	var body struct {
-		PolledRuns []struct {
-			RunID string `json:"run_id"`
-		} `json:"polled_runs"`
-		Recoveries []struct {
-			TaskID string `json:"task_id"`
-		} `json:"recoveries"`
-		DispatchFailures []struct {
-			TaskID string `json:"task_id"`
-			Status string `json:"status"`
-			Error  string `json:"error"`
-		} `json:"dispatch_failures"`
-	}
-	decodeJSON(t, tickResp, &body)
 
 	// 恒注册仓模式:未绑定注册仓的任务不得派发,被 park 为 blocked 等待 Rebind;
 	// 不会再走到"不支持角色 → human_required"的分支。
-	if len(body.DispatchFailures) != 0 {
-		t.Fatalf("unbound task must be parked instead of human-required: %s", tickResp.Body.String())
-	}
 	stored, err := orch.GetTask(context.Background(), created.TaskID)
 	if err != nil {
 		t.Fatalf("get parked task: %v", err)
 	}
 	if stored.Status != model.TaskStatusBlocked || !strings.Contains(stored.LastError, "repository not bound") {
 		t.Fatalf("expected unbound task parked as blocked with repository error, got %#v", stored)
-	}
-}
-
-func TestEffectRetryEndpointMovesFailedEffectBackToPending(t *testing.T) {
-	router, effectRepo := newTestRouterWithEffects(t)
-	ctx := context.Background()
-	if err := effectRepo.Create(ctx, &model.Effect{
-		TaskID:       "task-http-effect-1",
-		RunID:        "run-http-effect-1",
-		DedupeKey:    "effect-http-retry-1",
-		Kind:         "send_im_message",
-		Target:       "team-review-group",
-		Status:       model.EffectStatusFailed,
-		AttemptCount: 1,
-		ErrorMessage: "webhook unavailable",
-	}); err != nil {
-		t.Fatalf("create effect fixture: %v", err)
-	}
-
-	retryResp := performJSON(t, router, http.MethodPost, "/api/effects/retry", map[string]any{
-		"dedupe_key": "effect-http-retry-1",
-	})
-	if retryResp.Code != http.StatusAccepted {
-		t.Fatalf("expected retry status %d, got %d: %s", http.StatusAccepted, retryResp.Code, retryResp.Body.String())
-	}
-
-	var body struct {
-		DedupeKey    string             `json:"dedupe_key"`
-		Status       model.EffectStatus `json:"status"`
-		AttemptCount int                `json:"attempt_count"`
-		ErrorMessage string             `json:"error_message"`
-	}
-	decodeJSON(t, retryResp, &body)
-	if body.DedupeKey != "effect-http-retry-1" {
-		t.Fatalf("expected dedupe key, got %s", body.DedupeKey)
-	}
-	if body.Status != model.EffectStatusPending {
-		t.Fatalf("expected pending status, got %s", body.Status)
-	}
-	if body.AttemptCount != 1 {
-		t.Fatalf("expected attempt count preserved, got %d", body.AttemptCount)
-	}
-	if body.ErrorMessage != "" {
-		t.Fatalf("expected error message cleared, got %s", body.ErrorMessage)
-	}
-}
-
-func TestEffectRetryEndpointRejectsMissingDedupeKey(t *testing.T) {
-	router, _ := newTestRouterWithEffects(t)
-
-	retryResp := performJSON(t, router, http.MethodPost, "/api/effects/retry", map[string]any{})
-	if retryResp.Code != http.StatusBadRequest {
-		t.Fatalf("expected retry status %d, got %d: %s", http.StatusBadRequest, retryResp.Code, retryResp.Body.String())
 	}
 }
 
@@ -631,28 +542,6 @@ func newTestRouter(t *testing.T) (http.Handler, *orchestrator.Orchestrator, *rep
 	return NewRouter(orch), orch, runRepo, artifactRepo, dependencyRepo
 }
 
-func newTestRouterWithEffects(t *testing.T) (http.Handler, *repository.EffectRepository) {
-	t.Helper()
-
-	db := openHTTPTestDB(t)
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.Effect{}, &model.ResultSubmission{}); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-
-	taskRepo := repository.NewTaskRepository(db)
-	runRepo := repository.NewRunRepository(db)
-	effectRepo := repository.NewEffectRepository(db)
-	resultSubmissionRepo := repository.NewResultSubmissionRepository(db)
-	orch := orchestrator.New(
-		taskRepo,
-		runRepo,
-		orchestrator.WithEffectRepository(effectRepo),
-		orchestrator.WithResultSubmissionRepository(resultSubmissionRepo),
-	)
-
-	return NewRouter(orch), effectRepo
-}
-
 // seedWebhookRepo 构造按仓验签测试用的注册仓行:webhook secret 按仓持有,
 // 验签凭据来自仓行本身,不存在全局回退。
 func seedWebhookRepo(repositoryID, projectID, path, secret string, status registeredrepo.RepositoryStatus) *registeredrepo.RegisteredRepository {
@@ -722,51 +611,6 @@ func assertInboundEventCount(t *testing.T, db *gorm.DB, want int64) {
 	}
 }
 
-func createRunningHTTPTaskFixture(
-	t *testing.T,
-	ctx context.Context,
-	router http.Handler,
-	orch *orchestrator.Orchestrator,
-	runRepo *repository.RunRepository,
-	suffix string,
-) (string, string) {
-	t.Helper()
-
-	createResp := performJSON(t, router, http.MethodPost, "/api/tasks", map[string]any{
-		"dedupe_key": "tool:" + suffix,
-		"type":       "test_from_issue",
-		"role":       "TesterWorker",
-		"objective":  "run downstream contract test",
-	})
-	if createResp.Code != http.StatusCreated {
-		t.Fatalf("expected create status %d, got %d: %s", http.StatusCreated, createResp.Code, createResp.Body.String())
-	}
-
-	var created taskHTTPResponse
-	decodeJSON(t, createResp, &created)
-	runID := "run-" + suffix
-
-	claimResp := performJSON(t, router, http.MethodPost, "/api/tasks/"+created.TaskID+"/claim", map[string]any{
-		"run_id": runID,
-	})
-	if claimResp.Code != http.StatusOK {
-		t.Fatalf("expected claim status %d, got %d: %s", http.StatusOK, claimResp.Code, claimResp.Body.String())
-	}
-	if err := runRepo.Create(ctx, &model.Run{
-		RunID:      runID,
-		TaskID:     created.TaskID,
-		WorkerRole: "TesterWorker",
-		Status:     model.RunStatusRunning,
-	}); err != nil {
-		t.Fatalf("create run fixture: %v", err)
-	}
-	if _, err := orch.AdvanceTask(ctx, created.TaskID, model.TaskStatusRunning); err != nil {
-		t.Fatalf("advance task to running: %v", err)
-	}
-
-	return created.TaskID, runID
-}
-
 func assertStringSliceContains(t *testing.T, values []string, expected string) {
 	t.Helper()
 	for _, value := range values {
@@ -795,30 +639,6 @@ func openHTTPTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	return db
-}
-
-func performJSON(t *testing.T, router http.Handler, method, path string, payload any) *httptest.ResponseRecorder {
-	t.Helper()
-
-	var body *bytes.Reader
-	if payload == nil {
-		body = bytes.NewReader(nil)
-	} else {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			t.Fatalf("marshal payload: %v", err)
-		}
-		body = bytes.NewReader(raw)
-	}
-
-	req := httptest.NewRequest(method, path, body)
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-	return rec
 }
 
 func performRawJSON(t *testing.T, router http.Handler, method, path string, raw []byte) *httptest.ResponseRecorder {

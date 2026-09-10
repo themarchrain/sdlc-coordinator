@@ -145,3 +145,30 @@ func TestLoginRateLimiterCapsTrackedKeys(t *testing.T) {
 		t.Fatalf("rate limiter tracked %d keys, want capped at 4", size)
 	}
 }
+
+// 停用组织保留其路由索引认领：数据面由引擎层的停用状态门即时切断，
+// 行不删——停用窗口内身份不被其他组织抢注，恢复后立即可路由。
+func TestDisableTenantKeepsRepoRouteIndexRows(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	tenantID, _ := seedTenantWithAdmin(t, service, "route-freeze")
+
+	identity := RepoRouteIdentity{Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "acme/frozen"}
+	if err := service.Repository().UpsertRepoRouteIndex(ctx, RepoRouteIndex{
+		Provider: identity.Provider, BaseURL: identity.BaseURL, PathWithNamespace: identity.PathWithNamespace,
+		TenantID: tenantID, RepoFingerprint: "repo-frozen",
+	}); err != nil {
+		t.Fatalf("seed route index: %v", err)
+	}
+
+	if _, err := service.DisableTenant(ctx, &Actor{ID: 1, Username: "root"}, tenantID); err != nil {
+		t.Fatalf("disable tenant: %v", err)
+	}
+	route, err := service.Repository().GetRepoRouteIndex(ctx, identity)
+	if err != nil {
+		t.Fatalf("disable must keep the tenant's route claims: %v", err)
+	}
+	if route.TenantID != tenantID {
+		t.Fatalf("route claim must stay with its tenant, got tenant=%d", route.TenantID)
+	}
+}

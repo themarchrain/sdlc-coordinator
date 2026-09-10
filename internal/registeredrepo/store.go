@@ -106,7 +106,8 @@ func (s *Store) EnsureIdentityIndexes() error {
 	return nil
 }
 
-// NormalizeBaseURL 归一化平台地址:小写 scheme/host、去尾斜杠、拒绝非 http(s)
+// NormalizeBaseURL 归一化平台地址:小写 scheme/host、去尾斜杠、剥除与
+// scheme 匹配的默认端口(https 的 :443、http 的 :80)、拒绝非 http(s)
 // origin。注册摄入与存量回填共用,保证仓行 base_url 形态一致。
 func NormalizeBaseURL(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
@@ -115,6 +116,15 @@ func NormalizeBaseURL(raw string) (string, error) {
 	}
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
 	parsed.Host = strings.ToLower(parsed.Host)
+	// 显式默认端口与省略写法是同一实例:注册侧与 webhook 消歧侧都过本函数,
+	// 不剥会让两侧「差一点=不中」。
+	if (parsed.Scheme == "https" && strings.HasSuffix(parsed.Host, ":443")) ||
+		(parsed.Scheme == "http" && strings.HasSuffix(parsed.Host, ":80")) {
+		parsed.Host = parsed.Host[:strings.LastIndex(parsed.Host, ":")]
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("base_url must be an http(s) origin")
+	}
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
@@ -174,6 +184,16 @@ func (s *Store) Get(ctx context.Context, repositoryID string) (*RegisteredReposi
 	return s.first(ctx, "repository_id = ?", strings.TrimSpace(repositoryID))
 }
 
+// Delete 按 repository_id 物理删除仓行（注册竞态败者的租户库回滚专用；
+// 常规生命周期里仓行只切换状态，不物理删除）。
+func (s *Store) Delete(ctx context.Context, repositoryID string) error {
+	result := s.db.WithContext(ctx).Where("repository_id = ?", strings.TrimSpace(repositoryID)).Delete(&RegisteredRepository{})
+	if result.Error != nil {
+		return fmt.Errorf("delete registered repository: %w", result.Error)
+	}
+	return nil
+}
+
 func (s *Store) GetByProjectID(ctx context.Context, provider, projectID string) (*RegisteredRepository, error) {
 	return s.first(ctx, "provider = ? AND codehost_project_id = ?", strings.ToLower(strings.TrimSpace(provider)), strings.TrimSpace(projectID))
 }
@@ -191,12 +211,14 @@ func (s *Store) GetByPath(ctx context.Context, provider, path string) (*Register
 }
 
 // WebhookSecretByPath 返回注册仓的按仓 webhook secret(验签专用查找键为
-// provider + path_with_namespace)。未注册返回 gorm.ErrRecordNotFound;调用方
-// (handler 验签)对任何错误与空 secret 一律 fail-closed 拒绝。
-func (s *Store) WebhookSecretByPath(ctx context.Context, provider, path string) (string, error) {
+// provider + path_with_namespace;repoURL 是载荷自带完整链接,仅对齐
+// handlers 的 WebhookSecretLookup 签名,平台库直查不消费)。未注册与仓储
+// 错误一律折叠为空串(调用方按未注册 401 拒绝)；error 恒为 nil，签名仅为
+// 对齐 handlers 的 WebhookSecretLookup 接口。
+func (s *Store) WebhookSecretByPath(ctx context.Context, provider, path, repoURL string) (string, error) {
 	repo, err := s.GetByPath(ctx, provider, path)
 	if err != nil {
-		return "", err
+		return "", nil
 	}
 	return strings.TrimSpace(repo.WebhookSecret), nil
 }

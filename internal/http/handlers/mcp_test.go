@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -371,5 +372,24 @@ func TestMCPSessionAndUnknownMethods(t *testing.T) {
 	rpcErr, _ := response["error"].(map[string]any)
 	if rpcErr == nil || rpcErr["code"].(float64) != -32601 {
 		t.Fatalf("unknown method must be -32601: %#v", response)
+	}
+}
+
+type stubMCPEngineSource struct {
+	view MCPEngineView
+}
+
+func (s stubMCPEngineSource) MCPEngineForTenant(uint) MCPEngineView { return s.view }
+
+// 租户引擎不可用时回传通道 fail-closed（503）；仅存量无租户 token（0）
+// 保留平台兜底视图。
+func TestMCPEngineViewFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
+	handler := &MCPHandler{engines: stubMCPEngineSource{}}
+
+	if _, err := handler.engineView(resulttoken.Claims{TenantID: 7}); !errors.Is(err, errTenantEngineUnavailable) {
+		t.Fatalf("tenant engine miss must fail closed, got %v", err)
+	}
+	if _, err := handler.engineView(resulttoken.Claims{TenantID: 0}); err != nil {
+		t.Fatalf("legacy platform token must keep the fallback view, got %v", err)
 	}
 }

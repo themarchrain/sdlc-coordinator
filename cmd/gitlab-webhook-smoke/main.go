@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"sdlc-coordinator/internal/tools/gitlabsmoke"
@@ -14,7 +13,6 @@ import (
 
 func main() {
 	var opts gitlabsmoke.Options
-	var tick gitlabsmoke.TickOptions
 
 	flag.StringVar(&opts.BaseURL, "base-url", env("COORDINATOR_BASE_URL", "http://localhost:8080"), "coordinator base URL")
 	flag.StringVar(&opts.PayloadPath, "payload", env("GITLAB_FIXTURE_PATH", ""), "GitLab webhook JSON payload file")
@@ -24,15 +22,8 @@ func main() {
 	flag.StringVar(&opts.WebhookUUID, "webhook-uuid", env("GITLAB_WEBHOOK_UUID", ""), "GitLab webhook delivery UUID header")
 	flag.StringVar(&opts.InstanceURL, "instance", env("GITLAB_INSTANCE_URL", ""), "GitLab instance URL header")
 	flag.BoolVar(&opts.DryRun, "dry-run", false, "print replay requests without sending them")
-
-	flag.BoolVar(&tick.Enabled, "tick", envBool("GITLAB_SMOKE_TICK", false), "call /api/scheduler/tick after webhook replay")
-	flag.IntVar(&tick.DispatchLimit, "dispatch-limit", envInt("TICK_DISPATCH_LIMIT", 5), "scheduler tick dispatch limit")
-	flag.IntVar(&tick.PollLimit, "poll-limit", envInt("TICK_POLL_LIMIT", 20), "scheduler tick poll limit")
-	flag.IntVar(&tick.RecoveryLimit, "recovery-limit", envInt("TICK_RECOVERY_LIMIT", 10), "scheduler tick recovery limit")
-	flag.IntVar(&tick.EffectLimit, "effect-limit", envInt("TICK_EFFECT_LIMIT", 0), "scheduler tick effect execution limit")
 	flag.Parse()
 
-	opts.Tick = tick
 	opts.Output = os.Stdout
 
 	result, err := gitlabsmoke.Run(context.Background(), opts)
@@ -54,28 +45,4 @@ func env(key, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func envInt(key string, fallback int) int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func envBool(key string, fallback bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }

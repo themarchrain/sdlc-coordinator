@@ -215,6 +215,10 @@ func (service *Service) DisableTenant(ctx context.Context, actor *Actor, tenantI
 		if err := service.repo(ctx).ClearSupportForTenant(ctx, tenant.ID); err != nil {
 			return nil, err
 		}
+		// 数据面由引擎层的停用状态门即时切断（逐调用校验：webhook 处理器、
+		// MCP 视图、管理操作与调度扫描全部落空）。路由索引认领保留不删：
+		// 组织恢复后 webhook 立即可路由，停用窗口内身份也不会被其他组织
+		// 抢注（对账侧同样冻结这些行）。
 		if err := service.writeAudit(ctx, actor, tenant.ID, "tenant.disabled", "slug="+tenant.Slug); err != nil {
 			return nil, err
 		}
