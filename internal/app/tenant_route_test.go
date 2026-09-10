@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -381,5 +382,32 @@ func TestResolveTenantByPathDisambiguatesByInstanceURL(t *testing.T) {
 	// 单行命中：链接为空也不参与逻辑（快路径行为不变）。
 	if tenantID, err := resolveTenantByPath(ctx, cpRepo, "gitlab", "solo/repo", ""); err != nil || tenantID != alpha.ID {
 		t.Fatalf("single row must ignore the repo url, got tenant=%d err=%v", tenantID, err)
+	}
+}
+
+// 写穿端口的哨兵翻译：控制面的身份占用哨兵（UpsertRepoRouteIndex 对
+// 跨租户换主返回）必须翻译为注册面哨兵——service 的败者回滚分界只认
+// registeredrepo.ErrRouteIdentityClaimed，感知不到控制面包。
+func TestControlPlaneRouteIndexTranslatesClaimedSentinel(t *testing.T) {
+	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
+	ctx := context.Background()
+	owner := &controlplane.Tenant{Slug: "owner-org", DisplayName: "Owner"}
+	rival := &controlplane.Tenant{Slug: "rival-org", DisplayName: "Rival"}
+	for _, tenant := range []*controlplane.Tenant{owner, rival} {
+		if err := cpRepo.CreateTenant(ctx, tenant); err != nil {
+			t.Fatalf("seed tenant %s: %v", tenant.Slug, err)
+		}
+	}
+	sync := &controlPlaneRouteIndex{repo: cpRepo}
+	entry := registeredrepo.RouteIndexEntry{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com",
+		PathWithNamespace: "acme/app", RepoFingerprint: "repo-a",
+	}
+	if err := sync.Upsert(ctx, owner.ID, entry); err != nil {
+		t.Fatalf("first claim must succeed: %v", err)
+	}
+	err := sync.Upsert(ctx, rival.ID, entry)
+	if !errors.Is(err, registeredrepo.ErrRouteIdentityClaimed) {
+		t.Fatalf("cross-tenant upsert must surface the registration-scope claimed sentinel, got %v", err)
 	}
 }

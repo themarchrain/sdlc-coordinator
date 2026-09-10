@@ -184,6 +184,16 @@ func (s *Store) Get(ctx context.Context, repositoryID string) (*RegisteredReposi
 	return s.first(ctx, "repository_id = ?", strings.TrimSpace(repositoryID))
 }
 
+// Delete 按 repository_id 物理删除仓行（注册竞态败者的租户库回滚专用；
+// 常规生命周期里仓行只切换状态，不物理删除）。
+func (s *Store) Delete(ctx context.Context, repositoryID string) error {
+	result := s.db.WithContext(ctx).Where("repository_id = ?", strings.TrimSpace(repositoryID)).Delete(&RegisteredRepository{})
+	if result.Error != nil {
+		return fmt.Errorf("delete registered repository: %w", result.Error)
+	}
+	return nil
+}
+
 func (s *Store) GetByProjectID(ctx context.Context, provider, projectID string) (*RegisteredRepository, error) {
 	return s.first(ctx, "provider = ? AND codehost_project_id = ?", strings.ToLower(strings.TrimSpace(provider)), strings.TrimSpace(projectID))
 }

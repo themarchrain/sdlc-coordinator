@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/store"
+	"sdlc-coordinator/internal/tenantdb"
 
 	"github.com/gin-gonic/gin"
 )
@@ -282,5 +285,65 @@ func TestAdminRepositoriesRejectRetiredGitLabIssueLabelsKey(t *testing.T) {
 	})
 	if accept.Code != http.StatusCreated {
 		t.Fatalf("new key must be accepted: %d %s", accept.Code, accept.Body.String())
+	}
+}
+
+type claimingRouteIndexSync struct{}
+
+func (claimingRouteIndexSync) Upsert(context.Context, uint, registeredrepo.RouteIndexEntry) error {
+	return fmt.Errorf("%w: concurrent claim won", registeredrepo.ErrRouteIdentityClaimed)
+}
+
+func (claimingRouteIndexSync) Delete(context.Context, registeredrepo.RouteIndexEntry) error {
+	return nil
+}
+
+func (claimingRouteIndexSync) Lookup(context.Context, registeredrepo.RouteIndexEntry) (uint, bool, error) {
+	return 0, false, nil
+}
+
+// 注册竞态败者的 HTTP 链路：预检通过但写穿索引撞上并发占用（唯一索引
+// 拒绝），必须以 409 + route_identity_claimed 收场，而不是建了一座永远
+// 路由不到的仓却回 201 假成功。
+func TestAdminRepositoriesCreateReturns409WhenRouteClaimLosesRace(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repoStore := registeredrepo.NewStore(db)
+	if err := repoStore.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	svc := registeredrepo.NewService(repoStore, nil, nil)
+	svc.WithProbeFactory(func(string) registeredrepo.ProjectProbe { return repoProbeStub{} })
+	handler := NewAdminRepositoryHandler(svc)
+	handler.SetRouteIndexSync(claimingRouteIndexSync{})
+
+	router := gin.New()
+	// 模拟租户会话绑定：reposFor 按会话租户把写穿端口挂到本次请求。
+	router.Use(func(c *gin.Context) {
+		setTenantStore(c, &tenantdb.Store{DB: db})
+		c.Set(cpSessionKey, &controlplane.SessionInfo{EffectiveTenant: &controlplane.Tenant{ID: 2}})
+	})
+	handler.RegisterRoutes(router.Group("/api/admin"))
+
+	resp := performAdminRepositoryJSON(t, router, http.MethodPost, "/api/admin/repositories", map[string]any{
+		"display_name":         "Raced",
+		"path_with_namespace":  "group/raced",
+		"provider":             "gitlab",
+		"base_url":             "https://gitlab.example.com",
+		"token":                "repo-token-value",
+		"token_scope_attested": true,
+		"webhook_secret":       "repo-hook-secret-value",
+	})
+	if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "route_identity_claimed") {
+		t.Fatalf("race loser must get 409 route_identity_claimed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var count int64
+	if err := db.Model(&registeredrepo.RegisteredRepository{}).Count(&count).Error; err != nil {
+		t.Fatalf("count repositories: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("race loser must leave no orphan row, got %d", count)
 	}
 }

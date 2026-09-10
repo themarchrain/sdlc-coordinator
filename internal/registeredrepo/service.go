@@ -151,13 +151,15 @@ func (s *Service) indexEntry(repo *RegisteredRepository) RouteIndexEntry {
 	}
 }
 
-// syncUpsertRoute 在仓行身份定稿后写穿索引；失败不阻塞注册（低频对账以
-// 租户库为权威兜底修正）。
-func (s *Service) syncUpsertRoute(ctx context.Context, repo *RegisteredRepository) {
+// syncUpsertRoute 在仓行身份定稿后写穿索引。错误分界：身份冲突类失败
+// （ErrRouteIdentityClaimed）对账永不自愈——冲突保现状策略下败者永远
+// 无行，调用方必须同步回滚租户库仓行并显式拒绝；其他错误视为瞬时
+// 故障，有意由调用方吞掉，低频对账以租户库为权威兜底补行。
+func (s *Service) syncUpsertRoute(ctx context.Context, repo *RegisteredRepository) error {
 	if s == nil || s.routeIndex == nil {
-		return
+		return nil
 	}
-	_ = s.routeIndex.Upsert(ctx, s.routeTenantID, s.indexEntry(repo))
+	return s.routeIndex.Upsert(ctx, s.routeTenantID, s.indexEntry(repo))
 }
 
 // ensureRouteIdentityAvailable 在写入租户库前预检路由身份占用：身份已被
@@ -250,12 +252,22 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 	if err := s.store.Create(ctx, repo); err != nil {
 		return nil, err
 	}
-	if err := s.refreshIdentity(ctx, repo); err != nil {
-		s.syncUpsertRoute(ctx, repo)
-		view := ViewFrom(repo)
-		return &view, err
+	probeErr := s.refreshIdentity(ctx, repo)
+	syncErr := s.syncUpsertRoute(ctx, repo)
+	if errors.Is(syncErr, ErrRouteIdentityClaimed) {
+		// 并发败者（预检后被并发方抢占身份）：对账不会自愈，必须回滚
+		// 刚建的仓行并返回与排队败者一致的显式拒绝，不留永远路由不到的
+		// 孤儿仓。冲突优先于探活失败上报（冲突是硬错误）。
+		if delErr := s.store.Delete(ctx, repo.RepositoryID); delErr != nil {
+			return nil, fmt.Errorf("rollback registered repository %s after lost route claim: %w", repo.RepositoryID, delErr)
+		}
+		return nil, syncErr
 	}
-	s.syncUpsertRoute(ctx, repo)
+	// 其他写穿错误（瞬时故障）有意吞掉：对账以租户库为权威自愈补行。
+	if probeErr != nil {
+		view := ViewFrom(repo)
+		return &view, probeErr
+	}
 	view := ViewFrom(repo)
 	return &view, nil
 }
@@ -360,6 +372,8 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 	if repo.Status == StatusEnabled && (tokenChanged || pathChanged || providerChanged || baseURLChanged) {
 		return nil, ErrMustDisableFirst
 	}
+	// 身份快照：改身份的写穿若撞上并发占用，用快照恢复仓行。
+	previousProvider, previousBaseURL, previousPath := repo.Provider, repo.BaseURL, repo.PathWithNamespace
 	if request.DisplayName != nil {
 		repo.DisplayName = strings.TrimSpace(*request.DisplayName)
 	}
@@ -407,14 +421,28 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 	if err := s.store.Update(ctx, repo); err != nil {
 		return nil, err
 	}
+	var probeErr error
 	if pathChanged || tokenChanged || providerChanged || baseURLChanged {
-		if err := s.refreshIdentity(ctx, repo); err != nil {
-			s.syncUpsertRoute(ctx, repo)
-			view := ViewFrom(repo)
-			return &view, err
-		}
+		probeErr = s.refreshIdentity(ctx, repo)
 	}
-	s.syncUpsertRoute(ctx, repo)
+	syncErr := s.syncUpsertRoute(ctx, repo)
+	if errors.Is(syncErr, ErrRouteIdentityClaimed) {
+		// 并发败者：恢复旧身份回写仓行并返回显式拒绝。数字项目锚点保持
+		// 被清空状态无害（后续启用前的探活会按旧平台重取）。冲突优先于
+		// 探活失败上报。
+		repo.Provider = previousProvider
+		repo.BaseURL = previousBaseURL
+		repo.PathWithNamespace = previousPath
+		if err := s.store.Update(ctx, repo); err != nil {
+			return nil, fmt.Errorf("restore repository identity %s after lost route claim: %w", repo.RepositoryID, err)
+		}
+		return nil, syncErr
+	}
+	// 其他写穿错误（瞬时故障）有意吞掉：对账以租户库为权威自愈补行。
+	if probeErr != nil {
+		view := ViewFrom(repo)
+		return &view, probeErr
+	}
 	view := ViewFrom(repo)
 	return &view, nil
 }

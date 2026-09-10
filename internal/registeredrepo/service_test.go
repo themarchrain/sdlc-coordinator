@@ -610,9 +610,10 @@ type fakeRouteIndexSync struct {
 	ownerTenantID uint
 	found         bool
 	lookupErr     error
+	upsertErr     error
 }
 
-func (f *fakeRouteIndexSync) Upsert(context.Context, uint, RouteIndexEntry) error { return nil }
+func (f *fakeRouteIndexSync) Upsert(context.Context, uint, RouteIndexEntry) error { return f.upsertErr }
 func (f *fakeRouteIndexSync) Delete(context.Context, RouteIndexEntry) error       { return nil }
 func (f *fakeRouteIndexSync) Lookup(context.Context, RouteIndexEntry) (uint, bool, error) {
 	return f.ownerTenantID, f.found, f.lookupErr
@@ -671,5 +672,63 @@ func TestPatchRejectsRouteIdentityClaimedByAnotherTenant(t *testing.T) {
 	_, err = svc.Patch(context.Background(), view.RepositoryID, PatchRequest{PathWithNamespace: &newPath})
 	if !errors.Is(err, ErrRouteIdentityClaimed) {
 		t.Fatalf("expected route identity claimed error, got %v", err)
+	}
+}
+
+// 并发败者写穿：预检通过（身份未被占用）后、写穿索引前，并发方抢先把
+// 同一身份写进索引（唯一索引让本次写穿失败）。身份冲突类失败对账永不
+// 自愈（冲突保现状策略下败者永远无行），必须当场回滚刚建的租户库仓行
+// 并返回与排队败者一致的显式拒绝——留下行就是一座永远路由不到的孤儿仓。
+func TestCreateRejectsWhenRouteWriteThroughLosesRace(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	svc.SetRouteIndexSync(&fakeRouteIndexSync{upsertErr: ErrRouteIdentityClaimed}, 2)
+
+	_, err := svc.Create(context.Background(), validCreateRequest())
+	if !errors.Is(err, ErrRouteIdentityClaimed) {
+		t.Fatalf("expected route identity claimed error, got %v", err)
+	}
+	repos, listErr := svc.List(context.Background())
+	if listErr != nil || len(repos) != 0 {
+		t.Fatalf("race loser must roll back the tenant row: repos=%d err=%v", len(repos), listErr)
+	}
+}
+
+// 改仓换身份的并发败者同样回滚：身份字段恢复旧值再回写租户库，返回
+// 显式拒绝；数字项目锚点保持被清空状态无害（后续启用前的探活会重取）。
+func TestPatchRestoresIdentityWhenRouteWriteThroughLosesRace(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	created, err := svc.Create(context.Background(), validCreateRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetRouteIndexSync(&fakeRouteIndexSync{upsertErr: ErrRouteIdentityClaimed}, 2)
+
+	newBaseURL := "https://gitlab.other.example.com"
+	_, err = svc.Patch(context.Background(), created.RepositoryID, PatchRequest{BaseURL: &newBaseURL})
+	if !errors.Is(err, ErrRouteIdentityClaimed) {
+		t.Fatalf("expected route identity claimed error, got %v", err)
+	}
+	after, getErr := svc.Get(context.Background(), created.RepositoryID)
+	if getErr != nil {
+		t.Fatal(getErr)
+	}
+	if after.BaseURL != "https://gitlab.example.com" || after.PathWithNamespace != "group/a" || after.Provider != "gitlab" {
+		t.Fatalf("identity must be restored to its previous values, got %+v", after)
+	}
+}
+
+// 写穿的瞬时故障（非身份冲突）不阻塞注册：对账以租户库为权威，10 分钟
+// 内自愈补行——只有冲突类失败（不自愈）才值得同步拒绝，两类不得混淆。
+func TestCreateToleratesTransientRouteWriteThroughFailure(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	svc.SetRouteIndexSync(&fakeRouteIndexSync{upsertErr: errors.New("index temporarily unavailable")}, 2)
+
+	view, err := svc.Create(context.Background(), validCreateRequest())
+	if err != nil {
+		t.Fatalf("transient write-through failure must not block registration: %v", err)
+	}
+	repos, listErr := svc.List(context.Background())
+	if listErr != nil || len(repos) != 1 || repos[0].RepositoryID != view.RepositoryID {
+		t.Fatalf("row must survive a transient write-through failure: repos=%d err=%v", len(repos), listErr)
 	}
 }

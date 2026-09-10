@@ -27,10 +27,16 @@ type controlPlaneRouteIndex struct {
 }
 
 func (c *controlPlaneRouteIndex) Upsert(ctx context.Context, tenantID uint, entry registeredrepo.RouteIndexEntry) error {
-	return c.repo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+	err := c.repo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
 		Provider: entry.Provider, BaseURL: entry.BaseURL, PathWithNamespace: entry.PathWithNamespace,
 		TenantID: tenantID, RepoFingerprint: entry.RepoFingerprint,
 	})
+	// 控制面哨兵在此翻译为注册面哨兵：service 的败者回滚分界只认
+	// registeredrepo.ErrRouteIdentityClaimed，不感知控制面包。
+	if errors.Is(err, controlplane.ErrRepoRouteIdentityClaimed) {
+		return fmt.Errorf("%w: %s/%s", registeredrepo.ErrRouteIdentityClaimed, entry.Provider, entry.PathWithNamespace)
+	}
+	return err
 }
 
 func (c *controlPlaneRouteIndex) Delete(ctx context.Context, entry registeredrepo.RouteIndexEntry) error {
