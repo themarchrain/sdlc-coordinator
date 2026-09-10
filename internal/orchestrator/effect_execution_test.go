@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,60 @@ func TestExecutePendingEffectsSkipsWhenExecutorMissing(t *testing.T) {
 	if stashed.Status != model.EffectStatusPending || stashed.AttemptCount != 0 {
 		t.Fatalf("stashed effect should stay pending untouched: %#v", stashed)
 	}
+}
+
+// 批次中途渠道被清除(批首探测与逐条执行之间存在窗口):执行器返回未启用
+// 哨兵时,已标记 running 的效果退回 pending、后续效果不再触碰,等待配置
+// 后重放,而不是置 failed 等人工重试。
+func TestExecutePendingEffectsRequeuesWhenExecutorDisabledMidBatch(t *testing.T) {
+	ctx := context.Background()
+	effectRepo := newEffectExecutionRepository(t)
+	for _, key := range []string{"effect-first", "effect-second"} {
+		if err := effectRepo.Create(ctx, &model.Effect{
+			TaskID: "task-1", RunID: "run-1", DedupeKey: key,
+			Kind: "send_im_message", Target: "default",
+			Status:      model.EffectStatusPending,
+			RequestJSON: `{"body":"done"}`,
+		}); err != nil {
+			t.Fatalf("create effect %s: %v", key, err)
+		}
+	}
+
+	executor := &disablingEffectExecutor{}
+	orch := New(nil, nil, WithEffectRepository(effectRepo), WithEffectExecutor(executor))
+
+	results, err := orch.ExecutePendingEffects(ctx, 10)
+	if err != nil {
+		t.Fatalf("execute pending effects: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("disabled batch must produce no results, got %#v", results)
+	}
+
+	first, err := effectRepo.GetByDedupeKey(ctx, "effect-first")
+	if err != nil {
+		t.Fatalf("get first effect: %v", err)
+	}
+	if first.Status != model.EffectStatusPending || first.AttemptCount != 1 {
+		t.Fatalf("disabled effect must return to pending with the attempt kept, got %#v", first)
+	}
+	second, err := effectRepo.GetByDedupeKey(ctx, "effect-second")
+	if err != nil {
+		t.Fatalf("get second effect: %v", err)
+	}
+	if second.Status != model.EffectStatusPending || second.AttemptCount != 0 {
+		t.Fatalf("batch must stop at the disabled effect, got %#v", second)
+	}
+}
+
+// disablingEffectExecutor 批首探测申报启用,执行时申报未启用,模拟探测
+// 与执行之间配置被清除的竞态窗口。
+type disablingEffectExecutor struct{}
+
+func (f *disablingEffectExecutor) EffectExecutionEnabled(context.Context) bool { return true }
+
+func (f *disablingEffectExecutor) ExecuteEffect(_ context.Context, _ *model.Effect) (string, error) {
+	return "", fmt.Errorf("im channel not configured: %w", ErrEffectExecutorDisabled)
 }
 
 type fakeEffectExecutor struct {

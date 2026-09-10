@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 	effectexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/events"
 	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/orgconfig"
 
 	handlers "sdlc-coordinator/internal/http/handlers"
@@ -42,10 +42,11 @@ func tenantIMSettings(config orgconfig.Config) im.Settings {
 type tenantEffectExecutor struct {
 	provider *orgconfig.Provider
 	logger   *zap.Logger
+	tenantID uint
 }
 
-func newTenantEffectExecutor(provider *orgconfig.Provider, logger *zap.Logger) *tenantEffectExecutor {
-	return &tenantEffectExecutor{provider: provider, logger: logger}
+func newTenantEffectExecutor(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) *tenantEffectExecutor {
+	return &tenantEffectExecutor{provider: provider, logger: logger, tenantID: tenantID}
 }
 
 func (e *tenantEffectExecutor) EffectExecutionEnabled(ctx context.Context) bool {
@@ -56,7 +57,7 @@ func (e *tenantEffectExecutor) EffectExecutionEnabled(ctx context.Context) bool 
 func (e *tenantEffectExecutor) ExecuteEffect(ctx context.Context, effect *model.Effect) (string, error) {
 	executor, enabled := e.current(ctx)
 	if !enabled {
-		return "", errors.New("IM 通知渠道未配置")
+		return "", fmt.Errorf("im channel not configured: %w", orchestrator.ErrEffectExecutorDisabled)
 	}
 	return executor.ExecuteEffect(ctx, effect)
 }
@@ -64,7 +65,7 @@ func (e *tenantEffectExecutor) ExecuteEffect(ctx context.Context, effect *model.
 func (e *tenantEffectExecutor) current(ctx context.Context) (*effectexec.Executor, bool) {
 	config, err := e.provider.Get(ctx)
 	if err != nil && e.logger != nil {
-		e.logger.Warn("load tenant runtime config for IM failed", zap.Error(err))
+		e.logger.Warn("load tenant runtime config for IM failed", zap.Uint("tenant_id", e.tenantID), zap.Error(err))
 	}
 	backend := im.NewBackend(tenantIMSettings(config))
 	if backend == nil {

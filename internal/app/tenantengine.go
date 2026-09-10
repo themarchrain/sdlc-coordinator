@@ -95,11 +95,12 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	// 接续开发白名单。全部经 Provider 读通解析，保存即热生效。
 	orgConfig := orgconfig.NewProvider(db)
 	opts = append(opts,
-		orchestrator.WithEffectExecutor(newTenantEffectExecutor(orgConfig, shared.logger)),
+		orchestrator.WithEffectExecutor(newTenantEffectExecutor(orgConfig, shared.logger, tenantID)),
 		orchestrator.WithReviewerIMMentionsProvider(tenantReviewerMentionsProvider(orgConfig, shared.logger, tenantID)),
 	)
 	// 平台身份按仓行解析:resolver 与写回探针按任务所属仓的 provider/base_url
-	// 分派。全局 codehost 配置只作为注册表单默认值与空列回填来源,运行时不读取。
+	// 分派。组织段 codehost 配置仅作注册表单默认值(前端经 tenant-configuration
+	// 读取注入);仓行身份显式必填,运行时不做全局回填。
 	codeHostResolver := registeredrepo.NewCodeHostResolver(repoStore, nil)
 	opts = append(opts,
 		orchestrator.WithCodeHostBackendResolver(codeHostResolver),

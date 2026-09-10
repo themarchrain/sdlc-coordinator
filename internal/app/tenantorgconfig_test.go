@@ -33,7 +33,7 @@ func newOrgConfigTestDB(t *testing.T) *gorm.DB {
 func TestTenantEffectExecutorFollowsConfigSaves(t *testing.T) {
 	db := newOrgConfigTestDB(t)
 	ctx := context.Background()
-	executor := newTenantEffectExecutor(orgconfig.NewProvider(db), zap.NewNop())
+	executor := newTenantEffectExecutor(orgconfig.NewProvider(db), zap.NewNop(), 1)
 
 	if executor.EffectExecutionEnabled(ctx) {
 		t.Fatalf("executor must be disabled without org config")

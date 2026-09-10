@@ -65,6 +65,15 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 
 		responseJSON, err := o.effectExecutor.ExecuteEffect(ctx, &effect)
 		if err != nil {
+			if errors.Is(err, ErrEffectExecutorDisabled) {
+				// 批次中途渠道被清除(与批首探测间存在窗口):本条退回
+				// 队列保持 pending,后续效果原样留待配置后重放。
+				effect.Status = model.EffectStatusPending
+				if updateErr := o.effects.Update(ctx, &effect); updateErr != nil {
+					return nil, fmt.Errorf("requeue effect %s: %w", effect.DedupeKey, updateErr)
+				}
+				break
+			}
 			effect.Status = model.EffectStatusFailed
 			effect.ErrorMessage = err.Error()
 			if updateErr := o.effects.Update(ctx, &effect); updateErr != nil {
@@ -129,3 +138,8 @@ func (o *Orchestrator) RecoverStaleEffects(ctx context.Context, limit int) ([]Ef
 type conditionalEffectExecutor interface {
 	EffectExecutionEnabled(ctx context.Context) bool
 }
+
+// ErrEffectExecutorDisabled 是执行器在运行期申报「未启用」的哨兵错误:
+// ExecuteEffect 返回被它包装的错误时,效果退回队列保持 pending,而不是
+// 置 failed 等人工重试。
+var ErrEffectExecutorDisabled = errors.New("effect executor disabled")
