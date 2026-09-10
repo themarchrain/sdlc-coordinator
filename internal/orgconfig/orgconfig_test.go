@@ -230,3 +230,54 @@ func TestValidateChecksIMOutboundURLs(t *testing.T) {
 		t.Fatalf("non-http webhook_url must be rejected, got %v", errs)
 	}
 }
+
+// 执行 CLI 选择三态:空(跟随系统默认)与两个合法 CLI 通过,其他值拒绝。
+func TestValidateRunnerProvider(t *testing.T) {
+	base := Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}
+
+	for _, provider := range []string{"", "codex-cli", "claude-cli"} {
+		candidate := base
+		candidate.Runner.Provider = provider
+		if errs := Validate(candidate); len(errs) != 0 {
+			t.Fatalf("runner provider %q must pass, got %+v", provider, errs)
+		}
+	}
+
+	unknown := base
+	unknown.Runner.Provider = "cursor-cli"
+	if errs := Validate(unknown); !errs.Has("runner.provider") {
+		t.Fatalf("unknown runner provider must be rejected on runner.provider, got %+v", errs)
+	}
+}
+
+func TestMergeRunnerTakesRequestValue(t *testing.T) {
+	codeHost := configuration.EditableCodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}
+	current := Config{
+		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
+		Runner:   RunnerConfig{Provider: "claude-cli"},
+	}
+
+	merged := Merge(current, UpdateRequest{Config: EditableConfig{
+		CodeHost: codeHost,
+		Runner:   EditableRunnerConfig{Provider: "codex-cli"},
+	}})
+	if merged.Runner.Provider != "codex-cli" {
+		t.Fatalf("merge must take request runner provider, got %+v", merged.Runner)
+	}
+
+	// 空提交 = 回到跟随系统默认,不保留现值(无密钥语义,直接覆盖)。
+	merged = Merge(current, UpdateRequest{Config: EditableConfig{CodeHost: codeHost}})
+	if merged.Runner.Provider != "" {
+		t.Fatalf("empty request runner provider must merge to empty, got %+v", merged.Runner)
+	}
+}
+
+func TestMaskCarriesRunnerProvider(t *testing.T) {
+	view := Mask(Config{
+		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
+		Runner:   RunnerConfig{Provider: "claude-cli"},
+	})
+	if view.Config.Runner.Provider != "claude-cli" {
+		t.Fatalf("mask must carry runner provider, got %+v", view.Config.Runner)
+	}
+}

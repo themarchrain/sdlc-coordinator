@@ -150,3 +150,24 @@ func TestTenantReworkAllowlistLookupFollowsConfigSaves(t *testing.T) {
 		t.Fatalf("allowlist did not observe the save: %#v", ids)
 	}
 }
+
+func TestTenantRunnerProviderLookupFollowsConfigSaves(t *testing.T) {
+	db := newOrgConfigTestDB(t)
+	ctx := context.Background()
+	lookup := tenantRunnerProviderLookup(orgconfig.NewProvider(db), zap.NewNop(), 1)
+
+	// 未配置 = 空串,调用方回落系统默认。
+	if provider := lookup(ctx); provider != "" {
+		t.Fatalf("runner provider must be empty without org config: %q", provider)
+	}
+
+	if _, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
+		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
+		Runner:   orgconfig.RunnerConfig{Provider: "codex-cli"},
+	}, 0); err != nil {
+		t.Fatalf("save org config: %v", err)
+	}
+	if provider := lookup(ctx); provider != "codex-cli" {
+		t.Fatalf("runner provider did not observe the save: %q", provider)
+	}
+}

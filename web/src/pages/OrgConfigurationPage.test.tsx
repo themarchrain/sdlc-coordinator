@@ -12,6 +12,7 @@ const view: TenantConfigurationView = {
   config: {
     codehost: { provider: 'github', base_url: 'https://github.com', rework_allowed_user_ids: ['42'] },
     im: { provider: '', telegram: {}, feishu: {}, reviewer_mentions: [] },
+    runner: { provider: '' },
   },
   secrets: { telegram_bot_token_configured: false, feishu_secret_configured: false },
   revision: 3,
@@ -166,5 +167,32 @@ describe('OrgConfigurationPage', () => {
     expect(await screen.findByText('以下字段未通过校验')).toBeInTheDocument()
     expect(screen.getByText(/必须是完整的 http 或 https 地址/)).toBeInTheDocument()
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('selects the runner CLI on the first step and saves it', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue({ ...view, revision: 4 })
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+
+    expect(screen.getAllByText('执行 CLI').length).toBeGreaterThan(0)
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行 CLI' }))
+    fireEvent.click(await screen.findByText('Codex CLI'))
+
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      expected_revision: 3,
+      config: expect.objectContaining({
+        runner: { provider: 'codex-cli' },
+      }),
+    }))
+    // antd message 门户跨测试残留,用 All 变体容忍先前用例的未过期提示。
+    expect((await screen.findAllByText('组织配置已保存并生效')).length).toBeGreaterThan(0)
   })
 })

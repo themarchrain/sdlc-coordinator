@@ -35,6 +35,9 @@ type DeveloperRunnerCoordinator struct {
 	core      *AgentRunnerCoordinator
 	channel   *ResultChannelCoordinator
 	settings  ReviewerRunnerSettings
+	// runnerProviderLookup 是组织段「执行 CLI」选择的动态来源（派发时现取）；
+	// nil 或返回空串 = 沿用系统默认 Provider。
+	runnerProviderLookup func(context.Context) string
 }
 
 type DeveloperRunnerStartRequest struct {
@@ -75,6 +78,12 @@ func (c *DeveloperRunnerCoordinator) SetTenantRunnerRouter(router TenantRunnerRo
 	c.core.setTenantRunnerRouter(router)
 }
 
+// SetRunnerProviderLookup 在装配期接入组织段「执行 CLI」选择（派发时现取，
+// 保存即热生效）；lookup 为 nil 或返回空串时保留系统默认值。
+func (c *DeveloperRunnerCoordinator) SetRunnerProviderLookup(lookup func(context.Context) string) {
+	c.runnerProviderLookup = lookup
+}
+
 func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request DeveloperRunnerStartRequest) (*model.AgentExecution, error) {
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
@@ -87,10 +96,13 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 		return nil, err
 	}
 	runRoot := filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
+	// 组织段执行 CLI 选择覆盖请求 Provider 的 Name（值拷贝，其余字段保持
+	// 系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。
+	providerConfig := resolveRunnerProviderConfig(ctx, c.runnerProviderLookup, request.Provider)
 	executionRequest := runner.CreateExecutionRequest{
 		ExecutionID: request.Run.RunID, TaskID: request.Task.TaskID, Role: request.Task.Role,
 		WorkspacePath: runRoot, PromptFile: agent.PromptFileName, SchemaFile: agent.ResultSchemaFileName,
-		TimeoutSeconds: int64(request.Timeout / time.Second), Provider: request.Provider,
+		TimeoutSeconds: int64(request.Timeout / time.Second), Provider: providerConfig,
 	}
 	if existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest); err != nil {
 		return nil, err

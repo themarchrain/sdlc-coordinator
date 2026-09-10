@@ -179,6 +179,13 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	reviewerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
 	developerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
+	// 组织段「执行 CLI」选择：租户引擎派发时现取（保存即热生效），未配置
+	// 返回空串回落系统默认；平台引擎（tenantID=0）不注入，保持系统默认。
+	if tenantID != 0 {
+		runnerProviderLookup := tenantRunnerProviderLookup(orgConfig, shared.logger, tenantID)
+		reviewerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
+		developerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
+	}
 
 	return &tenantEngine{
 		tenantID:     tenantID,

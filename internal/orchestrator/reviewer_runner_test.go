@@ -54,6 +54,49 @@ func TestReviewerRunnerStartPersistsExecutionAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// 组织段「执行 CLI」选择经 lookup 注入后只覆盖派发请求 Provider 的 Name；
+// 其余字段保持系统值,未注入或返回空串时沿用系统默认。
+func TestReviewerRunnerStartWithoutLookupKeepsSystemProvider(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start without lookup: %v", err)
+	}
+	provider := fixture.runner.createRequest.Provider
+	if provider.Name != "fake" || provider.APIKey != "secret" || provider.Revision != 7 {
+		t.Fatalf("provider config must keep system values without lookup: %#v", provider)
+	}
+}
+
+func TestReviewerRunnerStartWithEmptyLookupFallsBackToSystemProvider(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "" })
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with empty lookup: %v", err)
+	}
+	if fixture.runner.createRequest.Provider.Name != "fake" {
+		t.Fatalf("empty lookup must fall back to system provider: %#v", fixture.runner.createRequest.Provider)
+	}
+}
+
+func TestReviewerRunnerStartWithTenantLookupOverridesProviderNameOnly(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "claude-cli" })
+	started, err := fixture.coordinator.Start(context.Background(), fixture.startRequest())
+	if err != nil {
+		t.Fatalf("start with tenant lookup: %v", err)
+	}
+	provider := fixture.runner.createRequest.Provider
+	if provider.Name != "claude-cli" {
+		t.Fatalf("tenant lookup must override provider name: %#v", provider)
+	}
+	if provider.APIKey != "secret" || provider.Revision != 7 {
+		t.Fatalf("tenant lookup must not touch other provider fields: %#v", provider)
+	}
+	if started.Provider != "claude-cli" {
+		t.Fatalf("execution projection must record tenant provider, got %q", started.Provider)
+	}
+}
+
 func TestReviewerRunnerReconcileAdvancesEventCursor(t *testing.T) {
 	fixture := newReviewerRunnerFixture(t)
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {

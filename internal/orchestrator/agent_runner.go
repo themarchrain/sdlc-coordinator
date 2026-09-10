@@ -83,6 +83,22 @@ func (c *AgentRunnerCoordinator) setTenantRunnerRouter(router TenantRunnerRouter
 	c.router = router
 }
 
+// resolveRunnerProviderConfig 应用组织段「执行 CLI」选择：lookup 未注入或
+// 返回空串时沿用系统默认值，非空时仅覆盖 Name——BaseURL/APIKey/Model 等
+// 其余字段保持系统值（组织段只租户化 CLI 选择，不触碰模型凭据）。覆盖必须
+// 发生在请求哈希计算之前，幂等重放与远端校验才能看到同一份请求。
+func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Context) string, fallback runner.ProviderConfig) runner.ProviderConfig {
+	if lookup == nil {
+		return fallback
+	}
+	name := strings.TrimSpace(lookup(ctx))
+	if name == "" {
+		return fallback
+	}
+	fallback.Name = name
+	return fallback
+}
+
 // attemptForTask 解析派发尝试：nil 路由回退单端点直连（Endpoint 留空 =
 // projection 不记录端点，观测走默认客户端，与既有行为一致）。
 func (c *AgentRunnerCoordinator) attemptForTask(ctx context.Context, task *model.Task) (RunnerAttempt, error) {

@@ -34,6 +34,13 @@ func (Record) TableName() string { return "tenant_runtime_config" }
 type Config struct {
 	CodeHost configuration.CodeHostConfig `json:"codehost"`
 	IM       configuration.IMConfig       `json:"im"`
+	Runner   RunnerConfig                 `json:"runner"`
+}
+
+// RunnerConfig 是组织段的执行 CLI 选择：provider 空串表示跟随系统默认，
+// 合法取值与系统段 agent_runner.provider 一致（codex-cli/claude-cli）。
+type RunnerConfig struct {
+	Provider string `json:"provider"`
 }
 
 // ReworkAllowedIDs 把白名单字符串转为三平台 normalizer 消费的数值 id；
@@ -136,6 +143,13 @@ func (s *Store) Save(ctx context.Context, config Config, expectedRevision int64)
 type EditableConfig struct {
 	CodeHost configuration.EditableCodeHostConfig `json:"codehost"`
 	IM       configuration.EditableIMConfig       `json:"im"`
+	Runner   EditableRunnerConfig                 `json:"runner"`
+}
+
+// EditableRunnerConfig 与 RunnerConfig 同形状（执行 CLI 选择无密钥语义，
+// 编辑面直接读写原值）。
+type EditableRunnerConfig struct {
+	Provider string `json:"provider"`
 }
 
 type SecretChanges struct {
@@ -199,6 +213,12 @@ func Validate(config Config) configuration.ValidationErrors {
 			break
 		}
 	}
+	// 执行 CLI 选择可空(空=跟随系统默认),非空时合法值与系统段
+	// agent_runner.provider 规则一致。
+	runnerProvider := strings.TrimSpace(config.Runner.Provider)
+	if runnerProvider != "" && runnerProvider != "codex-cli" && runnerProvider != "claude-cli" {
+		errs["runner.provider"] = "执行 CLI 仅支持 codex-cli 或 claude-cli"
+	}
 	return errs
 }
 
@@ -225,6 +245,8 @@ func Merge(current Config, request UpdateRequest) Config {
 			},
 			ReviewerMentions: cloneStringSlice(request.Config.IM.ReviewerMentions),
 		},
+		// 执行 CLI 选择无密钥语义,直接取提交值(空=跟随系统默认)。
+		Runner: RunnerConfig{Provider: request.Config.Runner.Provider},
 	}
 	applySecretChange(&result.IM.Telegram.BotToken, request.Secrets.TelegramBotToken, request.Secrets.ClearTelegramBotToken)
 	applySecretChange(&result.IM.Feishu.Secret, request.Secrets.FeishuSecret, request.Secrets.ClearFeishuSecret)
@@ -261,6 +283,7 @@ func Mask(config Config) View {
 				},
 				ReviewerMentions: cloneStringSlice(config.IM.ReviewerMentions),
 			},
+			Runner: EditableRunnerConfig{Provider: config.Runner.Provider},
 		},
 		Secrets: SecretStatus{
 			TelegramBotTokenConfigured: strings.TrimSpace(config.IM.Telegram.BotToken) != "",

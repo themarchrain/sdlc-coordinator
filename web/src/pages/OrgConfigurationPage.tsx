@@ -149,6 +149,9 @@ function CodeHostStep({ people, onManagePeople }: { people: Person[]; onManagePe
     <div className="configuration-form-grid">
       <Form.Item name={['codehost', 'provider']} label="代码托管平台" rules={[{ required: true }]}><Select aria-label="代码托管平台" options={[{ value: 'gitlab', label: 'GitLab' }, { value: 'gitea', label: 'Gitea' }, { value: 'github', label: 'GitHub' }]} /></Form.Item>
       <Form.Item name={['codehost', 'base_url']} label="平台地址" rules={[{ required: true }, { validator: validateHTTPURL }]}><Input placeholder="https://gitlab.example.com" /></Form.Item>
+      <Form.Item name={['runner', 'provider']} label="执行 CLI" extra="组织任务用哪个命令行 Agent 执行。">
+        <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, { value: 'codex-cli', label: 'Codex CLI' }, { value: 'claude-cli', label: 'Claude CLI' }]} />
+      </Form.Item>
       <p className="form-note">此处的平台与地址作为新增仓库表单的默认值；每个仓库可在仓库管理中单独指定平台与地址。</p>
       <Form.Item name={['people', 'rework_person_ids']} label="额外允许接续开发的人员" extra="从人员资产选择；MR 作者、负责人和 Reviewer 无需重复填写。"><Select mode="multiple" options={codeHostOptions} placeholder="选择人员" /></Form.Item>
     </div>
@@ -195,6 +198,7 @@ function SummaryStep({ form, fieldErrors }: { form: FormInstance<OrgConfigFormVa
     <div className="configuration-summary-grid">
       <div><span>代码仓库</span><strong>{values?.codehost?.base_url || '未填写'}</strong></div>
       <div><span>IM 通知</span><strong>{values?.im?.provider ? values.im.provider : '未配置'}</strong></div>
+      <div><span>执行 CLI</span><strong>{values?.runner?.provider || '跟随系统默认'}</strong></div>
     </div>
     {Object.keys(fieldErrors).length > 0 ? <Alert type="error" showIcon message="以下字段未通过校验" description={<ul>{Object.entries(fieldErrors).map(([field, detail]) => <li key={field}><code>{field}</code>：{detail}</li>)}</ul>} /> : null}
   </div>
@@ -213,6 +217,7 @@ function toFormValues(view: TenantConfigurationView, people: Person[]): OrgConfi
   return {
     codehost: { ...view.config.codehost, rework_allowed_user_ids: view.config.codehost.rework_allowed_user_ids || [] },
     im: { ...view.config.im, reviewer_mentions: view.config.im.reviewer_mentions || [] },
+    runner: { provider: view.config.runner.provider || '' },
     people: resolveTenantConfigurationPeople(view, people),
     secrets: {},
   }
@@ -227,6 +232,7 @@ function toUpdateRequest(values: OrgConfigFormValues, people: Person[], expected
         rework_allowed_user_ids: resolved.rework_allowed_user_ids,
       },
       im: { ...values.im, reviewer_mentions: resolved.reviewer_mentions },
+      runner: { provider: values.runner?.provider ?? '' },
     },
     secrets: values.secrets || {},
     expected_revision: expectedRevision,

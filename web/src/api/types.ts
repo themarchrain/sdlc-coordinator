@@ -344,6 +344,9 @@ export interface TenantConfigurationConfig {
     }
     reviewer_mentions: string[]
   }
+  runner: {
+    provider: '' | 'codex-cli' | 'claude-cli'
+  }
 }
 
 export interface TenantConfigurationSecretStatus {

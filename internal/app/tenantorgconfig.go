@@ -85,6 +85,18 @@ func tenantReviewerMentionsProvider(provider *orgconfig.Provider, logger *zap.Lo
 	}
 }
 
+// tenantRunnerProviderLookup 产出执行 CLI 选择的动态来源（审查/开发派发时
+// 现取）；未配置返回空串（调用方回落系统默认值）。
+func tenantRunnerProviderLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) string {
+	return func(ctx context.Context) string {
+		config, err := provider.Get(ctx)
+		if err != nil && logger != nil {
+			logger.Warn("load tenant runtime config for runner provider failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
+		}
+		return strings.TrimSpace(config.Runner.Provider)
+	}
+}
+
 // tenantReworkAllowlistLookup 产出接续开发白名单的动态来源（处理器在每次
 // GitLab webhook 投递时以请求 ctx 现取，组织段配置保存即生效）。
 func tenantReworkAllowlistLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) []int {
