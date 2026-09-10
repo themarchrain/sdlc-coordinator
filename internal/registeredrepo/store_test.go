@@ -104,17 +104,63 @@ func TestWebhookSecretByPathReturnsTrimmedSecret(t *testing.T) {
 	if err := repoStore.Create(ctx, repo); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	secret, err := repoStore.WebhookSecretByPath(ctx, "gitlab", "group/repo-a")
+	secret, err := repoStore.WebhookSecretByPath(ctx, "gitlab", "group/repo-a", "")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
 	if secret != "hook-secret-a" {
 		t.Fatalf("secret=%q", secret)
 	}
-	if secret, err := repoStore.WebhookSecretByPath(ctx, "gitlab", "group/missing"); err != nil || secret != "" {
+	if secret, err := repoStore.WebhookSecretByPath(ctx, "gitlab", "group/missing", ""); err != nil || secret != "" {
 		t.Fatalf("unregistered path must be empty-without-error, got secret=%q err=%v", secret, err)
 	}
-	if secret, err := repoStore.WebhookSecretByPath(ctx, "gitea", "group/repo-a"); err != nil || secret != "" {
+	if secret, err := repoStore.WebhookSecretByPath(ctx, "gitea", "group/repo-a", ""); err != nil || secret != "" {
 		t.Fatalf("provider scope must isolate path lookup, got secret=%q err=%v", secret, err)
+	}
+}
+
+// TestNormalizeBaseURL 锁定平台地址归一化形态：注册摄入与 webhook 撞名
+// 消歧共用此函数，同一输入两侧必须得到同一输出（含默认端口剥除——
+// https 显式 :443 与 http 显式 :80 是同一实例的两种写法，不剥会导致
+// 消歧「差一点=不中」）。
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "already normalized", raw: "https://gitlab.example.com", want: "https://gitlab.example.com"},
+		{name: "upper scheme and host", raw: "HTTPS://GitLab.Example.COM", want: "https://gitlab.example.com"},
+		{name: "trailing slash", raw: "https://gitlab.example.com/", want: "https://gitlab.example.com"},
+		{name: "multiple trailing slashes", raw: "https://gitlab.example.com//", want: "https://gitlab.example.com"},
+		{name: "https default port stripped", raw: "https://gitlab.example.com:443", want: "https://gitlab.example.com"},
+		{name: "http default port stripped", raw: "http://gitlab.internal:80", want: "http://gitlab.internal"},
+		{name: "leading and trailing spaces", raw: "  https://gitlab.example.com  ", want: "https://gitlab.example.com"},
+		{name: "non-default port kept", raw: "https://gitlab.internal:8443", want: "https://gitlab.internal:8443"},
+		{name: "default port with path", raw: "https://gitlab.example.com:443/sub", want: "https://gitlab.example.com/sub"},
+		{name: "http scheme kept", raw: "http://gitlab.internal", want: "http://gitlab.internal"},
+	}
+	for _, tc := range cases {
+		got, err := NormalizeBaseURL(tc.raw)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Fatalf("%s: NormalizeBaseURL(%q)=%q, want %q", tc.name, tc.raw, got, tc.want)
+		}
+	}
+	for _, raw := range []string{
+		"",
+		"   ",
+		"gitlab.example.com",
+		"ftp://gitlab.example.com",
+		"https://user@gitlab.example.com",
+		"https://gitlab.example.com?x=1",
+		"https://gitlab.example.com#frag",
+		"https://:443",
+	} {
+		if got, err := NormalizeBaseURL(raw); err == nil {
+			t.Fatalf("NormalizeBaseURL(%q) must be rejected, got %q", raw, got)
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"sdlc-coordinator/internal/controlplane"
+	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/tenantdb"
 
@@ -52,16 +53,42 @@ func (c *controlPlaneRouteIndex) Lookup(ctx context.Context, entry registeredrep
 }
 
 // resolveTenantByPath 按 (provider, path) 经控制面路由索引解析租户 id：
-// 唯一行 → 该租户；跨 base_url 多行 → error（fail-closed）；未命中 → 0
-// （由调用方决定平台库兜底语义）。webhook 验签与事件处理器路由共用。
-func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, provider, path string) (uint, error) {
+// 唯一行 → 该租户（repoURL 不参与，快路径行为不变）；跨 base_url 多行 →
+// 用 repoURL 推导实例地址、经注册侧同一 NormalizeBaseURL 规整后逐行比对，
+// 恰一行匹配 → 该租户，推导失败或零行匹配 → error（fail-closed）；
+// 未命中 → 0（由调用方决定平台库兜底语义）。webhook 验签与事件处理器
+// 路由共用。
+func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, provider, path, repoURL string) (uint, error) {
 	routes, err := index.GetRepoRouteIndexByPath(ctx, provider, path)
 	if err != nil {
 		return 0, err
 	}
 	if len(routes) > 1 {
-		// 跨 base_url 同 path 多行：路由歧义，fail-closed。
-		return 0, fmt.Errorf("ambiguous repo route for %s/%s", provider, path)
+		// 跨 base_url 同 path 多行：用载荷完整链接推导实例地址消歧。
+		instance, ok := handlers.DeriveInstanceBaseURL(repoURL, path)
+		if !ok {
+			return 0, fmt.Errorf("ambiguous repo route for %s/%s", provider, path)
+		}
+		normalized, normErr := registeredrepo.NormalizeBaseURL(instance)
+		if normErr != nil {
+			return 0, fmt.Errorf("ambiguous repo route for %s/%s", provider, path)
+		}
+		matches := 0
+		tenantID := uint(0)
+		for i := range routes {
+			// 行内 base_url 写入时已归一化；双侧都过同一函数是幂等的，
+			// 防「差一点=不中」（如显式默认端口）。
+			rowBase, rowErr := registeredrepo.NormalizeBaseURL(routes[i].BaseURL)
+			if rowErr != nil || rowBase != normalized {
+				continue
+			}
+			matches++
+			tenantID = routes[i].TenantID
+		}
+		if matches != 1 {
+			return 0, fmt.Errorf("ambiguous repo route for %s/%s", provider, path)
+		}
+		return tenantID, nil
 	}
 	if len(routes) == 1 {
 		return routes[0].TenantID, nil
@@ -71,8 +98,9 @@ func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, pr
 
 // tenantRouteSecretLookup 是 webhook 验签的租户路由解析：
 // 最小身份 (provider, path) → 控制面索引 → 打开租户库取仓行 secret。
-// 错误语义：err 非 nil = 基础设施抖动（索引查询失败/租户库句柄不可用/
-// 仓行查询故障），调用方回 5xx 让代码托管重试；空串 = 未注册
+// repoURL 是载荷自带完整链接，仅在索引同路径多行命中时用于推导实例
+// 地址消歧。错误语义：err 非 nil = 基础设施抖动（索引查询失败/租户库
+// 句柄不可用/仓行查询故障），调用方回 5xx 让代码托管重试；空串 = 未注册
 // （fail-closed 401）。索引未命中（tenantID=0）回退平台库仓行（存量
 // 部署过渡期），其余情形不再回落平台库——索引已指认租户却验平台副本，
 // 等于把事件放进错误的库。
@@ -82,8 +110,8 @@ type tenantRouteSecretLookup struct {
 	platform *registeredrepo.Store
 }
 
-func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provider, path string) (string, error) {
-	tenantID, err := resolveTenantByPath(ctx, l.index, provider, path)
+func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provider, path, repoURL string) (string, error) {
+	tenantID, err := resolveTenantByPath(ctx, l.index, provider, path, repoURL)
 	if err != nil {
 		return "", err
 	}

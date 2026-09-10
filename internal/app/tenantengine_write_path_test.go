@@ -280,14 +280,14 @@ func TestEngineForPathDistinguishesMissFromUnavailable(t *testing.T) {
 		t.Fatalf("seed ghost index: %v", err)
 	}
 
-	if _, err := application.pool.engineForPath(ctx, "gitea", "ghost/repo"); err == nil {
+	if _, err := application.pool.engineForPath(ctx, "gitea", "ghost/repo", ""); err == nil {
 		t.Fatal("engine for a routed but unavailable tenant must surface an error")
 	}
-	processor, err := application.pool.engineForPath(ctx, "gitea", "nowhere/repo")
+	processor, err := application.pool.engineForPath(ctx, "gitea", "nowhere/repo", "")
 	if err != nil || processor != application.pool.platform.processor {
 		t.Fatalf("unrouted repo must fall back to the platform processor, got proc=%v err=%v", processor, err)
 	}
-	if processor, err := application.pool.engineForPath(ctx, "gitea", "routed/ok"); err != nil || processor == nil {
+	if processor, err := application.pool.engineForPath(ctx, "gitea", "routed/ok", ""); err != nil || processor == nil {
 		t.Fatalf("routed active tenant must yield its engine processor, got proc=%v err=%v", processor, err)
 	}
 }

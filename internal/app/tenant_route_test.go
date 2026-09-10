@@ -109,7 +109,7 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver, platform: platformRepoStore}
 
 	// 索引未命中 + 平台库未命中 → 空串无错误（未注册，调用方 401）。
-	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/missing"); err != nil || secret != "" {
+	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/missing", ""); err != nil || secret != "" {
 		t.Fatalf("unknown repo must be empty-without-error, got secret=%q err=%v", secret, err)
 	}
 
@@ -120,7 +120,7 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed drifted index: %v", err)
 	}
-	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/gone"); err != nil || secret != "" {
+	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/gone", ""); err != nil || secret != "" {
 		t.Fatalf("drifted index must be empty-without-error (no platform fallback), got secret=%q err=%v", secret, err)
 	}
 
@@ -131,7 +131,7 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed platform repo: %v", err)
 	}
-	secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/legacy")
+	secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/legacy", "")
 	if err != nil || secret != "legacy-secret" {
 		t.Fatalf("platform fallback lookup: secret=%q err=%v", secret, err)
 	}
@@ -143,7 +143,7 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed index: %v", err)
 	}
-	secret, err = lookup.WebhookSecretByPath(ctx, "gitlab", "acme/app")
+	secret, err = lookup.WebhookSecretByPath(ctx, "gitlab", "acme/app", "")
 	if err != nil || secret != "tenant-secret" {
 		t.Fatalf("tenant routed lookup: secret=%q err=%v", secret, err)
 	}
@@ -193,7 +193,7 @@ func TestTenantRouteSecretLookupSurfacesStoreFailures(t *testing.T) {
 	if sqlDB, err := tenantStore.DB.DB(); err == nil {
 		_ = sqlDB.Close()
 	}
-	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/down"); err == nil {
+	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/down", ""); err == nil {
 		t.Fatal("tenant store failure must surface an error, not an empty 401 secret")
 	}
 
@@ -201,7 +201,7 @@ func TestTenantRouteSecretLookupSurfacesStoreFailures(t *testing.T) {
 	if sqlDB, err := platformDB.DB(); err == nil {
 		_ = sqlDB.Close()
 	}
-	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/unknown"); err == nil {
+	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/unknown", ""); err == nil {
 		t.Fatal("platform store failure must surface an error, not an empty 401 secret")
 	}
 }
@@ -324,5 +324,62 @@ func TestReconcileRepoRouteIndexKeepsFrozenTenantRows(t *testing.T) {
 	}
 	if _, err := cpRepo.GetRepoRouteIndex(ctx, orphan); err != nil {
 		t.Fatalf("frozen tenant's rows must survive reconciliation, got %v", err)
+	}
+}
+
+// 撞名消歧：两个组织在不同实例合法注册了同 (provider, path) 的仓（索引
+// 两行共存是合法形态）。webhook 载荷自带仓库完整链接，据此推导实例地址
+// 归因到正确组织；推导失败或零行匹配维持歧义拒绝（fail-closed，不猜
+// 不兜底）。单行命中时链接不参与逻辑（快路径行为不变）。
+func TestResolveTenantByPathDisambiguatesByInstanceURL(t *testing.T) {
+	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
+	ctx := context.Background()
+	alpha := &controlplane.Tenant{Slug: "alpha-org", DisplayName: "Alpha"}
+	beta := &controlplane.Tenant{Slug: "beta-org", DisplayName: "Beta"}
+	for _, tenant := range []*controlplane.Tenant{alpha, beta} {
+		if err := cpRepo.CreateTenant(ctx, tenant); err != nil {
+			t.Fatalf("seed tenant %s: %v", tenant.Slug, err)
+		}
+	}
+	shared := "shared/repo"
+	for _, seed := range []controlplane.RepoRouteIndex{
+		{Provider: "gitlab", BaseURL: "https://gitlab.alpha.example.com", PathWithNamespace: shared,
+			TenantID: alpha.ID, RepoFingerprint: "repo-alpha"},
+		{Provider: "gitlab", BaseURL: "https://gitlab.beta.example.com", PathWithNamespace: shared,
+			TenantID: beta.ID, RepoFingerprint: "repo-beta"},
+		{Provider: "gitlab", BaseURL: "https://gitlab.alpha.example.com", PathWithNamespace: "solo/repo",
+			TenantID: alpha.ID, RepoFingerprint: "repo-solo"},
+	} {
+		if err := cpRepo.UpsertRepoRouteIndex(ctx, seed); err != nil {
+			t.Fatalf("seed index: %v", err)
+		}
+	}
+
+	// 载荷链接指向其中一行的实例 → 归因到该行。
+	if tenantID, err := resolveTenantByPath(ctx, cpRepo, "gitlab", shared, "https://gitlab.alpha.example.com/shared/repo"); err != nil || tenantID != alpha.ID {
+		t.Fatalf("alpha instance must route to alpha, got tenant=%d err=%v", tenantID, err)
+	}
+	if tenantID, err := resolveTenantByPath(ctx, cpRepo, "gitlab", shared, "https://gitlab.beta.example.com/shared/repo"); err != nil || tenantID != beta.ID {
+		t.Fatalf("beta instance must route to beta, got tenant=%d err=%v", tenantID, err)
+	}
+	// 显式默认端口是同一实例的另一种写法，双侧归一化后必须命中。
+	if tenantID, err := resolveTenantByPath(ctx, cpRepo, "gitlab", shared, "https://gitlab.beta.example.com:443/shared/repo"); err != nil || tenantID != beta.ID {
+		t.Fatalf("explicit default port must still disambiguate, got tenant=%d err=%v", tenantID, err)
+	}
+	// 指向第三方实例（两行都不匹配）→ 歧义拒绝。
+	if _, err := resolveTenantByPath(ctx, cpRepo, "gitlab", shared, "https://gitlab.gamma.example.com/shared/repo"); err == nil {
+		t.Fatal("third-party instance must keep the ambiguity error")
+	}
+	// 载荷缺完整链接 → 歧义拒绝。
+	if _, err := resolveTenantByPath(ctx, cpRepo, "gitlab", shared, ""); err == nil {
+		t.Fatal("missing repo url must keep the ambiguity error")
+	}
+	// 链接与路径后缀不匹配 → 歧义拒绝。
+	if _, err := resolveTenantByPath(ctx, cpRepo, "gitlab", shared, "https://gitlab.alpha.example.com/other/repo"); err == nil {
+		t.Fatal("suffix mismatch must keep the ambiguity error")
+	}
+	// 单行命中：链接为空也不参与逻辑（快路径行为不变）。
+	if tenantID, err := resolveTenantByPath(ctx, cpRepo, "gitlab", "solo/repo", ""); err != nil || tenantID != alpha.ID {
+		t.Fatalf("single row must ignore the repo url, got tenant=%d err=%v", tenantID, err)
 	}
 }

@@ -302,10 +302,11 @@ var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
 // engineForPath 按 (provider, path) 的路由索引解析事件处理器：索引唯一
 // 行 → 该租户引擎的处理器；未命中 → 平台处理器（存量过渡期兜底）；
 // 索引指认租户但引擎不可用 → 错误（fail closed，调用方 5xx 让代码托管
-// 重试），故障瞬间的事件宁可被重试也不写进平台库。索引歧义同样返回
-// 错误（验签层已 fail-closed，此处防御性兜底）。
-func (p *enginePool) engineForPath(ctx context.Context, provider, path string) (*events.Processor, error) {
-	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path)
+// 重试），故障瞬间的事件宁可被重试也不写进平台库。repoURL 是载荷自带
+// 完整链接，仅在同路径多行命中时用于推导实例地址消歧（消歧失败同样
+// 返回错误——验签层已 fail-closed，此处防御性兜底）。
+func (p *enginePool) engineForPath(ctx context.Context, provider, path, repoURL string) (*events.Processor, error) {
+	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path, repoURL)
 	if err != nil {
 		return nil, err
 	}

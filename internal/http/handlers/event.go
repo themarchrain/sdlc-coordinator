@@ -25,20 +25,23 @@ const (
 )
 
 // WebhookSecretLookup 按 provider + 仓路径解析该仓的 webhook secret(webhook
-// secret 按仓持有,无全局回退)。返回空串表示未注册(调用方 401 拒绝);
-// 返回 error 表示基础设施抖动(索引查询失败/租户库句柄不可用/仓行查询
-// 故障,调用方 5xx 让代码托管重试)。两类失败都 fail-closed,未验证流量
-// 不得进入事件库。
+// secret 按仓持有,无全局回退)。repoURL 是载荷自带的仓库完整链接
+// (GitLab=project.web_url,Gitea/GitHub=repository.html_url),仅在
+// (provider, path) 命中多行时用于推导实例地址消歧,单行命中与未命中不
+// 参与逻辑。返回空串表示未注册(调用方 401 拒绝);返回 error 表示基础
+// 设施抖动(索引查询失败/租户库句柄不可用/仓行查询故障,调用方 5xx 让
+// 代码托管重试)。两类失败都 fail-closed,未验证流量不得进入事件库。
 type WebhookSecretLookup interface {
-	WebhookSecretByPath(ctx context.Context, provider, path string) (string, error)
+	WebhookSecretByPath(ctx context.Context, provider, path, repoURL string) (string, error)
 }
 
-// ProcessorFactory 按 (provider, path) 解析该仓所属租户的事件处理器。
-// 返回处理器非 nil 表示命中;处理器与 error 均为零值表示未命中(回落
-// 构造期的平台处理器,存量过渡期兜底);error 非 nil 表示路由已指认租户
-// 但引擎不可用(组织停用/租户库打开失败),调用方 fail-closed 回 5xx 让
-// 代码托管重试,不得回落平台库。
-type ProcessorFactory func(ctx context.Context, provider, path string) (*events.Processor, error)
+// ProcessorFactory 按 (provider, path) 解析该仓所属租户的事件处理器;
+// repoURL 同 WebhookSecretLookup,仅多行命中时参与实例消歧。返回处理器
+// 非 nil 表示命中;处理器与 error 均为零值表示未命中(回落构造期的平台
+// 处理器,存量过渡期兜底);error 非 nil 表示路由已指认租户但引擎不可用
+// (组织停用/租户库打开失败/路径歧义无法消解),调用方 fail-closed 回 5xx
+// 让代码托管重试,不得回落平台库。
+type ProcessorFactory func(ctx context.Context, provider, path, repoURL string) (*events.Processor, error)
 
 type EventHandler struct {
 	processor        *events.Processor
@@ -79,9 +82,9 @@ func WithProcessorFactory(factory ProcessorFactory) EventHandlerOption {
 // resolveProcessor 选取本请求的事件处理器:工厂命中用租户处理器;路由已
 // 指认租户但引擎不可用则上抛错误(调用方 5xx 让代码托管重试,不回落
 // 平台库);仅未命中回落构造期平台实例(存量过渡期兜底)。
-func (h *EventHandler) resolveProcessor(ctx context.Context, provider, path string) (*events.Processor, error) {
+func (h *EventHandler) resolveProcessor(ctx context.Context, provider, path, repoURL string) (*events.Processor, error) {
 	if h.processorFactory != nil {
-		processor, err := h.processorFactory(ctx, provider, path)
+		processor, err := h.processorFactory(ctx, provider, path, repoURL)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +128,8 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed gitlab webhook payload"})
 		return
 	}
-	authorized, authErr := h.authorizeGitLabWebhook(c.Request.Context(), path, c.GetHeader("X-Gitlab-Token"))
+	repoURL := gitLabRepoWebURL(raw)
+	authorized, authErr := h.authorizeGitLabWebhook(c.Request.Context(), path, repoURL, c.GetHeader("X-Gitlab-Token"))
 	if authErr != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook secret lookup unavailable"})
 		return
@@ -134,7 +138,7 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
 		return
 	}
-	processor, err := h.resolveProcessor(c.Request.Context(), providerGitLab, path)
+	processor, err := h.resolveProcessor(c.Request.Context(), providerGitLab, path, repoURL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
 		return
@@ -192,7 +196,8 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed gitea webhook payload"})
 		return
 	}
-	authorized, authErr := h.authorizeCodeHostWebhook(c.Request.Context(), providerGitea, path, c.GetHeader("X-Gitea-Signature"), raw, "")
+	repoURL := codeHostRepoHTMLURL(raw)
+	authorized, authErr := h.authorizeCodeHostWebhook(c.Request.Context(), providerGitea, path, repoURL, c.GetHeader("X-Gitea-Signature"), raw, "")
 	if authErr != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook secret lookup unavailable"})
 		return
@@ -201,7 +206,7 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
 		return
 	}
-	processor, err := h.resolveProcessor(c.Request.Context(), providerGitea, path)
+	processor, err := h.resolveProcessor(c.Request.Context(), providerGitea, path, repoURL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
 		return
@@ -259,7 +264,8 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed github webhook payload"})
 		return
 	}
-	authorized, authErr := h.authorizeCodeHostWebhook(c.Request.Context(), providerGitHub, path, c.GetHeader("X-Hub-Signature-256"), raw, "sha256=")
+	repoURL := codeHostRepoHTMLURL(raw)
+	authorized, authErr := h.authorizeCodeHostWebhook(c.Request.Context(), providerGitHub, path, repoURL, c.GetHeader("X-Hub-Signature-256"), raw, "sha256=")
 	if authErr != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook secret lookup unavailable"})
 		return
@@ -268,7 +274,7 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
 		return
 	}
-	processor, err := h.resolveProcessor(c.Request.Context(), providerGitHub, path)
+	processor, err := h.resolveProcessor(c.Request.Context(), providerGitHub, path, repoURL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
 		return
@@ -310,19 +316,20 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 
 // repoWebhookSecret 解析仓 secret；err 非 nil 表示基础设施抖动（如租户库
 // 句柄不可用），调用方回 5xx 让代码托管重试，不与「未注册」（空串）混淆。
-func (h *EventHandler) repoWebhookSecret(ctx context.Context, provider, path string) (string, error) {
+// repoURL 仅在路由索引多行命中时被查找端用于实例消歧。
+func (h *EventHandler) repoWebhookSecret(ctx context.Context, provider, path, repoURL string) (string, error) {
 	if h == nil || h.webhookSecrets == nil {
 		return "", nil
 	}
-	secret, err := h.webhookSecrets.WebhookSecretByPath(ctx, provider, path)
+	secret, err := h.webhookSecrets.WebhookSecretByPath(ctx, provider, path, repoURL)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(secret), nil
 }
 
-func (h *EventHandler) authorizeGitLabWebhook(ctx context.Context, path, received string) (bool, error) {
-	expected, err := h.repoWebhookSecret(ctx, providerGitLab, path)
+func (h *EventHandler) authorizeGitLabWebhook(ctx context.Context, path, repoURL, received string) (bool, error) {
+	expected, err := h.repoWebhookSecret(ctx, providerGitLab, path, repoURL)
 	if err != nil {
 		return false, err
 	}
@@ -339,8 +346,8 @@ func (h *EventHandler) authorizeGitLabWebhook(ctx context.Context, path, receive
 
 // authorizeCodeHostWebhook 验证 HMAC 签名(Gitea 与 GitHub 共用,差异只在
 // provider 作用域与 signaturePrefix:Gitea 裸 hex,GitHub 带 "sha256=" 前缀)。
-func (h *EventHandler) authorizeCodeHostWebhook(ctx context.Context, provider, path, receivedSignature string, body []byte, signaturePrefix string) (bool, error) {
-	expected, err := h.repoWebhookSecret(ctx, provider, path)
+func (h *EventHandler) authorizeCodeHostWebhook(ctx context.Context, provider, path, repoURL, receivedSignature string, body []byte, signaturePrefix string) (bool, error) {
+	expected, err := h.repoWebhookSecret(ctx, provider, path, repoURL)
 	if err != nil {
 		return false, err
 	}
@@ -383,6 +390,20 @@ func gitLabRepoPath(raw []byte) (string, bool) {
 	return path, true
 }
 
+// gitLabRepoWebURL 最小解析 project.web_url:仅在 (provider, path) 命中
+// 多行时用于推导实例地址消歧,缺失返回空串(消歧侧据此维持 fail-closed)。
+func gitLabRepoWebURL(raw []byte) string {
+	var payload struct {
+		Project struct {
+			WebURL string `json:"web_url"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Project.WebURL)
+}
+
 // codeHostRepoPath 最小解析 repository.full_name(Gitea/GitHub 载荷的仓路径键)。
 func codeHostRepoPath(raw []byte) (string, bool) {
 	var payload struct {
@@ -398,4 +419,32 @@ func codeHostRepoPath(raw []byte) (string, bool) {
 		return "", false
 	}
 	return path, true
+}
+
+// codeHostRepoHTMLURL 最小解析 repository.html_url(Gitea/GitHub 载荷的
+// 仓库完整链接):仅在多行命中时用于推导实例地址消歧,缺失返回空串。
+func codeHostRepoHTMLURL(raw []byte) string {
+	var payload struct {
+		Repository struct {
+			HTMLURL string `json:"html_url"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Repository.HTMLURL)
+}
+
+// DeriveInstanceBaseURL 从载荷自带的仓库完整链接推导实例地址。三个平台
+// 的完整链接均为 实例地址 + "/" + 仓路径 的拼接形态,且仓路径已另行解析
+// 在手,直接切后缀最稳;推导结果交给注册侧同一个 NormalizeBaseURL 规整
+// 后再与路由行比对(调用方职责)。链接为空或后缀不匹配时返回 false,
+// 调用方维持原有的歧义拒绝,不猜不兜底。
+func DeriveInstanceBaseURL(repoURL, repoPath string) (string, bool) {
+	repoURL = strings.TrimSpace(repoURL)
+	suffix := "/" + repoPath
+	if repoURL == "" || !strings.HasSuffix(repoURL, suffix) {
+		return "", false
+	}
+	return strings.TrimSuffix(repoURL, suffix), true
 }
