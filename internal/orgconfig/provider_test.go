@@ -19,7 +19,7 @@ func TestProviderReturnsFreshConfigAfterSave(t *testing.T) {
 
 	_, err = NewStore(db).Save(ctx, Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitea", BaseURL: "https://gitea.example.com", ReworkAllowedUserIDs: []string{"5"}},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}

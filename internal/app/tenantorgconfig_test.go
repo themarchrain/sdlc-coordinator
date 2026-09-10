@@ -42,7 +42,7 @@ func TestTenantEffectExecutorFollowsConfigSaves(t *testing.T) {
 	_, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
 		IM:       configuration.IMConfig{Provider: "feishu", Feishu: configuration.IMFeishuConfig{WebhookURL: "https://example.com/hook"}},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("save org config: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestTenantEffectExecutorFollowsConfigSaves(t *testing.T) {
 	// 换回未配置渠道：执行器回落未启用，效果留在队列等待重放。
 	_, err = orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-	})
+	}, 1)
 	if err != nil {
 		t.Fatalf("second save: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestTenantReviewerMentionsProviderFollowsConfigSaves(t *testing.T) {
 	_, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
 		IM:       configuration.IMConfig{Provider: "telegram", Telegram: configuration.IMTelegramConfig{BotToken: "t"}, ReviewerMentions: []string{"alice"}},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("save org config: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestTenantReworkAllowlistLookupFollowsConfigSaves(t *testing.T) {
 
 	_, err := orgconfig.NewStore(db).Save(context.Background(), orgconfig.Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com", ReworkAllowedUserIDs: []string{"7", "9"}},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("save org config: %v", err)
 	}

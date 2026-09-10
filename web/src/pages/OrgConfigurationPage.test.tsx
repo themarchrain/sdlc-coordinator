@@ -80,12 +80,28 @@ describe('OrgConfigurationPage', () => {
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      expected_revision: 3,
       config: expect.objectContaining({
         codehost: expect.objectContaining({ provider: 'github', base_url: 'https://github.com', rework_allowed_user_ids: ['42'] }),
         im: expect.objectContaining({ provider: '' }),
       }),
     }))
     expect(await screen.findByText('组织配置已保存并生效')).toBeInTheDocument()
+  })
+
+  it('surfaces the conflict message when a concurrent save wins', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockRejectedValue(new Error('配置已被他人更新，请刷新后重试'))
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    expect(await screen.findByText('配置已被他人更新，请刷新后重试')).toBeInTheDocument()
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 3 }))
   })
 
   it('surfaces field errors when validation rejects the payload', async () => {

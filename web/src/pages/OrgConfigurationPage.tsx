@@ -76,7 +76,7 @@ export function OrgConfigurationPage() {
     setFieldErrors({})
     try {
       const values = await form.validateFields()
-      const request = toUpdateRequest(values, people)
+      const request = toUpdateRequest(values, people, view.revision)
       const validation: ConfigurationValidationResult = await adminApi.validateTenantConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
@@ -207,7 +207,7 @@ function toFormValues(view: TenantConfigurationView, people: Person[]): OrgConfi
   }
 }
 
-function toUpdateRequest(values: OrgConfigFormValues, people: Person[]): TenantConfigurationUpdateRequest {
+function toUpdateRequest(values: OrgConfigFormValues, people: Person[], expectedRevision: number): TenantConfigurationUpdateRequest {
   const resolved = buildRuntimePeopleFields(values.people, people, values.codehost.provider, values.codehost.base_url)
   return {
     config: {
@@ -218,6 +218,7 @@ function toUpdateRequest(values: OrgConfigFormValues, people: Person[]): TenantC
       im: { ...values.im, reviewer_mentions: resolved.reviewer_mentions },
     },
     secrets: values.secrets || {},
+    expected_revision: expectedRevision,
   }
 }
 

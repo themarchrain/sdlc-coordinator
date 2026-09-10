@@ -55,6 +55,10 @@ func (c Config) ReworkAllowedIDs() []int {
 	return ids
 }
 
+// ErrConfigConflict 表示提交所基于的 revision 已过期(保存窗口内已被
+// 其他提交覆盖);调用方应提示刷新后重试,而不是静默整行覆盖。
+var ErrConfigConflict = errors.New("tenant runtime config revision conflict")
+
 // Store 提供组织段配置在单个库句柄上的读写；无状态，可按请求构造。
 type Store struct {
 	db *gorm.DB
@@ -81,33 +85,45 @@ func (s *Store) Load(ctx context.Context) (Config, int64, bool, error) {
 	return config, record.Revision, true, nil
 }
 
-// Save 整行覆盖保存（校验由调用方先行完成），revision 在事务内自增。
-func (s *Store) Save(ctx context.Context, config Config) (int64, error) {
+// Save 整行覆盖保存（校验由调用方先行完成）。仅当当前行 revision 等于
+// expectedRevision 时写入，revision 在 SQL 侧自增；无行且 expectedRevision
+// 为 0 视为首次保存。并发覆盖的提交以 ErrConfigConflict 拒绝。
+func (s *Store) Save(ctx context.Context, config Config, expectedRevision int64) (int64, error) {
 	payload, err := json.Marshal(config)
 	if err != nil {
 		return 0, fmt.Errorf("encode tenant runtime config: %w", err)
 	}
 	var revision int64
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&Record{}).Where("id = ? AND revision = ?", 1, expectedRevision).Updates(map[string]any{
+			"revision":     gorm.Expr("revision + 1"),
+			"payload_json": string(payload),
+			"updated_at":   time.Now().UTC(),
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			revision = expectedRevision + 1
+			return nil
+		}
 		var current Record
 		err := tx.First(&current, 1).Error
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
+			if expectedRevision != 0 {
+				return ErrConfigConflict
+			}
 			record := Record{ID: 1, Revision: 1, PayloadJSON: string(payload)}
 			if err := tx.Create(&record).Error; err != nil {
-				return err
+				return fmt.Errorf("create tenant runtime config: %w", err)
 			}
 			revision = 1
 			return nil
 		case err != nil:
 			return err
 		default:
-			revision = current.Revision + 1
-			return tx.Model(&Record{}).Where("id = ?", current.ID).Updates(map[string]any{
-				"revision":     revision,
-				"payload_json": string(payload),
-				"updated_at":   time.Now().UTC(),
-			}).Error
+			return ErrConfigConflict
 		}
 	})
 	if err != nil {
@@ -141,8 +157,9 @@ type View struct {
 }
 
 type UpdateRequest struct {
-	Config  EditableConfig `json:"config"`
-	Secrets SecretChanges  `json:"secrets"`
+	Config           EditableConfig `json:"config"`
+	Secrets          SecretChanges  `json:"secrets"`
+	ExpectedRevision int64          `json:"expected_revision"`
 }
 
 // Validate 校验规则与系统段历史规则一致（组织段 codehost 保持必填：

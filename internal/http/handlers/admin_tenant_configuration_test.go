@@ -69,7 +69,8 @@ func tenantConfigurationBody() map[string]any {
 			"codehost": map[string]any{"provider": "github", "base_url": "https://github.com", "rework_allowed_user_ids": []string{"42"}},
 			"im":       map[string]any{"provider": "", "reviewer_mentions": []string{}},
 		},
-		"secrets": map[string]any{},
+		"secrets":           map[string]any{},
+		"expected_revision": 0,
 	}
 }
 
@@ -94,9 +95,19 @@ func TestTenantConfigurationRoundTrip(t *testing.T) {
 		t.Fatalf("payload round trip mismatch: %s", body)
 	}
 
-	second := performTenantConfigurationRequest(t, router, http.MethodPut, "/api/admin/tenant-configuration", tenantConfigurationBody())
-	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"revision":2`) {
-		t.Fatalf("second put must bump revision: %d %s", second.Code, second.Body.String())
+	second := tenantConfigurationBody()
+	second["expected_revision"] = 1
+	secondPut := performTenantConfigurationRequest(t, router, http.MethodPut, "/api/admin/tenant-configuration", second)
+	if secondPut.Code != http.StatusOK || !strings.Contains(secondPut.Body.String(), `"revision":2`) {
+		t.Fatalf("second put must bump revision: %d %s", secondPut.Code, secondPut.Body.String())
+	}
+
+	// 基于过期 revision 的并发提交必须 409,而不是静默覆盖。
+	stale := tenantConfigurationBody()
+	stale["expected_revision"] = 1
+	stalePut := performTenantConfigurationRequest(t, router, http.MethodPut, "/api/admin/tenant-configuration", stale)
+	if stalePut.Code != http.StatusConflict || !strings.Contains(stalePut.Body.String(), "config_conflict") {
+		t.Fatalf("stale put must conflict: %d %s", stalePut.Code, stalePut.Body.String())
 	}
 }
 

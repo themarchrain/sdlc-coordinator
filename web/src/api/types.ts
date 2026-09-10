@@ -368,6 +368,7 @@ export interface TenantConfigurationSecretChanges {
 export interface TenantConfigurationUpdateRequest {
   config: TenantConfigurationConfig
   secrets?: TenantConfigurationSecretChanges
+  expected_revision: number
 }
 
 export interface ConfigurationView {

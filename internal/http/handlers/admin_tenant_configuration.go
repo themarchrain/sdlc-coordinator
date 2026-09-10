@@ -92,7 +92,11 @@ func (handler *AdminTenantConfigurationHandler) Update(c *gin.Context) {
 		}})
 		return
 	}
-	if _, err := store.Save(ctx, candidate); err != nil {
+	if _, err := store.Save(ctx, candidate, request.ExpectedRevision); err != nil {
+		if errors.Is(err, orgconfig.ErrConfigConflict) {
+			writeAdminError(c, http.StatusConflict, "config_conflict", "配置已被他人更新，请刷新后重试")
+			return
+		}
 		writeAdminError(c, http.StatusInternalServerError, "internal_error", "保存组织配置失败")
 		return
 	}

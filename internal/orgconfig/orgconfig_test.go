@@ -2,6 +2,7 @@ package orgconfig
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestStoreSaveRoundTripAndRevisionIncrement(t *testing.T) {
 	store := NewStore(db)
 
 	first := configuration.CodeHostConfig{Provider: "github", BaseURL: "https://github.com", ReworkAllowedUserIDs: []string{"101"}}
-	revision1, err := store.Save(ctx, Config{CodeHost: first})
+	revision1, err := store.Save(ctx, Config{CodeHost: first}, 0)
 	if err != nil {
 		t.Fatalf("first save: %v", err)
 	}
@@ -60,7 +61,7 @@ func TestStoreSaveRoundTripAndRevisionIncrement(t *testing.T) {
 	}
 
 	second := Config{CodeHost: first, IM: configuration.IMConfig{Provider: "feishu", Feishu: configuration.IMFeishuConfig{WebhookURL: "https://example.com/hook"}}}
-	revision2, err := store.Save(ctx, second)
+	revision2, err := store.Save(ctx, second, revision1)
 	if err != nil {
 		t.Fatalf("second save: %v", err)
 	}
@@ -70,6 +71,30 @@ func TestStoreSaveRoundTripAndRevisionIncrement(t *testing.T) {
 	loaded, _, _, err = store.Load(ctx)
 	if err != nil || loaded.IM.Provider != "feishu" {
 		t.Fatalf("second round trip mismatch: %+v err=%v", loaded, err)
+	}
+}
+
+func TestStoreSaveRejectsStaleRevision(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	store := NewStore(db)
+
+	config := Config{CodeHost: configuration.CodeHostConfig{Provider: "github", BaseURL: "https://github.com"}}
+	if _, err := store.Save(ctx, config, 0); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	// 基于过期 revision 的整行覆盖必须被拒绝,而不是静默吞掉并发提交。
+	if _, err := store.Save(ctx, config, 0); !errors.Is(err, ErrConfigConflict) {
+		t.Fatalf("stale save must conflict, got %v", err)
+	}
+	if _, err := store.Save(ctx, config, 2); !errors.Is(err, ErrConfigConflict) {
+		t.Fatalf("future revision must conflict, got %v", err)
+	}
+	if _, err := store.Save(ctx, config, 1); err != nil {
+		t.Fatalf("save at head revision: %v", err)
+	}
+	if _, revision, _, err := store.Load(ctx); err != nil || revision != 2 {
+		t.Fatalf("load after conflict-free save: rev=%d err=%v", revision, err)
 	}
 }
 
