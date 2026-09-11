@@ -102,13 +102,16 @@ func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Contex
 }
 
 // pinRunnerProviderOnRun 把本 run 实际使用的 CLI 钉进 run 行（best-effort：
-// 回写失败不阻断派发，代价是后续重建路径回落到现取值）。已钉住的值不覆盖。
+// 回写失败不阻断派发，代价是后续重建路径回落到现取值）。已钉住的值不
+// 覆盖。经列级条件更新只碰 provider 列——本函数在分钟级的工作区准备之后
+// 执行，整行保存会把并发终态化的 run 回滚成旧状态。
 func pinRunnerProviderOnRun(ctx context.Context, runs RunRepository, run *model.Run, provider string) {
 	if run == nil || run.Provider != "" || strings.TrimSpace(provider) == "" {
 		return
 	}
-	run.Provider = strings.TrimSpace(provider)
-	_ = runs.Update(ctx, run)
+	pinned := strings.TrimSpace(provider)
+	_ = runs.UpdateProviderIfEmpty(ctx, run.RunID, pinned)
+	run.Provider = pinned
 }
 
 // attemptForTask 解析派发尝试：nil 路由回退单端点直连（Endpoint 留空 =

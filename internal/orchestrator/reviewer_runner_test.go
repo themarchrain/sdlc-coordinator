@@ -350,3 +350,32 @@ func TestReviewerRunnerStartPinsDispatchedProviderOnRun(t *testing.T) {
 		t.Fatalf("run must be pinned to the dispatched cli, got %q", persisted.Provider)
 	}
 }
+
+// 钉住回写发生在分钟级的工作区准备之后，重建路径持有的可能是终态化
+// 之前的旧对象：列级条件更新必须只碰 provider 列，不得把库里已终态的
+// 状态字段回滚成旧值。
+func TestPinRunnerProviderOnRunKeepsConcurrentlyFinalizedRunIntact(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	completed := time.Now()
+	fixture.run.Status = model.RunStatusSucceeded
+	fixture.run.OutputJSON = `{"verdict":"approved"}`
+	fixture.run.CompletedAt = &completed
+	if err := fixture.runs.Update(context.Background(), fixture.run); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+
+	stale := &model.Run{RunID: fixture.run.RunID, TaskID: fixture.run.TaskID,
+		WorkerRole: fixture.run.WorkerRole, Status: model.RunStatusRunning}
+	pinRunnerProviderOnRun(context.Background(), fixture.runs, stale, " claude-cli ")
+
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.Provider != "claude-cli" {
+		t.Fatalf("provider was not pinned: %q", persisted.Provider)
+	}
+	if persisted.Status != model.RunStatusSucceeded || persisted.OutputJSON != `{"verdict":"approved"}` || persisted.CompletedAt == nil {
+		t.Fatalf("concurrent finalization was rolled back: %#v", persisted)
+	}
+}

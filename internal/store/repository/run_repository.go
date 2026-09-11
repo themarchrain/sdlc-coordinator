@@ -32,6 +32,18 @@ func (r *RunRepository) Update(ctx context.Context, run *model.Run) error {
 	return nil
 }
 
+// UpdateProviderIfEmpty 仅在 run 尚未钉住 CLI 时写入 provider 列。列级
+// 条件更新不整行覆盖：钉住发生在分钟级的工作区准备之后，整行保存会把
+// 并发终态化的状态字段回滚成旧值。
+func (r *RunRepository) UpdateProviderIfEmpty(ctx context.Context, runID, provider string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (provider = '' OR provider IS NULL)", runID).
+		Update("provider", provider).Error; err != nil {
+		return fmt.Errorf("update run provider: %w", err)
+	}
+	return nil
+}
+
 func (r *RunRepository) GetByRunID(ctx context.Context, runID string) (*model.Run, error) {
 	var run model.Run
 	if err := r.db.WithContext(ctx).Where("run_id = ?", runID).First(&run).Error; err != nil {

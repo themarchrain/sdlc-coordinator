@@ -38,6 +38,7 @@ type TaskRepository interface {
 type RunRepository interface {
 	Create(context.Context, *model.Run) error
 	Update(context.Context, *model.Run) error
+	UpdateProviderIfEmpty(context.Context, string, string) error
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
