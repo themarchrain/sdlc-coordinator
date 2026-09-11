@@ -319,3 +319,34 @@ func (s *recordingResultSubmitter) SubmitResult(_ context.Context, request Submi
 	}
 	return &SubmitResultResponse{Submission: &model.ResultSubmission{SubmissionID: "submission-runner", Status: model.ResultSubmissionStatusSucceeded}}, nil
 }
+
+// run 钉住派发时的执行 CLI：配置热切换后恢复/重建路径按钉住值重放，
+// 请求哈希与远端既有执行保持一致；钉住发生在 Start 成功路径上，幂等不覆盖。
+func TestReviewerRunnerStartHonorsPinnedProviderOverLiveLookup(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "claude-cli" })
+	fixture.run.Provider = "codex-cli"
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with pinned provider: %v", err)
+	}
+	if provider := fixture.runner.createRequest.Provider; provider.Name != "codex-cli" {
+		t.Fatalf("pinned provider must win over the live lookup, got %#v", provider)
+	}
+}
+
+func TestReviewerRunnerStartPinsDispatchedProviderOnRun(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "claude-cli" })
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with tenant lookup: %v", err)
+	}
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.Provider != "claude-cli" {
+		t.Fatalf("run must be pinned to the dispatched cli, got %q", persisted.Provider)
+	}
+}

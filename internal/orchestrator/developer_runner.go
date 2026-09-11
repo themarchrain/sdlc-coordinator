@@ -97,8 +97,9 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 	}
 	runRoot := filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
 	// 组织段执行 CLI 选择覆盖请求 Provider 的 Name（值拷贝，其余字段保持
-	// 系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。
-	providerConfig := resolveRunnerProviderConfig(ctx, c.runnerProviderLookup, request.Provider)
+	// 系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。run 已钉住
+	// CLI 时（恢复/重建路径）钉住值优先，配置热切换不改变在途 run 的身份。
+	providerConfig := resolveRunnerProviderConfig(ctx, c.runnerProviderLookup, request.Provider, request.Run.Provider)
 	executionRequest := runner.CreateExecutionRequest{
 		ExecutionID: request.Run.RunID, TaskID: request.Task.TaskID, Role: request.Task.Role,
 		WorkspacePath: runRoot, PromptFile: agent.PromptFileName, SchemaFile: agent.ResultSchemaFileName,
@@ -123,6 +124,7 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 	if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
 		return nil, fmt.Errorf("write developer task bundle: %w", err)
 	}
+	pinRunnerProviderOnRun(ctx, c.runs, request.Run, providerConfig.Name)
 	return c.core.Start(ctx, request.Task, request.Run, executionRequest)
 }
 

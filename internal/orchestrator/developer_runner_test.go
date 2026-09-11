@@ -260,3 +260,31 @@ func (f *fakeDeveloperFinalizer) Finalize(_ context.Context, request workspace.D
 	}
 	return f.delivery, nil
 }
+
+func TestDeveloperRunnerStartHonorsPinnedProviderAndPinsOnDispatch(t *testing.T) {
+	fixture := newDeveloperRunnerFixture(t, "implement_issue")
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "codex-cli" })
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with tenant lookup: %v", err)
+	}
+	if provider := fixture.runner.createRequest.Provider; provider.Name != "codex-cli" {
+		t.Fatalf("developer dispatch must honor the tenant lookup, got %#v", provider)
+	}
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.Provider != "codex-cli" {
+		t.Fatalf("run must be pinned to the dispatched cli, got %q", persisted.Provider)
+	}
+
+	// 配置热切换后重放（恢复/投影重建路径）：钉住值优先于现取值。
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "claude-cli" })
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("replay after config switch: %v", err)
+	}
+	if provider := fixture.runner.createRequest.Provider; provider.Name != "codex-cli" {
+		t.Fatalf("pinned provider must survive a config switch, got %#v", provider)
+	}
+}
