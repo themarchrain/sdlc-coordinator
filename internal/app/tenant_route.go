@@ -107,13 +107,11 @@ func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, pr
 // repoURL 是载荷自带完整链接，仅在索引同路径多行命中时用于推导实例
 // 地址消歧。错误语义：err 非 nil = 基础设施抖动（索引查询失败/租户库
 // 句柄不可用/仓行查询故障），调用方回 5xx 让代码托管重试；空串 = 未注册
-// （fail-closed 401）。索引未命中（tenantID=0）回退平台库仓行（存量
-// 部署过渡期），其余情形不再回落平台库——索引已指认租户却验平台副本，
-// 等于把事件放进错误的库。
+// （fail-closed 401）。索引未命中即未注册——仓库只经组织注册，不存在
+// 平台级仓行。
 type tenantRouteSecretLookup struct {
 	index    *controlplane.Repository
 	resolver tenantdb.Resolver
-	platform *registeredrepo.Store
 }
 
 func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provider, path, repoURL string) (string, error) {
@@ -121,29 +119,23 @@ func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provi
 	if err != nil {
 		return "", err
 	}
-	if tenantID != 0 {
-		store, handleErr := l.resolver.Handle(ctx, tenantID)
-		if handleErr != nil {
-			return "", fmt.Errorf("tenant store unavailable for tenant %d: %w", tenantID, handleErr)
-		}
-		repo, getErr := registeredrepo.NewStore(store.DB).GetByPath(ctx, provider, path)
-		if getErr == nil {
-			return strings.TrimSpace(repo.WebhookSecret), nil
-		}
-		if errors.Is(getErr, gorm.ErrRecordNotFound) {
-			// 租户库无此仓行（索引漂移）：按未注册拒绝，等对账清理索引。
-			return "", nil
-		}
-		return "", fmt.Errorf("tenant repo lookup failed for tenant %d: %w", tenantID, getErr)
-	}
-	repo, err := l.platform.GetByPath(ctx, provider, path)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if tenantID == 0 {
+		// 索引未命中：未注册，调用方按验签失败 401 拒收。
 		return "", nil
 	}
-	if err != nil {
-		return "", fmt.Errorf("platform repo lookup failed: %w", err)
+	store, handleErr := l.resolver.Handle(ctx, tenantID)
+	if handleErr != nil {
+		return "", fmt.Errorf("tenant store unavailable for tenant %d: %w", tenantID, handleErr)
 	}
-	return strings.TrimSpace(repo.WebhookSecret), nil
+	repo, getErr := registeredrepo.NewStore(store.DB).GetByPath(ctx, provider, path)
+	if getErr == nil {
+		return strings.TrimSpace(repo.WebhookSecret), nil
+	}
+	if errors.Is(getErr, gorm.ErrRecordNotFound) {
+		// 租户库无此仓行（索引漂移）：按未注册拒绝，等对账清理索引。
+		return "", nil
+	}
+	return "", fmt.Errorf("tenant repo lookup failed for tenant %d: %w", tenantID, getErr)
 }
 
 // reconcileRepoRouteIndex 以租户库为权威对账路由索引：租户库中

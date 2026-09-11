@@ -283,9 +283,9 @@ func TestEngineViewForPathDistinguishesMissFromUnavailable(t *testing.T) {
 	if _, err := application.pool.engineViewForPath(ctx, "gitea", "ghost/repo", ""); err == nil {
 		t.Fatal("engine for a routed but unavailable tenant must surface an error")
 	}
-	view, err := application.pool.engineViewForPath(ctx, "gitea", "nowhere/repo", "")
-	if err != nil || view == nil || view.Processor != application.pool.platform.processor {
-		t.Fatalf("unrouted repo must fall back to the platform view, got view=%v err=%v", view, err)
+	// 未路由仓：验签层已按未注册 401 拒收，引擎解析同样不得回落平台视图。
+	if _, err := application.pool.engineViewForPath(ctx, "gitea", "nowhere/repo", ""); err == nil {
+		t.Fatal("unrouted repo must surface an error instead of a platform view")
 	}
 	if view, err := application.pool.engineViewForPath(ctx, "gitea", "routed/ok", ""); err != nil || view == nil || view.Processor == nil {
 		t.Fatalf("routed active tenant must yield its engine view, got view=%v err=%v", view, err)

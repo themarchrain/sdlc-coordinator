@@ -282,8 +282,9 @@ func (failingSecretLookup) WebhookSecretByPath(context.Context, string, string, 
 	return "", errors.New("db down")
 }
 
-// 工厂三态语义:命中用工厂产物;未命中回落构造期平台处理器(存量过渡期
-// 兜底);路由已指认租户但引擎不可用则上抛错误,绝不回落平台库。
+// 工厂三态语义:命中用工厂产物;工厂零值(未注入工厂的装配,生产工厂已
+// 不产生零值——未路由在验签层即被拒)回落构造期处理器;引擎不可用则
+// 上抛错误。
 func TestResolveProcessorDistinguishesMissFromUnavailable(t *testing.T) {
 	platform := &events.Processor{}
 	miss := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {

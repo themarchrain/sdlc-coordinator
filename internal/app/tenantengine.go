@@ -314,21 +314,24 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 // 5xx 让代码托管重试,不回落平台库。
 var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
 
+var errRepoRouteMissing = errors.New("repo route missing")
+
 // engineViewForPath 按 (provider, path) 的路由索引解析引擎视图（处理器+
 // 按组织段配置构建的 Gitea/GitHub normalizer）：索引唯一行 → 该租户引擎
-// 的视图；未命中 → 平台视图（存量过渡期兜底，空组织段配置）；索引指认
-// 租户但引擎不可用 → 错误（fail closed，调用方 5xx 让代码托管重试），
-// 故障瞬间的事件宁可被重试也不写进平台库。repoURL 是载荷自带完整链接，
-// 仅在同路径多行命中时用于推导实例地址消歧（消歧失败同样返回错误——
-// 验签层已 fail-closed，此处防御性兜底）。租户配置冷读失败同样返回
-// 错误（拒收重试）。
+// 的视图；索引指认租户但引擎不可用 → 错误（fail closed，调用方 5xx 让代码
+// 托管重试），故障瞬间的事件宁可被重试也不丢失。repoURL 是载荷自带完整
+// 链接，仅在同路径多行命中时用于推导实例地址消歧（消歧失败同样返回
+// 错误——验签层已 fail-closed，此处防御性兜底）。租户配置冷读失败同样
+// 返回错误（拒收重试）。未命中同样返回错误：验签层已把未路由仓按未注册
+// 401 拒收，能走到这里只剩「验签通过后条目被对账删除」的微窗口，拒收
+// 重试让下一轮验签闭环。
 func (p *enginePool) engineViewForPath(ctx context.Context, provider, path, repoURL string) (*handlers.WebhookEngineView, error) {
 	tenantID, err := resolveTenantByPath(ctx, p.index, provider, path, repoURL)
 	if err != nil {
 		return nil, err
 	}
 	if tenantID == 0 {
-		return p.platform.tenantWebhookView(ctx)
+		return nil, errRepoRouteMissing
 	}
 	engine := p.forTenantID(ctx, tenantID)
 	if engine == nil {

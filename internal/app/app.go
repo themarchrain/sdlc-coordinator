@@ -162,9 +162,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	)
 	routerOptions := []any{
 		// webhook 验签租户路由：索引命中 → 租户库仓行 secret；
-		// 未命中回退平台库仓行（存量过渡期）；皆未命中由 handler fail-closed。
+		// 未命中即未注册，由 handler fail-closed 401。
 		api.WithWebhookSecretLookup(&tenantRouteSecretLookup{
-			index: controlPlaneService.Repository(), resolver: tenantStores, platform: platformRepoStore,
+			index: controlPlaneService.Repository(), resolver: tenantStores,
 		}),
 		// 事件引擎视图按 (provider, path) 路由到所属租户引擎（写路径租户化，
 		// 视图内 normalizer 按组织段配置构建）。

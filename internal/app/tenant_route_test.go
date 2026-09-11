@@ -4,15 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"testing"
 
 	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/registeredrepo"
-	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/tenantdb"
-
-	"gorm.io/gorm"
 )
 
 // 对账：索引以租户库为权威——租户库里的仓决定索引应有的
@@ -75,9 +71,8 @@ func TestReconcileRepoRouteIndexAlignsWithTenantStores(t *testing.T) {
 	}
 }
 
-// webhook 租户路由：索引命中 → 租户库仓行 secret；索引未命中回退
-// 平台库仓行（存量部署过渡期）；未注册返回空串（401），基础设施抖动
-// 返回错误（调用方 5xx 重试），索引指认租户后不再回落平台库。
+// webhook 租户路由：索引命中 → 租户库仓行 secret；索引未命中即未注册
+// 返回空串（401），基础设施抖动返回错误（调用方 5xx 重试）。
 func TestTenantRouteSecretLookup(t *testing.T) {
 	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
 	ctx := context.Background()
@@ -102,19 +97,15 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed tenant repo: %v", err)
 	}
-	platformRepoStore := registeredrepo.NewStore(openPlatformStoreDB(t))
-	if err := platformRepoStore.Migrate(); err != nil {
-		t.Fatalf("migrate platform repo store: %v", err)
-	}
 
-	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver, platform: platformRepoStore}
+	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver}
 
-	// 索引未命中 + 平台库未命中 → 空串无错误（未注册，调用方 401）。
+	// 索引未命中 → 空串无错误（未注册，调用方 401）。
 	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/missing", ""); err != nil || secret != "" {
 		t.Fatalf("unknown repo must be empty-without-error, got secret=%q err=%v", secret, err)
 	}
 
-	// 索引命中但租户库无仓行（索引漂移）→ 同未注册处理，不再回落平台库。
+	// 索引命中但租户库无仓行（索引漂移）→ 同未注册处理，等对账清理索引。
 	if err := cpRepo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
 		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "acme/gone",
 		TenantID: tenant.ID, RepoFingerprint: "repo-gone",
@@ -122,51 +113,25 @@ func TestTenantRouteSecretLookup(t *testing.T) {
 		t.Fatalf("seed drifted index: %v", err)
 	}
 	if secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/gone", ""); err != nil || secret != "" {
-		t.Fatalf("drifted index must be empty-without-error (no platform fallback), got secret=%q err=%v", secret, err)
+		t.Fatalf("drifted index must be empty-without-error, got secret=%q err=%v", secret, err)
 	}
 
-	// 索引未命中 → 平台库兜底（存量部署过渡期）。
-	if err := platformRepoStore.Create(ctx, &registeredrepo.RegisteredRepository{
-		RepositoryID: "repo-legacy", DisplayName: "L", Provider: "gitlab",
-		BaseURL: "https://gitlab.example.com", PathWithNamespace: "acme/legacy", WebhookSecret: "legacy-secret",
-	}); err != nil {
-		t.Fatalf("seed platform repo: %v", err)
-	}
-	secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/legacy", "")
-	if err != nil || secret != "legacy-secret" {
-		t.Fatalf("platform fallback lookup: secret=%q err=%v", secret, err)
-	}
-
-	// 索引命中 → 租户库 secret 优先于平台库。
+	// 索引命中 → 租户库仓行 secret。
 	if err := cpRepo.UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
 		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "acme/app",
 		TenantID: tenant.ID, RepoFingerprint: "repo-t",
 	}); err != nil {
 		t.Fatalf("seed index: %v", err)
 	}
-	secret, err = lookup.WebhookSecretByPath(ctx, "gitlab", "acme/app", "")
+	secret, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/app", "")
 	if err != nil || secret != "tenant-secret" {
 		t.Fatalf("tenant routed lookup: secret=%q err=%v", secret, err)
 	}
 }
 
-func openPlatformStoreDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db, err := store.Open("file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "platform.db")))
-	if err != nil {
-		t.Fatalf("open platform db: %v", err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	return db
-}
-
-// 基础设施故障（租户库/平台库查询失败）必须上抛错误（调用方 5xx 让代码
-// 托管重试），不得折叠成「未注册」的 401——401 不会被代码托管重试，
-// 故障窗口内的事件会被永久丢弃。
+// 基础设施故障（租户库查询失败）必须上抛错误（调用方 5xx 让代码托管
+// 重试），不得折叠成「未注册」的 401——401 不会被代码托管重试，故障
+// 窗口内的事件会被永久丢弃。
 func TestTenantRouteSecretLookupSurfacesStoreFailures(t *testing.T) {
 	cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
 	ctx := context.Background()
@@ -187,8 +152,7 @@ func TestTenantRouteSecretLookupSurfacesStoreFailures(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed index: %v", err)
 	}
-	platformDB := openPlatformStoreDB(t)
-	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver, platform: registeredrepo.NewStore(platformDB)}
+	lookup := &tenantRouteSecretLookup{index: cpRepo, resolver: resolver}
 
 	// 索引已指认租户，但租户库句柄失效：查询故障必须上抛（5xx 语义）。
 	if sqlDB, err := tenantStore.DB.DB(); err == nil {
@@ -196,14 +160,6 @@ func TestTenantRouteSecretLookupSurfacesStoreFailures(t *testing.T) {
 	}
 	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/down", ""); err == nil {
 		t.Fatal("tenant store failure must surface an error, not an empty 401 secret")
-	}
-
-	// 索引未命中的平台兜底查询失败：同样必须上抛。
-	if sqlDB, err := platformDB.DB(); err == nil {
-		_ = sqlDB.Close()
-	}
-	if _, err := lookup.WebhookSecretByPath(ctx, "gitlab", "acme/unknown", ""); err == nil {
-		t.Fatal("platform store failure must surface an error, not an empty 401 secret")
 	}
 }
 
