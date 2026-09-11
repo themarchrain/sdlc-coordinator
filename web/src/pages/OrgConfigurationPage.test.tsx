@@ -6,7 +6,12 @@ import { adminApi } from '../api/client'
 import type { TenantConfigurationView } from '../api/types'
 import { OrgConfigurationPage } from './OrgConfigurationPage'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  // antd message 渲染在 React 树外的 body 门户，不随组件卸载清理：残留的
+  // 提示会让后续用例的按文本查询命中多个元素。
+  document.body.querySelectorAll('.ant-message-notice').forEach(node => node.remove())
+})
 
 const view: TenantConfigurationView = {
   config: {
@@ -88,6 +93,39 @@ describe('OrgConfigurationPage', () => {
       }),
     }))
     expect(await screen.findByText('组织配置已保存并生效')).toBeInTheDocument()
+  })
+
+  it('preserves api-managed im mention maps when saving', async () => {
+    const withMentions = {
+      ...view,
+      config: {
+        ...view.config,
+        im: {
+          ...view.config.im,
+          telegram: { ...view.config.im.telegram, mention_map: { alice: '@alice' } },
+          feishu: { ...view.config.im.feishu, mention_map: { bob: '@bob' } },
+        },
+      },
+    }
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(withMentions)
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue(withMentions)
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        im: expect.objectContaining({
+          telegram: expect.objectContaining({ mention_map: { alice: '@alice' } }),
+          feishu: expect.objectContaining({ mention_map: { bob: '@bob' } }),
+        }),
+      }),
+    }))
   })
 
   it('surfaces the conflict message when a concurrent save wins', async () => {

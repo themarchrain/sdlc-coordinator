@@ -84,7 +84,7 @@ export function OrgConfigurationPage() {
         message.error('「明确清除」与新值不能同时提交：请取消勾选或清空新值')
         return
       }
-      const request = toUpdateRequest(values, people, view?.revision ?? 0)
+      const request = toUpdateRequest(values, people, view, view?.revision ?? 0)
       const validation: ConfigurationValidationResult = await adminApi.validateTenantConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
@@ -223,7 +223,7 @@ function toFormValues(view: TenantConfigurationView, people: Person[]): OrgConfi
   }
 }
 
-function toUpdateRequest(values: OrgConfigFormValues, people: Person[], expectedRevision: number): TenantConfigurationUpdateRequest {
+function toUpdateRequest(values: OrgConfigFormValues, people: Person[], view: TenantConfigurationView | undefined, expectedRevision: number): TenantConfigurationUpdateRequest {
   const resolved = buildRuntimePeopleFields(values.people, people, values.codehost.provider, values.codehost.base_url)
   return {
     config: {
@@ -231,7 +231,14 @@ function toUpdateRequest(values: OrgConfigFormValues, people: Person[], expected
         ...values.codehost,
         rework_allowed_user_ids: resolved.rework_allowed_user_ids,
       },
-      im: { ...values.im, reviewer_mentions: resolved.reviewer_mentions },
+      im: {
+        ...values.im,
+        // mention_map 没有页面表单项（仅 API 可写），表单取值不含它：
+        // 保存载荷必须回填加载值，否则整行替换语义会把 @提及映射清空。
+        telegram: { ...values.im.telegram, mention_map: view?.config.im.telegram.mention_map ?? {} },
+        feishu: { ...values.im.feishu, mention_map: view?.config.im.feishu.mention_map ?? {} },
+        reviewer_mentions: resolved.reviewer_mentions,
+      },
       runner: { provider: values.runner?.provider ?? '' },
     },
     secrets: values.secrets || {},
