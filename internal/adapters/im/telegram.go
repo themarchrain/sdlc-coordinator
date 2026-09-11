@@ -124,11 +124,8 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	raw := strings.TrimSpace(string(data))
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
-		return nil, fmt.Errorf("telegram sendMessage: %s", resp.Status)
-	}
-
+	// 错误分类先于状态码分支:真实 Bot API 对业务失败(含实体解析错误)
+	// 返回 4xx 状态码 + JSON body,降级判据必须在两个分支都可达。
 	var parsed struct {
 		OK          bool   `json:"ok"`
 		Description string `json:"description"` // 仅内部错误分类,不进错误文本
@@ -136,8 +133,16 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 			MessageID int64 `json:"message_id"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("decode telegram response: %w", err)
+	decodeErr := json.Unmarshal([]byte(raw), &parsed)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
+		if decodeErr == nil && parsed.Description != "" && strings.Contains(parsed.Description, "can't parse entities") {
+			return nil, fmt.Errorf("telegram sendMessage: remote rejected: %w", errTelegramEntityParse)
+		}
+		return nil, fmt.Errorf("telegram sendMessage: %s", resp.Status)
+	}
+	if decodeErr != nil {
+		return nil, fmt.Errorf("decode telegram response: %w", decodeErr)
 	}
 	if !parsed.OK {
 		// 业务码失败不抄远端原文:错误消息随效果记录外显,抄录会把任意

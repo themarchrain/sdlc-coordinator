@@ -77,6 +77,8 @@ func TestTelegramBackendTargetOverridesDefaultChat(t *testing.T) {
 
 func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// 业务失败走非 2xx 状态码(真实 API 契约)。
+		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"ok":false,"description":"Bad Request: chat not found"}`))
 	}))
 	defer server.Close()
@@ -88,8 +90,8 @@ func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 
 	apiError := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
 	_, err := apiError.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
-	if err == nil || err.Error() != "telegram sendMessage failed: remote rejected" || strings.Contains(err.Error(), "chat not found") {
-		t.Fatalf("api error must omit the remote description, got %v", err)
+	if err == nil || err.Error() != "telegram sendMessage: 400 Bad Request" || strings.Contains(err.Error(), "chat not found") {
+		t.Fatalf("api error must report the status line and omit the remote description, got %v", err)
 	}
 }
 
