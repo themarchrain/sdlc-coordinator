@@ -62,8 +62,8 @@ func (c *controlPlaneRouteIndex) Lookup(ctx context.Context, entry registeredrep
 // 唯一行 → 该租户（repoURL 不参与，快路径行为不变）；跨 base_url 多行 →
 // 用 repoURL 推导实例地址、经注册侧同一 NormalizeBaseURL 规整后逐行比对，
 // 恰一行匹配 → 该租户，推导失败或零行匹配 → error（fail-closed）；
-// 未命中 → 0（由调用方决定平台库兜底语义）。webhook 验签与事件处理器
-// 路由共用。
+// 未命中 → 0，调用方一律按未注册处理（验签 401 / 引擎解析上抛错误）。
+// webhook 验签与事件处理器路由共用。
 func resolveTenantByPath(ctx context.Context, index *controlplane.Repository, provider, path, repoURL string) (uint, error) {
 	routes, err := index.GetRepoRouteIndexByPath(ctx, provider, path)
 	if err != nil {

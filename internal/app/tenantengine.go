@@ -314,6 +314,9 @@ func (p *enginePool) all(ctx context.Context) []*tenantEngine {
 // 5xx 让代码托管重试,不回落平台库。
 var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
 
+// errRepoRouteMissing 表示验签通过后路由索引条目已缺失（仅剩验签与解析
+// 之间条目被对账删除的微窗口）：fail-closed 回 5xx，重投后由验签按未注册
+// 拒绝闭环。
 var errRepoRouteMissing = errors.New("repo route missing")
 
 // engineViewForPath 按 (provider, path) 的路由索引解析引擎视图（处理器+

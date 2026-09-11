@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -46,10 +47,9 @@ type WebhookEngineView struct {
 
 // EngineViewFactory 按 (provider, path) 解析该仓所属租户的引擎视图;
 // repoURL 同 WebhookSecretLookup,仅多行命中时参与实例消歧。返回视图非 nil
-// 表示命中;视图与 error 均为零值表示未命中(回落构造期的平台视图,存量
-// 过渡期兜底);error 非 nil 表示路由已指认租户但引擎不可用(组织停用/租户
-// 库打开失败/路径歧义无法消解/租户配置冷读失败),调用方 fail-closed 回
-// 5xx 让代码托管重试,不得回落平台库。
+// 表示命中;error 非 nil 表示引擎不可用(组织停用/租户库打开失败/路径歧义
+// 无法消解/租户配置冷读失败/路由缺失),调用方 fail-closed 回 5xx 让代码
+// 托管重试。仓库只经组织注册,不存在平台级兜底视图。
 type EngineViewFactory func(ctx context.Context, provider, path, repoURL string) (*WebhookEngineView, error)
 
 type EventHandler struct {
@@ -69,18 +69,21 @@ func WithWebhookSecretLookup(lookup WebhookSecretLookup) EventHandlerOption {
 }
 
 // WithEngineViewFactory 注入按仓路由的引擎视图工厂;每个 webhook 请求在验签
-// 通过后按 (provider, path) 选择视图实例(租户引擎或平台兜底,引擎不可用
-// 则拒绝),视图内的 normalizer 按当前组织段配置构建,白名单热生效。
+// 通过后按 (provider, path) 选择租户引擎视图,引擎不可用则拒绝,视图内的
+// normalizer 按当前组织段配置构建,白名单热生效。
 func WithEngineViewFactory(factory EngineViewFactory) EventHandlerOption {
 	return func(h *EventHandler) {
 		h.engineViewFactory = factory
 	}
 }
 
-// resolveEngineView 选取本请求的引擎视图:工厂命中用租户视图;路由已指认
-// 租户但引擎不可用(或租户配置冷读失败)则上抛错误(调用方 5xx 让代码托管
-// 重试,不回落平台库);仅未命中回落构造期平台视图(存量过渡期兜底,空组织
-// 段配置,白名单为空)。
+// errEngineViewMissing 表示已注入工厂却返回零值视图:装配契约违例,按引擎
+// 不可用拒绝,绝不静默回落构造期默认视图把事件写进错误的库。
+var errEngineViewMissing = errors.New("event engine view missing")
+
+// resolveEngineView 选取本请求的引擎视图:工厂命中用租户视图;工厂返回
+// 错误或零值视图一律上抛(调用方 5xx 让代码托管重试)。未注入工厂的装配
+// (测试/引导形态)沿用构造期默认视图。
 func (h *EventHandler) resolveEngineView(ctx context.Context, provider, path, repoURL string) (*WebhookEngineView, error) {
 	if h.engineViewFactory != nil {
 		view, err := h.engineViewFactory(ctx, provider, path, repoURL)
@@ -90,6 +93,7 @@ func (h *EventHandler) resolveEngineView(ctx context.Context, provider, path, re
 		if view != nil {
 			return view, nil
 		}
+		return nil, errEngineViewMissing
 	}
 	return h.platformView, nil
 }

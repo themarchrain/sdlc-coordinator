@@ -282,16 +282,15 @@ func (failingSecretLookup) WebhookSecretByPath(context.Context, string, string, 
 	return "", errors.New("db down")
 }
 
-// 工厂三态语义:命中用工厂产物;工厂零值(未注入工厂的装配,生产工厂已
-// 不产生零值——未路由在验签层即被拒)回落构造期处理器;引擎不可用则
-// 上抛错误。
-func TestResolveProcessorDistinguishesMissFromUnavailable(t *testing.T) {
+// 工厂契约:命中用工厂产物;工厂返回错误或零值视图(装配契约违例)一律
+// 上抛,不回落构造期默认视图;未注入工厂的装配沿用构造期默认视图。
+func TestResolveEngineViewFailsClosedOnZeroViewFromFactory(t *testing.T) {
 	platform := &events.Processor{}
-	miss := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+	missing := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
 		return nil, nil
 	}))
-	if view, err := miss.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view != miss.platformView {
-		t.Fatalf("miss must fall back to the platform view, got view=%v err=%v", view, err)
+	if view, err := missing.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err == nil || view != nil {
+		t.Fatalf("zero view from an injected factory must fail closed, got view=%v err=%v", view, err)
 	}
 	down := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
 		return nil, errors.New("tenant engine unavailable")
@@ -305,6 +304,10 @@ func TestResolveProcessorDistinguishesMissFromUnavailable(t *testing.T) {
 	}))
 	if view, err := targeted.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view.Processor != hit {
 		t.Fatalf("factory hit must win, got view=%v err=%v", view, err)
+	}
+	bare := NewEventHandler(platform)
+	if view, err := bare.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view != bare.platformView {
+		t.Fatalf("assembly without a factory keeps the constructor view, got view=%v err=%v", view, err)
 	}
 }
 
