@@ -20,6 +20,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { AgentObservabilityPage } from '../pages/AgentObservabilityPage'
 import { PortalApp } from '../portal/PortalApp'
 import { SuperAdminApp } from '../superadmin/SuperAdminApp'
+import { SuperAdminOverviewPage } from '../superadmin/SuperAdminOverviewPage'
 import { useWorkspaceSession, type WorkspaceRole } from './workspaceSession'
 
 const rank: Record<WorkspaceRole, number> = { member: 0, tenant_admin: 1, super_admin: 2 }
@@ -31,17 +32,21 @@ function RoleGate({ min, children }: { min: WorkspaceRole; children: ReactNode }
   return children
 }
 
-// SupportOnlyGate：业务页面对应的 API 已收窄为 support_only——
-// 无支持访问的超管直接访问业务路由时引导回运行总览，不再渲染必然 403 的页面；
-// 支持访问中（role 降为 tenant_admin）行为不变。
+// SupportOnlyGate：组织级业务页面（需求/仓库/任务/数据/人员/安全操作/
+// 连接器/Agent 观测）对无支持访问的超管整体关闭——直达 URL 一律引导回
+// 首页，不再渲染必然 403 或越权可见的页面；支持访问中（role 降为
+// tenant_admin）与组织管理员不受影响。
 function SupportOnlyGate({ children }: { children: ReactNode }) {
   const { superAdmin, session } = useWorkspaceSession()
   if (superAdmin && !session?.support?.active) return <Navigate to="/" replace />
   return children
 }
 
+// 首页按身份分流：超管看系统总览（组织规模），成员看工作台，
+// 组织管理员（含支持访问中的超管）看组织级运行总览。
 function HomeRoute() {
   const { role } = useWorkspaceSession()
+  if (role === 'super_admin') return <SuperAdminOverviewPage />
   if (role === 'member') return <MemberHomePage />
   return <OverviewPage />
 }
@@ -51,7 +56,6 @@ export function App() {
     <Routes>
       <Route path="login" element={<LoginPage />} />
       <Route path="portal/*" element={<PortalApp />} />
-      <Route path="super-admin/*" element={<SuperAdminApp />} />
       <Route path="*" element={<AuthenticationBoundary><AppShell><ConfigurationBoundary><AdminRoutes /></ConfigurationBoundary></AppShell></AuthenticationBoundary>} />
     </Routes>
   )
@@ -72,9 +76,11 @@ function AdminRoutes() {
           <Route path="repositories" element={<RoleGate min="tenant_admin"><SupportOnlyGate><RepositoriesPage /></SupportOnlyGate></RoleGate>} />
           <Route path="tasks" element={<SupportOnlyGate><TasksPage /></SupportOnlyGate>} />
           <Route path="explorer" element={<SupportOnlyGate><DataExplorerPage /></SupportOnlyGate>} />
-          <Route path="connectors" element={<RoleGate min="tenant_admin"><ConnectorsPage /></RoleGate>} />
-          <Route path="operations" element={<RoleGate min="tenant_admin"><OperationsPage /></RoleGate>} />
-          <Route path="agents" element={<AgentObservabilityPage />} />
+          <Route path="connectors" element={<RoleGate min="tenant_admin"><SupportOnlyGate><ConnectorsPage /></SupportOnlyGate></RoleGate>} />
+          <Route path="operations" element={<RoleGate min="tenant_admin"><SupportOnlyGate><OperationsPage /></SupportOnlyGate></RoleGate>} />
+          <Route path="agents" element={<SupportOnlyGate><AgentObservabilityPage /></SupportOnlyGate>} />
+          {/* 超管子应用整合进主壳：页面渲染在 AppShell 内，子应用自带会话门闸。 */}
+          <Route path="super-admin/*" element={<SuperAdminApp />} />
           <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

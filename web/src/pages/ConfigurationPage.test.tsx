@@ -83,7 +83,9 @@ describe('ConfigurationPage', () => {
 
     expect(screen.getByLabelText('Runner 服务地址')).toHaveValue('http://agent-runner:8081')
     expect(screen.getByLabelText('共享工作区')).toHaveValue('/app/workspaces')
-    expect(screen.getByText('Codex CLI')).toBeInTheDocument()
+    // 执行 Provider 已撤出向导：不再提供选择 UI，只按加载值展示协议说明。
+    expect(screen.queryByLabelText('执行 Provider')).not.toBeInTheDocument()
+    expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument()
     expect(screen.getByLabelText('执行模型')).toHaveValue('deepseek-v4-flash-0731')
     expect(screen.getByLabelText('单任务超时（分钟）')).toHaveValue('30')
     expect(screen.getByText('裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。')).toBeInTheDocument()
@@ -117,6 +119,8 @@ describe('ConfigurationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    // provider 已无 UI 编辑，但保存 payload 必须原样回传加载值：
+    // 后端整行替换语义下缺键会把系统默认 CLI 静默清空。
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({
         agent_runner: expect.objectContaining({

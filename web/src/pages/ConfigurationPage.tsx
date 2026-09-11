@@ -210,9 +210,12 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
     <div className="configuration-form-grid">
       <Form.Item name={['agent_runner', 'service_url']} label="Runner 服务地址" rules={[{ required: true }, { validator: validateHTTPURL }]} extra="同一 Compose 网络内默认使用 http://agent-runner:8081。"><Input placeholder="http://agent-runner:8081" /></Form.Item>
       <Form.Item name={['agent_runner', 'workspace_root']} label="共享工作区" rules={[{ required: true }]} extra="Coordinator 与 Runner 容器内必须映射到同一路径。"><Input className="mono" placeholder="/app/workspaces" /></Form.Item>
-      <Form.Item name={['agent_runner', 'provider']} label="执行 Provider" rules={[{ required: true }]}><Select options={[{ value: 'codex-cli', label: 'Codex CLI' }, { value: 'claude-cli', label: 'Claude Code CLI' }]} /></Form.Item>
+      {/* 执行 Provider 不再提供 UI 编辑（切换属系统级变更，不进配置向导）；
+          保留隐藏注册字段让保存 payload 原样回传加载值——后端整行替换语义下
+          缺键会把系统默认 CLI 静默清空。 */}
+      <Form.Item name={['agent_runner', 'provider']} hidden><Input className="mono" /></Form.Item>
       <div className="configuration-provider-note">{provider === 'codex-cli' ? '裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。' : '裸 Agent，不加载个人 Claude 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。'}</div>
-      <Form.Item name={['agent_runner', 'provider_base_url']} label="模型接入地址" rules={[{ validator: validateHTTPURL }]} extra="由使用者自行提供，且协议必须兼容所选 CLI：codex-cli 要求 Responses API，claude-cli 要求 Messages API。Coordinator 只做透传，不做协议适配。"><Input placeholder="https://llm.example.com/v1" /></Form.Item>
+      <Form.Item name={['agent_runner', 'provider_base_url']} label="模型接入地址" rules={[{ validator: validateHTTPURL }]} extra="由使用者自行提供，且协议必须兼容当前执行 Provider：codex-cli 要求 Responses API，claude-cli 要求 Messages API。Coordinator 只做透传，不做协议适配。"><Input placeholder="https://llm.example.com/v1" /></Form.Item>
       <Form.Item name={['agent_runner', 'model']} label="执行模型" rules={[{ required: true }]}><Input className="mono" placeholder="模型 ID" /></Form.Item>
       <Form.Item name={['agent_runner', 'effort']} label="推理强度" rules={[{ required: true }]}><Select options={['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))} /></Form.Item>
       <Form.Item name={['agent_runner', 'task_timeout_minutes']} label="单任务超时（分钟）" rules={[{ required: true }]} extra="默认 30 分钟；超时后 Runner 会终止当前 Agent 进程，本次 Run 按失败策略处理。"><InputNumber min={1} max={240} precision={0} /></Form.Item>

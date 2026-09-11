@@ -1,11 +1,8 @@
-import { Menu } from 'antd'
-import { AuditOutlined, ClusterOutlined } from '@ant-design/icons'
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Spin } from 'antd'
 
 import { portalApi, type PortalSessionPayload } from '../api/portal'
-import { AppearanceDrawerButton } from '../components/AppearanceDrawer'
 import { AuditLogPage } from './AuditLogPage'
 import { TenantDetailPage } from './TenantDetailPage'
 import { TenantsPage } from './TenantsPage'
@@ -30,7 +27,7 @@ function SuperAdminSessionGate() {
   }, [])
 
   if (state.phase === 'loading') {
-    return <main className="flex min-h-screen items-center justify-center"><Spin /></main>
+    return <div className="flex items-center justify-center py-16"><Spin /></div>
   }
   if (state.phase === 'redirect') {
     return <Navigate to="/portal/login" replace />
@@ -45,61 +42,20 @@ function SuperAdminSessionGate() {
   return <Outlet context={session} />
 }
 
-// SuperAdminShell 是超管独立后台页面区骨架：独立菜单区，与组织内
-// 界面（AppShell）完全分离；入口 /admin/super-admin/*。菜单用横向 antd Menu +
-// 普通头部布局，不引入 Sider 响应式（jsdom 下 matchMedia 交互不稳）。叶子页面
-// 由 <Outlet /> 渲染（Outlet 化形态）。
-function SuperAdminShell() {
-  const navigate = useNavigate()
-  const location = useLocation()
-
-  const selectedKey = location.pathname.startsWith('/super-admin/audit-log')
-    ? 'audit-log'
-    : 'tenants'
-
-  return (
-    <div className="flex min-h-screen flex-col bg-[var(--colorBgLayout,#f5f5f5)]" data-testid="super-admin-shell">
-      <header className="flex items-center justify-between border-b border-[var(--colorBorderSecondary,#eee)] bg-[var(--colorBgContainer,#fff)] px-4 py-2">
-        <div className="select-none text-sm font-semibold tracking-widest text-[var(--colorTextSecondary,#666)]">
-          超管后台
-        </div>
-        <Menu
-          mode="horizontal"
-          selectedKeys={[selectedKey]}
-          onClick={(info) => navigate(`/super-admin/${info.key}`)}
-          items={[
-            { key: 'tenants', icon: <ClusterOutlined />, label: '组织管理' },
-            { key: 'audit-log', icon: <AuditOutlined />, label: '审计日志' },
-          ]}
-          style={{ flex: 1, minWidth: 280, borderBottom: 'none' }}
-        />
-        {/* 外观主题入口：与 AppShell 顶栏同一入口，超管后台也能换本地肤。 */}
-        <AppearanceDrawerButton />
-      </header>
-      <main className="flex-1 p-4">
-        <Outlet />
-      </main>
-    </div>
-  )
-}
-
-// EntryNormalize 是 index/兜底共用的规范化导航：未知入口按 URL 前缀送回组织
-// 列表——带 /super-admin 前缀的入口在生产挂法下由父路由吸收、在直接渲染挂法
-// 下由下方双前缀叶子吸收；无前缀入口走根下叶子。落点与当前路径相同时不再
-// 导航（防重定向循环）。
+// EntryNormalize 是 index/兜底共用的规范化导航：未知入口一律送回组织列表
+// （绝对路径，防相对导航在嵌套挂法下循环）。落点与当前路径相同时不再导航。
 function EntryNormalize() {
   const location = useLocation()
   const path = location.pathname.replace(/\/+$/, '') || '/'
-  const target = path.startsWith('/super-admin') ? '/super-admin/tenants' : '/tenants'
-  if (path === target) {
+  if (path === '/super-admin/tenants') {
     return null
   }
-  return <Navigate to={target} replace />
+  return <Navigate to="/super-admin/tenants" replace />
 }
 
-// 单一 layout 路由树：门闸（pathless）→ Shell（pathless，main 内 Outlet）→
-// 叶子子路由（Outlet 化形态）。叶子按两种挂载形态双前缀注册：生产挂法
-// （App.tsx 的 super-admin/* 父路由）命中第一组；直接渲染 <SuperAdminApp/>
+// 超管子应用不再自带独立壳：页面渲染在 /admin 主壳（AppShell）内，本组件
+// 只保留「会话门闸 + 叶子路由」。叶子按两种挂载形态双前缀注册：生产挂法
+// （AdminRoutes 内的 super-admin/* 父路由）命中第一组；直接渲染 <SuperAdminApp/>
 // 时 base 为根，URL 自带的 /super-admin 前缀由第二组吸收——不依赖双层
 // Routes 的 splat base 累积语义（回归防护：直接渲染时早期实现叶子匹配
 // 不到、主区空白）。
@@ -107,16 +63,14 @@ export function SuperAdminApp() {
   return (
     <Routes>
       <Route element={<SuperAdminSessionGate />}>
-        <Route element={<SuperAdminShell />}>
-          <Route path="tenants" element={<TenantsPage />} />
-          <Route path="tenants/:id" element={<TenantDetailPage />} />
-          <Route path="audit-log" element={<AuditLogPage />} />
-          <Route path="super-admin/tenants" element={<TenantsPage />} />
-          <Route path="super-admin/tenants/:id" element={<TenantDetailPage />} />
-          <Route path="super-admin/audit-log" element={<AuditLogPage />} />
-          <Route index element={<EntryNormalize />} />
-          <Route path="*" element={<EntryNormalize />} />
-        </Route>
+        <Route path="tenants" element={<TenantsPage />} />
+        <Route path="tenants/:id" element={<TenantDetailPage />} />
+        <Route path="audit-log" element={<AuditLogPage />} />
+        <Route path="super-admin/tenants" element={<TenantsPage />} />
+        <Route path="super-admin/tenants/:id" element={<TenantDetailPage />} />
+        <Route path="super-admin/audit-log" element={<AuditLogPage />} />
+        <Route index element={<EntryNormalize />} />
+        <Route path="*" element={<EntryNormalize />} />
       </Route>
     </Routes>
   )

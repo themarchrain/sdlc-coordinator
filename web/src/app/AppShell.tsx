@@ -3,6 +3,7 @@ import { useState } from 'react'
 import {
   ApiOutlined,
   AppstoreOutlined,
+  AuditOutlined,
   BankOutlined,
   BulbOutlined,
   ControlOutlined,
@@ -40,6 +41,18 @@ const agentWorkspaces = [
   { to: '/agents', label: 'Agent 运行', icon: <RobotOutlined /> },
 ]
 
+// 超管是独立身份、不属于任何组织：工作区只留系统总览，业务视图整体退出；
+// 管理组换成系统配置 + 超管子应用两个入口。
+const superAdminWorkspaces = [
+  { to: '/', label: '系统总览', icon: <AppstoreOutlined />, end: true },
+]
+
+const superAdminAdminWorkspaces = [
+  { to: '/settings', label: '系统配置', icon: <SettingOutlined /> },
+  { to: '/super-admin/tenants', label: '组织管理', icon: <BankOutlined /> },
+  { to: '/super-admin/audit-log', label: '审计日志', icon: <AuditOutlined /> },
+]
+
 function withRepository(path: string, repositoryID: string | null) {
   if (!repositoryID) return path
   return `${path}?repository_id=${encodeURIComponent(repositoryID)}`
@@ -52,8 +65,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const repositoryID = searchParams.get('repository_id')
   const { role, superAdmin } = useWorkspaceSession()
   const member = role === 'member' && !superAdmin
-  // 超管无租户身份：业务菜单（需求/仓库/任务/数据/人员）对其隐藏，只留系统级入口；
-  // 支持访问中的超管 role 视作 tenant_admin，不受此收敛影响。
+  // 超管无租户身份：菜单整体收敛为系统级三件事（系统总览 / 系统配置 /
+  // 组织管理+审计日志），Agent 观测组对超管隐藏；支持访问中的超管 role 视作
+  // tenant_admin，走组织侧完整菜单，不受此收敛影响。
   const superAdminSolo = role === 'super_admin'
   const workspaceItems = member
     ? [
@@ -62,16 +76,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         { to: '/tasks', label: '任务查询', icon: <ProfileOutlined /> },
         { to: '/explorer', label: '数据查询', icon: <DatabaseOutlined /> },
       ]
-    : workspaces.filter((item) => !superAdminSolo || item.to === '/')
+    : superAdminSolo
+      ? superAdminWorkspaces
+      : workspaces
   const adminItems = member
     ? []
-    : [
-        ...adminWorkspaces.filter((item) => {
-          if (item.to === '/settings') return superAdmin || role === 'super_admin'
-          return !(superAdminSolo && item.to === '/people')
-        }),
-        ...(role === 'tenant_admin' ? [{ to: '/org', label: '组织管理', icon: <BankOutlined /> }] : []),
-      ]
+    : superAdminSolo
+      ? superAdminAdminWorkspaces
+      : [
+          // 支持访问中的超管（superAdmin 标记仍在）可继续直达系统配置排障。
+          ...adminWorkspaces.filter((item) => item.to !== '/settings' || superAdmin),
+          ...(role === 'tenant_admin' ? [{ to: '/org', label: '组织管理', icon: <BankOutlined /> }] : []),
+        ]
+  const agentItems = superAdminSolo ? [] : agentWorkspaces
 
   return (
     <div className={`control-room${collapsed ? ' control-room--collapsed' : ''}`}>
@@ -88,12 +105,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               {item.icon}<span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
-          <div className="nav-group-title">Agent 观测</div>
-          {agentWorkspaces.map((item) => (
-            <NavLink key={item.to} to={withRepository(item.to, repositoryID)} title={item.label}>
-              {item.icon}<span className="nav-label">{item.label}</span>
-            </NavLink>
-          ))}
+          {agentItems.length > 0 ? (
+            <>
+              <div className="nav-group-title">Agent 观测</div>
+              {agentItems.map((item) => (
+                <NavLink key={item.to} to={withRepository(item.to, repositoryID)} title={item.label}>
+                  {item.icon}<span className="nav-label">{item.label}</span>
+                </NavLink>
+              ))}
+            </>
+          ) : null}
           {adminItems.length > 0 ? (
             <>
               <div className="nav-group-title">管理与配置</div>
