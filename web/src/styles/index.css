@@ -433,6 +433,9 @@ a:hover { color: var(--link-hover); }
 /* Configuration is a guarded setup workbench, not another operational dashboard. */
 .configuration-alert { margin-bottom: 14px; }
 .configuration-shell { min-height: 610px; padding: 0; display: grid; grid-template-columns: 230px minmax(0, 1fr); overflow: hidden; }
+/* 组织配置向导复用 shell/workbench 但没有状态侧栏子元素：退化单列，
+   避免整个表单掉进 230px 侧栏列（宽度塌陷成逐字竖排）。 */
+.org-configuration-page .configuration-shell { display: block; max-width: 880px; }
 .org-page { display: flex; flex-direction: column; gap: 16px; }
 .org-page h3 { margin: 0 0 12px; font-size: 15px; }
 .org-invite-form { margin-top: 12px; }
