@@ -44,7 +44,7 @@ function renderPage(items = repositories) {
     config: {
       codehost: { provider: 'gitea', base_url: 'https://gitea.example.com', rework_allowed_user_ids: [] },
       im: { provider: '', telegram: {}, feishu: {}, reviewer_mentions: [] },
-      runner: { provider: '' },
+      runner: { provider: '', effort: '' },
     },
     secrets: { telegram_bot_token_configured: false, feishu_secret_configured: false },
     revision: 1,

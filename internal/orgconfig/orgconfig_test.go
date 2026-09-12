@@ -250,34 +250,53 @@ func TestValidateRunnerProvider(t *testing.T) {
 	}
 }
 
+// 推理强度档位,空(跟随系统默认)与五档通过,其他值拒绝。
+func TestValidateRunnerEffort(t *testing.T) {
+	base := Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}
+
+	for _, effort := range []string{"", "low", "medium", "high", "xhigh", "max"} {
+		candidate := base
+		candidate.Runner.Effort = effort
+		if errs := Validate(candidate); len(errs) != 0 {
+			t.Fatalf("runner effort %q must pass, got %+v", effort, errs)
+		}
+	}
+
+	unknown := base
+	unknown.Runner.Effort = "ultracode"
+	if errs := Validate(unknown); !errs.Has("runner.effort") {
+		t.Fatalf("unknown runner effort must be rejected on runner.effort, got %+v", errs)
+	}
+}
+
 func TestMergeRunnerTakesRequestValue(t *testing.T) {
 	codeHost := configuration.EditableCodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}
 	current := Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-		Runner:   RunnerConfig{Provider: "claude-cli"},
+		Runner:   RunnerConfig{Provider: "claude-cli", Effort: "low"},
 	}
 
 	merged := Merge(current, UpdateRequest{Config: EditableConfig{
 		CodeHost: codeHost,
-		Runner:   EditableRunnerConfig{Provider: "codex-cli"},
+		Runner:   EditableRunnerConfig{Provider: "codex-cli", Effort: "high"},
 	}})
-	if merged.Runner.Provider != "codex-cli" {
-		t.Fatalf("merge must take request runner provider, got %+v", merged.Runner)
+	if merged.Runner.Provider != "codex-cli" || merged.Runner.Effort != "high" {
+		t.Fatalf("merge must take request runner selection, got %+v", merged.Runner)
 	}
 
 	// 空提交 = 回到跟随系统默认,不保留现值(无密钥语义,直接覆盖)。
 	merged = Merge(current, UpdateRequest{Config: EditableConfig{CodeHost: codeHost}})
-	if merged.Runner.Provider != "" {
-		t.Fatalf("empty request runner provider must merge to empty, got %+v", merged.Runner)
+	if merged.Runner.Provider != "" || merged.Runner.Effort != "" {
+		t.Fatalf("empty request runner selection must merge to empty, got %+v", merged.Runner)
 	}
 }
 
-func TestMaskCarriesRunnerProvider(t *testing.T) {
+func TestMaskCarriesRunnerSelection(t *testing.T) {
 	view := Mask(Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-		Runner:   RunnerConfig{Provider: "claude-cli"},
+		Runner:   RunnerConfig{Provider: "claude-cli", Effort: "low"},
 	})
-	if view.Config.Runner.Provider != "claude-cli" {
-		t.Fatalf("mask must carry runner provider, got %+v", view.Config.Runner)
+	if view.Config.Runner.Provider != "claude-cli" || view.Config.Runner.Effort != "low" {
+		t.Fatalf("mask must carry the runner selection, got %+v", view.Config.Runner)
 	}
 }

@@ -44,6 +44,18 @@ func (r *RunRepository) UpdateProviderIfEmpty(ctx context.Context, runID, provid
 	return nil
 }
 
+// UpdateEffortIfEmpty 仅在 run 尚未钉住推理强度时写入 effort 列；动机与
+// UpdateProviderIfEmpty 相同：列级条件更新不整行覆盖，避免把并发终态化
+// 的状态字段回滚成旧值。
+func (r *RunRepository) UpdateEffortIfEmpty(ctx context.Context, runID, effort string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (effort = '' OR effort IS NULL)", runID).
+		Update("effort", effort).Error; err != nil {
+		return fmt.Errorf("update run effort: %w", err)
+	}
+	return nil
+}
+
 func (r *RunRepository) GetByRunID(ctx context.Context, runID string) (*model.Run, error) {
 	var run model.Run
 	if err := r.db.WithContext(ctx).Where("run_id = ?", runID).First(&run).Error; err != nil {

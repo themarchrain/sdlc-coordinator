@@ -263,7 +263,7 @@ func (f *fakeDeveloperFinalizer) Finalize(_ context.Context, request workspace.D
 
 func TestDeveloperRunnerStartHonorsPinnedProviderAndPinsOnDispatch(t *testing.T) {
 	fixture := newDeveloperRunnerFixture(t, "implement_issue")
-	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "codex-cli" })
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Provider: "codex-cli"} })
 
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
 		t.Fatalf("start with tenant lookup: %v", err)
@@ -280,7 +280,7 @@ func TestDeveloperRunnerStartHonorsPinnedProviderAndPinsOnDispatch(t *testing.T)
 	}
 
 	// 配置热切换后重放（恢复/投影重建路径）：钉住值优先于现取值。
-	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) string { return "claude-cli" })
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Provider: "claude-cli"} })
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
 		t.Fatalf("replay after config switch: %v", err)
 	}

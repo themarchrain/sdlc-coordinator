@@ -85,15 +85,18 @@ func tenantReviewerMentionsProvider(provider *orgconfig.Provider, logger *zap.Lo
 	}
 }
 
-// tenantRunnerProviderLookup 产出执行 CLI 选择的动态来源（审查/开发派发时
-// 现取）；未配置返回空串（调用方回落系统默认值）。
-func tenantRunnerProviderLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) string {
-	return func(ctx context.Context) string {
+// tenantRunnerProviderLookup 产出执行选择（CLI 与推理强度）的动态来源
+// （审查/开发派发时现取）；未配置的字段返回空串（调用方回落系统默认值）。
+func tenantRunnerProviderLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) orchestrator.RunnerSelection {
+	return func(ctx context.Context) orchestrator.RunnerSelection {
 		config, err := provider.Get(ctx)
 		if err != nil && logger != nil {
-			logger.Warn("load tenant runtime config for runner provider failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
+			logger.Warn("load tenant runtime config for runner selection failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		}
-		return strings.TrimSpace(config.Runner.Provider)
+		return orchestrator.RunnerSelection{
+			Provider: strings.TrimSpace(config.Runner.Provider),
+			Effort:   strings.TrimSpace(config.Runner.Effort),
+		}
 	}
 }
 

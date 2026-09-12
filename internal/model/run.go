@@ -32,7 +32,11 @@ type Run struct {
 	// Provider 钉住本 run 派发时实际使用的执行 CLI：组织段配置热切换后，
 	// 恢复/投影重建路径按钉住值重放请求，请求哈希与远端既有执行保持一致。
 	// 空串表示派发于钉住机制之前（或系统默认），恢复路径回落现取值。
-	Provider          string     `gorm:"index"`
+	Provider string `gorm:"index"`
+	// Effort 钉住本 run 派发时实际生效的推理强度，语义与 Provider 一致：
+	// 请求哈希覆盖推理强度，热切换后按钉住值重放才能与远端既有执行对上；
+	// 空串表示派发于钉住机制之前，恢复路径回落现取值。
+	Effort            string     `gorm:"index"`
 	StartedAt         *time.Time `gorm:"index"`
 	CompletedAt       *time.Time `gorm:"index"`
 	ArtifactsPurgedAt *time.Time `gorm:"index"`

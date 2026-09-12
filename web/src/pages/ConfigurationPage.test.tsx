@@ -87,6 +87,8 @@ describe('ConfigurationPage', () => {
     expect(screen.queryByLabelText('执行 Provider')).not.toBeInTheDocument()
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument()
     expect(screen.getByLabelText('执行模型')).toHaveValue('deepseek-v4-flash-0731')
+    // 推理强度已下沉组织配置：系统向导不再渲染编辑 UI。
+    expect(screen.queryByLabelText('推理强度')).not.toBeInTheDocument()
     expect(screen.getByLabelText('单任务超时（分钟）')).toHaveValue('30')
     expect(screen.getByText('裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。')).toBeInTheDocument()
     expect(screen.getAllByText('已配置').length).toBeGreaterThanOrEqual(2)
@@ -119,14 +121,15 @@ describe('ConfigurationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
-    // provider 已无 UI 编辑，但保存 payload 必须原样回传加载值：
-    // 后端整行替换语义下缺键会把系统默认 CLI 静默清空。
+    // provider 与 effort 已无 UI 编辑，但保存 payload 必须原样回传加载值：
+    // 后端整行替换语义下缺键会把系统兜底值静默清空。
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({
         agent_runner: expect.objectContaining({
           service_url: 'http://agent-runner:8081',
           provider: 'codex-cli',
           model: 'deepseek-v4-flash-0731',
+          effort: 'high',
           task_timeout: '30m',
         }),
         scheduler: expect.objectContaining({ callback_base_url: 'http://127.0.0.1:8080', workspace_root: '/app/workspaces' }),

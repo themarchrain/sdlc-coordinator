@@ -152,6 +152,9 @@ function CodeHostStep({ people, onManagePeople }: { people: Person[]; onManagePe
       <Form.Item name={['runner', 'provider']} label="执行 CLI" extra="组织任务用哪个命令行 Agent 执行。">
         <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, { value: 'codex-cli', label: 'Codex CLI' }, { value: 'claude-cli', label: 'Claude CLI' }]} />
       </Form.Item>
+      <Form.Item name={['runner', 'effort']} label="推理强度" extra="CLI 的思考深度档位；留空跟随系统默认。">
+        <Select aria-label="推理强度" allowClear options={['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))} />
+      </Form.Item>
       <p className="form-note">此处的平台与地址作为新增仓库表单的默认值；每个仓库可在仓库管理中单独指定平台与地址。</p>
       <Form.Item name={['people', 'rework_person_ids']} label="额外允许接续开发的人员" extra="从人员资产选择；MR 作者、负责人和 Reviewer 无需重复填写。"><Select mode="multiple" options={codeHostOptions} placeholder="选择人员" /></Form.Item>
     </div>
@@ -199,6 +202,7 @@ function SummaryStep({ form, fieldErrors }: { form: FormInstance<OrgConfigFormVa
       <div><span>代码仓库</span><strong>{values?.codehost?.base_url || '未填写'}</strong></div>
       <div><span>IM 通知</span><strong>{values?.im?.provider ? values.im.provider : '未配置'}</strong></div>
       <div><span>执行 CLI</span><strong>{values?.runner?.provider || '跟随系统默认'}</strong></div>
+      <div><span>推理强度</span><strong>{values?.runner?.effort || '跟随系统默认'}</strong></div>
     </div>
     {Object.keys(fieldErrors).length > 0 ? <Alert type="error" showIcon message="以下字段未通过校验" description={<ul>{Object.entries(fieldErrors).map(([field, detail]) => <li key={field}><code>{field}</code>：{detail}</li>)}</ul>} /> : null}
   </div>
@@ -217,7 +221,7 @@ function toFormValues(view: TenantConfigurationView, people: Person[]): OrgConfi
   return {
     codehost: { ...view.config.codehost, rework_allowed_user_ids: view.config.codehost.rework_allowed_user_ids || [] },
     im: { ...view.config.im, reviewer_mentions: view.config.im.reviewer_mentions || [] },
-    runner: { provider: view.config.runner.provider || '' },
+    runner: { provider: view.config.runner.provider || '', effort: view.config.runner.effort || '' },
     people: resolveTenantConfigurationPeople(view, people),
     secrets: {},
   }
@@ -239,7 +243,7 @@ function toUpdateRequest(values: OrgConfigFormValues, people: Person[], view: Te
         feishu: { ...values.im.feishu, mention_map: view?.config.im.feishu.mention_map ?? {} },
         reviewer_mentions: resolved.reviewer_mentions,
       },
-      runner: { provider: values.runner?.provider ?? '' },
+      runner: { provider: values.runner?.provider ?? '', effort: values.runner?.effort ?? '' },
     },
     secrets: values.secrets || {},
     expected_revision: expectedRevision,

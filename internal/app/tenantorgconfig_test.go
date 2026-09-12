@@ -156,18 +156,19 @@ func TestTenantRunnerProviderLookupFollowsConfigSaves(t *testing.T) {
 	ctx := context.Background()
 	lookup := tenantRunnerProviderLookup(orgconfig.NewProvider(db), zap.NewNop(), 1)
 
-	// 未配置 = 空串,调用方回落系统默认。
-	if provider := lookup(ctx); provider != "" {
-		t.Fatalf("runner provider must be empty without org config: %q", provider)
+	// 未配置 = 两字段空串,调用方回落系统默认。
+	if selection := lookup(ctx); selection.Provider != "" || selection.Effort != "" {
+		t.Fatalf("runner selection must be empty without org config: %#v", selection)
 	}
 
 	if _, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-		Runner:   orgconfig.RunnerConfig{Provider: "codex-cli"},
+		Runner:   orgconfig.RunnerConfig{Provider: "codex-cli", Effort: "high"},
 	}, 0); err != nil {
 		t.Fatalf("save org config: %v", err)
 	}
-	if provider := lookup(ctx); provider != "codex-cli" {
-		t.Fatalf("runner provider did not observe the save: %q", provider)
+	selection := lookup(ctx)
+	if selection.Provider != "codex-cli" || selection.Effort != "high" {
+		t.Fatalf("runner selection did not observe the save: %#v", selection)
 	}
 }

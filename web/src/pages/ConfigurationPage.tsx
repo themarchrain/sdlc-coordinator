@@ -8,7 +8,6 @@ import {
   Input,
   InputNumber,
   message,
-  Select,
   Steps,
   Switch,
   Tag,
@@ -217,7 +216,10 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
       <div className="configuration-provider-note">{provider === 'codex-cli' ? '裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。' : '裸 Agent，不加载个人 Claude 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。'}</div>
       <Form.Item name={['agent_runner', 'provider_base_url']} label="模型接入地址" rules={[{ validator: validateHTTPURL }]} extra="由使用者自行提供，且协议必须兼容当前执行 Provider：codex-cli 要求 Responses API，claude-cli 要求 Messages API。Coordinator 只做透传，不做协议适配。"><Input placeholder="https://llm.example.com/v1" /></Form.Item>
       <Form.Item name={['agent_runner', 'model']} label="执行模型" rules={[{ required: true }]}><Input className="mono" placeholder="模型 ID" /></Form.Item>
-      <Form.Item name={['agent_runner', 'effort']} label="推理强度" rules={[{ required: true }]}><Select options={['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))} /></Form.Item>
+      {/* 推理强度已下沉组织配置（组织可选、系统兜底）；保留隐藏注册字段让
+          保存 payload 原样回传加载值——后端整行替换语义下缺键会把系统兜底
+          值静默清空。 */}
+      <Form.Item name={['agent_runner', 'effort']} hidden><Input className="mono" /></Form.Item>
       <Form.Item name={['agent_runner', 'task_timeout_minutes']} label="单任务超时（分钟）" rules={[{ required: true }]} extra="默认 30 分钟；超时后 Runner 会终止当前 Agent 进程，本次 Run 按失败策略处理。"><InputNumber min={1} max={240} precision={0} /></Form.Item>
       <SecretField name="agent_runner_api_key" clearName="clear_agent_runner_api_key" label="模型 API Key" configured={secrets.agent_runner_api_key_configured} />
       <SecretField name="agent_runner_custom_headers_json" clearName="clear_agent_runner_custom_headers_json" label="自定义 Header JSON" configured={secrets.agent_runner_custom_headers_configured} optional />

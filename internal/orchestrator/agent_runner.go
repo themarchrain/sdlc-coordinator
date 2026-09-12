@@ -83,35 +83,63 @@ func (c *AgentRunnerCoordinator) setTenantRunnerRouter(router TenantRunnerRouter
 	c.router = router
 }
 
-// resolveRunnerProviderConfig 应用组织段「执行 CLI」选择：pinned 非空（run
-// 已钉住派发时的 CLI）时直接沿用，不再查询——配置热切换后恢复/重建路径
-// 按钉住值重放，请求哈希与远端既有执行一致；未钉住时 lookup 未注入或返回
-// 空串沿用系统默认值，非空时仅覆盖 Name——BaseURL/APIKey/Model 等其余字段
-// 保持系统值（组织段只租户化 CLI 选择，不触碰模型凭据）。覆盖必须发生在
-// 请求哈希计算之前，幂等重放与远端校验才能看到同一份请求。
-func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Context) string, fallback runner.ProviderConfig, pinned string) runner.ProviderConfig {
-	name := strings.TrimSpace(pinned)
-	if name == "" && lookup != nil {
-		name = strings.TrimSpace(lookup(ctx))
-	}
-	if name == "" {
-		return fallback
-	}
-	fallback.Name = name
-	return fallback
+// RunnerSelection 是组织段执行选择的现取结果：CLI 与推理强度两个字段
+// 独立解析，空串表示组织未设置（回落系统默认值）。
+type RunnerSelection struct {
+	Provider string
+	Effort   string
 }
 
-// pinRunnerProviderOnRun 把本 run 实际使用的 CLI 钉进 run 行（best-effort：
-// 回写失败不阻断派发，代价是后续重建路径回落到现取值）。已钉住的值不
-// 覆盖。经列级条件更新只碰 provider 列——本函数在分钟级的工作区准备之后
-// 执行，整行保存会把并发终态化的 run 回滚成旧状态。
-func pinRunnerProviderOnRun(ctx context.Context, runs RunRepository, run *model.Run, provider string) {
-	if run == nil || run.Provider != "" || strings.TrimSpace(provider) == "" {
+// resolveRunnerProviderConfig 应用组织段执行选择（CLI 与推理强度）：pinned
+// 非空（run 已钉住派发时的取值）时直接沿用，不再查询——配置热切换后恢复/
+// 重建路径按钉住值重放，请求哈希（覆盖 CLI 名与推理强度）与远端既有执行
+// 一致；未钉住的字段经 lookup 现取，lookup 未注入或返回空串时沿用系统
+// 默认值。两个候选字段仅在非空时覆盖——BaseURL/APIKey/Model 等其余字段
+// 保持系统值（组织段只租户化执行选择，不触碰模型凭据），组织只设其一时
+// 不覆盖另一个。覆盖必须发生在请求哈希计算之前，幂等重放与远端校验才能
+// 看到同一份请求。
+func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Context) RunnerSelection, fallback runner.ProviderConfig, pinnedProvider, pinnedEffort string) runner.ProviderConfig {
+	provider := strings.TrimSpace(pinnedProvider)
+	effort := strings.TrimSpace(pinnedEffort)
+	if (provider == "" || effort == "") && lookup != nil {
+		live := lookup(ctx)
+		if provider == "" {
+			provider = strings.TrimSpace(live.Provider)
+		}
+		if effort == "" {
+			effort = strings.TrimSpace(live.Effort)
+		}
+	}
+	if provider == "" && effort == "" {
+		return fallback
+	}
+	resolved := fallback
+	if provider != "" {
+		resolved.Name = provider
+	}
+	if effort != "" {
+		resolved.Effort = effort
+	}
+	return resolved
+}
+
+// pinRunnerProviderOnRun 把本 run 实际使用的 CLI 与推理强度钉进 run 行
+// （best-effort：回写失败不阻断派发，代价是后续重建路径回落到现取值）。
+// 已钉住的值不覆盖，两列独立判定。经列级条件更新只碰各自的列——本函数
+// 在分钟级的工作区准备之后执行，整行保存会把并发终态化的 run 回滚成旧
+// 状态。
+func pinRunnerProviderOnRun(ctx context.Context, runs RunRepository, run *model.Run, provider, effort string) {
+	if run == nil {
 		return
 	}
-	pinned := strings.TrimSpace(provider)
-	_ = runs.UpdateProviderIfEmpty(ctx, run.RunID, pinned)
-	run.Provider = pinned
+	if pinned := strings.TrimSpace(provider); pinned != "" && run.Provider == "" {
+		_ = runs.UpdateProviderIfEmpty(ctx, run.RunID, pinned)
+		run.Provider = pinned
+	}
+	if pinned := strings.TrimSpace(effort); pinned != "" && run.Effort == "" {
+		_ = runs.UpdateEffortIfEmpty(ctx, run.RunID, pinned)
+		run.Effort = pinned
+	}
 }
 
 // attemptForTask 解析派发尝试：nil 路由回退单端点直连（Endpoint 留空 =
