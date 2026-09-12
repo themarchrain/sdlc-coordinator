@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -119,13 +120,33 @@ func NewEventHandler(processor *events.Processor, opts ...EventHandlerOption) *E
 	return handler
 }
 
-func (h *EventHandler) GitLab(c *gin.Context) {
+// webhookMaxRequestBytes 限制 webhook 投递体大小（与 MCP/租户配置同口径）：
+// 消费的事件类型（议题/评论/PR/MR note）载荷远小于该值；超限读断后验签
+// 必然失败，fail-closed 拒收超大投递，防公网内存滥用。
+const webhookMaxRequestBytes = 1 << 20
+
+// readWebhookBody 读入投递体并施加大小上限，超限返回 413、其余读错误 400。
+func readWebhookBody(c *gin.Context, provider string) ([]byte, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, webhookMaxRequestBytes)
 	raw, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "read gitlab event payload failed",
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, gin.H{
+			"error":   fmt.Sprintf("read %s event payload failed", provider),
 			"details": err.Error(),
 		})
+		return nil, false
+	}
+	return raw, true
+}
+
+func (h *EventHandler) GitLab(c *gin.Context) {
+	raw, ok := readWebhookBody(c, "gitlab")
+	if !ok {
 		return
 	}
 	// 鉴权先于业务依赖检查:先从不可信 payload 最小解析仓路径,取该仓 secret 验签;
@@ -189,12 +210,8 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 // Gitea 处理 Gitea webhook:X-Gitea-Signature 携带 hex(hmac_sha256(secret, body)),
 // secret 按仓解析,使用常量时间比较;事件经 GiteaNormalizer 规范化后进入统一编排。
 func (h *EventHandler) Gitea(c *gin.Context) {
-	raw, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "read gitea event payload failed",
-			"details": err.Error(),
-		})
+	raw, ok := readWebhookBody(c, "gitea")
+	if !ok {
 		return
 	}
 	// 鉴权先于业务依赖检查:最小解析仓路径 → 取该仓 secret → 验签。
@@ -257,12 +274,8 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 // hex(hmac_sha256(secret, body)),secret 按仓解析,常量时间比较;事件经
 // GitHubNormalizer 规范化后进入统一编排。
 func (h *EventHandler) GitHub(c *gin.Context) {
-	raw, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "read github event payload failed",
-			"details": err.Error(),
-		})
+	raw, ok := readWebhookBody(c, "github")
+	if !ok {
 		return
 	}
 	// 鉴权先于业务依赖检查:最小解析仓路径 → 取该仓 secret → 验签。

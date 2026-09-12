@@ -420,3 +420,17 @@ func TestWebhookForwardsRepoURLToFactory(t *testing.T) {
 		t.Fatalf("factory must receive the payload repo url, got %+v", seen)
 	}
 }
+
+// 投递体超上限：验签前读断并 413 拒收，不进任何解析或业务依赖。
+func TestWebhookPayloadOverSizeCapRejected(t *testing.T) {
+	handler := NewEventHandler(&events.Processor{})
+	router := gin.New()
+	router.POST("/events/gitlab", handler.GitLab)
+	req := httptest.NewRequest(http.MethodPost, "/events/gitlab",
+		bytes.NewReader(bytes.Repeat([]byte("a"), webhookMaxRequestBytes+1)))
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized payload must be rejected with 413, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
