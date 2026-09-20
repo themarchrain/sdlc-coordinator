@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ConfigurationView, Person } from '../api/types'
-import { buildRuntimePeopleFields, personCodeHostIdentity, resolveConfigurationPeople } from './configurationPeople'
+import type { Person, TenantConfigurationView } from '../api/types'
+import { buildRuntimePeopleFields, personCodeHostIdentity, resolveTenantConfigurationPeople } from './configurationPeople'
 
 const people: Person[] = [
   {
@@ -20,11 +20,11 @@ const view = {
     codehost: { provider: 'gitlab', base_url: 'https://gitlab.example.com/', rework_allowed_user_ids: ['7', '99'] },
     im: { reviewer_mentions: ['审查人', '历史提醒人'] },
   },
-} as unknown as ConfigurationView
+} as unknown as TenantConfigurationView
 
 describe('configuration people resolution', () => {
   it('matches people and keeps unmatched runtime values as explicit legacy values', () => {
-    expect(resolveConfigurationPeople(view, people)).toEqual({
+    expect(resolveTenantConfigurationPeople(view, people)).toEqual({
       rework_person_ids: ['person-owner'],
       reviewer_person_ids: ['person-reviewer'],
       legacy_rework_user_ids: ['99'],

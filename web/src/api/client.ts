@@ -12,6 +12,8 @@ import type {
   ConnectorRecord,
   ConnectorRun,
   ConfigurationStatus,
+  TenantConfigurationUpdateRequest,
+  TenantConfigurationView,
   ConfigurationUpdateRequest,
   ConfigurationUpdateResult,
   ConfigurationValidationResult,
@@ -116,6 +118,9 @@ export const adminApi = {
 	updateConfiguration: (value: ConfigurationUpdateRequest) => request<ConfigurationUpdateResult>('/api/admin/configuration', { method: 'PUT', body: jsonBody(value) }),
 	restartConfiguration: () => request<{ status: string }>('/api/admin/configuration/restart', { method: 'POST', body: jsonBody({}) }),
 
+  tenantConfiguration: (signal?: AbortSignal) => request<TenantConfigurationView>('/api/admin/tenant-configuration', { signal }),
+  validateTenantConfiguration: (value: TenantConfigurationUpdateRequest) => request<ConfigurationValidationResult>('/api/admin/tenant-configuration/validate', { method: 'POST', body: jsonBody(value) }),
+  updateTenantConfiguration: (value: TenantConfigurationUpdateRequest) => request<TenantConfigurationView>('/api/admin/tenant-configuration', { method: 'PUT', body: jsonBody(value) }),
   listPeople: (query: Query = {}, signal?: AbortSignal) => request<Page<Person>>(`/api/admin/people${queryString(query)}`, { signal }),
   getPerson: (personID: string, signal?: AbortSignal) => request<Person>(`/api/admin/people/${encodeURIComponent(personID)}`, { signal }),
   createPerson: (value: PersonInput) => request<Person>('/api/admin/people', { method: 'POST', body: jsonBody(value) }),

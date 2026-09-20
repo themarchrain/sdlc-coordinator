@@ -104,6 +104,26 @@ func TestGitLabWebhookVerifiesAgainstRepoSecret(t *testing.T) {
 	}
 }
 
+func TestGitLabWebhookRejectsWhenEngineViewFactoryFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	failing := gin.New()
+	handler := NewEventHandler(nil,
+		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
+			{provider: "gitlab", path: "group/repo-a"}: "secret-a",
+		}}),
+		WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+			return nil, errors.New("tenant runtime config unavailable")
+		}),
+	)
+	failing.POST("/api/events/gitlab", handler.GitLab)
+
+	payload := `{"project":{"path_with_namespace":"group/repo-a"},"object_kind":"merge_request"}`
+	response := performEvent(t, failing, http.MethodPost, "/api/events/gitlab", payload, map[string]string{"X-Gitlab-Token": "secret-a"})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("cold config read failure must reject with 503, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
 func TestGitLabWebhookRejectsUnregisteredRepo(t *testing.T) {
 	router, lookup := newEventRouter(nil)
 	payload := `{"project":{"path_with_namespace":"group/unknown","web_url":"https://gitlab.example.com/group/unknown"},"object_kind":"push"}`
@@ -262,28 +282,32 @@ func (failingSecretLookup) WebhookSecretByPath(context.Context, string, string, 
 	return "", errors.New("db down")
 }
 
-// 工厂三态语义:命中用工厂产物;未命中回落构造期平台处理器(存量过渡期
-// 兜底);路由已指认租户但引擎不可用则上抛错误,绝不回落平台库。
-func TestResolveProcessorDistinguishesMissFromUnavailable(t *testing.T) {
+// 工厂契约:命中用工厂产物;工厂返回错误或零值视图(装配契约违例)一律
+// 上抛,不回落构造期默认视图;未注入工厂的装配沿用构造期默认视图。
+func TestResolveEngineViewFailsClosedOnZeroViewFromFactory(t *testing.T) {
 	platform := &events.Processor{}
-	miss := NewEventHandler(platform, WithProcessorFactory(func(context.Context, string, string, string) (*events.Processor, error) {
+	missing := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
 		return nil, nil
 	}))
-	if proc, err := miss.resolveProcessor(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || proc != platform {
-		t.Fatalf("miss must fall back to the platform processor, got proc=%v err=%v", proc, err)
+	if view, err := missing.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err == nil || view != nil {
+		t.Fatalf("zero view from an injected factory must fail closed, got view=%v err=%v", view, err)
 	}
-	down := NewEventHandler(platform, WithProcessorFactory(func(context.Context, string, string, string) (*events.Processor, error) {
+	down := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
 		return nil, errors.New("tenant engine unavailable")
 	}))
-	if proc, err := down.resolveProcessor(context.Background(), providerGitLab, "group/repo-a", ""); err == nil || proc != nil {
-		t.Fatalf("unavailable engine must surface an error without a processor, got proc=%v err=%v", proc, err)
+	if view, err := down.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err == nil || view != nil {
+		t.Fatalf("unavailable engine must surface an error without a view, got view=%v err=%v", view, err)
 	}
 	hit := &events.Processor{}
-	targeted := NewEventHandler(platform, WithProcessorFactory(func(context.Context, string, string, string) (*events.Processor, error) {
-		return hit, nil
+	targeted := NewEventHandler(platform, WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
+		return &WebhookEngineView{Processor: hit}, nil
 	}))
-	if proc, err := targeted.resolveProcessor(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || proc != hit {
-		t.Fatalf("factory hit must win, got proc=%v err=%v", proc, err)
+	if view, err := targeted.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view.Processor != hit {
+		t.Fatalf("factory hit must win, got view=%v err=%v", view, err)
+	}
+	bare := NewEventHandler(platform)
+	if view, err := bare.resolveEngineView(context.Background(), providerGitLab, "group/repo-a", ""); err != nil || view != bare.platformView {
+		t.Fatalf("assembly without a factory keeps the constructor view, got view=%v err=%v", view, err)
 	}
 }
 
@@ -296,7 +320,7 @@ func TestGiteaWebhookFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
 		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
 			{provider: "gitea", path: "group/repo-a"}: "secret-gitea-a",
 		}}),
-		WithProcessorFactory(func(context.Context, string, string, string) (*events.Processor, error) {
+		WithEngineViewFactory(func(context.Context, string, string, string) (*WebhookEngineView, error) {
 			return nil, errors.New("tenant engine unavailable")
 		}))
 	router.POST("/api/events/gitea", handler.Gitea)
@@ -377,7 +401,7 @@ func TestWebhookForwardsRepoURLToFactory(t *testing.T) {
 		WithWebhookSecretLookup(&fakeSecretLookup{secrets: map[secretLookupKey]string{
 			{provider: "github", path: "group/repo-a"}: "secret-github-a",
 		}}),
-		WithProcessorFactory(func(_ context.Context, provider, path, repoURL string) (*events.Processor, error) {
+		WithEngineViewFactory(func(_ context.Context, provider, path, repoURL string) (*WebhookEngineView, error) {
 			seen.provider, seen.path, seen.repoURL = provider, path, repoURL
 			// 返回不可用错误：工厂已被调用即可断参，503 收尾避免依赖
 			// 平台处理器的完整装配。
@@ -394,5 +418,19 @@ func TestWebhookForwardsRepoURLToFactory(t *testing.T) {
 	}
 	if seen.provider != "github" || seen.path != "group/repo-a" || seen.repoURL != "https://github.com/group/repo-a" {
 		t.Fatalf("factory must receive the payload repo url, got %+v", seen)
+	}
+}
+
+// 投递体超上限：验签前读断并 413 拒收，不进任何解析或业务依赖。
+func TestWebhookPayloadOverSizeCapRejected(t *testing.T) {
+	handler := NewEventHandler(&events.Processor{})
+	router := gin.New()
+	router.POST("/events/gitlab", handler.GitLab)
+	req := httptest.NewRequest(http.MethodPost, "/events/gitlab",
+		bytes.NewReader(bytes.Repeat([]byte("a"), webhookMaxRequestBytes+1)))
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized payload must be rejected with 413, got %d: %s", resp.Code, resp.Body.String())
 	}
 }

@@ -28,8 +28,8 @@ describe('workbench org workspace', () => {
 
     const { container } = render(<MemoryRouter initialEntries={['/org']}><App /></MemoryRouter>)
 
-    expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
-    expect(container.querySelector('.workspace-canvas')).toContainElement(screen.getByText('Acme 组织'))
+    expect(await screen.findByText('组织信息')).toBeInTheDocument()
+    expect(container.querySelector('.workspace-canvas')).toContainElement(screen.getByText('组织信息'))
     expect(screen.getByText('Coordinator')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('href', '/org')
     expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('aria-current', 'page')

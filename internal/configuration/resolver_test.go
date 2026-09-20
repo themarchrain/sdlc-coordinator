@@ -21,7 +21,7 @@ func TestResolverImportsCompleteLegacyEnvironmentOnlyWhenTableIsEmpty(t *testing
 	if result.Snapshot.Source != SourceEnvImport || result.Snapshot.Revision != 1 || result.Snapshot.Status != StatusReady {
 		t.Fatalf("legacy environment was not imported: %#v", result.Snapshot)
 	}
-	if result.EffectiveConfig.CodeHostBaseURL != "https://legacy.gitlab.example.com" {
+	if result.EffectiveConfig.AgentRunner.ServiceURL != "http://agent-runner:8081" {
 		t.Fatalf("unexpected effective config: %#v", result.EffectiveConfig)
 	}
 	if result.EffectiveConfig.AgentRunner.ProviderConfigRevision != result.Snapshot.Revision {
@@ -32,16 +32,16 @@ func TestResolverImportsCompleteLegacyEnvironmentOnlyWhenTableIsEmpty(t *testing
 func TestResolverIgnoresLegacyEnvironmentWhenSnapshotExists(t *testing.T) {
 	repository := newConfigurationRepositoryTestDB(t)
 	persisted := validRuntimeConfig()
-	persisted.CodeHost.BaseURL = "https://sqlite.gitlab.example.com"
+	persisted.AgentRunner.Model = "sqlite-model"
 	if _, err := repository.Save(context.Background(), StatusReady, SourceUI, persisted); err != nil {
 		t.Fatalf("seed snapshot: %v", err)
 	}
 	legacy := completeLegacyConfig()
-	legacy.CodeHostBaseURL = "https://conflicting-env.example.com"
+	legacy.AgentRunner.Model = "conflicting-env-model"
 
 	result := NewResolver(repository).Resolve(context.Background(), testBootstrapConfig(), legacy)
 
-	if result.Mode != ModeReady || result.EffectiveConfig.CodeHostBaseURL != persisted.CodeHost.BaseURL {
+	if result.Mode != ModeReady || result.EffectiveConfig.AgentRunner.Model != persisted.AgentRunner.Model {
 		t.Fatalf("legacy environment overrode SQLite: %#v", result)
 	}
 	if result.Snapshot == nil || result.Snapshot.Revision != 1 || result.Snapshot.Source != SourceUI {
@@ -57,9 +57,7 @@ func TestResolverReturnsSetupPendingWithPartialLegacyPrefill(t *testing.T) {
 			Provider:   "claude-cli",
 			Model:      "deepseek-v4-flash-0731",
 		},
-		CodeHostProvider: "gitlab",
-		CodeHostBaseURL:  "https://gitlab.example.com",
-		Scheduler:        completeLegacyConfig().Scheduler,
+		Scheduler: completeLegacyConfig().Scheduler,
 	}
 
 	result := NewResolver(repository).Resolve(context.Background(), testBootstrapConfig(), legacy)
@@ -67,7 +65,7 @@ func TestResolverReturnsSetupPendingWithPartialLegacyPrefill(t *testing.T) {
 	if result.Mode != ModeSetupPending || result.Snapshot != nil {
 		t.Fatalf("unexpected resolution: %#v", result)
 	}
-	if result.Prefill.AgentRunner.ServiceURL != legacy.AgentRunner.ServiceURL || result.Prefill.CodeHost.BaseURL != legacy.CodeHostBaseURL {
+	if result.Prefill.AgentRunner.ServiceURL != legacy.AgentRunner.ServiceURL || result.Prefill.AgentRunner.Model != legacy.AgentRunner.Model {
 		t.Fatalf("partial values were not preserved for prefill: %#v", result.Prefill)
 	}
 	if _, err := repository.Latest(context.Background()); err != ErrSnapshotNotFound {
@@ -92,7 +90,7 @@ func TestResolverMovesSavedRestartRequiredSnapshotToReadyOnNewProcess(t *testing
 func TestResolverReturnsConfigurationErrorForInvalidStoredSnapshot(t *testing.T) {
 	repository := newConfigurationRepositoryTestDB(t)
 	invalid := validRuntimeConfig()
-	invalid.CodeHost.BaseURL = ""
+	invalid.AgentRunner.Model = ""
 	if _, err := repository.Save(context.Background(), StatusReady, SourceUI, invalid); err != nil {
 		t.Fatalf("seed invalid snapshot: %v", err)
 	}
@@ -102,7 +100,7 @@ func TestResolverReturnsConfigurationErrorForInvalidStoredSnapshot(t *testing.T)
 	if result.Mode != ModeConfigurationError || result.Snapshot == nil || !strings.Contains(result.ConfigurationError, "validation") {
 		t.Fatalf("unexpected invalid snapshot resolution: %#v", result)
 	}
-	if result.EffectiveConfig.CodeHostBaseURL != "" {
+	if result.EffectiveConfig.AgentRunner.Model != "" {
 		t.Fatal("invalid stored snapshot must not assemble runtime config")
 	}
 }
@@ -122,7 +120,6 @@ func completeLegacyConfig() config.Config {
 	if err != nil {
 		panic(err)
 	}
-	effective.CodeHostBaseURL = "https://legacy.gitlab.example.com"
 	return effective
 }
 
@@ -195,21 +192,5 @@ func TestFromLegacyConfigDropsWebhookSecretChannel(t *testing.T) {
 	if strings.Contains(string(encoded), "new-secret") || strings.Contains(string(encoded), "old-secret") ||
 		strings.Contains(string(encoded), "webhook_secret") {
 		t.Fatalf("legacy webhook secret channel was re-emitted: %s", encoded)
-	}
-}
-
-// TestFromLegacyConfigDropsGitLabBaseURLChannel 快照导入只认
-// codehost.provider/base_url,GITLAB_BASE_URL 别名不会隐式映射。
-func TestFromLegacyConfigDropsGitLabBaseURLChannel(t *testing.T) {
-	runtime, err := FromLegacyConfig(config.Config{CodeHostProvider: ""})
-	if err != nil {
-		t.Fatalf("import legacy config: %v", err)
-	}
-	defaulted := ApplyDefaults(runtime)
-	if defaulted.CodeHost.Provider != "gitlab" {
-		t.Fatalf("provider default: %q", defaulted.CodeHost.Provider)
-	}
-	if defaulted.CodeHost.BaseURL != "" {
-		t.Fatalf("no legacy channel may populate base_url, got %q", defaulted.CodeHost.BaseURL)
 	}
 }

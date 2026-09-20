@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
 import { portalApi, type PortalSessionPayload, type PortalTenantSummary } from '../api/portal'
+import { App } from '../app/App'
 import { TenantsPage } from './TenantsPage'
 import { TenantDetailPage } from './TenantDetailPage'
 import { AuditLogPage } from './AuditLogPage'
@@ -104,22 +105,50 @@ describe('AuditLogPage', () => {
   })
 })
 
-describe('SuperAdminApp shell', () => {
-  it('exposes a dedicated menu area separate from tenant pages', async () => {
+describe('SuperAdminApp inside the admin shell', () => {
+  it('renders tenant pages within AppShell with menu entries from the sidebar', async () => {
+    // 独立壳已移除：超管子应用页面渲染在 /admin 主壳内，菜单入口来自
+    // AppShell 侧边栏（组织管理/审计日志），外观主题入口同源顶栏。
     vi.spyOn(portalApi, 'session').mockResolvedValue({
       user: { id: 9, username: 'root', role: 'super_admin', must_change_password: false },
       scope: { kind: 'super_admin', role: 'super_admin' },
     })
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({ items: [] })
     vi.spyOn(portalApi, 'superListTenants').mockResolvedValue({ tenants })
-    render(
-      <MemoryRouter initialEntries={['/super-admin']}>
-        <SuperAdminApp />
+
+    const { container } = render(
+      <MemoryRouter initialEntries={['/super-admin/tenants']}>
+        <App />
       </MemoryRouter>,
     )
-    const orgEntries = await screen.findAllByText('组织管理')
-    expect(orgEntries.length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('审计日志')).toBeInTheDocument()
-    expect(screen.getByRole('menu')).toBeInTheDocument()
+    const row = await screen.findByText('Acme 组织')
+    expect(screen.getByText('Beta 组织')).toBeInTheDocument()
+    expect(container.querySelector('.workspace-canvas')).toContainElement(row)
+    const tenantsLink = screen.getByRole('link', { name: /组织管理/ })
+    expect(tenantsLink).toHaveAttribute('href', '/super-admin/tenants')
+    expect(tenantsLink).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /审计日志/ })).toHaveAttribute('href', '/super-admin/audit-log')
+    expect(screen.getByText('Coordinator')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '外观主题' })).toBeInTheDocument()
+  })
+
+  it('normalizes the bare /super-admin entry onto the tenants list inside the shell', async () => {
+    vi.spyOn(portalApi, 'session').mockResolvedValue({
+      user: { id: 9, username: 'root', role: 'super_admin', must_change_password: false },
+      scope: { kind: 'super_admin', role: 'super_admin' },
+    })
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({ items: [] })
+    vi.spyOn(portalApi, 'superListTenants').mockResolvedValue({ tenants })
+
+    render(
+      <MemoryRouter initialEntries={['/super-admin']}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('aria-current', 'page')
   })
 })
 
@@ -129,26 +158,26 @@ describe('SuperAdminApp mounting shapes', () => {
     scope: { kind: 'super_admin', role: 'super_admin' },
   }
 
-  it('renders the shell and tenant rows through the production route mounting', async () => {
-    // 生产形态锁定（App.tsx 真实挂法）：必须带 super-admin/* 父路由；
-    // 不带父路由的直接渲染形态匹配不到叶子路由，单独覆盖下一条。
+  it('renders the tenant rows through the production route mounting inside the shell', async () => {
+    // 生产形态锁定（App.tsx 真实挂法）：super-admin/* 在主壳 AdminRoutes 内，
+    // 页面渲染在 AppShell 主区，不再有独立超管壳。
     vi.spyOn(portalApi, 'session').mockResolvedValue(superSession)
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({ items: [] })
     vi.spyOn(portalApi, 'superListTenants').mockResolvedValue({ tenants })
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={['/super-admin/tenants']}>
-        <Routes>
-          <Route path="super-admin/*" element={<SuperAdminApp />} />
-        </Routes>
+        <App />
       </MemoryRouter>,
     )
-    expect(await screen.findByTestId('super-admin-shell')).toBeInTheDocument()
-    expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
+    const row = await screen.findByText('Acme 组织')
     expect(screen.getByText('Beta 组织')).toBeInTheDocument()
+    expect(container.querySelector('.workspace-canvas')).toContainElement(row)
   })
 
   it('stays usable when mounted directly without the super-admin/* parent route', async () => {
-    // 直接渲染形态（无父路由）：重构前叶子路由匹配不到、主区空白（红）；
-    // 重构后兜底导航把无前缀 URL 规范到叶子路由，两种挂载形态都可用。
+    // 直接渲染形态（无父路由）：兜底导航把无前缀 URL 规范到叶子路由，
+    // 两种挂载形态都可用；独立壳移除后不再渲染专属骨架。
     vi.spyOn(portalApi, 'session').mockResolvedValue(superSession)
     vi.spyOn(portalApi, 'superListTenants').mockResolvedValue({ tenants })
     render(
@@ -156,8 +185,8 @@ describe('SuperAdminApp mounting shapes', () => {
         <SuperAdminApp />
       </MemoryRouter>,
     )
-    expect(await screen.findByTestId('super-admin-shell')).toBeInTheDocument()
     expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
+    expect(screen.queryByTestId('super-admin-shell')).not.toBeInTheDocument()
   })
 })
 
@@ -242,6 +271,6 @@ describe('portal gate for super admins', () => {
         <App />
       </MemoryRouter>,
     )
-    expect(await screen.findByText('Acme 组织')).toBeInTheDocument()
+    expect(await screen.findByText('组织信息')).toBeInTheDocument()
   })
 })

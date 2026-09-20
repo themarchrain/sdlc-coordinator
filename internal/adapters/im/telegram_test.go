@@ -77,6 +77,8 @@ func TestTelegramBackendTargetOverridesDefaultChat(t *testing.T) {
 
 func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// 业务失败走非 2xx 状态码(真实 API 契约)。
+		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"ok":false,"description":"Bad Request: chat not found"}`))
 	}))
 	defer server.Close()
@@ -87,7 +89,25 @@ func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 	}
 
 	apiError := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
-	if _, err := apiError.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || !strings.Contains(err.Error(), "chat not found") {
-		t.Fatalf("api error must include description, got %v", err)
+	_, err := apiError.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err == nil || err.Error() != "telegram sendMessage: 400 Bad Request" || strings.Contains(err.Error(), "chat not found") {
+		t.Fatalf("api error must report the status line and omit the remote description, got %v", err)
+	}
+}
+
+func TestTelegramBackendNon2xxErrorOmitsResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"internal":"secret-body"}`))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("non-2xx must report status, got %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-body") {
+		t.Fatalf("non-2xx error must not carry remote body, got %v", err)
 	}
 }

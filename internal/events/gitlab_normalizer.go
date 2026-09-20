@@ -16,10 +16,14 @@ type GitLabNormalizer struct {
 
 type GitLabNormalizerOption func(*GitLabNormalizer)
 
-// WithCodeHostReworkAllowedUserIDs 配置平台级 rework 白名单(平台 user id)。
-// 白名单语义为 codehost 通用,三平台 normalizer 共用同一份配置。
-func WithCodeHostReworkAllowedUserIDs(ids []int) GitLabNormalizerOption {
+// WithGitLabReworkAllowedUserIDs 设置接续开发白名单(平台 user id),
+// 非正数 id 静默忽略——与 Gitea/GitHub 侧同名选项语义一致。动态来源由
+// 处理器按投递现取后经本选项物化(见 WithGitLabReworkLookup)。
+func WithGitLabReworkAllowedUserIDs(ids []int) GitLabNormalizerOption {
 	return func(normalizer *GitLabNormalizer) {
+		if normalizer.reworkAllowedUserIDs == nil {
+			normalizer.reworkAllowedUserIDs = map[int]struct{}{}
+		}
 		for _, id := range ids {
 			if id > 0 {
 				normalizer.reworkAllowedUserIDs[id] = struct{}{}

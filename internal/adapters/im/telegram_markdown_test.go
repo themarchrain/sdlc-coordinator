@@ -90,6 +90,8 @@ func TestTelegramBackendFallsBackToPlainTextWhenEntitiesRejected(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		payloads = append(payloads, payload)
 		if len(payloads) == 1 {
+			// 真实 Bot API 对实体解析错误返回 400 状态码 + JSON body。
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"ok":false,"description":"Bad Request: can't parse entities: unclosed tag at byte 5"}`))
 			return
 		}
@@ -127,13 +129,15 @@ func TestTelegramBackendDoesNotFallbackOnNonParseErrors(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests++
+		// 业务失败走非 2xx 状态码(真实 API 契约),且不属于可降级的实体错误。
+		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"ok":false,"description":"Bad Request: chat not found"}`))
 	}))
 	defer server.Close()
 
 	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
-	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "**x**"}); err == nil || !strings.Contains(err.Error(), "chat not found") {
-		t.Fatalf("chat error must surface directly, got %v", err)
+	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "**x**"}); err == nil || strings.Contains(err.Error(), "chat not found") {
+		t.Fatalf("api error must omit the remote description, got %v", err)
 	}
 	if requests != 1 {
 		t.Fatalf("non-parse error must not trigger fallback, got %d requests", requests)

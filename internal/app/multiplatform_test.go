@@ -15,6 +15,7 @@ import (
 	"sdlc-coordinator/internal/adapters/gitea"
 	"sdlc-coordinator/internal/adapters/gitlab"
 	"sdlc-coordinator/internal/config"
+	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -81,27 +82,28 @@ func TestMultiPlatformCoexistence(t *testing.T) {
 		t.Fatalf("new app without global codehost config: %v", err)
 	}
 
-	repoStore := registeredrepo.NewStore(db)
 	// 同 path、同数字 project id:身份唯一性只在 provider 作用域内成立。
-	seeded := []*registeredrepo.RegisteredRepository{
-		{
-			RepositoryID: "repo_gl", DisplayName: "gitlab 仓", Provider: "gitlab", BaseURL: gitlabBackend.URL,
-			CodeHostProjectID: "15594", PathWithNamespace: "demo-group/lite-list",
-			Token: "token-gl", WebhookSecret: "secret-gl", TokenScopeAttested: true,
-			Status: registeredrepo.StatusEnabled,
-		},
-		{
-			RepositoryID: "repo_gt", DisplayName: "gitea 仓", Provider: "gitea", BaseURL: giteaBackend.URL,
-			CodeHostProjectID: "15594", PathWithNamespace: "demo-group/lite-list",
-			Token: "token-gt", WebhookSecret: "secret-gt", TokenScopeAttested: true,
-			Status: registeredrepo.StatusEnabled,
-		},
+	// 两仓注册进同一租户:准入与事件都路由到该租户引擎。
+	tenant := seedTenantRoutedRepository(t, application, "acme-mp", "gitlab", "repo_gl", "15594", "demo-group/lite-list", gitlabBackend.URL, "secret-gl")
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
 	}
-	for _, repo := range seeded {
-		if err := repoStore.Create(ctx, repo); err != nil {
-			t.Fatalf("seed %s: %v", repo.RepositoryID, err)
-		}
+	if err := registeredrepo.NewStore(tenantStore.DB).Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: "repo_gt", DisplayName: "gitea 仓", Provider: "gitea", BaseURL: giteaBackend.URL,
+		CodeHostProjectID: "15594", PathWithNamespace: "demo-group/lite-list",
+		Token: "token-gt", WebhookSecret: "secret-gt", TokenScopeAttested: true,
+		Status: registeredrepo.StatusEnabled,
+	}); err != nil {
+		t.Fatalf("seed gitea repository: %v", err)
 	}
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: "gitea", BaseURL: giteaBackend.URL, PathWithNamespace: "demo-group/lite-list",
+		TenantID: tenant.ID, RepoFingerprint: "repo_gt",
+	}); err != nil {
+		t.Fatalf("seed gitea route index: %v", err)
+	}
+	repoStore := registeredrepo.NewStore(tenantStore.DB)
 
 	// 1) webhook 验签按 provider 作用域隔离:同 path 仓各匹配各的 secret。
 	gitlabPayload := readAppFixture(t, "../events/testdata/gitlab/merge_request_opened.json")
@@ -134,7 +136,7 @@ func TestMultiPlatformCoexistence(t *testing.T) {
 		RepositoryID *string
 	}
 	var rows []taskRow
-	if err := db.Table("tasks").Select("task_id, repository_id").Find(&rows).Error; err != nil {
+	if err := tenantStore.DB.Table("tasks").Select("task_id, repository_id").Find(&rows).Error; err != nil {
 		t.Fatalf("list tasks: %v", err)
 	}
 	bound := map[string]string{}
@@ -213,9 +215,9 @@ func TestMultiPlatformCoexistence(t *testing.T) {
 	}
 }
 
-// TestLegacyRepositoryRowsAreBackfilledOnStartup 启动时为缺少平台身份的仓行补齐
-// provider/base_url,且不改变 enabled 状态。
-func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
+// TestStartupLeavesLegacyRepositoryRowsUntouched 全局 codehost 配置已随配置
+// 双层化退役:启动不再回填仓行身份,缺身份的存量行原样保留,索引仍照常建立。
+func TestStartupLeavesLegacyRepositoryRowsUntouched(t *testing.T) {
 	db := openAppTestDB(t)
 	repoStore := registeredrepo.NewStore(db)
 	if err := repoStore.Migrate(); err != nil {
@@ -232,9 +234,7 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	}
 
 	application, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "gitlab",
-		CodeHostBaseURL:  "https://gitlab.example.com",
+		HTTPAddr: ":0",
 	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -245,8 +245,8 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload legacy row: %v", err)
 	}
-	if backfilled.Provider != "gitlab" || backfilled.BaseURL != "https://gitlab.example.com" {
-		t.Fatalf("legacy row not backfilled: provider=%q base_url=%q", backfilled.Provider, backfilled.BaseURL)
+	if backfilled.Provider != "" || backfilled.BaseURL != "" {
+		t.Fatalf("startup must not backfill identity anymore: provider=%q base_url=%q", backfilled.Provider, backfilled.BaseURL)
 	}
 	if backfilled.Status != registeredrepo.StatusEnabled {
 		t.Fatalf("backfill must not change status, got %s", backfilled.Status)
@@ -254,9 +254,7 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 
 	// 重启幂等:第二次启动回填零行、索引 IF NOT EXISTS,仓行与状态不变。
 	if _, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "gitlab",
-		CodeHostBaseURL:  "https://gitlab.example.com",
+		HTTPAddr: ":0",
 	}), zap.NewNop(), db); err != nil {
 		t.Fatalf("second startup must be idempotent: %v", err)
 	}
@@ -264,7 +262,7 @@ func TestLegacyRepositoryRowsAreBackfilledOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload after restart: %v", err)
 	}
-	if rerun.Provider != "gitlab" || rerun.BaseURL != "https://gitlab.example.com" || rerun.Status != registeredrepo.StatusEnabled {
+	if rerun.Provider != "" || rerun.BaseURL != "" || rerun.Status != registeredrepo.StatusEnabled {
 		t.Fatalf("restart must not alter repository identity: %+v", rerun)
 	}
 }

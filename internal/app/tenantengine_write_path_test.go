@@ -232,10 +232,10 @@ func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 	}
 }
 
-// engineForPath 三态：索引指认的租户打不开引擎 → 错误（5xx，不回落
-// 平台库）；索引未命中 → 平台处理器（存量过渡期兜底）；正常租户 →
-// 该租户引擎的处理器。
-func TestEngineForPathDistinguishesMissFromUnavailable(t *testing.T) {
+// engineViewForPath 三态：索引指认的租户打不开引擎 → 错误（5xx，不回落
+// 平台库）；索引未命中 → 平台视图（存量过渡期兜底）；正常租户 →
+// 该租户引擎的视图。
+func TestEngineViewForPathDistinguishesMissFromUnavailable(t *testing.T) {
 	ctx := context.Background()
 	db := openAppTestDB(t)
 	cfg := withTestControlPlane(t, config.Config{HTTPAddr: ":0"})
@@ -280,14 +280,14 @@ func TestEngineForPathDistinguishesMissFromUnavailable(t *testing.T) {
 		t.Fatalf("seed ghost index: %v", err)
 	}
 
-	if _, err := application.pool.engineForPath(ctx, "gitea", "ghost/repo", ""); err == nil {
+	if _, err := application.pool.engineViewForPath(ctx, "gitea", "ghost/repo", ""); err == nil {
 		t.Fatal("engine for a routed but unavailable tenant must surface an error")
 	}
-	processor, err := application.pool.engineForPath(ctx, "gitea", "nowhere/repo", "")
-	if err != nil || processor != application.pool.platform.processor {
-		t.Fatalf("unrouted repo must fall back to the platform processor, got proc=%v err=%v", processor, err)
+	// 未路由仓：验签层已按未注册 401 拒收，引擎解析同样不得回落平台视图。
+	if _, err := application.pool.engineViewForPath(ctx, "gitea", "nowhere/repo", ""); err == nil {
+		t.Fatal("unrouted repo must surface an error instead of a platform view")
 	}
-	if processor, err := application.pool.engineForPath(ctx, "gitea", "routed/ok", ""); err != nil || processor == nil {
-		t.Fatalf("routed active tenant must yield its engine processor, got proc=%v err=%v", processor, err)
+	if view, err := application.pool.engineViewForPath(ctx, "gitea", "routed/ok", ""); err != nil || view == nil || view.Processor == nil {
+		t.Fatalf("routed active tenant must yield its engine view, got view=%v err=%v", view, err)
 	}
 }

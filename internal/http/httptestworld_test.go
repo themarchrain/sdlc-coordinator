@@ -17,6 +17,7 @@ import (
 	"sdlc-coordinator/internal/model"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
 	"sdlc-coordinator/internal/orchestrator"
+	"sdlc-coordinator/internal/orgconfig"
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
@@ -66,6 +67,9 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 	requirementStore := requirements.NewStore(db)
 	if err := requirementStore.Migrate(); err != nil {
 		t.Fatalf("migrate requirements: %v", err)
+	}
+	if err := orgconfig.NewStore(db).Migrate(); err != nil {
+		t.Fatalf("migrate org config: %v", err)
 	}
 	controlPlaneRepository := controlplane.NewRepository(db)
 	if err := controlPlaneRepository.Migrate(); err != nil {

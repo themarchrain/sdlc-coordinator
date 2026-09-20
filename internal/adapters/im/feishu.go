@@ -34,7 +34,7 @@ func NewFeishuBackend(settings FeishuSettings) *FeishuBackend {
 		webhookURL: strings.TrimSpace(settings.WebhookURL),
 		secret:     strings.TrimSpace(settings.Secret),
 		mentions:   settings.Mentions,
-		httpClient: http.DefaultClient,
+		httpClient: sendHTTPClient,
 	}
 }
 
@@ -90,18 +90,20 @@ func (backend *FeishuBackend) SendMessage(ctx context.Context, req SendMessageRe
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	raw := strings.TrimSpace(string(data))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("feishu webhook: %s: %s", resp.Status, raw)
+		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
+		return nil, fmt.Errorf("feishu webhook: %s", resp.Status)
 	}
 
 	var parsed struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
+		Code int `json:"code"`
 	}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return nil, fmt.Errorf("decode feishu response: %w", err)
 	}
 	if parsed.Code != 0 {
-		return nil, fmt.Errorf("feishu webhook failed: code %d: %s", parsed.Code, strings.TrimSpace(parsed.Msg))
+		// 业务码失败只报码不抄远端原文:错误消息随效果记录外显,抄录会
+		// 把任意外部响应体带进管理台。
+		return nil, fmt.Errorf("feishu webhook failed: code %d", parsed.Code)
 	}
 	return &Message{RawJSON: raw, Provider: "feishu"}, nil
 }

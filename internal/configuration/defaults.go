@@ -3,8 +3,6 @@ package configuration
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,21 +25,6 @@ func ApplyDefaults(cfg RuntimeConfig) RuntimeConfig {
 	}
 	if strings.TrimSpace(cfg.AgentRunner.TaskTimeout) == "" {
 		cfg.AgentRunner.TaskTimeout = "30m"
-	}
-	if strings.TrimSpace(cfg.CodeHost.Provider) == "" {
-		cfg.CodeHost.Provider = "gitlab"
-	}
-	if cfg.CodeHost.ReworkAllowedUserIDs == nil {
-		cfg.CodeHost.ReworkAllowedUserIDs = []string{}
-	}
-	if cfg.IM.ReviewerMentions == nil {
-		cfg.IM.ReviewerMentions = []string{}
-	}
-	if cfg.IM.Telegram.MentionMap == nil {
-		cfg.IM.Telegram.MentionMap = map[string]string{}
-	}
-	if cfg.IM.Feishu.MentionMap == nil {
-		cfg.IM.Feishu.MentionMap = map[string]string{}
 	}
 
 	schedulerWasEmpty := cfg.Scheduler == (SchedulerConfig{})
@@ -80,7 +63,6 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 		}
 	}
 
-	provider := strings.ToLower(strings.TrimSpace(runtimeConfig.CodeHost.Provider))
 	result := config.Config{
 		AgentRunner: config.AgentRunnerSettings{
 			ServiceURL:      strings.TrimRight(strings.TrimSpace(runtimeConfig.AgentRunner.ServiceURL), "/"),
@@ -93,17 +75,12 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 			Effort:          strings.TrimSpace(runtimeConfig.AgentRunner.Effort),
 			TaskTimeout:     agentRunnerTaskTimeout,
 		},
-		HTTPAddr:                     bootstrap.HTTPAddr,
-		DatabaseDSN:                  bootstrap.DatabaseDSN,
-		CodeHostProvider:             provider,
-		CodeHostBaseURL:              strings.TrimRight(strings.TrimSpace(runtimeConfig.CodeHost.BaseURL), "/"),
-		CodeHostReworkAllowedUserIDs: joinNumericIDs(runtimeConfig.CodeHost.ReworkAllowedUserIDs),
-		IM:                           encodeIMSettings(runtimeConfig.IM),
-		ReviewerIMMentions:           append([]string(nil), runtimeConfig.IM.ReviewerMentions...),
-		LogLevel:                     bootstrap.LogLevel,
-		LogDir:                       bootstrap.LogDir,
-		Environment:                  bootstrap.Environment,
-		ControlPlane:                 bootstrap.ControlPlane,
+		HTTPAddr:     bootstrap.HTTPAddr,
+		DatabaseDSN:  bootstrap.DatabaseDSN,
+		LogLevel:     bootstrap.LogLevel,
+		LogDir:       bootstrap.LogDir,
+		Environment:  bootstrap.Environment,
+		ControlPlane: bootstrap.ControlPlane,
 		Scheduler: config.SchedulerSettings{
 			Enabled:  runtimeConfig.Scheduler.Enabled,
 			Interval: schedulerInterval,
@@ -122,62 +99,9 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 	return result, nil
 }
 
-func joinNumericIDs(values []string) string {
-	unique := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			unique[trimmed] = struct{}{}
-		}
-	}
-	numbers := make([]int, 0, len(unique))
-	for value := range unique {
-		parsed, err := strconv.Atoi(value)
-		if err != nil || parsed <= 0 {
-			continue
-		}
-		numbers = append(numbers, parsed)
-	}
-	sort.Ints(numbers)
-	parts := make([]string, 0, len(numbers))
-	for _, value := range numbers {
-		parts = append(parts, strconv.Itoa(value))
-	}
-	return strings.Join(parts, ",")
-}
-
-func encodeIMSettings(im IMConfig) config.IMSettings {
-	provider := strings.ToLower(strings.TrimSpace(im.Provider))
-	return config.IMSettings{
-		Provider: provider,
-		Telegram: config.IMTelegramSettings{
-			BotToken:      im.Telegram.BotToken,
-			APIBase:       im.Telegram.APIBase,
-			DefaultChatID: im.Telegram.DefaultChatID,
-			MentionMap:    encodeStringMap(im.Telegram.MentionMap),
-		},
-		Feishu: config.IMFeishuSettings{
-			WebhookURL: im.Feishu.WebhookURL,
-			Secret:     im.Feishu.Secret,
-			MentionMap: encodeStringMap(im.Feishu.MentionMap),
-		},
-	}
-}
-
-func encodeStringMap(source map[string]string) string {
-	if len(source) == 0 {
-		return ""
-	}
-	encoded, err := json.Marshal(source)
-	if err != nil {
-		return ""
-	}
-	return string(encoded)
-}
-
-// isValidPlatformUserID 校验平台用户 ID 的字符串形态:非空、纯数字、非零。
+// IsValidPlatformUserID 校验平台用户 ID 的字符串形态:非空、纯数字、非零。
 // 三平台数值域不同,配置面统一以字符串承载。
-func isValidPlatformUserID(value string) bool {
+func IsValidPlatformUserID(value string) bool {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || trimmed == "0" {
 		return false

@@ -33,7 +33,7 @@ func TestValidateRequiresCoreIntegrationFields(t *testing.T) {
 	for _, field := range []string{
 		"agent_runner.model",
 		"agent_runner.api_key",
-		"codehost.base_url",
+		"scheduler.callback_base_url",
 	} {
 		if !errs.Has(field) {
 			t.Fatalf("missing validation error for %s: %#v", field, errs)
@@ -45,7 +45,7 @@ func TestValidateRequiresCoreIntegrationFields(t *testing.T) {
 // 字段已删,编组输出不含该键,配置也不要求该值。
 func TestValidateNoLongerRequiresWebhookSecret(t *testing.T) {
 	cfg := validRuntimeConfig()
-	encoded, err := json.Marshal(cfg.CodeHost)
+	encoded, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,52 +57,29 @@ func TestValidateNoLongerRequiresWebhookSecret(t *testing.T) {
 	}
 }
 
-// TestSnapshotDecodeIgnoresLegacyWebhookSecret 旧快照 JSON 中的 webhook_secret
-// 键在解码时被忽略,不报错也不写入运行配置。
-func TestSnapshotDecodeIgnoresLegacyWebhookSecret(t *testing.T) {
+// TestSnapshotDecodeDropsOrgScopedSections 旧快照 JSON 中的 codehost/im 段
+// (含历史 token/webhook_secret 键)在系统段收窄后解码被整体忽略:不报错、
+// 不进入运行配置、重编码不再出现。
+func TestSnapshotDecodeDropsOrgScopedSections(t *testing.T) {
 	var cfg RuntimeConfig
-	raw := `{"agent_runner":{},"codehost":{"provider":"gitlab","base_url":"https://gitlab.example.com","token":"legacy-global-secret","webhook_secret":"legacy-webhook-secret"},"im":{},"scheduler":{}}`
+	raw := `{"agent_runner":{},"codehost":{"provider":"gitlab","base_url":"https://gitlab.example.com","token":"legacy-global-secret","webhook_secret":"legacy-webhook-secret"},"im":{"provider":"telegram"},"scheduler":{}}`
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatalf("decode legacy snapshot: %v", err)
-	}
-	if cfg.CodeHost.BaseURL != "https://gitlab.example.com" {
-		t.Fatalf("legacy snapshot decode lost fields: %#v", cfg)
 	}
 	encoded, err := json.Marshal(ApplyDefaults(cfg))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "legacy-webhook-secret") || strings.Contains(string(encoded), "webhook_secret") {
-		t.Fatalf("legacy webhook secret channel was re-emitted: %s", encoded)
-	}
-}
-
-// TestSnapshotDecodeIgnoresLegacyCodeHostToken 旧快照 JSON 中的 codehost.token
-// 键在解码时被忽略,不报错也不写入运行配置。
-func TestSnapshotDecodeIgnoresLegacyCodeHostToken(t *testing.T) {
-	var cfg RuntimeConfig
-	raw := `{"agent_runner":{},"codehost":{"provider":"gitlab","base_url":"https://gitlab.example.com","token":"legacy-global-secret"},"im":{},"scheduler":{}}`
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		t.Fatalf("decode legacy snapshot: %v", err)
-	}
-	if cfg.CodeHost.BaseURL != "https://gitlab.example.com" {
-		t.Fatalf("legacy snapshot decode lost fields: %#v", cfg)
-	}
-	encoded, err := json.Marshal(ApplyDefaults(cfg))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), "legacy-global-secret") || strings.Contains(string(encoded), "\"token\"") {
-		t.Fatalf("legacy token channel was re-emitted: %s", encoded)
+	for _, banned := range []string{"legacy-webhook-secret", "webhook_secret", "legacy-global-secret", "codehost", "\"im\""} {
+		if strings.Contains(string(encoded), banned) {
+			t.Fatalf("org-scoped section was re-emitted (%s): %s", banned, encoded)
+		}
 	}
 }
 
 func TestApplyDefaultsUsesExistingSafeRuntimeDefaults(t *testing.T) {
 	got := ApplyDefaults(RuntimeConfig{})
 
-	if got.CodeHost.Provider != "gitlab" {
-		t.Fatalf("unexpected identity defaults: %#v", got)
-	}
 	if got.AgentRunner.ServiceURL != "http://agent-runner:8081" || got.AgentRunner.WorkspaceRoot != "/app/workspaces" || got.AgentRunner.Provider != "codex-cli" || got.AgentRunner.Effort != "high" {
 		t.Fatalf("unexpected agent runner defaults: %#v", got.AgentRunner)
 	}
@@ -139,9 +116,6 @@ func TestCodeHostConfigUnmarshalAcceptsLegacyNumericAllowlist(t *testing.T) {
 
 func TestValidateRejectsMalformedTypedValues(t *testing.T) {
 	cfg := validRuntimeConfig()
-	cfg.CodeHost.Provider = "bitbucket"
-	cfg.CodeHost.ReworkAllowedUserIDs = []string{"0"}
-	cfg.IM.ReviewerMentions = []string{"  "}
 	cfg.Scheduler.Interval = "2s"
 	cfg.Scheduler.DispatchLimit = -1
 	cfg.AgentRunner.ServiceURL = "not-a-url"
@@ -151,9 +125,6 @@ func TestValidateRejectsMalformedTypedValues(t *testing.T) {
 
 	errs := Validate(cfg)
 	for _, field := range []string{
-		"codehost.provider",
-		"codehost.rework_allowed_user_ids",
-		"im.reviewer_mentions",
 		"scheduler.interval",
 		"scheduler.dispatch_limit",
 		"agent_runner.service_url",
@@ -200,9 +171,6 @@ func TestToEffectiveConfigPreservesBootstrapAndConvertsRuntime(t *testing.T) {
 	if got.HTTPAddr != ":9090" || got.DatabaseDSN != "file:test.db" || got.LogLevel != "debug" {
 		t.Fatalf("bootstrap settings changed: %#v", got)
 	}
-	if got.CodeHostBaseURL != runtimeConfig.CodeHost.BaseURL {
-		t.Fatalf("runtime settings not converted: %#v", got)
-	}
 	if got.AgentRunner.ServiceURL != runtimeConfig.AgentRunner.ServiceURL || got.AgentRunner.APIKey != runtimeConfig.AgentRunner.APIKey || got.AgentRunner.CustomHeaders["X-Tenant"] != "example-tenant" {
 		t.Fatalf("agent runner settings not converted: %#v", got.AgentRunner)
 	}
@@ -212,17 +180,8 @@ func TestToEffectiveConfigPreservesBootstrapAndConvertsRuntime(t *testing.T) {
 	if got.AgentRunner.ProviderBaseURL != "https://gateway.example" {
 		t.Fatalf("provider gateway url was not converted: %#v", got.AgentRunner)
 	}
-	if got.IM.Provider != runtimeConfig.IM.Provider || got.IM.Telegram.BotToken != runtimeConfig.IM.Telegram.BotToken {
-		t.Fatalf("im settings not converted: %#v", got.IM)
-	}
 	if got.Scheduler.Interval != 45*time.Second {
 		t.Fatalf("scheduler duration not converted: %s", got.Scheduler.Interval)
-	}
-	if got.CodeHostReworkAllowedUserIDs != "7,9" {
-		t.Fatalf("rework allowlist not converted: %s", got.CodeHostReworkAllowedUserIDs)
-	}
-	if !reflect.DeepEqual(got.ReviewerIMMentions, []string{"reviewer@example.com"}) {
-		t.Fatalf("unexpected reviewer mentions: %#v", got.ReviewerIMMentions)
 	}
 }
 
@@ -232,19 +191,6 @@ func validRuntimeConfig() RuntimeConfig {
 			ServiceURL: "http://agent-runner:8081", WorkspaceRoot: "/app/workspaces", Provider: "codex-cli",
 			ProviderBaseURL: "https://gateway.example", APIKey: "runner-api-key",
 			CustomHeadersJSON: `{"X-Tenant":"example-tenant"}`, Model: "deepseek-v4-flash-0731", Effort: "high", TaskTimeout: "45m",
-		},
-		CodeHost: CodeHostConfig{
-			Provider:             "gitlab",
-			BaseURL:              "https://gitlab.example.com",
-			ReworkAllowedUserIDs: []string{"7", "9"},
-		},
-		IM: IMConfig{
-			Provider: "telegram",
-			Telegram: IMTelegramConfig{
-				BotToken:      "bot-token",
-				DefaultChatID: "-1001",
-			},
-			ReviewerMentions: []string{"reviewer@example.com"},
 		},
 		Scheduler: SchedulerConfig{
 			Enabled:             true,
@@ -303,21 +249,6 @@ func TestRuntimeConfigDropsLegacyTranslatorFields(t *testing.T) {
 	}
 	if strings.Contains(string(roundtrip), "translator_url") || strings.Contains(string(roundtrip), "normalize_to_chat") {
 		t.Fatalf("legacy translator fields were re-emitted: %s", roundtrip)
-	}
-}
-
-func TestValidateAcceptsGitHubProvider(t *testing.T) {
-	cfg := validRuntimeConfig()
-	cfg.CodeHost.Provider = "github"
-	errs := Validate(cfg)
-	if _, ok := errs["codehost.provider"]; ok {
-		t.Fatalf("expected github provider to validate, got %#v", errs)
-	}
-
-	cfg.CodeHost.Provider = "sourcehut"
-	errs = Validate(cfg)
-	if errs["codehost.provider"] == "" {
-		t.Fatal("expected unknown provider to be rejected")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,10 @@ import (
 
 // TelegramSettings 驱动 Telegram Bot API 实现;Mentions 为显示名 -> 数字用户 ID。
 type TelegramSettings struct {
-	BotToken      string
+	BotToken string
+	// TODO: api_base/webhook_url 暂不限制目标网段(内网可用,自托管 bot-api
+	// server 依赖此行为);未来若要拒绝私网目标以收敛出站探测面,须同时为
+	// 自托管场景提供显式放行配置。
 	APIBase       string // 空值用 https://api.telegram.org,自托管 bot-api server 可覆盖
 	DefaultChatID string
 	Mentions      map[string]string
@@ -36,7 +40,7 @@ func NewTelegramBackend(settings TelegramSettings) *TelegramBackend {
 		apiBase:       apiBase,
 		defaultChatID: strings.TrimSpace(settings.DefaultChatID),
 		mentions:      settings.Mentions,
-		httpClient:    http.DefaultClient,
+		httpClient:    sendHTTPClient,
 	}
 }
 
@@ -92,8 +96,12 @@ func (backend *TelegramBackend) mentionLines(mentionNames []string, html bool) s
 	return out.String()
 }
 
+// errTelegramEntityParse 标记「Telegram 判定消息实体非法」这一业务错误
+// 类别:渲染降级的机器判据(errors.Is),哨兵文本固定,不携带远端原文。
+var errTelegramEntityParse = errors.New("message entities rejected")
+
 func isTelegramEntityParseError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "can't parse entities")
+	return errors.Is(err, errTelegramEntityParse)
 }
 
 func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map[string]any) (*Message, error) {
@@ -116,22 +124,34 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	raw := strings.TrimSpace(string(data))
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("telegram sendMessage: %s: %s", resp.Status, raw)
-	}
-
+	// 错误分类先于状态码分支:真实 Bot API 对业务失败(含实体解析错误)
+	// 返回 4xx 状态码 + JSON body,降级判据必须在两个分支都可达。
 	var parsed struct {
 		OK          bool   `json:"ok"`
-		Description string `json:"description"`
+		Description string `json:"description"` // 仅内部错误分类,不进错误文本
 		Result      struct {
 			MessageID int64 `json:"message_id"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("decode telegram response: %w", err)
+	decodeErr := json.Unmarshal([]byte(raw), &parsed)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
+		if decodeErr == nil && parsed.Description != "" && strings.Contains(parsed.Description, "can't parse entities") {
+			return nil, fmt.Errorf("telegram sendMessage: remote rejected: %w", errTelegramEntityParse)
+		}
+		return nil, fmt.Errorf("telegram sendMessage: %s", resp.Status)
+	}
+	if decodeErr != nil {
+		return nil, fmt.Errorf("decode telegram response: %w", decodeErr)
 	}
 	if !parsed.OK {
-		return nil, fmt.Errorf("telegram sendMessage failed: %s", strings.TrimSpace(parsed.Description))
+		// 业务码失败不抄远端原文:错误消息随效果记录外显,抄录会把任意
+		// 外部响应体带进管理台。渲染降级依赖的「实体非法」类别经哨兵
+		// 结构化传递,判据本身不进错误文本。
+		if parsed.Description != "" && strings.Contains(parsed.Description, "can't parse entities") {
+			return nil, fmt.Errorf("telegram sendMessage failed: remote rejected: %w", errTelegramEntityParse)
+		}
+		return nil, fmt.Errorf("telegram sendMessage failed: remote rejected")
 	}
 	return &Message{
 		ID:       fmt.Sprintf("%d", parsed.Result.MessageID),

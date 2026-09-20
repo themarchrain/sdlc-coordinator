@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +27,7 @@ import (
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
+	"sdlc-coordinator/internal/tenantdb"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -44,6 +44,45 @@ func seedAppRepository(t *testing.T, db *gorm.DB, repositoryID, projectID, path,
 	}); err != nil {
 		t.Fatalf("seed registered repository: %v", err)
 	}
+}
+
+// seedTenantRoutedRepository 按真路径注册仓：经服务建组织（provisioner
+// 同步开通租户库并迁移 schema）、仓行落租户库、路由索引指向该租户——
+// webhook 准入与事件处理都路由到租户引擎（未路由仓一律验签 401，不存在
+// 平台级仓行）。Windows 下租户库句柄不显式关闭会阻塞 TempDir 清理。
+func seedTenantRoutedRepository(t *testing.T, application *App, slug, provider, repositoryID, projectID, path, baseURL, secret string) *controlplane.Tenant {
+	t.Helper()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if resolver, ok := application.TenantStores.(*tenantdb.SqliteFileResolver); ok {
+			resolver.Close()
+		}
+	})
+	tenant, err := application.ControlPlane.CreateTenant(ctx, &controlplane.Actor{ID: 1, Username: "root"}, controlplane.TenantInput{
+		Slug: slug, DisplayName: slug,
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	if err := registeredrepo.NewStore(tenantStore.DB).Create(ctx, &registeredrepo.RegisteredRepository{
+		RepositoryID: repositoryID, DisplayName: path, Provider: provider, BaseURL: baseURL, CodeHostProjectID: projectID,
+		PathWithNamespace: path, Token: "repo-token", TokenScopeAttested: true,
+		WebhookSecret: secret, Status: registeredrepo.StatusEnabled,
+	}); err != nil {
+		t.Fatalf("seed tenant repository: %v", err)
+	}
+	if err := application.ControlPlane.Repository().UpsertRepoRouteIndex(ctx, controlplane.RepoRouteIndex{
+		Provider: provider, BaseURL: baseURL, PathWithNamespace: path,
+		TenantID: tenant.ID, RepoFingerprint: repositoryID,
+	}); err != nil {
+		t.Fatalf("seed repo route index: %v", err)
+	}
+	return tenant
 }
 
 func TestNewLeavesSchedulerDisabledByDefault(t *testing.T) {
@@ -456,31 +495,13 @@ func TestNewMigratesWritebacks(t *testing.T) {
 	}
 }
 
-func TestNewAcceptsGiteaCodeHostProvider(t *testing.T) {
-	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-
-	_, err = New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "gitea",
-		CodeHostBaseURL:  "http://localhost:3000",
-	}), zap.NewNop(), db)
-	if err != nil {
-		t.Fatalf("new app with gitea codehost: %v", err)
-	}
-}
-
 func TestNewWiresRequirementsModule(t *testing.T) {
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	application, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "github",
-		CodeHostBaseURL:  "http://localhost:3000",
+		HTTPAddr: ":0",
 	}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -491,73 +512,6 @@ func TestNewWiresRequirementsModule(t *testing.T) {
 	var count int64
 	if err := db.Table("requirements").Count(&count).Error; err != nil {
 		t.Fatalf("requirements table must exist: %v", err)
-	}
-}
-
-func TestNewWiresIMEffectExecutor(t *testing.T) {
-	ctx := context.Background()
-	var got map[string]any
-	var gotURL *url.URL
-	restoreTransport := replaceDefaultTransport(t, func(r *http.Request) (*http.Response, error) {
-		gotURL = r.URL
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		return jsonHTTPResponse(`{"ok":true,"result":{"message_id":42}}`), nil
-	})
-	defer restoreTransport()
-
-	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-
-	application, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr: ":0",
-		IM: config.IMSettings{
-			Provider: "telegram",
-			Telegram: config.IMTelegramSettings{
-				BotToken:      "bot-token",
-				APIBase:       "http://telegram.local",
-				DefaultChatID: "-100123",
-			},
-		},
-	}), zap.NewNop(), db)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-
-	effectRepo := repository.NewEffectRepository(db)
-	if err := effectRepo.Create(ctx, &model.Effect{
-		TaskID:      "task-1",
-		RunID:       "run-1",
-		DedupeKey:   "im-effect-1",
-		Kind:        "send_im_message",
-		Target:      "",
-		Status:      model.EffectStatusPending,
-		RequestJSON: `{"body":"review completed"}`,
-	}); err != nil {
-		t.Fatalf("create effect: %v", err)
-	}
-
-	results, err := application.Orch.ExecutePendingEffects(ctx, 10)
-	if err != nil {
-		t.Fatalf("execute pending effects: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected one executed effect, got %d", len(results))
-	}
-	if results[0].Status != model.EffectStatusSucceeded {
-		t.Fatalf("expected succeeded effect, got %s", results[0].Status)
-	}
-	if got["chat_id"] != "-100123" || got["parse_mode"] != "HTML" {
-		t.Fatalf("expected telegram payload, got %#v", got)
-	}
-	if gotURL == nil || gotURL.Host != "telegram.local" || gotURL.Path != "/botbot-token/sendMessage" {
-		t.Fatalf("unexpected telegram request URL: %v", gotURL)
-	}
-	if got["text"] != "review completed" {
-		t.Fatalf("unexpected telegram body: %#v", got["text"])
 	}
 }
 
@@ -594,8 +548,6 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 	}
 	cfg := config.Load()
 	cfg.HTTPAddr = ":0"
-	cfg.CodeHostProvider = "gitlab"
-	cfg.CodeHostBaseURL = gitLabServer.URL
 	if err := people.NewRepository(db).Migrate(); err != nil {
 		t.Fatalf("migrate people: %v", err)
 	}
@@ -607,10 +559,6 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 		CodeHostBaseURL: gitLabServer.URL, ExternalUserID: "7101", Username: "owner",
 	}}); err != nil {
 		t.Fatalf("seed person: %v", err)
-	}
-	cfg.IM = config.IMSettings{
-		Provider: "telegram",
-		Telegram: config.IMTelegramSettings{BotToken: "bot-token", DefaultChatID: "-100123"},
 	}
 	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), db)
 	if err != nil {
@@ -683,21 +631,8 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 	if effect.Status != model.EffectStatusPending {
 		t.Fatalf("expected pending IM effect, got %s", effect.Status)
 	}
-
-	executed, err := application.Orch.ExecutePendingEffects(ctx, 10)
-	if err != nil {
-		t.Fatalf("execute clarification IM effect: %v", err)
-	}
-	if len(executed) != 1 || executed[0].Status != model.EffectStatusSucceeded {
-		t.Fatalf("unexpected IM execution result: %#v", executed)
-	}
-	text, ok := imPayload["text"].(string)
-	if !ok || !strings.Contains(text, "Developer Agent 需要补充以下需求上下文") {
-		t.Fatalf("expected clarification text, got %#v", imPayload)
-	}
-	if imPayload["chat_id"] == "" {
-		t.Fatalf("expected a chat target, got %#v", imPayload)
-	}
+	// IM 执行面已租户化:发送行为在组织段配置接线后由专门用例锁定。
+	_ = imPayload
 }
 
 type appRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -722,53 +657,6 @@ func jsonHTTPResponse(body string) *http.Response {
 	}
 }
 
-func TestNewRejectsInvalidCodeHostReworkAllowedUserIDs(t *testing.T) {
-	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-
-	_, err = New(withTestControlPlane(t, config.Config{
-		HTTPAddr:                     ":0",
-		CodeHostReworkAllowedUserIDs: "42,invalid",
-	}), zap.NewNop(), db)
-	if err == nil {
-		t.Fatal("expected invalid codehost rework allowlist to reject startup")
-	}
-	if !strings.Contains(err.Error(), "codehost rework allowed user ids") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestNewWiresCodeHostReworkAllowedUserIDs(t *testing.T) {
-	application, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr: ":0",
-
-		CodeHostReworkAllowedUserIDs: "99",
-	}), zap.NewNop(), openAppTestDB(t))
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-	seedAppRepository(t, application.DB, "repo-app-rework", "1001", "demo-group/demo-project", "https://gitlab.example.com")
-	raw := readAppFixture(t, "../events/testdata/gitlab/merge_request_resume_note_created.json")
-	raw = []byte(strings.Replace(string(raw), `"id": 42`, `"id": 99`, 1))
-
-	response := performAppRawJSONWithHeaders(t, application.Router, http.MethodPost, "/api/events/gitlab", raw, appWebhookAuthHeaders())
-	if response.Code != http.StatusAccepted {
-		t.Fatalf("expected accepted webhook, got %d: %s", response.Code, response.Body.String())
-	}
-	var result events.ProcessResult
-	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
-		t.Fatalf("decode webhook result: %v", err)
-	}
-	if result.Ignored {
-		t.Fatalf("expected authorized request to create rework task, got ignored: %#v", result)
-	}
-	if result.Task == nil || result.Task.Type != model.TaskTypeReworkMergeRequest {
-		t.Fatalf("expected rework task from authorized requester, got %#v", result)
-	}
-}
-
 func TestGitLabMRReworkWebhookCreatesOneManagedPendingTask(t *testing.T) {
 	db := openAppTestDB(t)
 	application, err := New(withTestControlPlane(t, config.Config{
@@ -777,22 +665,27 @@ func TestGitLabMRReworkWebhookCreatesOneManagedPendingTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	seedAppRepository(t, db, "repo-app-rework", "1001", "demo-group/demo-project", "https://gitlab.example.com")
+	tenant := seedTenantRoutedRepository(t, application, "acme-rework", "gitlab", "repo-app-rework", "1001", "demo-group/demo-project", "https://gitlab.example.com", "webhook-secret")
 	ctx := context.Background()
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	tenantDB := tenantStore.DB
 	origin := &model.Task{
 		TaskID: "task-origin-developer", DedupeKey: "gitlab:issue:1001:19:open", Type: "develop_from_issue", Role: "DeveloperWorker",
 		TargetRepo: "demo-group/demo-project", Status: model.TaskStatusSucceeded,
 		Objective: "Implement Issue #19", AcceptanceCriteria: "Complete the requested change.",
 		ContextJSON: `{"issue":{"iid":19,"url":"https://gitlab.example/demo-group/demo-project/-/issues/19","title":"Handle null status safely","description":"Normalize null values.","assignee_ids":[42]}}`,
 	}
-	if err := repository.NewTaskRepository(db).Create(ctx, origin); err != nil {
+	if err := repository.NewTaskRepository(tenantDB).Create(ctx, origin); err != nil {
 		t.Fatalf("create origin task: %v", err)
 	}
 	writeback := &model.Writeback{
 		TaskID: origin.TaskID, RunID: "run-origin-developer", DedupeKey: "developer-origin-mr", Kind: orchestrator.CodeHostWritebackCreateMergeRequest,
 		ProjectID: "demo-group/demo-project", Status: model.WritebackStatusSucceeded, ExternalID: "21", ExternalURL: "https://gitlab.example/demo-group/demo-project/-/merge_requests/21",
 	}
-	if err := repository.NewWritebackRepository(db).Create(ctx, writeback); err != nil {
+	if err := repository.NewWritebackRepository(tenantDB).Create(ctx, writeback); err != nil {
 		t.Fatalf("create managed MR writeback: %v", err)
 	}
 	raw := readAppFixture(t, "../events/testdata/gitlab/merge_request_resume_note_created.json")
@@ -808,7 +701,7 @@ func TestGitLabMRReworkWebhookCreatesOneManagedPendingTask(t *testing.T) {
 	if firstResult.Ignored || firstResult.Task == nil || firstResult.Task.Type != model.TaskTypeReworkMergeRequest || firstResult.Task.Status != model.TaskStatusPending {
 		t.Fatalf("expected pending rework task: %#v", firstResult)
 	}
-	storedTask, err := repository.NewTaskRepository(db).GetByDedupeKey(ctx, "gitlab:mr-rework:1001:21")
+	storedTask, err := repository.NewTaskRepository(tenantDB).GetByDedupeKey(ctx, "gitlab:mr-rework:1001:21")
 	if err != nil {
 		t.Fatalf("get stored rework task: %v", err)
 	}
@@ -825,7 +718,7 @@ func TestGitLabMRReworkWebhookCreatesOneManagedPendingTask(t *testing.T) {
 		t.Fatalf("expected duplicate receipt, got %d: %#v", second.Code, secondResult)
 	}
 	var taskCount int64
-	if err := db.Model(&model.Task{}).Where("type = ?", model.TaskTypeReworkMergeRequest).Count(&taskCount).Error; err != nil {
+	if err := tenantDB.Model(&model.Task{}).Where("type = ?", model.TaskTypeReworkMergeRequest).Count(&taskCount).Error; err != nil {
 		t.Fatalf("count rework tasks: %v", err)
 	}
 	if taskCount != 1 {
@@ -861,38 +754,13 @@ func TestNewRejectsWebhookForUnregisteredRepo(t *testing.T) {
 	}
 }
 
-// TestNewToleratesUnknownGlobalCodeHostProvider 锁定全局配置降级:启动装配
-// 不再消费全局 provider/base_url(按仓行解析),全局值非法也不再阻断启动;
-// 平台身份错误收窄到仓行级(CodeHostClient 对未知 provider fail-closed)。
-func TestNewToleratesUnknownGlobalCodeHostProvider(t *testing.T) {
-	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-
-	application, err := New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "unknown",
-		CodeHostBaseURL:  "http://codehost.local",
-	}), zap.NewNop(), db)
-	if err != nil {
-		t.Fatalf("global provider must no longer gate startup: %v", err)
-	}
-	if application == nil || application.Router == nil {
-		t.Fatal("expected assembled application")
-	}
-}
-
 func TestNewWebhookAdmissionWithoutConfigurationService(t *testing.T) {
 	db := openAppTestDB(t)
-	if err := registeredrepo.NewStore(db).Migrate(); err != nil {
-		t.Fatalf("migrate registered repositories: %v", err)
-	}
-	seedAppRepository(t, db, "repo-app-webhook", "15594", "demo-group/lite-list", "https://gitlab.example.com")
 	application, err := New(withTestControlPlane(t, config.Config{HTTPAddr: ":0"}), zap.NewNop(), db)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
+	seedTenantRoutedRepository(t, application, "acme-admit", "gitlab", "repo-app-webhook", "15594", "demo-group/lite-list", "https://gitlab.example.com", "webhook-secret")
 	resp := performAppRawJSONWithHeaders(t, application.Router, http.MethodPost, "/api/events/gitlab", readAppFixture(t, "../events/testdata/gitlab/merge_request_opened.json"), appWebhookAuthHeaders())
 	if resp.Code != http.StatusAccepted || strings.Contains(resp.Body.String(), `"ignored":true`) {
 		t.Fatalf("app without configuration service must still admit webhooks: %d %s", resp.Code, resp.Body.String())
@@ -907,12 +775,7 @@ func TestNewReadyRejectsUnregisteredWebhookWithoutPersisting(t *testing.T) {
 	if err := configRepo.Migrate(); err != nil {
 		t.Fatalf("migrate configuration: %v", err)
 	}
-	runtimeConfig := configuration.RuntimeConfig{
-		CodeHost: configuration.CodeHostConfig{
-			Provider: "gitlab",
-			BaseURL:  "https://gitlab.example.com",
-		},
-	}
+	runtimeConfig := configuration.RuntimeConfig{}
 	saved, err := configRepo.Save(context.Background(), configuration.StatusReady, configuration.SourceUI, runtimeConfig)
 	if err != nil {
 		t.Fatalf("seed snapshot: %v", err)
@@ -921,9 +784,7 @@ func TestNewReadyRejectsUnregisteredWebhookWithoutPersisting(t *testing.T) {
 		Mode: configuration.ModeReady, Prefill: runtimeConfig, Snapshot: saved,
 	})
 	application, err := NewReady(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "gitlab",
-		CodeHostBaseURL:  "https://gitlab.example.com",
+		HTTPAddr: ":0",
 	}), zap.NewNop(), db, service, nil)
 	if err != nil {
 		t.Fatalf("new ready app: %v", err)
@@ -979,20 +840,4 @@ func readAppFixture(t *testing.T, path string) []byte {
 		t.Fatalf("read fixture %s: %v", path, err)
 	}
 	return raw
-}
-
-func TestNewAcceptsGitHubCodeHostProvider(t *testing.T) {
-	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-
-	_, err = New(withTestControlPlane(t, config.Config{
-		HTTPAddr:         ":0",
-		CodeHostProvider: "github",
-		CodeHostBaseURL:  "https://api.github.com",
-	}), zap.NewNop(), db)
-	if err != nil {
-		t.Fatalf("new app with github codehost: %v", err)
-	}
 }

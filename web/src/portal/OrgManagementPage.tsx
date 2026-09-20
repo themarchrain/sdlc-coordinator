@@ -1,7 +1,10 @@
-import { Button, Card, Descriptions, Form, InputNumber, Modal, Popconfirm, Result, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Descriptions, Form, InputNumber, Modal, Popconfirm, Result, Space, Table, Tag, Typography, message } from 'antd'
+import { SettingOutlined } from '@ant-design/icons'
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { portalApi, type PortalInviteCodeRecord, type PortalMember, type PortalTenant } from '../api/portal'
+import { PageHeading } from '../components/PageHeading'
 
 interface Profile {
   tenant: PortalTenant
@@ -14,9 +17,11 @@ function formatDateTime(value: string | null | undefined): string {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
-// OrgManagementPage 是组织内「组织管理」最小页：成员列表与邀请码
-// 管理，仅组织管理员（tenant_admin）可用；支持访问中的超管同样可见。
+// OrgManagementPage 是组织内「组织管理」工作台：组织信息、成员列表、
+// 邀请码管理与组织配置入口，仅组织管理员（tenant_admin）可用；支持访问
+// 中的超管同样可见。
 export function OrgManagementPage() {
+  const navigate = useNavigate()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [members, setMembers] = useState<PortalMember[]>([])
   const [inviteCodes, setInviteCodes] = useState<PortalInviteCodeRecord[]>([])
@@ -111,9 +116,14 @@ export function OrgManagementPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <Card>
-        <Descriptions title={profile.tenant.display_name} size="small" column={3}>
+    <div className="org-page">
+      <PageHeading
+        eyebrow="组织管理"
+        title={profile.tenant.display_name}
+        action={<Button type="primary" icon={<SettingOutlined />} onClick={() => navigate('/org/settings')}>组织配置</Button>}
+      />
+      <section className="surface-panel">
+        <Descriptions title="组织信息" size="small" column={3}>
           <Descriptions.Item label="组织标识">{profile.tenant.slug}</Descriptions.Item>
           <Descriptions.Item label="状态">
             <Tag color={profile.tenant.status === 'active' ? 'green' : 'red'}>
@@ -124,9 +134,10 @@ export function OrgManagementPage() {
             {profile.support ? '支持访问（超管）' : '组织管理员'}
           </Descriptions.Item>
         </Descriptions>
-      </Card>
+      </section>
 
-      <Card title="成员列表" data-testid="members-card">
+      <section className="surface-panel" data-testid="members-card">
+        <h3>成员列表</h3>
         <Table<PortalMember>
           rowKey="user_id"
           size="small"
@@ -163,14 +174,13 @@ export function OrgManagementPage() {
             },
           ]}
         />
-      </Card>
+      </section>
 
-      <Card
-        title="邀请码管理"
-        extra={
+      <section className="surface-panel">
+        <div className="configuration-inline-title">
+          <h3>邀请码管理</h3>
           <Button type="primary" loading={issuing} onClick={() => void issue()}>生成邀请码</Button>
-        }
-      >
+        </div>
         <Table<PortalInviteCodeRecord>
           rowKey="id"
           size="small"
@@ -209,7 +219,7 @@ export function OrgManagementPage() {
         />
         <Form
           layout="inline"
-          className="mt-3"
+          className="org-invite-form"
           onFinish={(values: { expiresInHours?: number; maxUses?: number }) => void issue(values)}
         >
           <Form.Item name="expiresInHours" label="有效期（小时）" initialValue={72}>
@@ -220,7 +230,7 @@ export function OrgManagementPage() {
           </Form.Item>
           <Button htmlType="submit" loading={issuing}>按参数生成</Button>
         </Form>
-      </Card>
+      </section>
 
       <Modal
         open={issuedCode !== null}

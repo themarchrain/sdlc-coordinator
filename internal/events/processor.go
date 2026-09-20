@@ -60,11 +60,15 @@ type MergeRequestReworkHandler interface {
 }
 
 type Processor struct {
-	events           InboundEventStore
-	taskCreator      TaskCreator
-	gitlabNormalizer GitLabNormalizer
-	taskFactory      TaskFactory
-	repos            RepositoryLookup
+	events                  InboundEventStore
+	taskCreator             TaskCreator
+	gitlabNormalizerOptions []GitLabNormalizerOption
+	// gitlabReworkLookup 在每次 GitLab webhook 投递时以请求 ctx 现取接续
+	// 开发白名单(组织段配置保存后的下一个事件即用新值,热生效),物化为
+	// 本次投递的 normalizer 选项。
+	gitlabReworkLookup func(context.Context) []int
+	taskFactory        TaskFactory
+	repos              RepositoryLookup
 }
 
 type RepositoryLookup interface {
@@ -101,13 +105,25 @@ func WithGitLabWebhookMetadata(metadata GitLabWebhookMetadata) GitLabWebhookOpti
 	}
 }
 
+// NewProcessor 的 normalizer 选项在每次 GitLab webhook 处理时重新物化:
+// 选项里挂接续开发白名单查找函数时,组织段配置保存后的下一个事件即用新值。
 func NewProcessor(events InboundEventStore, taskCreator TaskCreator, normalizerOptions ...GitLabNormalizerOption) *Processor {
 	return &Processor{
-		events:           events,
-		taskCreator:      taskCreator,
-		gitlabNormalizer: NewGitLabNormalizer(normalizerOptions...),
-		taskFactory:      NewTaskFactory(),
+		events:                  events,
+		taskCreator:             taskCreator,
+		gitlabNormalizerOptions: normalizerOptions,
+		taskFactory:             NewTaskFactory(),
 	}
+}
+
+// SetGitLabReworkLookup 注册接续开发白名单的动态来源:每次 GitLab webhook
+// 投递时以请求 ctx 调用一次,结果物化进本次投递的 normalizer。读取跟随
+// 请求取消链,不脱离 webhook 的超时控制。
+func (p *Processor) SetGitLabReworkLookup(lookup func(context.Context) []int) {
+	if p == nil {
+		return
+	}
+	p.gitlabReworkLookup = lookup
 }
 
 func (p *Processor) SetRepositoryLookup(lookup RepositoryLookup) {
@@ -124,7 +140,12 @@ func (p *Processor) ProcessGitLabWebhook(ctx context.Context, raw []byte, opts .
 			opt(&options)
 		}
 	}
-	return p.ProcessWebhook(ctx, p.gitlabNormalizer, raw, WebhookMetadata{
+	normalizerOptions := p.gitlabNormalizerOptions
+	if p.gitlabReworkLookup != nil {
+		normalizerOptions = append(append([]GitLabNormalizerOption{}, normalizerOptions...),
+			WithGitLabReworkAllowedUserIDs(p.gitlabReworkLookup(ctx)))
+	}
+	return p.ProcessWebhook(ctx, NewGitLabNormalizer(normalizerOptions...), raw, WebhookMetadata{
 		EventType:   options.metadata.EventName,
 		DeliveryID:  options.metadata.EventUUID,
 		InstanceURL: options.metadata.InstanceURL,

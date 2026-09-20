@@ -3,7 +3,6 @@ package configuration
 import (
 	"encoding/json"
 	"fmt"
-	"net/mail"
 	"net/url"
 	"sort"
 	"strconv"
@@ -36,8 +35,6 @@ const (
 
 type RuntimeConfig struct {
 	AgentRunner AgentRunnerConfig `json:"agent_runner"`
-	CodeHost    CodeHostConfig    `json:"codehost"`
-	IM          IMConfig          `json:"im"`
 	Scheduler   SchedulerConfig   `json:"scheduler"`
 }
 
@@ -187,38 +184,6 @@ func Validate(cfg RuntimeConfig) ValidationErrors {
 		}
 	}
 
-	provider := strings.ToLower(strings.TrimSpace(cfg.CodeHost.Provider))
-	if provider != "gitlab" && provider != "gitea" && provider != "github" {
-		errs["codehost.provider"] = "仅支持 gitlab、gitea 或 github"
-	}
-	requireAbsoluteHTTPURL(errs, "codehost.base_url", cfg.CodeHost.BaseURL, true)
-	for _, id := range cfg.CodeHost.ReworkAllowedUserIDs {
-		if !isValidPlatformUserID(id) {
-			errs["codehost.rework_allowed_user_ids"] = "用户 ID 必须为正整数字符串"
-			break
-		}
-	}
-
-	switch strings.ToLower(strings.TrimSpace(cfg.IM.Provider)) {
-	case "", "none", "telegram", "feishu":
-	default:
-		errs["im.provider"] = "IM 通知渠道仅支持 telegram 或 feishu"
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.IM.Provider), "telegram") && strings.TrimSpace(cfg.IM.Telegram.BotToken) == "" {
-		errs["im.telegram.bot_token"] = "启用 Telegram 通知时必须填写 Bot Token"
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.IM.Provider), "feishu") && strings.TrimSpace(cfg.IM.Feishu.WebhookURL) == "" {
-		errs["im.feishu.webhook_url"] = "启用飞书通知时必须填写群机器人 Webhook 地址"
-	}
-	// reviewer_mentions 的内容为 IM 提及键(人员显示名),不再是邮箱;
-	// 键域与人员目录解析链产出对齐,只校验非空。
-	for _, mention := range cfg.IM.ReviewerMentions {
-		if strings.TrimSpace(mention) == "" {
-			errs["im.reviewer_mentions"] = "提醒人不能为空"
-			break
-		}
-	}
-
 	requireAbsoluteHTTPURL(errs, "scheduler.callback_base_url", cfg.Scheduler.CallbackBaseURL, true)
 	requireTrimmed(errs, "scheduler.workspace_root", cfg.Scheduler.WorkspaceRoot)
 	validateDuration(errs, "scheduler.interval", cfg.Scheduler.Interval, 5*time.Second)
@@ -263,10 +228,4 @@ func validateNonNegative(errs ValidationErrors, field string, value int) {
 	if value < 0 {
 		errs[field] = "不能小于 0"
 	}
-}
-
-func validEmail(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	parsed, err := mail.ParseAddress(raw)
-	return err == nil && parsed.Address == raw && strings.Contains(raw, "@")
 }

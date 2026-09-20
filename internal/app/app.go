@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,18 +10,17 @@ import (
 	"time"
 
 	"sdlc-coordinator/internal/adapters/agentrunner"
-	"sdlc-coordinator/internal/adapters/im"
 	"sdlc-coordinator/internal/admin"
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
 	"sdlc-coordinator/internal/controlplane"
-	effectexec "sdlc-coordinator/internal/effects"
 	api "sdlc-coordinator/internal/http"
 	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
 	"sdlc-coordinator/internal/orchestrator"
+	"sdlc-coordinator/internal/orgconfig"
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
@@ -65,10 +63,6 @@ func New(cfg config.Config, logger *zap.Logger, db *gorm.DB) (*App, error) {
 }
 
 func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationService *configuration.Service, shutdown configuration.ShutdownRequester) (*App, error) {
-	reworkAllowedUserIDs, err := config.ParseCodeHostReworkAllowedUserIDs(cfg.CodeHostReworkAllowedUserIDs)
-	if err != nil {
-		return nil, fmt.Errorf("parse codehost rework allowed user ids: %w", err)
-	}
 	if err := migrateBusinessStore(db); err != nil {
 		return nil, fmt.Errorf("migrate platform database: %w", err)
 	}
@@ -90,30 +84,12 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		}
 	}()
 
-	// 平台库仓行的身份回填与作用域唯一索引（引擎装配前置；无 provider/
-	// base_url 的仓行用全局配置补齐）。顺序固定 Migrate → BackfillIdentity → Ensure。
+	// 平台库仓行的作用域唯一索引（引擎装配前置）。
 	platformRepoStore := registeredrepo.NewStore(db)
-	if backfilled, err := platformRepoStore.BackfillIdentity(context.Background(), cfg.CodeHostProvider, cfg.CodeHostBaseURL); err != nil {
-		return nil, fmt.Errorf("backfill repository platform identity: %w", err)
-	} else if backfilled > 0 {
-		// 计数语义为「填充的身份列数」(provider 与 base_url 各计一次),不是仓数。
-		logger.Info("backfilled repository platform identity from global codehost config", zap.Int64("identity_columns_backfilled", backfilled))
-	}
-	if cfg.CodeHostBaseURL == "" {
-		logger.Warn("global codehost base url is empty; repository rows without platform identity were not backfilled")
-	}
 	if err := platformRepoStore.EnsureIdentityIndexes(); err != nil {
 		return nil, err
 	}
 
-	imBackend, err := newIMBackend(cfg)
-	if err != nil {
-		return nil, err
-	}
-	var effectExecutor *effectexec.Executor
-	if imBackend != nil {
-		effectExecutor = effectexec.NewExecutor(imBackend)
-	}
 	// MCP 结果回传通道签名密钥仅存内存（重启即失效，在途 agent 落入文本
 	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
 	// 缺省未配置时通道保持关闭（纯文本模式）。
@@ -152,12 +128,10 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	// 各租户引擎承接该组织仓行的全部写路径（事件→任务→派发→回传→写回）。
 	defaultRunnerEndpoint := strings.TrimRight(strings.TrimSpace(cfg.AgentRunner.ServiceURL), "/")
 	shared := engineShared{
-		cfg:                  cfg,
-		logger:               logger,
-		reworkAllowedUserIDs: reworkAllowedUserIDs,
-		effectExecutor:       effectExecutor,
-		poolSource:           runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
-		defaultRunner:        agentrunner.NewClient(cfg.AgentRunner.ServiceURL, nil),
+		cfg:           cfg,
+		logger:        logger,
+		poolSource:    runnerpool.NewControlPlanePoolSource(controlPlaneService, []string{defaultRunnerEndpoint}),
+		defaultRunner: agentrunner.NewClient(cfg.AgentRunner.ServiceURL, nil),
 		runnerClientFactory: func(endpoint string) orchestrator.ReviewerRunnerClient {
 			return agentrunner.NewClient(endpoint, nil)
 		},
@@ -188,17 +162,17 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	)
 	routerOptions := []any{
 		// webhook 验签租户路由：索引命中 → 租户库仓行 secret；
-		// 未命中回退平台库仓行（存量过渡期）；皆未命中由 handler fail-closed。
+		// 未命中即未注册，由 handler fail-closed 401。
 		api.WithWebhookSecretLookup(&tenantRouteSecretLookup{
-			index: controlPlaneService.Repository(), resolver: tenantStores, platform: platformRepoStore,
+			index: controlPlaneService.Repository(), resolver: tenantStores,
 		}),
-		// 事件处理器按 (provider, path) 路由到所属租户引擎（写路径租户化）。
-		api.WithEventProcessorFactory(pool.engineForPath),
+		// 事件引擎视图按 (provider, path) 路由到所属租户引擎（写路径租户化，
+		// 视图内 normalizer 按组织段配置构建）。
+		api.WithEngineViewFactory(pool.engineViewForPath),
 		// 管理台操作（手动 tick/重试/重绑）按会话租户选择引擎。
 		api.WithAdminOperationEngines(pool),
 		// 注册/改仓写穿路由索引（租户作用域请求按会话租户）。
 		api.WithRouteIndexSync(&controlPlaneRouteIndex{repo: controlPlaneService.Repository()}),
-		api.WithReworkAllowedUserIDs(reworkAllowedUserIDs),
 		api.WithTickDefaults(cfg.Scheduler.TickRequest),
 		api.WithAdminQueryService(admin.NewQueryService(db)),
 		api.WithConnectorService(connectorService),
@@ -310,7 +284,10 @@ func migrateBusinessStore(db *gorm.DB) error {
 	if err := requirements.NewStore(db).Migrate(); err != nil {
 		return err
 	}
-	return people.NewRepository(db).Migrate()
+	if err := people.NewRepository(db).Migrate(); err != nil {
+		return err
+	}
+	return orgconfig.NewStore(db).Migrate()
 }
 
 // migrateTenantStores 启动时遍历控制面租户，逐库打开并迁移。
@@ -392,42 +369,6 @@ func newRepositoryDirectory(db *gorm.DB) *registeredrepo.Service {
 		nil,
 		registeredrepo.NewSQLActivityChecker(db),
 	)
-}
-
-func newIMBackend(cfg config.Config) (im.Backend, error) {
-	telegramMentions, err := parseMentionMap(cfg.IM.Telegram.MentionMap)
-	if err != nil {
-		return nil, fmt.Errorf("parse im_telegram_mention_map: %w", err)
-	}
-	feishuMentions, err := parseMentionMap(cfg.IM.Feishu.MentionMap)
-	if err != nil {
-		return nil, fmt.Errorf("parse im_feishu_mention_map: %w", err)
-	}
-	return im.NewBackend(im.Settings{
-		Provider: strings.ToLower(strings.TrimSpace(cfg.IM.Provider)),
-		Telegram: im.TelegramSettings{
-			BotToken:      cfg.IM.Telegram.BotToken,
-			APIBase:       cfg.IM.Telegram.APIBase,
-			DefaultChatID: cfg.IM.Telegram.DefaultChatID,
-			Mentions:      telegramMentions,
-		},
-		Feishu: im.FeishuSettings{
-			WebhookURL: cfg.IM.Feishu.WebhookURL,
-			Secret:     cfg.IM.Feishu.Secret,
-			Mentions:   feishuMentions,
-		},
-	}), nil
-}
-
-func parseMentionMap(raw string) (map[string]string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return nil, nil
-	}
-	parsed := map[string]string{}
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, err
-	}
-	return parsed, nil
 }
 
 // runnerRepositoryResolver 按任务绑定解析注册仓整行,是 runner 链路 workspace

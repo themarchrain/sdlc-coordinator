@@ -54,6 +54,49 @@ func TestReviewerRunnerStartPersistsExecutionAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// 组织段「执行 CLI」选择经 lookup 注入后只覆盖派发请求 Provider 的 Name；
+// 其余字段保持系统值,未注入或返回空串时沿用系统默认。
+func TestReviewerRunnerStartWithoutLookupKeepsSystemProvider(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start without lookup: %v", err)
+	}
+	provider := fixture.runner.createRequest.Provider
+	if provider.Name != "fake" || provider.APIKey != "secret" || provider.Revision != 7 {
+		t.Fatalf("provider config must keep system values without lookup: %#v", provider)
+	}
+}
+
+func TestReviewerRunnerStartWithEmptyLookupFallsBackToSystemProvider(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{} })
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with empty lookup: %v", err)
+	}
+	if fixture.runner.createRequest.Provider.Name != "fake" {
+		t.Fatalf("empty lookup must fall back to system provider: %#v", fixture.runner.createRequest.Provider)
+	}
+}
+
+func TestReviewerRunnerStartWithTenantLookupOverridesProviderNameOnly(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Provider: "claude-cli"} })
+	started, err := fixture.coordinator.Start(context.Background(), fixture.startRequest())
+	if err != nil {
+		t.Fatalf("start with tenant lookup: %v", err)
+	}
+	provider := fixture.runner.createRequest.Provider
+	if provider.Name != "claude-cli" {
+		t.Fatalf("tenant lookup must override provider name: %#v", provider)
+	}
+	if provider.APIKey != "secret" || provider.Revision != 7 {
+		t.Fatalf("tenant lookup must not touch other provider fields: %#v", provider)
+	}
+	if started.Provider != "claude-cli" {
+		t.Fatalf("execution projection must record tenant provider, got %q", started.Provider)
+	}
+}
+
 func TestReviewerRunnerReconcileAdvancesEventCursor(t *testing.T) {
 	fixture := newReviewerRunnerFixture(t)
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
@@ -275,4 +318,137 @@ func (s *recordingResultSubmitter) SubmitResult(_ context.Context, request Submi
 		return s.response, nil
 	}
 	return &SubmitResultResponse{Submission: &model.ResultSubmission{SubmissionID: "submission-runner", Status: model.ResultSubmissionStatusSucceeded}}, nil
+}
+
+// run 钉住派发时的执行 CLI：配置热切换后恢复/重建路径按钉住值重放，
+// 请求哈希与远端既有执行保持一致；钉住发生在 Start 成功路径上，幂等不覆盖。
+func TestReviewerRunnerStartHonorsPinnedProviderOverLiveLookup(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Provider: "claude-cli"} })
+	fixture.run.Provider = "codex-cli"
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with pinned provider: %v", err)
+	}
+	if provider := fixture.runner.createRequest.Provider; provider.Name != "codex-cli" {
+		t.Fatalf("pinned provider must win over the live lookup, got %#v", provider)
+	}
+}
+
+func TestReviewerRunnerStartPinsDispatchedProviderOnRun(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Provider: "claude-cli"} })
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with tenant lookup: %v", err)
+	}
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.Provider != "claude-cli" {
+		t.Fatalf("run must be pinned to the dispatched cli, got %q", persisted.Provider)
+	}
+}
+
+// 钉住回写发生在分钟级的工作区准备之后，重建路径持有的可能是终态化
+// 之前的旧对象：列级条件更新必须只碰 provider/effort 各自的列，不得把
+// 库里已终态的状态字段回滚成旧值。
+func TestPinRunnerProviderOnRunKeepsConcurrentlyFinalizedRunIntact(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	completed := time.Now()
+	fixture.run.Status = model.RunStatusSucceeded
+	fixture.run.OutputJSON = `{"verdict":"approved"}`
+	fixture.run.CompletedAt = &completed
+	if err := fixture.runs.Update(context.Background(), fixture.run); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+
+	stale := &model.Run{RunID: fixture.run.RunID, TaskID: fixture.run.TaskID,
+		WorkerRole: fixture.run.WorkerRole, Status: model.RunStatusRunning}
+	pinRunnerProviderOnRun(context.Background(), fixture.runs, stale, " claude-cli ", " high ")
+
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.Provider != "claude-cli" {
+		t.Fatalf("provider was not pinned: %q", persisted.Provider)
+	}
+	if persisted.Effort != "high" {
+		t.Fatalf("effort was not pinned: %q", persisted.Effort)
+	}
+	if persisted.Status != model.RunStatusSucceeded || persisted.OutputJSON != `{"verdict":"approved"}` || persisted.CompletedAt == nil {
+		t.Fatalf("concurrent finalization was rolled back: %#v", persisted)
+	}
+}
+
+// 组织段推理强度经 lookup 注入后覆盖派发请求 Provider 的 Effort；组织只设
+// effort 不设 provider 时 CLI 名保持系统值（两字段独立解析，互不牵连）。
+func TestReviewerRunnerStartWithTenantEffortOnlyOverridesEffort(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	request := fixture.startRequest()
+	request.Provider.Effort = "medium"
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Effort: "high"} })
+
+	if _, err := fixture.coordinator.Start(context.Background(), request); err != nil {
+		t.Fatalf("start with tenant effort: %v", err)
+	}
+	provider := fixture.runner.createRequest.Provider
+	if provider.Effort != "high" {
+		t.Fatalf("tenant effort must override the system effort: %#v", provider)
+	}
+	if provider.Name != "fake" || provider.APIKey != "secret" || provider.Revision != 7 {
+		t.Fatalf("effort-only lookup must not touch other provider fields: %#v", provider)
+	}
+}
+
+// 组织只设 provider 不设 effort 时，系统推理强度保持不变。
+func TestReviewerRunnerStartWithTenantProviderOnlyKeepsSystemEffort(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	request := fixture.startRequest()
+	request.Provider.Effort = "medium"
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Provider: "claude-cli"} })
+
+	if _, err := fixture.coordinator.Start(context.Background(), request); err != nil {
+		t.Fatalf("start with tenant provider: %v", err)
+	}
+	if provider := fixture.runner.createRequest.Provider; provider.Name != "claude-cli" || provider.Effort != "medium" {
+		t.Fatalf("provider-only lookup must keep the system effort: %#v", provider)
+	}
+}
+
+// 钉住优先级：run 行已钉住推理强度时，热切换后的组织值不改变在途 run 的
+// 重放身份（请求哈希覆盖推理强度，重放必须与远端既有执行对上）。
+func TestReviewerRunnerStartHonorsPinnedEffortOverLiveLookup(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	request := fixture.startRequest()
+	request.Provider.Effort = "medium"
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Effort: "max"} })
+	fixture.run.Effort = "low"
+
+	if _, err := fixture.coordinator.Start(context.Background(), request); err != nil {
+		t.Fatalf("start with pinned effort: %v", err)
+	}
+	if effort := fixture.runner.createRequest.Provider.Effort; effort != "low" {
+		t.Fatalf("pinned effort must win over the live lookup, got %q", effort)
+	}
+}
+
+func TestReviewerRunnerStartPinsDispatchedEffortOnRun(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	request := fixture.startRequest()
+	request.Provider.Effort = "medium"
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{Effort: "xhigh"} })
+
+	if _, err := fixture.coordinator.Start(context.Background(), request); err != nil {
+		t.Fatalf("start with tenant effort: %v", err)
+	}
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.Effort != "xhigh" {
+		t.Fatalf("run must be pinned to the dispatched effort, got %q", persisted.Effort)
+	}
 }

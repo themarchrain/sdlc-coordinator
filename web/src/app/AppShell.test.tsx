@@ -63,18 +63,25 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: /系统配置/ })).not.toBeInTheDocument()
   })
 
-  it('trims business menus for super admins, keeping system configuration and agent observability', () => {
+  it('converges the super admin menu to system-level entries only', () => {
     mockRepositories()
     render(<MemoryRouter initialEntries={['/settings']}><WorkspaceSessionProvider value={superAdminWorkspace}><AppShell><div>超管内容</div></AppShell></WorkspaceSessionProvider></MemoryRouter>)
 
     expect(screen.getByRole('link', { name: /系统配置/ })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: /Agent 运行/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /运行总览/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /系统总览/ })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: /组织管理/ })).toHaveAttribute('href', '/super-admin/tenants')
+    expect(screen.getByRole('link', { name: /审计日志/ })).toHaveAttribute('href', '/super-admin/audit-log')
+    // 业务视图与 Agent 观测组对超管整体退出；管理组不再挂组织级页面。
+    expect(screen.queryByRole('link', { name: /运行总览/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Agent 运行/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Agent 观测')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /需求管理/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /仓库管理/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /任务查询/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /数据查询/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /人员资产/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /安全操作/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /连接器实例/ })).not.toBeInTheDocument()
   })
 
   it('adds repository management to the workspace and demotes connectors to the admin footer', () => {
@@ -205,5 +212,25 @@ describe('AppShell', () => {
     await waitFor(() => expect(container.querySelector('.context-bar')).toContainElement(eyebrow))
     expect(container.querySelector('.workspace-canvas')).not.toContainElement(eyebrow)
     expect(screen.queryByRole('heading', { name: '任务轨迹' })).not.toBeInTheDocument()
+  })
+
+  it('opens the appearance drawer from the context bar for members too', async () => {
+    // 主题入口迁到外壳顶栏后，没有 /settings 路由的成员也能换本地肤。
+    mockRepositories()
+    const { container } = render(
+      <MemoryRouter>
+        <WorkspaceSessionProvider value={memberWorkspace}>
+          <AppShell><div>成员内容</div></AppShell>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    const trigger = screen.getByRole('button', { name: '外观主题' })
+    expect(container.querySelector('.context-bar')).toContainElement(trigger)
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '外观主题' })).toBeInTheDocument()
+    expect(screen.getByText(/外观主题：默认/)).toBeInTheDocument()
   })
 })

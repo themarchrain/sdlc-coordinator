@@ -123,6 +123,7 @@ var routeMatrixCatalog = concatMatrix(
 	adminAgentRows,
 	adminOperationRows,
 	adminConfigurationRows,
+	adminTenantConfigurationRows,
 	adminPeopleRows,
 	adminRepositoryRows,
 	adminRequirementRows,
@@ -208,6 +209,12 @@ var adminConfigurationRows = []MatrixRow{
 	mr("POST", "/api/admin/configuration/validate", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
 	mr("PUT", "/api/admin/configuration", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
 	mr("POST", "/api/admin/configuration/restart", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
+}
+
+var adminTenantConfigurationRows = []MatrixRow{
+	mr("GET", "/api/admin/tenant-configuration", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "组织段运行配置视图；组织管理员"),
+	mr("POST", "/api/admin/tenant-configuration/validate", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "组织段配置预校验"),
+	mr("PUT", "/api/admin/tenant-configuration", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "组织段配置保存，热生效无重启"),
 }
 
 var adminPeopleRows = []MatrixRow{
@@ -311,6 +318,7 @@ var spaPageRows = []MatrixRow{
 	mr("GET", "/admin/portal/select-tenant", ClassSPA, allow, allow, allow, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "现状不变"),
 	mr("GET", "/admin/portal/change-password", ClassSPA, allow, allow, allow, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "现状不变"),
 	mr("GET", "/admin/org", ClassSPA, deny, allow, deny, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "组织管理内嵌工作台；member 不可见；支持访问中的超管放行"),
+	mr("GET", "/admin/org/settings", ClassSPA, deny, allow, deny, deny, ChannelNone, false, "PortalSessionGate", "PortalSessionGate", "组织配置向导；member 不可见；支持访问中的超管放行"),
 	mr("GET", "/admin/super-admin/tenants", ClassSPA, allow, deny, deny, deny, ChannelNone, false, "SuperAdminSessionGate", "SuperAdminSessionGate", "现状不变"),
 	mr("GET", "/admin/super-admin/tenants/:id", ClassSPA, allow, deny, deny, deny, ChannelNone, false, "SuperAdminSessionGate", "SuperAdminSessionGate", "现状不变"),
 	mr("GET", "/admin/super-admin/audit-log", ClassSPA, allow, deny, deny, deny, ChannelNone, false, "SuperAdminSessionGate", "SuperAdminSessionGate", "现状不变"),

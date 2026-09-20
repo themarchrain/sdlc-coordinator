@@ -38,6 +38,8 @@ type TaskRepository interface {
 type RunRepository interface {
 	Create(context.Context, *model.Run) error
 	Update(context.Context, *model.Run) error
+	UpdateProviderIfEmpty(context.Context, string, string) error
+	UpdateEffortIfEmpty(context.Context, string, string) error
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
@@ -106,7 +108,7 @@ type Orchestrator struct {
 	repositoryLookup               RepositoryLookup
 	assigneeMentionDirectory       AssigneeMentionDirectory
 	developerIMTarget              string
-	reviewerIMMentions             []string
+	reviewerIMMentionsProvider     func(context.Context) []string
 	reviewerRunner                 ReviewerRunnerExecutionCoordinator
 	reviewerRunnerSettings         ReviewerRunnerSettings
 	developerRunner                DeveloperRunnerExecutionCoordinator
@@ -190,9 +192,16 @@ func WithDeveloperClarificationIMTarget(target string) Option {
 	}
 }
 
+// WithReviewerIMMentions 固定提醒人名单(静态装配与测试用)。
 func WithReviewerIMMentions(mentions []string) Option {
+	return WithReviewerIMMentionsProvider(func(context.Context) []string { return mentions })
+}
+
+// WithReviewerIMMentionsProvider 动态提醒人来源:引擎侧接组织段配置,
+// 每次审查收尾现取,配置保存即生效。
+func WithReviewerIMMentionsProvider(provider func(context.Context) []string) Option {
 	return func(o *Orchestrator) {
-		o.reviewerIMMentions = normalizeIMMentions(mentions)
+		o.reviewerIMMentionsProvider = provider
 	}
 }
 
@@ -789,12 +798,16 @@ func (o *Orchestrator) lookupRegisteredRepo(ctx context.Context, task *model.Tas
 }
 
 func (o *Orchestrator) reviewerMentionsFor(ctx context.Context, task *model.Task) []string {
-	platform := strings.Join(o.reviewerIMMentions, ",")
+	var reviewerIMMentions []string
+	if o.reviewerIMMentionsProvider != nil {
+		reviewerIMMentions = normalizeIMMentions(o.reviewerIMMentionsProvider(ctx))
+	}
+	platform := strings.Join(reviewerIMMentions, ",")
 	resolved := registeredrepo.ResolvePeople(o.lookupRegisteredRepo(ctx, task), registeredrepo.PeopleSettings{
 		ReviewerMentions: platform,
 	})
 	if strings.TrimSpace(resolved.ReviewerMentions) == "" || resolved.ReviewerMentions == platform {
-		return o.reviewerIMMentions
+		return reviewerIMMentions
 	}
 	raw := strings.TrimSpace(resolved.ReviewerMentions)
 	if strings.HasPrefix(raw, "[") {

@@ -7,6 +7,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -35,20 +37,26 @@ type WebhookSecretLookup interface {
 	WebhookSecretByPath(ctx context.Context, provider, path, repoURL string) (string, error)
 }
 
-// ProcessorFactory 按 (provider, path) 解析该仓所属租户的事件处理器;
-// repoURL 同 WebhookSecretLookup,仅多行命中时参与实例消歧。返回处理器
-// 非 nil 表示命中;处理器与 error 均为零值表示未命中(回落构造期的平台
-// 处理器,存量过渡期兜底);error 非 nil 表示路由已指认租户但引擎不可用
-// (组织停用/租户库打开失败/路径歧义无法消解),调用方 fail-closed 回 5xx
-// 让代码托管重试,不得回落平台库。
-type ProcessorFactory func(ctx context.Context, provider, path, repoURL string) (*events.Processor, error)
+// WebhookEngineView 一次 webhook 请求所需的引擎件:处理器与按当前组织段
+// 配置构建的平台 normalizer(GitLab normalizer 由处理器按构造期选项现建,
+// 不在本视图内)。
+type WebhookEngineView struct {
+	Processor        *events.Processor
+	GiteaNormalizer  events.GiteaNormalizer
+	GitHubNormalizer events.GitHubNormalizer
+}
+
+// EngineViewFactory 按 (provider, path) 解析该仓所属租户的引擎视图;
+// repoURL 同 WebhookSecretLookup,仅多行命中时参与实例消歧。返回视图非 nil
+// 表示命中;error 非 nil 表示引擎不可用(组织停用/租户库打开失败/路径歧义
+// 无法消解/租户配置冷读失败/路由缺失),调用方 fail-closed 回 5xx 让代码
+// 托管重试。仓库只经组织注册,不存在平台级兜底视图。
+type EngineViewFactory func(ctx context.Context, provider, path, repoURL string) (*WebhookEngineView, error)
 
 type EventHandler struct {
-	processor        *events.Processor
-	processorFactory ProcessorFactory
-	webhookSecrets   WebhookSecretLookup
-	giteaNormalizer  events.GiteaNormalizer
-	githubNormalizer events.GitHubNormalizer
+	platformView      *WebhookEngineView
+	engineViewFactory EngineViewFactory
+	webhookSecrets    WebhookSecretLookup
 }
 
 type EventHandlerOption func(*EventHandler)
@@ -61,38 +69,34 @@ func WithWebhookSecretLookup(lookup WebhookSecretLookup) EventHandlerOption {
 	}
 }
 
-// WithReworkAllowedUserIDs 注入平台级 rework 白名单(平台 user id),
-// gitea/github normalizer 与 GitLab 侧共用同一份配置。
-func WithReworkAllowedUserIDs(ids []int) EventHandlerOption {
+// WithEngineViewFactory 注入按仓路由的引擎视图工厂;每个 webhook 请求在验签
+// 通过后按 (provider, path) 选择租户引擎视图,引擎不可用则拒绝,视图内的
+// normalizer 按当前组织段配置构建,白名单热生效。
+func WithEngineViewFactory(factory EngineViewFactory) EventHandlerOption {
 	return func(h *EventHandler) {
-		h.giteaNormalizer = events.NewGiteaNormalizer(events.WithGiteaReworkAllowedUserIDs(ids))
-		h.githubNormalizer = events.NewGitHubNormalizer(events.WithGitHubReworkAllowedUserIDs(ids))
+		h.engineViewFactory = factory
 	}
 }
 
-// WithProcessorFactory 注入按仓路由的处理器工厂;每个 webhook 请求在验签
-// 通过后按 (provider, path) 选择处理器实例(租户引擎;未命中回落平台兜底,
-// 引擎不可用则拒绝)。
-func WithProcessorFactory(factory ProcessorFactory) EventHandlerOption {
-	return func(h *EventHandler) {
-		h.processorFactory = factory
-	}
-}
+// errEngineViewMissing 表示已注入工厂却返回零值视图:装配契约违例,按引擎
+// 不可用拒绝,绝不静默回落构造期默认视图把事件写进错误的库。
+var errEngineViewMissing = errors.New("event engine view missing")
 
-// resolveProcessor 选取本请求的事件处理器:工厂命中用租户处理器;路由已
-// 指认租户但引擎不可用则上抛错误(调用方 5xx 让代码托管重试,不回落
-// 平台库);仅未命中回落构造期平台实例(存量过渡期兜底)。
-func (h *EventHandler) resolveProcessor(ctx context.Context, provider, path, repoURL string) (*events.Processor, error) {
-	if h.processorFactory != nil {
-		processor, err := h.processorFactory(ctx, provider, path, repoURL)
+// resolveEngineView 选取本请求的引擎视图:工厂命中用租户视图;工厂返回
+// 错误或零值视图一律上抛(调用方 5xx 让代码托管重试)。未注入工厂的装配
+// (测试/引导形态)沿用构造期默认视图。
+func (h *EventHandler) resolveEngineView(ctx context.Context, provider, path, repoURL string) (*WebhookEngineView, error) {
+	if h.engineViewFactory != nil {
+		view, err := h.engineViewFactory(ctx, provider, path, repoURL)
 		if err != nil {
 			return nil, err
 		}
-		if processor != nil {
-			return processor, nil
+		if view != nil {
+			return view, nil
 		}
+		return nil, errEngineViewMissing
 	}
-	return h.processor, nil
+	return h.platformView, nil
 }
 
 type GitLabEventResponse struct {
@@ -105,20 +109,44 @@ type GitLabEventResponse struct {
 }
 
 func NewEventHandler(processor *events.Processor, opts ...EventHandlerOption) *EventHandler {
-	handler := &EventHandler{processor: processor}
+	handler := &EventHandler{platformView: &WebhookEngineView{
+		Processor:        processor,
+		GiteaNormalizer:  events.NewGiteaNormalizer(),
+		GitHubNormalizer: events.NewGitHubNormalizer(),
+	}}
 	for _, opt := range opts {
 		opt(handler)
 	}
 	return handler
 }
 
-func (h *EventHandler) GitLab(c *gin.Context) {
+// webhookMaxRequestBytes 限制 webhook 投递体大小（与 MCP/租户配置同口径）：
+// 消费的事件类型（议题/评论/PR/MR note）载荷远小于该值；超限读断后验签
+// 必然失败，fail-closed 拒收超大投递，防公网内存滥用。
+const webhookMaxRequestBytes = 1 << 20
+
+// readWebhookBody 读入投递体并施加大小上限，超限返回 413、其余读错误 400。
+func readWebhookBody(c *gin.Context, provider string) ([]byte, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, webhookMaxRequestBytes)
 	raw, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "read gitlab event payload failed",
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, gin.H{
+			"error":   fmt.Sprintf("read %s event payload failed", provider),
 			"details": err.Error(),
 		})
+		return nil, false
+	}
+	return raw, true
+}
+
+func (h *EventHandler) GitLab(c *gin.Context) {
+	raw, ok := readWebhookBody(c, "gitlab")
+	if !ok {
 		return
 	}
 	// 鉴权先于业务依赖检查:先从不可信 payload 最小解析仓路径,取该仓 secret 验签;
@@ -138,17 +166,17 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitlab webhook"})
 		return
 	}
-	processor, err := h.resolveProcessor(c.Request.Context(), providerGitLab, path, repoURL)
+	view, err := h.resolveEngineView(c.Request.Context(), providerGitLab, path, repoURL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
 		return
 	}
-	if h == nil || processor == nil {
+	if view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
 
-	result, err := processor.ProcessGitLabWebhook(c.Request.Context(), raw, events.WithGitLabWebhookMetadata(events.GitLabWebhookMetadata{
+	result, err := view.Processor.ProcessGitLabWebhook(c.Request.Context(), raw, events.WithGitLabWebhookMetadata(events.GitLabWebhookMetadata{
 		EventName:   c.GetHeader("X-Gitlab-Event"),
 		EventUUID:   c.GetHeader("X-Gitlab-Event-UUID"),
 		WebhookUUID: c.GetHeader("X-Gitlab-Webhook-UUID"),
@@ -182,12 +210,8 @@ func (h *EventHandler) GitLab(c *gin.Context) {
 // Gitea 处理 Gitea webhook:X-Gitea-Signature 携带 hex(hmac_sha256(secret, body)),
 // secret 按仓解析,使用常量时间比较;事件经 GiteaNormalizer 规范化后进入统一编排。
 func (h *EventHandler) Gitea(c *gin.Context) {
-	raw, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "read gitea event payload failed",
-			"details": err.Error(),
-		})
+	raw, ok := readWebhookBody(c, "gitea")
+	if !ok {
 		return
 	}
 	// 鉴权先于业务依赖检查:最小解析仓路径 → 取该仓 secret → 验签。
@@ -206,17 +230,17 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized gitea webhook"})
 		return
 	}
-	processor, err := h.resolveProcessor(c.Request.Context(), providerGitea, path, repoURL)
+	view, err := h.resolveEngineView(c.Request.Context(), providerGitea, path, repoURL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
 		return
 	}
-	if h == nil || processor == nil {
+	if view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
 
-	result, err := processor.ProcessWebhook(c.Request.Context(), h.giteaNormalizer, raw, events.WebhookMetadata{
+	result, err := view.Processor.ProcessWebhook(c.Request.Context(), view.GiteaNormalizer, raw, events.WebhookMetadata{
 		EventType:   c.GetHeader("X-Gitea-Event"),
 		DeliveryID:  c.GetHeader("X-Gitea-Delivery"),
 		InstanceURL: c.GetHeader("X-Gitea-Instance"),
@@ -250,12 +274,8 @@ func (h *EventHandler) Gitea(c *gin.Context) {
 // hex(hmac_sha256(secret, body)),secret 按仓解析,常量时间比较;事件经
 // GitHubNormalizer 规范化后进入统一编排。
 func (h *EventHandler) GitHub(c *gin.Context) {
-	raw, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "read github event payload failed",
-			"details": err.Error(),
-		})
+	raw, ok := readWebhookBody(c, "github")
+	if !ok {
 		return
 	}
 	// 鉴权先于业务依赖检查:最小解析仓路径 → 取该仓 secret → 验签。
@@ -274,17 +294,17 @@ func (h *EventHandler) GitHub(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized github webhook"})
 		return
 	}
-	processor, err := h.resolveProcessor(c.Request.Context(), providerGitHub, path, repoURL)
+	view, err := h.resolveEngineView(c.Request.Context(), providerGitHub, path, repoURL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "event processor unavailable"})
 		return
 	}
-	if h == nil || processor == nil {
+	if view == nil || view.Processor == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "event processor not configured"})
 		return
 	}
 
-	result, err := processor.ProcessWebhook(c.Request.Context(), h.githubNormalizer, raw, events.WebhookMetadata{
+	result, err := view.Processor.ProcessWebhook(c.Request.Context(), view.GitHubNormalizer, raw, events.WebhookMetadata{
 		EventType:   c.GetHeader("X-GitHub-Event"),
 		DeliveryID:  c.GetHeader("X-GitHub-Delivery"),
 		InstanceURL: c.GetHeader("X-GitHub-Enterprise-Host"),

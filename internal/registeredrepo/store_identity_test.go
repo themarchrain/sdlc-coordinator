@@ -8,7 +8,7 @@ import (
 )
 
 // openRawTestDB 打开只做 AutoMigrate 的裸库:回填迁移测试需要控制
-// EnsureIdentityIndexes 的时机(生产顺序为 Migrate → BackfillIdentity → Ensure)。
+// EnsureIdentityIndexes 的时机(生产顺序为 Migrate → Ensure)。
 func openRawTestDB(t *testing.T) *Store {
 	t.Helper()
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
@@ -54,67 +54,6 @@ func TestStoreScopesIdentityByProvider(t *testing.T) {
 	}
 	if _, err := repoStore.GetByProjectID(ctx, "github", "555"); err == nil {
 		t.Fatal("unrelated provider must not match")
-	}
-}
-
-// TestBackfillIdentityFillsEmptyColumnsOnlyAndIsIdempotent 用全局配置填补空列,
-// 规范化大小写与尾斜杠,不覆盖已有值,重入不再改行。
-func TestBackfillIdentityFillsEmptyColumnsOnlyAndIsIdempotent(t *testing.T) {
-	repoStore := openRawTestDB(t)
-	ctx := context.Background()
-	legacy := enabledFixture("repo_old", "1", "group/old")
-	legacy.Provider, legacy.BaseURL = "", "" // 空列:尚无平台身份
-	if err := repoStore.Create(ctx, legacy); err != nil {
-		t.Fatalf("create legacy row: %v", err)
-	}
-	custom := enabledFixture("repo_new", "2", "group/new")
-	custom.Provider, custom.BaseURL = "gitea", "https://gitea.example.com"
-	if err := repoStore.Create(ctx, custom); err != nil {
-		t.Fatalf("create custom row: %v", err)
-	}
-	backfilled, err := repoStore.BackfillIdentity(ctx, "GitLab", "https://GitLab.example.com/")
-	if err != nil || backfilled != 2 {
-		t.Fatalf("backfill: %v rows=%d", err, backfilled)
-	}
-	loaded, err := repoStore.Get(ctx, "repo_old")
-	if err != nil {
-		t.Fatalf("reload legacy row: %v", err)
-	}
-	if loaded.Provider != "gitlab" || loaded.BaseURL != "https://gitlab.example.com" {
-		t.Fatalf("legacy row not normalized: %+v", loaded)
-	}
-	kept, err := repoStore.Get(ctx, "repo_new")
-	if err != nil {
-		t.Fatalf("reload custom row: %v", err)
-	}
-	if kept.Provider != "gitea" || kept.BaseURL != "https://gitea.example.com" {
-		t.Fatalf("backfill must not overwrite configured values: %+v", kept)
-	}
-	again, err := repoStore.BackfillIdentity(ctx, "gitlab", "https://gitlab.example.com")
-	if err != nil || again != 0 {
-		t.Fatalf("backfill must be idempotent: %v rows=%d", err, again)
-	}
-}
-
-// TestBackfillIdentitySkipsMissingDefaults 锁定:全局配置缺失时不报错、不填充
-// (告警由装配方负责),启动不因缺省阻断。
-func TestBackfillIdentitySkipsMissingDefaults(t *testing.T) {
-	repoStore := openRawTestDB(t)
-	ctx := context.Background()
-	repo := enabledFixture("repo_old", "1", "group/old")
-	repo.Provider, repo.BaseURL = "", ""
-	if err := repoStore.Create(ctx, repo); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if _, err := repoStore.BackfillIdentity(ctx, "", ""); err != nil {
-		t.Fatalf("missing defaults must not error: %v", err)
-	}
-	loaded, err := repoStore.Get(ctx, "repo_old")
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if loaded.Provider != "" || loaded.BaseURL != "" {
-		t.Fatalf("empty defaults must fill nothing: %+v", loaded)
 	}
 }
 

@@ -197,7 +197,7 @@ func TestProcessorResumesNormalizedGitLabReceiptFromStoredPayload(t *testing.T) 
 	ctx := context.Background()
 	metadata := GitLabWebhookMetadata{EventUUID: "event-normalized-resume"}
 	receipt := newGitLabReceipt([]byte(gitLabMROpenPayload), metadata)
-	normalization, err := processor.gitlabNormalizer.Normalize([]byte(gitLabMROpenPayload))
+	normalization, err := NewGitLabNormalizer().Normalize([]byte(gitLabMROpenPayload))
 	if err != nil {
 		t.Fatalf("normalize fixture: %v", err)
 	}
@@ -348,8 +348,8 @@ func TestProcessorAppliesGitLabReworkRequesterAllowlist(t *testing.T) {
 	processor := NewProcessor(
 		repository.NewInboundEventRepository(db),
 		handler,
-		WithCodeHostReworkAllowedUserIDs([]int{99}),
 	)
+	processor.SetGitLabReworkLookup(func(context.Context) []int { return []int{99} })
 	raw := readGitLabFixture(t, "merge_request_resume_note_created.json")
 	raw = []byte(strings.Replace(string(raw), `"id": 42`, `"id": 99`, 1))
 
@@ -545,6 +545,26 @@ func newProcessorFixture(t *testing.T) (*Processor, *repository.InboundEventRepo
 	return NewProcessor(inboundRepo, orch), inboundRepo, taskRepo
 }
 
+func newProcessorFixtureWithNormalizerOptions(t *testing.T, opts ...GitLabNormalizerOption) (*Processor, *repository.InboundEventRepository, *repository.TaskRepository) {
+	t.Helper()
+
+	databaseName := strings.NewReplacer("/", "_", "\\", "_", " ", "_").Replace(t.Name())
+	db, err := store.Open("file:" + databaseName + "_" + model.NewID("testdb") + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.InboundEvent{}); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	taskRepo := repository.NewTaskRepository(db)
+	runRepo := repository.NewRunRepository(db)
+	inboundRepo := repository.NewInboundEventRepository(db)
+	orch := orchestrator.New(taskRepo, runRepo)
+
+	return NewProcessor(inboundRepo, orch, opts...), inboundRepo, taskRepo
+}
+
 type mutableRepositoryLookup struct {
 	repositories map[string]*registeredrepo.RegisteredRepository
 }
@@ -611,5 +631,49 @@ func TestProcessorDefersUnenabledEventThenReplaysAfterEnable(t *testing.T) {
 	}
 	if storedEvent.Status != model.InboundEventStatusTaskCreated {
 		t.Fatalf("expected stored event task_created, got %s", storedEvent.Status)
+	}
+}
+
+// TestProcessorGitLabAllowlistLookupHotReloads 锁定:GitLab 白名单经查找函数
+// 供给,组织段配置变更后同处理器的下一个事件即按新白名单判定。
+func TestProcessorGitLabAllowlistLookupHotReloads(t *testing.T) {
+	allowed := []int{77}
+	processor, _, taskRepo := newProcessorFixtureWithNormalizerOptions(t)
+	processor.SetGitLabReworkLookup(func(context.Context) []int { return allowed })
+	ctx := context.Background()
+
+	created, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_opened_developer_agent.json"))
+	if err != nil {
+		t.Fatalf("create developer task: %v", err)
+	}
+	task := created.Task
+	if task == nil {
+		t.Fatal("expected developer task")
+	}
+	task.Status = model.TaskStatusHumanRequired
+	if err := taskRepo.Update(ctx, task); err != nil {
+		t.Fatalf("mark task human_required: %v", err)
+	}
+
+	stranger := []byte(strings.Replace(string(readGitLabFixture(t, "issue_resume_note_created.json")), `"id": 42`, `"id": 77`, 1))
+	resumed, err := processor.ProcessGitLabWebhook(ctx, stranger, WithGitLabWebhookMetadata(GitLabWebhookMetadata{EventUUID: "hot-allow-1"}))
+	if err != nil {
+		t.Fatalf("resume with allowlisted stranger: %v", err)
+	}
+	if resumed.Ignored || resumed.Task == nil {
+		t.Fatalf("allowlisted stranger must resume task, got %#v", resumed)
+	}
+	task.Status = model.TaskStatusHumanRequired
+	if err := taskRepo.Update(ctx, task); err != nil {
+		t.Fatalf("re-mark task human_required: %v", err)
+	}
+
+	allowed = []int{}
+	denied, err := processor.ProcessGitLabWebhook(ctx, stranger, WithGitLabWebhookMetadata(GitLabWebhookMetadata{EventUUID: "hot-allow-2"}))
+	if err != nil {
+		t.Fatalf("resume after allowlist removal: %v", err)
+	}
+	if !denied.Ignored || denied.Task != nil {
+		t.Fatalf("stranger outside allowlist must be ignored, got %#v", denied)
 	}
 }

@@ -87,12 +87,35 @@ func TestFeishuBackendReportsBusinessErrorsAndRejectsMissingWebhook(t *testing.T
 	defer server.Close()
 
 	backend := NewFeishuBackend(FeishuSettings{WebhookURL: server.URL})
-	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || !strings.Contains(err.Error(), "sign match fail") {
-		t.Fatalf("business error must include msg, got %v", err)
+	if _, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || err.Error() != "feishu webhook failed: code 19021" || strings.Contains(err.Error(), "sign match fail") {
+		t.Fatalf("business error must carry the code but omit the remote msg, got %v", err)
 	}
 
 	missing := NewFeishuBackend(FeishuSettings{})
 	if _, err := missing.SendMessage(context.Background(), SendMessageRequest{Body: "hi"}); err == nil || !strings.Contains(err.Error(), "webhook") {
 		t.Fatalf("missing webhook url must fail, got %v", err)
+	}
+}
+
+func TestFeishuBackendNon2xxErrorOmitsResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"internal":"secret-body"}`))
+	}))
+	defer server.Close()
+
+	backend := NewFeishuBackend(FeishuSettings{WebhookURL: server.URL})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("non-2xx must report status, got %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-body") {
+		t.Fatalf("non-2xx error must not carry remote body, got %v", err)
+	}
+}
+
+func TestSendHTTPClientHasTimeout(t *testing.T) {
+	if sendHTTPClient == nil || sendHTTPClient.Timeout <= 0 {
+		t.Fatalf("shared send client must carry a timeout, got %+v", sendHTTPClient)
 	}
 }

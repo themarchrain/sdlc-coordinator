@@ -28,7 +28,6 @@ func (s *Store) Migrate() error {
 		return fmt.Errorf("migrate registered repositories: %w", err)
 	}
 	// 唯一性由 provider 作用域索引承担(EnsureIdentityIndexes)。
-	// 新索引须在 BackfillIdentity 之后建:Migrate → BackfillIdentity → Ensure。
 	// 下列索引名是改列名前的字面名;SQLite RENAME COLUMN 不改索引名,须按旧名 drop。
 	for _, name := range []string{
 		"idx_registered_repositories_path_with_namespace",
@@ -126,32 +125,6 @@ func NormalizeBaseURL(raw string) (string, error) {
 		return "", fmt.Errorf("base_url must be an http(s) origin")
 	}
 	return strings.TrimRight(parsed.String(), "/"), nil
-}
-
-// BackfillIdentity 用全局配置值填补 provider/base_url 空列,不覆盖已有值。
-// 两条 UPDATE 各填各的空列;全局值缺失时跳过对应列(告警由装配方负责),可重入。
-// 全局值非空但不合法时返回错误——部署配置损坏时应 fail-fast,不要带病启动。
-func (s *Store) BackfillIdentity(ctx context.Context, defaultProvider, defaultBaseURL string) (int64, error) {
-	var total int64
-	if provider := strings.ToLower(strings.TrimSpace(defaultProvider)); provider != "" {
-		result := s.db.WithContext(ctx).Model(&RegisteredRepository{}).Where("provider = ''").Update("provider", provider)
-		if result.Error != nil {
-			return total, fmt.Errorf("backfill provider: %w", result.Error)
-		}
-		total += result.RowsAffected
-	}
-	if strings.TrimSpace(defaultBaseURL) != "" {
-		baseURL, err := NormalizeBaseURL(defaultBaseURL)
-		if err != nil {
-			return total, fmt.Errorf("backfill base_url: %w", err)
-		}
-		result := s.db.WithContext(ctx).Model(&RegisteredRepository{}).Where("base_url = ''").Update("base_url", baseURL)
-		if result.Error != nil {
-			return total, fmt.Errorf("backfill base_url: %w", result.Error)
-		}
-		total += result.RowsAffected
-	}
-	return total, nil
 }
 
 func (s *Store) Create(ctx context.Context, repo *RegisteredRepository) error {
