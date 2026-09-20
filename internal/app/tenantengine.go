@@ -148,7 +148,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎
-	// 租户，回传端按声明路由回同一引擎（存量无租户 token 回落平台）。
+	// 租户，回传端按声明路由回同一引擎（无租户声明的 token 一律拒绝）。
 	ingressIssuer := orchestrator.RunTokenIssuerFunc(func(taskID, runID, role string) (string, error) {
 		return resulttoken.Issue(shared.resultTokenSecret, resulttoken.Claims{
 			TaskID: taskID, RunID: runID, Role: role, TenantID: tenantID,

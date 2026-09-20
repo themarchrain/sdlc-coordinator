@@ -252,7 +252,13 @@ func migrateBusinessStore(db *gorm.DB) error {
 	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}); err != nil {
 		return err
 	}
-	if err := registeredrepo.NewStore(db).Migrate(); err != nil {
+	repoStore := registeredrepo.NewStore(db)
+	if err := repoStore.Migrate(); err != nil {
+		return err
+	}
+	// 防串仓唯一索引随建表一并建立：平台库调用点拆除后，这里是索引唯一的
+	// 生产建立点，漏掉则新装租户库只剩路由索引预检一层防线。
+	if err := repoStore.EnsureIdentityIndexes(); err != nil {
 		return err
 	}
 	if err := requirements.NewStore(db).Migrate(); err != nil {

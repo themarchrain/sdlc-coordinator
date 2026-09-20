@@ -393,3 +393,49 @@ func TestMCPEngineViewFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
 		t.Fatalf("tenant-zero token must fail closed too, got %v", err)
 	}
 }
+
+// TestMCPHandleGateCoversEngineOnlyAssembly 以 Handle 级请求锁定门槛语义：
+// 默认通道缺席、仅注入引擎选择器（生产装配形态）判已配置并正常服务；
+// 选择器返回零值视图时 tools/call 503；双缺席仍是未配置 500。
+func TestMCPHandleGateCoversEngineOnlyAssembly(t *testing.T) {
+	f := newMCPFixture(t)
+	f.createDeveloperRun(t, "run-mcp-gate")
+	token := f.token(mcpTestEndpointTask, "run-mcp-gate", "DeveloperWorker", f.now())
+
+	serving := NewMCPHandler(nil, f.secret, nil, nil, nil, 5,
+		WithMCPEngineSource(stubMCPEngineSource{view: MCPEngineView{
+			Channel: f.handler.channel, Tasks: f.tasks, Runs: f.runs, Rejections: f.rejections,
+		}}))
+	f.handler = serving
+	f.router = gin.New()
+	f.router.POST("/mcp", serving.Handle)
+	code, response := f.postRPC(t, token, "tools/list", map[string]any{})
+	if code != http.StatusOK {
+		t.Fatalf("engine-only assembly must pass the configured gate: %d %v", code, response)
+	}
+	result, _ := response["result"].(map[string]any)
+	tools, _ := result["tools"].([]any)
+	if len(tools) != 1 {
+		t.Fatalf("tools/list must serve normally in engine-only assembly: %#v", response)
+	}
+
+	f.handler = NewMCPHandler(nil, f.secret, nil, nil, nil, 5, WithMCPEngineSource(stubMCPEngineSource{}))
+	f.router = gin.New()
+	f.router.POST("/mcp", f.handler.Handle)
+	code, response = f.postRPC(t, token, "tools/call", map[string]any{"name": "submit", "arguments": json.RawMessage("{}")})
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("zero view must fail closed with 503: %d %v", code, response)
+	}
+	if errObj, _ := response["error"].(map[string]any); errObj == nil || errObj["message"] != "tenant engine unavailable" {
+		t.Fatalf("503 must name the tenant engine: %#v", response)
+	}
+
+	unconfigured := NewMCPHandler(nil, f.secret, nil, nil, nil, 5)
+	f.handler = unconfigured
+	f.router = gin.New()
+	f.router.POST("/mcp", unconfigured.Handle)
+	code, response = f.postRPC(t, token, "tools/list", map[string]any{})
+	if code != http.StatusInternalServerError {
+		t.Fatalf("no channel and no engines must stay unconfigured: %d %v", code, response)
+	}
+}

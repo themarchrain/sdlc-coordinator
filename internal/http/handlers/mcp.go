@@ -27,9 +27,9 @@ type MCPEngineView struct {
 	Rejections *repository.ResultRejectionRepository
 }
 
-// MCPEngineSource 按 token 中的租户声明选择引擎视图；0（存量 token 无
-// 租户）走平台兜底视图，其余未命中返回零值视图（消费端 fail-closed 回
-// 503，不回落平台库）。
+// MCPEngineSource 按 token 中的租户声明选择引擎视图；未命中或无租户
+// 声明（含 0）一律返回零值视图（消费端 fail-closed 回 503，不回落
+// 平台库）。
 type MCPEngineSource interface {
 	MCPEngineForTenant(tenantID uint) MCPEngineView
 }
