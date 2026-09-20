@@ -42,7 +42,7 @@ func TestBuildApplicationSelectsBootstrapModeWithoutRuntimeWorkers(t *testing.T)
 	if err != nil {
 		t.Fatalf("build application: %v", err)
 	}
-	if application.Mode != configuration.ModeSetupPending || application.Orch != nil || application.Scheduler != nil {
+	if application.Mode != configuration.ModeSetupPending || application.Scheduler != nil {
 		t.Fatalf("unexpected bootstrap application: %#v", application)
 	}
 }

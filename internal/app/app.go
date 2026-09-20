@@ -15,6 +15,7 @@ import (
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/connectors"
 	"sdlc-coordinator/internal/controlplane"
+	"sdlc-coordinator/internal/events"
 	api "sdlc-coordinator/internal/http"
 	handlers "sdlc-coordinator/internal/http/handlers"
 	"sdlc-coordinator/internal/model"
@@ -49,7 +50,6 @@ type App struct {
 	DB               *gorm.DB
 	Router           *gin.Engine
 	Server           *api.Server
-	Orch             *orchestrator.Orchestrator
 	pool             *enginePool
 	Scheduler        *scheduler.Runner
 	RequirementsSync *requirements.Runner
@@ -63,9 +63,8 @@ func New(cfg config.Config, logger *zap.Logger, db *gorm.DB) (*App, error) {
 }
 
 func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationService *configuration.Service, shutdown configuration.ShutdownRequester) (*App, error) {
-	if err := migrateBusinessStore(db); err != nil {
-		return nil, fmt.Errorf("migrate platform database: %w", err)
-	}
+	// 平台库只承载控制面与运行配置，不建业务表：业务引擎只存在于租户库
+	//（存量部署的平台库旧业务表原地保留，legacy 迁移按需读取）。
 
 	// 真分库装配：接口不变，Handle 解析到
 	// <TENANT_DATA_DIR>/<tenantID>/db.sqlite；Main() 保持平台库句柄。
@@ -83,12 +82,6 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 			tenantStores.Close()
 		}
 	}()
-
-	// 平台库仓行的作用域唯一索引（引擎装配前置）。
-	platformRepoStore := registeredrepo.NewStore(db)
-	if err := platformRepoStore.EnsureIdentityIndexes(); err != nil {
-		return nil, err
-	}
 
 	// MCP 结果回传通道签名密钥仅存内存（重启即失效，在途 agent 落入文本
 	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
@@ -124,8 +117,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		return nil, err
 	}
 
-	// 引擎池：平台引擎处理索引未命中的存量仓行与无租户 token 兜底，
-	// 各租户引擎承接该组织仓行的全部写路径（事件→任务→派发→回传→写回）。
+	// 引擎池：只装配租户引擎（各租户承接其仓行的全部写路径
+	// 事件→任务→派发→回传→写回）；路由索引未命中在验签层即 401，
+	// 不存在平台兜底引擎。
 	defaultRunnerEndpoint := strings.TrimRight(strings.TrimSpace(cfg.AgentRunner.ServiceURL), "/")
 	shared := engineShared{
 		cfg:           cfg,
@@ -137,27 +131,22 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		},
 		resultTokenSecret: resultTokenSecret,
 	}
-	platformEngine, err := buildTenantEngine(db, 0, shared)
-	if err != nil {
-		return nil, fmt.Errorf("build platform engine: %w", err)
-	}
-	pool := newEnginePool(platformEngine, tenantStores, controlPlaneService, shared, logger)
+	pool := newEnginePool(tenantStores, controlPlaneService, shared, logger)
 
-	// 以下为 router 兜底层（会话未绑定租户时的默认服务，全部平台库句柄；
-	// 租户作用域请求在 handler 层按 BindTenantStore 重建对应版本）。
-	peopleService, peopleLookup, err := newPeopleDirectory(db)
-	if err != nil {
-		return nil, err
-	}
+	// 以下为路由注册载体（构造期默认服务）：生产请求一律按绑定库重建
+	//（BindTenantStore 恒注入，租户作用域用租户库、无作用域用 Main），
+	// 构造期不得在平台库建表——people 目录必须用不迁移的构造形态。
+	peopleService := people.NewService(people.NewRepository(db))
+	peopleLookup := people.NewMultiProviderLookupClient(nil)
 	repositoryService := newRepositoryDirectory(db)
 	requirementsService := requirements.NewService(
-		requirements.NewStore(db), platformRepoStore,
+		requirements.NewStore(db), registeredrepo.NewStore(db),
 		requirements.NewProviderClientFactory(nil),
 	)
 	connectorService := connectors.NewService(connectors.NewConnectorRepository(db), connectors.NewHTTPClient())
 	mcpHandler := handlers.NewMCPHandler(
-		platformEngine.mcpView.Channel, resultTokenSecret, platformEngine.mcpView.Tasks, platformEngine.mcpView.Runs,
-		platformEngine.mcpView.Rejections, resultSubmissionMaxRejections,
+		nil, resultTokenSecret, nil, nil, nil,
+		resultSubmissionMaxRejections,
 		handlers.WithMCPEngineSource(pool),
 	)
 	routerOptions := []any{
@@ -191,9 +180,12 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
 	}
-	routerArgs := []any{platformEngine.processor}
+	// webhook 默认处理器只是路由注册载体：生产恒注入 EngineViewFactory，
+	// 每个请求按 (provider, path) 路由到所属租户引擎视图（factory 优先且
+	// 绝不回落构造期默认——空壳 processor 永不被调用）。
+	routerArgs := []any{&events.Processor{}}
 	routerArgs = append(routerArgs, routerOptions...)
-	router := api.NewRouter(platformEngine.orch, routerArgs...)
+	router := api.NewRouter(nil, routerArgs...)
 	server := api.NewServer(cfg.HTTPAddr, router)
 	var schedulerRunner *scheduler.Runner
 	if cfg.Scheduler.Enabled {
@@ -207,7 +199,6 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		DB:               db,
 		Router:           router,
 		Server:           server,
-		Orch:             platformEngine.orch,
 		pool:             pool,
 		Scheduler:        schedulerRunner,
 		RequirementsSync: requirementsSyncRunner,
@@ -221,24 +212,9 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 	if mode != configuration.ModeSetupPending && mode != configuration.ModeConfigurationError {
 		return nil, fmt.Errorf("unsupported bootstrap mode %q", mode)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ConnectorInstance{}); err != nil {
-		return nil, fmt.Errorf("migrate database: %w", err)
-	}
-	if err := registeredrepo.NewStore(db).Migrate(); err != nil {
-		return nil, err
-	}
-	// setup 模式无配置可回填;作用域唯一索引直接建立(空表/空 provider 行不冲突)。
-	if err := registeredrepo.NewStore(db).EnsureIdentityIndexes(); err != nil {
-		return nil, err
-	}
-	if err := requirements.NewStore(db).Migrate(); err != nil {
-		return nil, err
-	}
-	peopleService, peopleLookup, err := newPeopleDirectory(db)
-	if err != nil {
-		return nil, err
-	}
-	repositoryService := newRepositoryDirectory(db)
+	// setup 模式同样不建业务表：平台库从第一秒起就只是控制面+运行配置；
+	// 业务面（people/repositories 等路由）在本模式不注册，404 与既有
+	// 设计一致；业务表随首次建组织由 provisioner 建进租户库。
 	controlPlaneService, err := newControlPlane(bootstrap.ControlPlane, logger)
 	if err != nil {
 		return nil, err
@@ -247,8 +223,6 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 	bootstrapRouterOptions := []any{
 		api.WithConfigurationService(configurationService, shutdown),
 		api.WithRuntimeMode(mode),
-		api.WithPeopleService(peopleService, peopleLookup),
-		api.WithRepositoryService(repositoryService),
 		api.WithControlPlaneService(controlPlaneService),
 		api.WithTenantStoreResolver(tenantStores),
 	}

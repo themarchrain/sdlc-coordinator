@@ -381,15 +381,15 @@ type stubMCPEngineSource struct {
 
 func (s stubMCPEngineSource) MCPEngineForTenant(uint) MCPEngineView { return s.view }
 
-// 租户引擎不可用时回传通道 fail-closed（503）；仅存量无租户 token（0）
-// 保留平台兜底视图。
+// 引擎选择器注入时零值视图一律 fail-closed（503）——含无租户 token
+// （其寿命早已耗尽，不存在存活的平台兜底消费方）。
 func TestMCPEngineViewFailsClosedWhenTenantEngineUnavailable(t *testing.T) {
 	handler := &MCPHandler{engines: stubMCPEngineSource{}}
 
 	if _, err := handler.engineView(resulttoken.Claims{TenantID: 7}); !errors.Is(err, errTenantEngineUnavailable) {
 		t.Fatalf("tenant engine miss must fail closed, got %v", err)
 	}
-	if _, err := handler.engineView(resulttoken.Claims{TenantID: 0}); err != nil {
-		t.Fatalf("legacy platform token must keep the fallback view, got %v", err)
+	if _, err := handler.engineView(resulttoken.Claims{TenantID: 0}); !errors.Is(err, errTenantEngineUnavailable) {
+		t.Fatalf("tenant-zero token must fail closed too, got %v", err)
 	}
 }

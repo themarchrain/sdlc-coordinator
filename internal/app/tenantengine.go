@@ -58,8 +58,7 @@ type tenantEngine struct {
 
 // staticTaskTenantResolver 把派发路由的租户解析固定为本引擎的租户：
 // 引擎内任务的仓行必在本库，无需再经索引反查（旧的任务→平台库仓行
-// 反查在真分库下必然落空）。平台引擎（tenantID=0）解析为 0，池路由
-// 自然回退共享默认池。
+// 反查在真分库下必然落空）。未指派端点的租户由池路由回退共享默认池。
 type staticTaskTenantResolver struct {
 	tenantID uint
 }
@@ -68,8 +67,8 @@ func (r staticTaskTenantResolver) ResolveTenant(_ context.Context, _ *model.Task
 	return r.tenantID, nil
 }
 
-// buildTenantEngine 对一个库句柄装配完整引擎。db 由调用方保证已迁移
-// （平台库 migrateBusinessStore、租户库 migrateTenantStores/provisioner）。
+// buildTenantEngine 对一个租户库句柄装配完整引擎。db 由调用方保证已迁移
+// （migrateTenantStores/provisioner）。
 func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenantEngine, error) {
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
@@ -179,13 +178,11 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	reviewerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
 	developerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
-	// 组织段「执行 CLI」选择：租户引擎派发时现取（保存即热生效），未配置
-	// 返回空串回落系统默认；平台引擎（tenantID=0）不注入，保持系统默认。
-	if tenantID != 0 {
-		runnerProviderLookup := tenantRunnerProviderLookup(orgConfig, shared.logger, tenantID)
-		reviewerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
-		developerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
-	}
+	// 组织段执行选择（CLI 与推理强度）：引擎派发时现取（保存即热生效），
+	// 未配置的字段回落系统默认。
+	runnerProviderLookup := tenantRunnerProviderLookup(orgConfig, shared.logger, tenantID)
+	reviewerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
+	developerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
 
 	return &tenantEngine{
 		tenantID:     tenantID,
@@ -202,7 +199,8 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	}, nil
 }
 
-// enginePool 惰性构造并缓存各租户引擎；tenantID=0 固定为平台引擎。
+// enginePool 惰性构造并缓存各租户引擎；不存在平台引擎——tenantID=0
+// 一律按不可用处理（无作用域会话、存量无租户 token 全部 fail-closed）。
 // 租户全集每轮从控制面动态拉取（新建/停用组织自然生效），构造失败
 // 记日志并跳过（不阻塞其他引擎）。
 type enginePool struct {
@@ -212,24 +210,23 @@ type enginePool struct {
 	control  *controlplane.Service
 	index    *controlplane.Repository
 	shared   engineShared
-	platform *tenantEngine
 	logger   *zap.Logger
 }
 
-// newEnginePool 固定平台引擎（构造失败即装配失败）并准备租户惰性构造。
-func newEnginePool(platform *tenantEngine, resolver *tenantdb.SqliteFileResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
+// newEnginePool 准备租户引擎的惰性构造；引擎随首次访问逐个建立。
+func newEnginePool(resolver *tenantdb.SqliteFileResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
 	return &enginePool{
-		engines:  map[uint]*tenantEngine{0: platform},
+		engines:  map[uint]*tenantEngine{},
 		resolver: resolver,
 		control:  control,
 		index:    control.Repository(),
 		shared:   shared,
-		platform: platform,
 		logger:   logger,
 	}
 }
 
-// forTenantID 返回该租户的引擎（0=平台）；未缓存则打开租户库并构造。
+// forTenantID 返回该租户的引擎；0（无租户）恒为 nil——平台库没有业务
+// 引擎，无作用域调用方按各自语义 fail-closed。未缓存则打开租户库并构造。
 // 打开或构造失败返回 nil（调用方按场景兜底或放弃）。
 //
 // 句柄走 OpenUnmanaged（不参与 resolver 的 LRU 淘汰）：引擎与句柄同为
@@ -241,7 +238,7 @@ func newEnginePool(platform *tenantEngine, resolver *tenantdb.SqliteFileResolver
 // 保证（实例级 tickMu 单飞锁因此不分裂）。持锁做 IO 是有意取舍。
 func (p *enginePool) forTenantID(ctx context.Context, tenantID uint) *tenantEngine {
 	if tenantID == 0 {
-		return p.platform
+		return nil
 	}
 	// 停用（或状态异常）租户一律无引擎：webhook/管理操作/MCP 全部落空，
 	// 调用方按各自语义 fail-closed。逐调用查一次控制面（本地 sqlite），
@@ -273,14 +270,13 @@ func (p *enginePool) forTenantID(ctx context.Context, tenantID uint) *tenantEngi
 	return engine
 }
 
-// CloseTenantEngines 关闭全部租户引擎持有的独立句柄并清空缓存（平台
-// 引擎的库句柄归装配层，不在范围）。引擎句柄不经 resolver 缓存通道，
-// 优雅停机与测试清理需经此显式释放。
+// CloseTenantEngines 关闭全部租户引擎持有的独立句柄并清空缓存。
+// 引擎句柄不经 resolver 缓存通道，优雅停机与测试清理需经此显式释放。
 func (p *enginePool) CloseTenantEngines() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for id, engine := range p.engines {
-		if id == 0 || engine == nil || engine.db == nil {
+		if engine == nil || engine.db == nil {
 			continue
 		}
 		if sqlDB, err := engine.db.DB(); err == nil {
@@ -290,9 +286,9 @@ func (p *enginePool) CloseTenantEngines() {
 	}
 }
 
-// all 返回平台引擎与当前全部租户引擎（租户清单动态拉取；拉取失败仅平台）。
+// all 返回当前全部活跃租户引擎（租户清单动态拉取；拉取失败返回空集）。
 func (p *enginePool) all(ctx context.Context) []*tenantEngine {
-	result := []*tenantEngine{p.platform}
+	result := []*tenantEngine{}
 	tenants, err := p.control.ListTenants(ctx)
 	if err != nil {
 		p.logger.Warn("list tenants for engine sweep failed", zap.Error(err))
@@ -344,15 +340,12 @@ func (p *enginePool) engineViewForPath(ctx context.Context, provider, path, repo
 }
 
 // engineForSession 按请求会话的组织作用域解析引擎；无作用域会话（超管
-// 直连）用平台引擎。租户引擎不可用返回 nil——管理操作面据此 503，不再
-// 回落平台库（那会把租户操作写进错误的库）。
+// 直连）恒为 nil——平台库没有业务引擎，管理操作面据此 503，不回落任何
+// 默认库（那会把操作写进错误的库）。租户引擎不可用同样返回 nil。
 func (p *enginePool) engineForSession(c *gin.Context) *tenantEngine {
 	tenantID := uint(0)
 	if session := handlers.CurrentPortalSession(c); session != nil && session.EffectiveTenant != nil {
 		tenantID = session.EffectiveTenant.ID
-	}
-	if tenantID == 0 {
-		return p.platform
 	}
 	return p.forTenantID(context.Background(), tenantID)
 }
@@ -430,8 +423,8 @@ func (p *enginePool) requirementsSyncAll(ctx context.Context) (requirements.Sync
 }
 
 // MCPEngineForTenant 实现 handlers.MCPEngineSource：按 token 租户声明取
-// 引擎视图（0=平台，覆盖存量无租户 token）；租户引擎不可用返回零值视图，
-// 由回传端 fail-closed（503）——不再回落平台视图把回传写进错误的库。
+// 引擎视图；租户引擎不可用（含 tenantID=0——平台库没有业务引擎，存量
+// 无租户 token 寿命早已耗尽）返回零值视图，由回传端 fail-closed（503）。
 func (p *enginePool) MCPEngineForTenant(tenantID uint) handlers.MCPEngineView {
 	if engine := p.forTenantID(context.Background(), tenantID); engine != nil {
 		return engine.mcpView

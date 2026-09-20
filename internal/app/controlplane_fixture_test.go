@@ -34,9 +34,10 @@ func withTestControlPlane(t *testing.T, cfg config.Config) config.Config {
 	if cfg.ControlPlane.SuperAdminPassword == "" {
 		cfg.ControlPlane.SuperAdminPassword = "test-super-password"
 	}
-	// 租户数据根生产默认指向进程相对路径 data/tenants，测试必须改指临时
-	// 目录，避免 Handle 在源码树里落 data/tenants 目录。
-	if strings.TrimSpace(cfg.TenantDataDir) == "" {
+	// 租户数据根改指临时目录：config.Load() 会预填生产默认（进程相对
+	// data/tenants），预填默认值或空值都必须覆盖，否则 Handle 会在源码树里
+	// 落 data/tenants 并跨测试运行残留；测试显式指定的目录保持原样。
+	if strings.TrimSpace(cfg.TenantDataDir) == "" || cfg.TenantDataDir == config.DefaultTenantDataDir {
 		cfg.TenantDataDir = t.TempDir()
 	}
 	return cfg

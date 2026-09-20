@@ -109,7 +109,7 @@ func TestNewBootstrapDoesNotAssembleRuntimeWorkersAndGatesWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new bootstrap app: %v", err)
 	}
-	if application.Orch != nil || application.Scheduler != nil {
+	if application.Scheduler != nil {
 		t.Fatalf("runtime workers assembled in bootstrap mode: %#v", application)
 	}
 
@@ -124,7 +124,7 @@ func TestNewBootstrapDoesNotAssembleRuntimeWorkersAndGatesWrites(t *testing.T) {
 	}
 }
 
-func TestNewBootstrapExposesPeopleDirectoryWithoutRuntimeWorkers(t *testing.T) {
+func TestNewBootstrapKeepsBusinessRoutesUnregistered(t *testing.T) {
 	db := openAppTestDB(t)
 	repository := configuration.NewRepository(db)
 	if err := repository.Migrate(); err != nil {
@@ -162,25 +162,17 @@ func TestNewBootstrapExposesPeopleDirectoryWithoutRuntimeWorkers(t *testing.T) {
 		t.Fatal("missing portal session cookie")
 	}
 
-	// people 面收窄为 support_only——bootstrap 装配同语义，进入
-	// 支持访问后仍可用（本测锁定的是 bootstrap 装配接线，非鉴权窗口）。
-	createdTenant, err := application.ControlPlane.CreateTenant(context.Background(), nil, controlplane.TenantInput{Slug: "acme-it", DisplayName: "Acme IT"})
-	if err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
-	if err := application.ControlPlane.EnterSupportAccess(context.Background(), portalCookie.Value, createdTenant.ID, "bootstrap wiring test"); err != nil {
-		t.Fatalf("enter support access: %v", err)
-	}
-
+	// bootstrap 不注册业务面路由：people 等组织数据面在 setup 模式不存在
+	//（404），平台库也不为其建表；业务表随首次建组织由 provisioner 建进租户库。
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/people", nil)
 	request.AddCookie(portalCookie)
 	application.Router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"items":[]`) {
-		t.Fatalf("unexpected people response %d: %s", response.Code, response.Body.String())
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("business routes must stay unregistered in bootstrap mode, got %d: %s", response.Code, response.Body.String())
 	}
-	if application.Orch != nil || application.Scheduler != nil {
-		t.Fatalf("people directory assembled runtime workers in bootstrap mode: %#v", application)
+	if application.Scheduler != nil {
+		t.Fatalf("bootstrap mode must not assemble runtime workers: %#v", application)
 	}
 }
 
@@ -218,23 +210,31 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	seedAppRepository(t, application.DB, "repo-app-reviewer", "1001", "group/project", reviewerBaseURL)
-	repositoryID := "repo-app-reviewer"
-	// 派发按真租户路由（fail-closed）：为仓登记路由索引指到默认租户。
-	cpRepo := application.ControlPlane.Repository()
-	tenant := &controlplane.Tenant{Slug: "acme-it", DisplayName: "Acme IT"}
-	if err := cpRepo.CreateTenant(context.Background(), tenant); err != nil {
+	// 经服务建组织（provisioner 同步迁移租户库业务表），仓行种进租户库，
+	// dispatch 全程走租户引擎——平台库没有业务引擎。
+	tenant, err := application.ControlPlane.CreateTenant(context.Background(), nil, controlplane.TenantInput{Slug: "acme-it", DisplayName: "Acme IT"})
+	if err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
-	if err := cpRepo.UpsertRepoRouteIndex(context.Background(), controlplane.RepoRouteIndex{
-		Provider: "gitlab", BaseURL: reviewerBaseURL, PathWithNamespace: "group/project",
-		TenantID: tenant.ID, RepoFingerprint: repositoryID,
-	}); err != nil {
-		t.Fatalf("seed repo route index: %v", err)
+	tenantStore, err := application.TenantStores.Handle(context.Background(), tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
 	}
+	seedAppRepository(t, tenantStore.DB, "repo-app-reviewer", "1001", "group/project", reviewerBaseURL)
+	repositoryID := "repo-app-reviewer"
+	engine := application.pool.forTenantID(context.Background(), tenant.ID)
+	if engine == nil {
+		t.Fatal("tenant engine must be available")
+	}
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if closer, ok := application.TenantStores.(interface{ Close() }); ok {
+			closer.Close()
+		}
+	})
 	// 事件载荷 URL 固定为不可达的外部地址:若实现回退为事件 URL,真实 git 准备会
 	// 网络失败,本测试即红——锁定「clone 以注册仓行为权威」。
-	task, err := application.Orch.CreateTask(context.Background(), &model.Task{
+	task, err := engine.orch.CreateTask(context.Background(), &model.Task{
 		TaskID: "task-app-runner-reviewer", DedupeKey: "app-runner-reviewer", Type: "review_mr", Role: "ReviewerWorker",
 		SourceRepo: "group/project", TargetRepo: "group/project", RepositoryID: &repositoryID, Objective: "review MR", AcceptanceCriteria: "return verdict",
 		ContextJSON: `{"project":{"path":"group/project"},"merge_request":{"iid":21,"url":"https://gitlab.example/group/project/-/merge_requests/21","review_mode":"full","source_branch":"feature/review","target_branch":"master","head_sha":"` + headSHA + `"},"repos":[{"name":"project","url":"https://gitlab.example.com/group/project.git","branch":"feature/review","access":"readable"}]}`,
@@ -242,7 +242,7 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create reviewer task: %v", err)
 	}
-	dispatched, err := application.Orch.DispatchReviewerTask(context.Background(), task.TaskID)
+	dispatched, err := engine.orch.DispatchReviewerTask(context.Background(), task.TaskID)
 	if err != nil {
 		t.Fatalf("dispatch reviewer task: %v", err)
 	}
@@ -252,15 +252,55 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	}
 }
 
-func TestNewAndBootstrapMigrateAgentExecutions(t *testing.T) {
+// 平台库不承载业务表：ready 与 bootstrap 两种装配形态都不得在平台库
+// 建任何业务表（新部署从第一秒起平台库只是控制面+运行配置）；业务表
+// 随首次建组织由 provisioner 建进租户库。
+func TestNewAndBootstrapKeepPlatformStoreFreeOfBusinessTables(t *testing.T) {
+	businessTables := []any{
+		&model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{},
+		&model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{},
+		&model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{},
+		&model.ConnectorInstance{},
+		"registered_repositories", "requirements", "people", "codehost_identities", "tenant_runtime_config",
+	}
+	assertFree := func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+		for _, table := range businessTables {
+			if db.Migrator().HasTable(table) {
+				t.Fatalf("platform store must not create business table %#v", table)
+			}
+		}
+	}
+
 	t.Run("ready", func(t *testing.T) {
 		db := openAppTestDB(t)
-		if _, err := New(withTestControlPlane(t, config.Config{HTTPAddr: ":0"}), zap.NewNop(), db); err != nil {
+		application, err := New(withTestControlPlane(t, config.Config{HTTPAddr: ":0"}), zap.NewNop(), db)
+		if err != nil {
 			t.Fatalf("new app: %v", err)
 		}
-		if !db.Migrator().HasTable(&model.AgentExecution{}) {
-			t.Fatal("expected agent executions table in ready mode")
+		assertFree(t, db)
+		// 对照面：经服务建组织后，业务表出现在租户库（全量清单来自
+		// provisioner 与 migrateBusinessStore 的同一迁移路径）。
+		tenant, err := application.ControlPlane.CreateTenant(context.Background(), nil, controlplane.TenantInput{Slug: "acme-tables", DisplayName: "Acme Tables"})
+		if err != nil {
+			t.Fatalf("create tenant: %v", err)
 		}
+		tenantStore, err := application.TenantStores.Handle(context.Background(), tenant.ID)
+		if err != nil {
+			t.Fatalf("open tenant store: %v", err)
+		}
+		t.Cleanup(func() {
+			if closer, ok := application.TenantStores.(interface{ Close() }); ok {
+				closer.Close()
+			}
+		})
+		for _, table := range businessTables {
+			if !tenantStore.DB.Migrator().HasTable(table) {
+				t.Fatalf("tenant store must create business table %#v", table)
+			}
+		}
+		// 平台库在租户开通后依然干净。
+		assertFree(t, db)
 	})
 
 	t.Run("bootstrap", func(t *testing.T) {
@@ -268,9 +308,7 @@ func TestNewAndBootstrapMigrateAgentExecutions(t *testing.T) {
 		if _, err := NewBootstrap(withTestBootstrap(t, config.BootstrapConfig{HTTPAddr: ":0"}), zap.NewNop(), db, nil, nil, configuration.ModeSetupPending); err != nil {
 			t.Fatalf("new bootstrap app: %v", err)
 		}
-		if !db.Migrator().HasTable(&model.AgentExecution{}) {
-			t.Fatal("expected agent executions table in bootstrap mode")
-		}
+		assertFree(t, db)
 	})
 }
 
@@ -465,36 +503,6 @@ func appReviewerGit(t *testing.T, dir string, args ...string) string {
 	return string(output)
 }
 
-func TestNewMigratesWritebacks(t *testing.T) {
-	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-
-	_, err = New(withTestControlPlane(t, config.Config{
-		HTTPAddr: ":0",
-	}), zap.NewNop(), db)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-
-	if !db.Migrator().HasTable(&model.Writeback{}) {
-		t.Fatal("expected writebacks table to be migrated")
-	}
-	if !db.Migrator().HasTable(&model.InboundEvent{}) {
-		t.Fatal("expected inbound_events table to be migrated")
-	}
-	if !db.Migrator().HasTable(&model.Effect{}) {
-		t.Fatal("expected effects table to be migrated")
-	}
-	if !db.Migrator().HasTable(&model.ResultSubmission{}) {
-		t.Fatal("expected result_submissions table to be migrated")
-	}
-	if !db.Migrator().HasTable(&model.ConnectorInstance{}) {
-		t.Fatal("expected connector_instances table to be migrated")
-	}
-}
-
 func TestNewWiresRequirementsModule(t *testing.T) {
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {
@@ -509,9 +517,25 @@ func TestNewWiresRequirementsModule(t *testing.T) {
 	if application.RequirementsSync == nil {
 		t.Fatal("requirements sync runner must be wired")
 	}
-	var count int64
-	if err := db.Table("requirements").Count(&count).Error; err != nil {
-		t.Fatalf("requirements table must exist: %v", err)
+	// requirements 表在租户库：经服务建组织后由 provisioner 迁移建表。
+	tenant, err := application.ControlPlane.CreateTenant(context.Background(), nil, controlplane.TenantInput{Slug: "acme-req", DisplayName: "Acme Requirements"})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tenantStore, err := application.TenantStores.Handle(context.Background(), tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	t.Cleanup(func() {
+		if closer, ok := application.TenantStores.(interface{ Close() }); ok {
+			closer.Close()
+		}
+	})
+	if !tenantStore.DB.Migrator().HasTable("requirements") {
+		t.Fatal("tenant store must create the requirements table")
+	}
+	if db.Migrator().HasTable("requirements") {
+		t.Fatal("platform store must not create the requirements table")
 	}
 }
 
@@ -548,11 +572,29 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 	}
 	cfg := config.Load()
 	cfg.HTTPAddr = ":0"
-	if err := people.NewRepository(db).Migrate(); err != nil {
-		t.Fatalf("migrate people: %v", err)
+	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
 	}
+	// 全链走租户库：经服务建组织（provisioner 迁移业务表含 people），人员、
+	// 仓行、任务与后续断言全部种进租户库，收尾经租户引擎执行。
+	tenant, err := application.ControlPlane.CreateTenant(ctx, nil, controlplane.TenantInput{Slug: "acme-clarify", DisplayName: "Acme Clarify"})
+	if err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	tenantStore, err := application.TenantStores.Handle(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("open tenant store: %v", err)
+	}
+	tenantDB := tenantStore.DB
+	t.Cleanup(func() {
+		application.pool.CloseTenantEngines()
+		if closer, ok := application.TenantStores.(interface{ Close() }); ok {
+			closer.Close()
+		}
+	})
 	enabled := true
-	if err := people.NewRepository(db).Create(ctx, &people.Person{
+	if err := people.NewRepository(tenantDB).Create(ctx, &people.Person{
 		PersonID: "person-owner", DisplayName: "负责人", Email: "owner@example.com", Enabled: enabled,
 	}, []people.CodeHostIdentity{{
 		IdentityID: "identity-owner", PersonID: "person-owner", Provider: "gitlab",
@@ -560,25 +602,21 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 	}}); err != nil {
 		t.Fatalf("seed person: %v", err)
 	}
-	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), db)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-	seedAppRepository(t, db, "repo-app-clarification", "15594", "demo-group/lite-list", "https://gitlab.example.com")
+	seedAppRepository(t, tenantDB, "repo-app-clarification", "15594", "demo-group/lite-list", "https://gitlab.example.com")
 	// 写回目标按仓行 base_url 解析:指向测试后端,与人员身份同址。
-	if seeded, err := registeredrepo.NewStore(db).Get(ctx, "repo-app-clarification"); err != nil {
+	if seeded, err := registeredrepo.NewStore(tenantDB).Get(ctx, "repo-app-clarification"); err != nil {
 		t.Fatalf("load seeded repository: %v", err)
 	} else {
 		seeded.BaseURL = gitLabServer.URL
-		if err := registeredrepo.NewStore(db).Update(ctx, seeded); err != nil {
+		if err := registeredrepo.NewStore(tenantDB).Update(ctx, seeded); err != nil {
 			t.Fatalf("point repository at test backend: %v", err)
 		}
 	}
 
-	taskRepo := repository.NewTaskRepository(db)
-	runRepo := repository.NewRunRepository(db)
-	writebackRepo := repository.NewWritebackRepository(db)
-	effectRepo := repository.NewEffectRepository(db)
+	taskRepo := repository.NewTaskRepository(tenantDB)
+	runRepo := repository.NewRunRepository(tenantDB)
+	writebackRepo := repository.NewWritebackRepository(tenantDB)
+	effectRepo := repository.NewEffectRepository(tenantDB)
 	currentRunID := "run-developer-clarification"
 	repositoryID := "repo-app-clarification"
 	task := &model.Task{
@@ -602,7 +640,11 @@ func TestNewCreatesDeveloperClarificationFollowupsFromAssigneeMap(t *testing.T) 
 	}
 
 	reason := "请补充 status 字段的允许枚举值。"
-	completedTask, _, err := application.Orch.ApplyCanonicalResult(ctx, results.CanonicalResult{
+	engine := application.pool.forTenantID(ctx, tenant.ID)
+	if engine == nil {
+		t.Fatal("tenant engine must be available")
+	}
+	completedTask, _, err := engine.orch.ApplyCanonicalResult(ctx, results.CanonicalResult{
 		TaskID: task.TaskID, RunID: currentRunID, Status: results.StatusHumanRequired,
 		Summary: "缺少接口字段定义", BlockerReason: &reason,
 	})
@@ -745,12 +787,10 @@ func TestNewRejectsWebhookForUnregisteredRepo(t *testing.T) {
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("expected unauthorized status %d, got %d: %s", http.StatusUnauthorized, resp.Code, resp.Body.String())
 	}
-	var eventCount int64
-	if err := db.Model(&model.InboundEvent{}).Count(&eventCount).Error; err != nil {
-		t.Fatal(err)
-	}
-	if eventCount != 0 {
-		t.Fatalf("unverified delivery must not persist events, got %d", eventCount)
+	// 平台库没有 inbound_events 表（结构性断言：无处可落）；未注册仓在
+	// 验签即被拒，也不进任何租户库。
+	if db.Migrator().HasTable(&model.InboundEvent{}) {
+		t.Fatal("platform store must not create the inbound events table")
 	}
 }
 
@@ -794,12 +834,10 @@ func TestNewReadyRejectsUnregisteredWebhookWithoutPersisting(t *testing.T) {
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("expected unauthorized webhook, got %d: %s", resp.Code, resp.Body.String())
 	}
-	var eventCount int64
-	if err := db.Model(&model.InboundEvent{}).Count(&eventCount).Error; err != nil {
-		t.Fatal(err)
-	}
-	if eventCount != 0 {
-		t.Fatalf("unverified delivery must not persist events, got %d", eventCount)
+	// 平台库没有 inbound_events 表（结构性断言：无处可落）；未注册仓在
+	// 验签即被拒，也不进任何租户库。
+	if db.Migrator().HasTable(&model.InboundEvent{}) {
+		t.Fatal("platform store must not create the inbound events table")
 	}
 }
 
