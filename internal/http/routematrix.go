@@ -169,8 +169,8 @@ var mcpRows = []MatrixRow{
 }
 
 var adminQueryRows = []MatrixRow{
-	mr("GET", "/api/admin/overview", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类：member 只读"),
-	mr("GET", "/api/admin/metrics", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
+	mr("GET", "/api/admin/overview", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类：member 只读"),
+	mr("GET", "/api/admin/metrics", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
 	mr("GET", "/api/admin/tasks", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
 	mr("GET", "/api/admin/tasks/:task_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
 	mr("GET", "/api/admin/tasks/:task_id/timeline", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "查询类"),
@@ -191,9 +191,9 @@ var adminQueryRows = []MatrixRow{
 }
 
 var adminAgentRows = []MatrixRow{
-	mr("GET", "/api/admin/agents/executions/summary", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "观测只读"),
-	mr("GET", "/api/admin/agents/executions/executions", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "观测只读"),
-	mr("GET", "/api/admin/agents/executions/executions/:execution_id", ClassAdmin, allow, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "观测只读"),
+	mr("GET", "/api/admin/agents/executions/summary", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "观测只读"),
+	mr("GET", "/api/admin/agents/executions/executions", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "观测只读"),
+	mr("GET", "/api/admin/agents/executions/executions/:execution_id", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "观测只读"),
 }
 
 var adminOperationRows = []MatrixRow{
@@ -247,20 +247,20 @@ var adminRequirementRows = []MatrixRow{
 }
 
 var adminConnectorRows = []MatrixRow{
-	mr("GET", "/api/admin/connectors", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("POST", "/api/admin/connectors", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
-	mr("GET", "/api/admin/connectors/:connector_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("PATCH", "/api/admin/connectors/:connector_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
-	mr("DELETE", "/api/admin/connectors/:connector_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
-	mr("POST", "/api/admin/connectors/:connector_id/probe", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
-	mr("POST", "/api/admin/connectors/:connector_id/runs", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
-	mr("GET", "/api/admin/connectors/:connector_id/runs", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("GET", "/api/admin/connectors/:connector_id/runs/:run_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("GET", "/api/admin/connectors/:connector_id/records", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("GET", "/api/admin/connectors/:connector_id/records/:record_id", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("GET", "/api/admin/connectors/:connector_id/metrics", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("GET", "/api/admin/connectors/:connector_id/configuration", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
-	mr("PUT", "/api/admin/connectors/:connector_id/configuration", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
+	mr("GET", "/api/admin/connectors", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("POST", "/api/admin/connectors", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
+	mr("GET", "/api/admin/connectors/:connector_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("PATCH", "/api/admin/connectors/:connector_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
+	mr("DELETE", "/api/admin/connectors/:connector_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
+	mr("POST", "/api/admin/connectors/:connector_id/probe", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
+	mr("POST", "/api/admin/connectors/:connector_id/runs", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
+	mr("GET", "/api/admin/connectors/:connector_id/runs", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("GET", "/api/admin/connectors/:connector_id/runs/:run_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("GET", "/api/admin/connectors/:connector_id/records", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("GET", "/api/admin/connectors/:connector_id/records/:record_id", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("GET", "/api/admin/connectors/:connector_id/metrics", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("GET", "/api/admin/connectors/:connector_id/configuration", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 配置类"),
+	mr("PUT", "/api/admin/connectors/:connector_id/configuration", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "connectors 写"),
 }
 
 var portalAuthRows = []MatrixRow{
