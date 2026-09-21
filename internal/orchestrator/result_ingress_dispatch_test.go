@@ -14,8 +14,9 @@ import (
 )
 
 type staticRunTokenIssuer struct {
-	secret []byte
-	calls  int
+	secret          []byte
+	calls           int
+	lastTaskTimeout time.Duration
 }
 
 func newStaticRunTokenIssuer(t *testing.T) *staticRunTokenIssuer {
@@ -27,8 +28,9 @@ func newStaticRunTokenIssuer(t *testing.T) *staticRunTokenIssuer {
 	return &staticRunTokenIssuer{secret: secret}
 }
 
-func (s *staticRunTokenIssuer) IssueRunToken(taskID, runID, role string) (string, error) {
+func (s *staticRunTokenIssuer) IssueRunToken(taskID, runID, role string, taskTimeout time.Duration) (string, error) {
 	s.calls++
+	s.lastTaskTimeout = taskTimeout
 	return resulttoken.Issue(s.secret, resulttoken.Claims{TaskID: taskID, RunID: runID, Role: role, TTL: time.Hour}, time.Now())
 }
 
@@ -88,6 +90,11 @@ func TestAgentRunnerStartSignsPerRunTokenIntoDispatchRequest(t *testing.T) {
 	if claims.TaskID != task.TaskID || claims.RunID != run.RunID || claims.Role != task.Role {
 		t.Fatalf("token claims do not bind the run: %#v", claims)
 	}
+	// TTL 来源=本次派发请求的超时（组织可放宽超过系统默认，token 不能
+	// 先于任务结束过期）。
+	if issuer.lastTaskTimeout != time.Duration(1800)*time.Second {
+		t.Fatalf("issuer must receive the dispatch timeout, got %s", issuer.lastTaskTimeout)
+	}
 }
 
 func TestAgentRunnerStartSkipsTokenOnIdempotentReplay(t *testing.T) {
@@ -126,6 +133,6 @@ func TestAgentRunnerStartFailsClosedOnIssuerError(t *testing.T) {
 
 type failingRunTokenIssuer struct{}
 
-func (f *failingRunTokenIssuer) IssueRunToken(string, string, string) (string, error) {
+func (f *failingRunTokenIssuer) IssueRunToken(string, string, string, time.Duration) (string, error) {
 	return "", errors.New("issuer unavailable")
 }

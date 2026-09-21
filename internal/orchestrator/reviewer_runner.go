@@ -121,10 +121,11 @@ func (c *ReviewerRunnerCoordinator) Start(ctx context.Context, request ReviewerR
 		return nil, err
 	}
 	runRoot := filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
-	// 组织段执行选择覆盖请求 Provider 的 Name 与 Effort（值拷贝，其余字段
-	// 保持系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。run 已钉住
-	// 取值时（恢复/重建路径）钉住值优先，配置热切换不改变在途 run 的身份。
-	providerConfig := resolveRunnerProviderConfig(ctx, c.runnerProviderLookup, request.Provider, request.Run.Provider, request.Run.Effort)
+	// 组织段执行选择覆盖请求 Provider 的 Name/Effort 与派发超时（值拷贝，
+	// 其余字段保持系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。
+	// run 已钉住取值时（恢复/重建路径）钉住值优先，配置热切换不改变在途
+	// run 的身份（请求哈希覆盖三项）。
+	providerConfig, taskTimeout := resolveRunnerExecution(ctx, c.runnerProviderLookup, request.Provider, request.Timeout, request.Run)
 	executionRequest := runner.CreateExecutionRequest{
 		ExecutionID:    request.Run.RunID,
 		TaskID:         request.Task.TaskID,
@@ -132,7 +133,7 @@ func (c *ReviewerRunnerCoordinator) Start(ctx context.Context, request ReviewerR
 		WorkspacePath:  runRoot,
 		PromptFile:     agent.PromptFileName,
 		SchemaFile:     agent.ResultSchemaFileName,
-		TimeoutSeconds: int64(request.Timeout / time.Second),
+		TimeoutSeconds: int64(taskTimeout / time.Second),
 		Provider:       providerConfig,
 	}
 	if existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest); err != nil {
@@ -155,7 +156,7 @@ func (c *ReviewerRunnerCoordinator) Start(ctx context.Context, request ReviewerR
 		return nil, fmt.Errorf("write reviewer task bundle: %w", err)
 	}
 
-	pinRunnerProviderOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort)
+	pinRunnerSelectionOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort, taskTimeout)
 	return c.core.Start(ctx, request.Task, request.Run, executionRequest)
 }
 

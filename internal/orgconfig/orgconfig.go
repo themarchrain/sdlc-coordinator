@@ -37,13 +37,15 @@ type Config struct {
 	Runner   RunnerConfig                 `json:"runner"`
 }
 
-// RunnerConfig 是组织段的执行选择：provider 与 effort 空串均表示跟随系统
-// 默认；合法取值与系统段 agent_runner 同名字段一致（CLI 为 codex-cli/
-// claude-cli，推理强度为 low/medium/high/xhigh/max 五档）。两个字段独立
-// 解析：组织只设其一时，派发不覆盖另一个。
+// RunnerConfig 是组织段的执行选择：provider/effort 空串与 task_timeout
+// 空串均表示跟随系统默认；合法取值与系统段 agent_runner 同名字段一致
+// （CLI 为 codex-cli/claude-cli，推理强度为 low/medium/high/xhigh/max
+// 五档，单任务超时为 1 分钟到 4 小时的时长）。字段独立解析：组织只设
+// 其一时，派发不覆盖另一个。
 type RunnerConfig struct {
-	Provider string `json:"provider"`
-	Effort   string `json:"effort"`
+	Provider    string `json:"provider"`
+	Effort      string `json:"effort"`
+	TaskTimeout string `json:"task_timeout"`
 }
 
 // ReworkAllowedIDs 把白名单字符串转为三平台 normalizer 消费的数值 id；
@@ -152,8 +154,9 @@ type EditableConfig struct {
 // EditableRunnerConfig 与 RunnerConfig 同形状（执行选择无密钥语义，
 // 编辑面直接读写原值）。
 type EditableRunnerConfig struct {
-	Provider string `json:"provider"`
-	Effort   string `json:"effort"`
+	Provider    string `json:"provider"`
+	Effort      string `json:"effort"`
+	TaskTimeout string `json:"task_timeout"`
 }
 
 type SecretChanges struct {
@@ -230,6 +233,13 @@ func Validate(config Config) configuration.ValidationErrors {
 	default:
 		errs["runner.effort"] = "推理强度仅支持 low、medium、high、xhigh 或 max"
 	}
+	// 单任务超时可空(空=跟随系统默认),非空时须为 1 分钟到 4 小时的时长。
+	if raw := strings.TrimSpace(config.Runner.TaskTimeout); raw != "" {
+		value, err := time.ParseDuration(raw)
+		if err != nil || value < time.Minute || value > 4*time.Hour {
+			errs["runner.task_timeout"] = "必须是 1 分钟到 4 小时之间的有效时长"
+		}
+	}
 	return errs
 }
 
@@ -257,7 +267,7 @@ func Merge(current Config, request UpdateRequest) Config {
 			ReviewerMentions: cloneStringSlice(request.Config.IM.ReviewerMentions),
 		},
 		// 执行选择无密钥语义,直接取提交值(空=跟随系统默认)。
-		Runner: RunnerConfig{Provider: request.Config.Runner.Provider, Effort: request.Config.Runner.Effort},
+		Runner: RunnerConfig{Provider: request.Config.Runner.Provider, Effort: request.Config.Runner.Effort, TaskTimeout: request.Config.Runner.TaskTimeout},
 	}
 	applySecretChange(&result.IM.Telegram.BotToken, request.Secrets.TelegramBotToken, request.Secrets.ClearTelegramBotToken)
 	applySecretChange(&result.IM.Feishu.Secret, request.Secrets.FeishuSecret, request.Secrets.ClearFeishuSecret)
@@ -294,7 +304,7 @@ func Mask(config Config) View {
 				},
 				ReviewerMentions: cloneStringSlice(config.IM.ReviewerMentions),
 			},
-			Runner: EditableRunnerConfig{Provider: config.Runner.Provider, Effort: config.Runner.Effort},
+			Runner: EditableRunnerConfig{Provider: config.Runner.Provider, Effort: config.Runner.Effort, TaskTimeout: config.Runner.TaskTimeout},
 		},
 		Secrets: SecretStatus{
 			TelegramBotTokenConfigured: strings.TrimSpace(config.IM.Telegram.BotToken) != "",

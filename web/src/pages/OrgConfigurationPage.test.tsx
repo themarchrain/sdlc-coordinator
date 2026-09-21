@@ -17,7 +17,7 @@ const view: TenantConfigurationView = {
   config: {
     codehost: { provider: 'github', base_url: 'https://github.com', rework_allowed_user_ids: ['42'] },
     im: { provider: '', telegram: {}, feishu: {}, reviewer_mentions: [] },
-    runner: { provider: '', effort: '' },
+    runner: { provider: '', effort: '', task_timeout: '' },
   },
   secrets: { telegram_bot_token_configured: false, feishu_secret_configured: false },
   revision: 3,
@@ -227,12 +227,34 @@ describe('OrgConfigurationPage', () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
       expected_revision: 3,
       config: expect.objectContaining({
-        // effort 无表单改动时空值原样往返（跟随系统默认）。
-        runner: { provider: 'codex-cli', effort: '' },
+        // effort/超时无表单改动时空值原样往返（跟随系统默认）。
+        runner: { provider: 'codex-cli', effort: '', task_timeout: '' },
       }),
     }))
     // antd message 门户跨测试残留,用 All 变体容忍先前用例的未过期提示。
     expect((await screen.findAllByText('组织配置已保存并生效')).length).toBeGreaterThan(0)
+  })
+
+  it('sets the task timeout on the first step and saves it', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue({ ...view, revision: 4 })
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+
+    fireEvent.change(screen.getByLabelText('单任务超时（分钟）'), { target: { value: '45' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        runner: { provider: '', effort: '', task_timeout: '45m' },
+      }),
+    }))
   })
 
   it('selects the effort level on the first step and saves it', async () => {
@@ -254,7 +276,7 @@ describe('OrgConfigurationPage', () => {
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({
-        runner: { provider: '', effort: 'xhigh' },
+        runner: { provider: '', effort: 'xhigh', task_timeout: '' },
       }),
     }))
   })

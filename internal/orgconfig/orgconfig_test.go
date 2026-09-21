@@ -250,6 +250,27 @@ func TestValidateRunnerProvider(t *testing.T) {
 	}
 }
 
+// 单任务超时,空(跟随系统默认)与 1 分钟到 4 小时区间通过,越界/坏格式拒。
+func TestValidateRunnerTaskTimeout(t *testing.T) {
+	base := Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}
+
+	for _, raw := range []string{"", "1m", "45m", "4h"} {
+		candidate := base
+		candidate.Runner.TaskTimeout = raw
+		if errs := Validate(candidate); len(errs) != 0 {
+			t.Fatalf("runner task timeout %q must pass, got %+v", raw, errs)
+		}
+	}
+
+	for _, raw := range []string{"30s", "0m", "5h", "not-a-duration"} {
+		candidate := base
+		candidate.Runner.TaskTimeout = raw
+		if errs := Validate(candidate); !errs.Has("runner.task_timeout") {
+			t.Fatalf("runner task timeout %q must be rejected on runner.task_timeout, got %+v", raw, errs)
+		}
+	}
+}
+
 // 推理强度档位,空(跟随系统默认)与五档通过,其他值拒绝。
 func TestValidateRunnerEffort(t *testing.T) {
 	base := Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}
@@ -273,20 +294,20 @@ func TestMergeRunnerTakesRequestValue(t *testing.T) {
 	codeHost := configuration.EditableCodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}
 	current := Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-		Runner:   RunnerConfig{Provider: "claude-cli", Effort: "low"},
+		Runner:   RunnerConfig{Provider: "claude-cli", Effort: "low", TaskTimeout: "30m"},
 	}
 
 	merged := Merge(current, UpdateRequest{Config: EditableConfig{
 		CodeHost: codeHost,
-		Runner:   EditableRunnerConfig{Provider: "codex-cli", Effort: "high"},
+		Runner:   EditableRunnerConfig{Provider: "codex-cli", Effort: "high", TaskTimeout: "45m"},
 	}})
-	if merged.Runner.Provider != "codex-cli" || merged.Runner.Effort != "high" {
+	if merged.Runner.Provider != "codex-cli" || merged.Runner.Effort != "high" || merged.Runner.TaskTimeout != "45m" {
 		t.Fatalf("merge must take request runner selection, got %+v", merged.Runner)
 	}
 
 	// 空提交 = 回到跟随系统默认,不保留现值(无密钥语义,直接覆盖)。
 	merged = Merge(current, UpdateRequest{Config: EditableConfig{CodeHost: codeHost}})
-	if merged.Runner.Provider != "" || merged.Runner.Effort != "" {
+	if merged.Runner.Provider != "" || merged.Runner.Effort != "" || merged.Runner.TaskTimeout != "" {
 		t.Fatalf("empty request runner selection must merge to empty, got %+v", merged.Runner)
 	}
 }
@@ -294,9 +315,9 @@ func TestMergeRunnerTakesRequestValue(t *testing.T) {
 func TestMaskCarriesRunnerSelection(t *testing.T) {
 	view := Mask(Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-		Runner:   RunnerConfig{Provider: "claude-cli", Effort: "low"},
+		Runner:   RunnerConfig{Provider: "claude-cli", Effort: "low", TaskTimeout: "30m"},
 	})
-	if view.Config.Runner.Provider != "claude-cli" || view.Config.Runner.Effort != "low" {
+	if view.Config.Runner.Provider != "claude-cli" || view.Config.Runner.Effort != "low" || view.Config.Runner.TaskTimeout != "30m" {
 		t.Fatalf("mask must carry the runner selection, got %+v", view.Config.Runner)
 	}
 }

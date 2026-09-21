@@ -352,9 +352,9 @@ func TestReviewerRunnerStartPinsDispatchedProviderOnRun(t *testing.T) {
 }
 
 // 钉住回写发生在分钟级的工作区准备之后，重建路径持有的可能是终态化
-// 之前的旧对象：列级条件更新必须只碰 provider/effort 各自的列，不得把
-// 库里已终态的状态字段回滚成旧值。
-func TestPinRunnerProviderOnRunKeepsConcurrentlyFinalizedRunIntact(t *testing.T) {
+// 之前的旧对象：列级条件更新必须只碰 provider/effort/超时各自的列，
+// 不得把库里已终态的状态字段回滚成旧值。
+func TestPinRunnerSelectionOnRunKeepsConcurrentlyFinalizedRunIntact(t *testing.T) {
 	fixture := newReviewerRunnerFixture(t)
 	completed := time.Now()
 	fixture.run.Status = model.RunStatusSucceeded
@@ -366,7 +366,7 @@ func TestPinRunnerProviderOnRunKeepsConcurrentlyFinalizedRunIntact(t *testing.T)
 
 	stale := &model.Run{RunID: fixture.run.RunID, TaskID: fixture.run.TaskID,
 		WorkerRole: fixture.run.WorkerRole, Status: model.RunStatusRunning}
-	pinRunnerProviderOnRun(context.Background(), fixture.runs, stale, " claude-cli ", " high ")
+	pinRunnerSelectionOnRun(context.Background(), fixture.runs, stale, " claude-cli ", " high ", 90*time.Minute)
 
 	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
 	if err != nil {
@@ -377,6 +377,9 @@ func TestPinRunnerProviderOnRunKeepsConcurrentlyFinalizedRunIntact(t *testing.T)
 	}
 	if persisted.Effort != "high" {
 		t.Fatalf("effort was not pinned: %q", persisted.Effort)
+	}
+	if persisted.TaskTimeoutSeconds != 90*60 {
+		t.Fatalf("task timeout was not pinned: %d", persisted.TaskTimeoutSeconds)
 	}
 	if persisted.Status != model.RunStatusSucceeded || persisted.OutputJSON != `{"verdict":"approved"}` || persisted.CompletedAt == nil {
 		t.Fatalf("concurrent finalization was rolled back: %#v", persisted)
@@ -432,6 +435,55 @@ func TestReviewerRunnerStartHonorsPinnedEffortOverLiveLookup(t *testing.T) {
 	}
 	if effort := fixture.runner.createRequest.Provider.Effort; effort != "low" {
 		t.Fatalf("pinned effort must win over the live lookup, got %q", effort)
+	}
+}
+
+// 组织段单任务超时经 lookup 注入后覆盖派发请求的超时；组织只设超时时
+// CLI/推理强度保持系统值（三字段独立解析）。
+func TestReviewerRunnerStartWithTenantTimeoutOnlyOverridesTimeout(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{TaskTimeout: 90 * time.Minute} })
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with tenant timeout: %v", err)
+	}
+	if seconds := fixture.runner.createRequest.TimeoutSeconds; seconds != 90*60 {
+		t.Fatalf("tenant timeout must override the system timeout: %d", seconds)
+	}
+	provider := fixture.runner.createRequest.Provider
+	if provider.Name != "fake" || provider.Effort != "" {
+		t.Fatalf("timeout-only lookup must not touch other provider fields: %#v", provider)
+	}
+}
+
+// 钉住优先级：run 行已钉住超时时，热切换后的组织值不改变在途 run 的
+// 重放身份（请求哈希覆盖超时秒数）。
+func TestReviewerRunnerStartHonorsPinnedTimeoutOverLiveLookup(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{TaskTimeout: 4 * time.Hour} })
+	fixture.run.TaskTimeoutSeconds = 45 * 60
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with pinned timeout: %v", err)
+	}
+	if seconds := fixture.runner.createRequest.TimeoutSeconds; seconds != 45*60 {
+		t.Fatalf("pinned timeout must win over the live lookup, got %d", seconds)
+	}
+}
+
+func TestReviewerRunnerStartPinsDispatchedTimeoutOnRun(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	fixture.coordinator.SetRunnerProviderLookup(func(context.Context) RunnerSelection { return RunnerSelection{TaskTimeout: 2 * time.Hour} })
+
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start with tenant timeout: %v", err)
+	}
+	persisted, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if persisted.TaskTimeoutSeconds != 2*60*60 {
+		t.Fatalf("run must be pinned to the dispatched timeout, got %d", persisted.TaskTimeoutSeconds)
 	}
 }
 

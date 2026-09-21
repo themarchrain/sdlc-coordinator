@@ -220,7 +220,10 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
           保存 payload 原样回传加载值——后端整行替换语义下缺键会把系统兜底
           值静默清空。 */}
       <Form.Item name={['agent_runner', 'effort']} hidden><Input className="mono" /></Form.Item>
-      <Form.Item name={['agent_runner', 'task_timeout_minutes']} label="单任务超时（分钟）" rules={[{ required: true }]} extra="默认 30 分钟；超时后 Runner 会终止当前 Agent 进程，本次 Run 按失败策略处理。"><InputNumber min={1} max={240} precision={0} /></Form.Item>
+      {/* 单任务超时已下沉组织配置（组织可选、系统兜底）；保留隐藏注册字段让
+          保存 payload 原样回传加载值——后端整行替换语义下缺键会把系统兜底
+          值静默清空。 */}
+      <Form.Item name={['agent_runner', 'task_timeout_minutes']} hidden><Input className="mono" /></Form.Item>
       <SecretField name="agent_runner_api_key" clearName="clear_agent_runner_api_key" label="模型 API Key" configured={secrets.agent_runner_api_key_configured} />
       <SecretField name="agent_runner_custom_headers_json" clearName="clear_agent_runner_custom_headers_json" label="自定义 Header JSON" configured={secrets.agent_runner_custom_headers_configured} optional />
     </div>
