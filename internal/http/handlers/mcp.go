@@ -27,9 +27,9 @@ type MCPEngineView struct {
 	Rejections *repository.ResultRejectionRepository
 }
 
-// MCPEngineSource 按 token 中的租户声明选择引擎视图；0（存量 token 无
-// 租户）走平台兜底视图，其余未命中返回零值视图（消费端 fail-closed 回
-// 503，不回落平台库）。
+// MCPEngineSource 按 token 中的租户声明选择引擎视图；未命中或无租户
+// 声明（含 0）一律返回零值视图（消费端 fail-closed 回 503，不回落
+// 平台库）。
 type MCPEngineSource interface {
 	MCPEngineForTenant(tenantID uint) MCPEngineView
 }
@@ -86,17 +86,16 @@ func NewMCPHandler(
 // 打不开、组织停用）：fail-closed，不回落平台视图。
 var errTenantEngineUnavailable = errors.New("tenant engine unavailable")
 
-// engineView 按 claims 解析本请求的引擎依赖：选择器命中优先；租户引擎
-// 不可用时返回错误（503），仅 0（存量无租户 token）走平台兜底视图。
+// engineView 按 claims 解析本请求的引擎依赖：选择器命中优先；选择器
+// 注入时零值视图（引擎不可用，含无租户 token——其寿命早已耗尽）一律
+// 返回错误（503）。未注入选择器的装配（单库形态/测试）沿用构造期默认。
 func (h *MCPHandler) engineView(claims resulttoken.Claims) (MCPEngineView, error) {
 	if h.engines != nil {
 		view := h.engines.MCPEngineForTenant(claims.TenantID)
 		if view.Channel != nil {
 			return view, nil
 		}
-		if claims.TenantID != 0 {
-			return MCPEngineView{}, errTenantEngineUnavailable
-		}
+		return MCPEngineView{}, errTenantEngineUnavailable
 	}
 	return MCPEngineView{Channel: h.channel, Tasks: h.tasks, Runs: h.runs, Rejections: h.rejections}, nil
 }
@@ -154,7 +153,9 @@ const mcpMaxRequestBytes = 1 << 20 // 1 MiB
 const DefaultMaxCorrectionAttempts = 5
 
 func (h *MCPHandler) Handle(c *gin.Context) {
-	if h == nil || h.channel == nil || len(h.secret) == 0 {
+	// 已配置 = 有密钥且（默认通道或引擎选择器）至少其一在场；生产装配
+	// 只注入选择器（平台默认视图已随平台引擎拆除）。
+	if h == nil || (h.channel == nil && h.engines == nil) || len(h.secret) == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "mcp handler is not configured"})
 		return
 	}

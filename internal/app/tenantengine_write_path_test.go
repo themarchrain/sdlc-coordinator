@@ -18,7 +18,7 @@ import (
 
 // TestTenantWebhookCreatesTaskInTenantStore 是写路径租户化的 headline：
 // 租户库中的注册仓行收到 webhook 后，事件入库与任务创建全部落在该租户的
-// 租户库；平台主库的 inbound_events/tasks 保持零行（读写不再错位）。
+// 租户库；平台主库无 inbound_events/tasks 表（读写不再错位）。
 func TestTenantWebhookCreatesTaskInTenantStore(t *testing.T) {
 	ctx := context.Background()
 	db := openAppTestDB(t)
@@ -77,9 +77,9 @@ func TestTenantWebhookCreatesTaskInTenantStore(t *testing.T) {
 	// 任务与入站事件都落在租户库。
 	assertTenantRowCount(t, tenantStore.DB, "tasks", 1)
 	assertTenantRowCount(t, tenantStore.DB, "inbound_events", 1)
-	// 平台主库两表零行：读写错位消除。
-	assertTenantRowCount(t, db, "tasks", 0)
-	assertTenantRowCount(t, db, "inbound_events", 0)
+	// 平台主库无业务表（无表=零行的结构性加强版）：读写错位消除。
+	assertPlatformBusinessTableAbsent(t, db, "tasks")
+	assertPlatformBusinessTableAbsent(t, db, "inbound_events")
 
 	// 同一事件重放（同载荷）幂等：租户库任务仍恰一条（dedupe 落在租户库内）。
 	replay := performAppRawJSONWithHeaders(t, application.Router, http.MethodPost, "/api/events/gitea", payload,
@@ -89,7 +89,7 @@ func TestTenantWebhookCreatesTaskInTenantStore(t *testing.T) {
 	}
 	assertTenantRowCount(t, tenantStore.DB, "tasks", 1)
 	assertTenantRowCount(t, tenantStore.DB, "inbound_events", 1)
-	assertTenantRowCount(t, db, "inbound_events", 0)
+	assertPlatformBusinessTableAbsent(t, db, "inbound_events")
 }
 
 // assertTenantRowCount 断言指定库的业务表行数。
@@ -101,6 +101,15 @@ func assertTenantRowCount(t *testing.T, db *gorm.DB, table string, want int) {
 	}
 	if count != int64(want) {
 		t.Fatalf("table %s: want %d rows, got %d", table, want, count)
+	}
+}
+
+// assertPlatformBusinessTableAbsent 锁定平台库不建业务表（结构性断言，
+// 比行数清零更强：无表即无落点）。
+func assertPlatformBusinessTableAbsent(t *testing.T, db *gorm.DB, table string) {
+	t.Helper()
+	if db.Migrator().HasTable(table) {
+		t.Fatalf("platform store must not create table %s", table)
 	}
 }
 
@@ -221,7 +230,7 @@ func TestEnginePoolForTenantIDFailsClosedForDisabledTenant(t *testing.T) {
 	if frozen.Code != http.StatusServiceUnavailable {
 		t.Fatalf("disabled tenant webhook must fail closed with 503, got %d: %s", frozen.Code, frozen.Body.String())
 	}
-	assertTenantRowCount(t, db, "inbound_events", 0)
+	assertPlatformBusinessTableAbsent(t, db, "inbound_events")
 	assertTenantRowCount(t, tenantStore.DB, "inbound_events", 0)
 
 	if _, err := application.ControlPlane.RestoreTenant(ctx, actor, tenant.ID); err != nil {
