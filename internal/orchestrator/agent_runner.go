@@ -20,15 +20,18 @@ type AgentRunnerObservation struct {
 }
 
 // RunTokenIssuer signs the per-run bearer tokens for the MCP result channel.
+// taskTimeout is the dispatch-resolved effective timeout: the token must not
+// expire before the run can finish, so its TTL derives from this value (the
+// issuer adds the polling grace).
 type RunTokenIssuer interface {
-	IssueRunToken(taskID, runID, role string) (string, error)
+	IssueRunToken(taskID, runID, role string, taskTimeout time.Duration) (string, error)
 }
 
 // RunTokenIssuerFunc adapts a function into a RunTokenIssuer.
-type RunTokenIssuerFunc func(taskID, runID, role string) (string, error)
+type RunTokenIssuerFunc func(taskID, runID, role string, taskTimeout time.Duration) (string, error)
 
-func (f RunTokenIssuerFunc) IssueRunToken(taskID, runID, role string) (string, error) {
-	return f(taskID, runID, role)
+func (f RunTokenIssuerFunc) IssueRunToken(taskID, runID, role string, taskTimeout time.Duration) (string, error) {
+	return f(taskID, runID, role, taskTimeout)
 }
 
 type AgentRunnerCoordinator struct {
@@ -83,25 +86,30 @@ func (c *AgentRunnerCoordinator) setTenantRunnerRouter(router TenantRunnerRouter
 	c.router = router
 }
 
-// RunnerSelection 是组织段执行选择的现取结果：CLI 与推理强度两个字段
-// 独立解析，空串表示组织未设置（回落系统默认值）。
+// RunnerSelection 是组织段执行选择的现取结果：CLI、推理强度与单任务
+// 超时三个字段独立解析，空串/零值表示组织未设置（回落系统默认值）。
 type RunnerSelection struct {
-	Provider string
-	Effort   string
+	Provider    string
+	Effort      string
+	TaskTimeout time.Duration
 }
 
-// resolveRunnerProviderConfig 应用组织段执行选择（CLI 与推理强度）：pinned
-// 非空（run 已钉住派发时的取值）时直接沿用，不再查询——配置热切换后恢复/
-// 重建路径按钉住值重放，请求哈希（覆盖 CLI 名与推理强度）与远端既有执行
-// 一致；未钉住的字段经 lookup 现取，lookup 未注入或返回空串时沿用系统
-// 默认值。两个候选字段仅在非空时覆盖——BaseURL/APIKey/Model 等其余字段
-// 保持系统值（组织段只租户化执行选择，不触碰模型凭据），组织只设其一时
-// 不覆盖另一个。覆盖必须发生在请求哈希计算之前，幂等重放与远端校验才能
-// 看到同一份请求。
-func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Context) RunnerSelection, fallback runner.ProviderConfig, pinnedProvider, pinnedEffort string) runner.ProviderConfig {
-	provider := strings.TrimSpace(pinnedProvider)
-	effort := strings.TrimSpace(pinnedEffort)
-	if (provider == "" || effort == "") && lookup != nil {
+// resolveRunnerExecution 应用组织段执行选择（CLI、推理强度、单任务超时）：
+// run 行已钉住的字段（派发时写入）直接沿用不再查询——配置热切换后恢复/
+// 重建路径按钉住值重放，请求哈希（覆盖 CLI 名、推理强度与超时秒数）与
+// 远端既有执行一致；未钉住的字段经 lookup 现取，lookup 未注入或零值时
+// 沿用系统默认值。候选字段仅在非空/非零时覆盖——BaseURL/APIKey/Model
+// 等其余字段保持系统值（组织段只租户化执行选择，不触碰模型凭据），组织
+// 只设其一时不覆盖另一个。覆盖必须发生在请求哈希计算之前，幂等重放与
+// 远端校验才能看到同一份请求。
+func resolveRunnerExecution(ctx context.Context, lookup func(context.Context) RunnerSelection, fallback runner.ProviderConfig, fallbackTimeout time.Duration, run *model.Run) (runner.ProviderConfig, time.Duration) {
+	provider := strings.TrimSpace(run.Provider)
+	effort := strings.TrimSpace(run.Effort)
+	timeout := time.Duration(0)
+	if run.TaskTimeoutSeconds > 0 {
+		timeout = time.Duration(run.TaskTimeoutSeconds) * time.Second
+	}
+	if (provider == "" || effort == "" || timeout == 0) && lookup != nil {
 		live := lookup(ctx)
 		if provider == "" {
 			provider = strings.TrimSpace(live.Provider)
@@ -109,9 +117,9 @@ func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Contex
 		if effort == "" {
 			effort = strings.TrimSpace(live.Effort)
 		}
-	}
-	if provider == "" && effort == "" {
-		return fallback
+		if timeout == 0 {
+			timeout = live.TaskTimeout
+		}
 	}
 	resolved := fallback
 	if provider != "" {
@@ -120,15 +128,18 @@ func resolveRunnerProviderConfig(ctx context.Context, lookup func(context.Contex
 	if effort != "" {
 		resolved.Effort = effort
 	}
-	return resolved
+	if timeout == 0 {
+		timeout = fallbackTimeout
+	}
+	return resolved, timeout
 }
 
-// pinRunnerProviderOnRun 把本 run 实际使用的 CLI 与推理强度钉进 run 行
-// （best-effort：回写失败不阻断派发，代价是后续重建路径回落到现取值）。
-// 已钉住的值不覆盖，两列独立判定。经列级条件更新只碰各自的列——本函数
-// 在分钟级的工作区准备之后执行，整行保存会把并发终态化的 run 回滚成旧
-// 状态。
-func pinRunnerProviderOnRun(ctx context.Context, runs RunRepository, run *model.Run, provider, effort string) {
+// pinRunnerSelectionOnRun 把本 run 实际使用的 CLI、推理强度与单任务超时
+// 钉进 run 行（best-effort：回写失败不阻断派发，代价是后续重建路径回落
+// 到现取值）。已钉住的值不覆盖，三列独立判定。经列级条件更新只碰各自的
+// 列——本函数在分钟级的工作区准备之后执行，整行保存会把并发终态化的
+// run 回滚成旧状态。
+func pinRunnerSelectionOnRun(ctx context.Context, runs RunRepository, run *model.Run, provider, effort string, timeout time.Duration) {
 	if run == nil {
 		return
 	}
@@ -139,6 +150,10 @@ func pinRunnerProviderOnRun(ctx context.Context, runs RunRepository, run *model.
 	if pinned := strings.TrimSpace(effort); pinned != "" && run.Effort == "" {
 		_ = runs.UpdateEffortIfEmpty(ctx, run.RunID, pinned)
 		run.Effort = pinned
+	}
+	if seconds := int64(timeout / time.Second); seconds > 0 && run.TaskTimeoutSeconds == 0 {
+		_ = runs.UpdateTaskTimeoutIfEmpty(ctx, run.RunID, seconds)
+		run.TaskTimeoutSeconds = seconds
 	}
 }
 
@@ -210,7 +225,7 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 		return existing, nil
 	}
 	if c.ingressIssuer != nil && c.ingressEndpoint != "" {
-		token, err := c.ingressIssuer.IssueRunToken(task.TaskID, run.RunID, task.Role)
+		token, err := c.ingressIssuer.IssueRunToken(task.TaskID, run.RunID, task.Role, time.Duration(request.TimeoutSeconds)*time.Second)
 		if err != nil {
 			return nil, fmt.Errorf("issue run result token: %w", err)
 		}

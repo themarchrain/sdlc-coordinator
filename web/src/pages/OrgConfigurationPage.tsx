@@ -7,6 +7,7 @@ import {
   Divider,
   Form,
   Input,
+  InputNumber,
   message,
   Select,
   Steps,
@@ -37,6 +38,8 @@ import {
 
 type OrgConfigSecrets = NonNullable<TenantConfigurationUpdateRequest['secrets']>
 type OrgConfigFormValues = TenantConfigurationUpdateRequest['config'] & {
+  // 表单内超时以分钟编辑，提交前换算回时长字符串（空=跟随系统默认）。
+  runner?: TenantConfigurationUpdateRequest['config']['runner'] & { task_timeout_minutes?: number }
   people: ConfigurationPeopleSelection
   secrets: OrgConfigSecrets
 }
@@ -155,6 +158,9 @@ function CodeHostStep({ people, onManagePeople }: { people: Person[]; onManagePe
       <Form.Item name={['runner', 'effort']} label="推理强度" extra="CLI 的思考深度档位；留空跟随系统默认。">
         <Select aria-label="推理强度" allowClear options={['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))} />
       </Form.Item>
+      <Form.Item name={['runner', 'task_timeout_minutes']} label="单任务超时（分钟）" extra="超时后 Runner 终止本次 Agent 进程；留空跟随系统默认。">
+        <InputNumber aria-label="单任务超时（分钟）" min={1} max={240} precision={0} className="mono" placeholder="跟随系统默认" />
+      </Form.Item>
       <p className="form-note">此处的平台与地址作为新增仓库表单的默认值；每个仓库可在仓库管理中单独指定平台与地址。</p>
       <Form.Item name={['people', 'rework_person_ids']} label="额外允许接续开发的人员" extra="从人员资产选择；MR 作者、负责人和 Reviewer 无需重复填写。"><Select mode="multiple" options={codeHostOptions} placeholder="选择人员" /></Form.Item>
     </div>
@@ -203,6 +209,7 @@ function SummaryStep({ form, fieldErrors }: { form: FormInstance<OrgConfigFormVa
       <div><span>IM 通知</span><strong>{values?.im?.provider ? values.im.provider : '未配置'}</strong></div>
       <div><span>执行 CLI</span><strong>{values?.runner?.provider || '跟随系统默认'}</strong></div>
       <div><span>推理强度</span><strong>{values?.runner?.effort || '跟随系统默认'}</strong></div>
+      <div><span>单任务超时</span><strong>{values?.runner?.task_timeout_minutes ? `${values.runner.task_timeout_minutes} 分钟` : '跟随系统默认'}</strong></div>
     </div>
     {Object.keys(fieldErrors).length > 0 ? <Alert type="error" showIcon message="以下字段未通过校验" description={<ul>{Object.entries(fieldErrors).map(([field, detail]) => <li key={field}><code>{field}</code>：{detail}</li>)}</ul>} /> : null}
   </div>
@@ -221,7 +228,7 @@ function toFormValues(view: TenantConfigurationView, people: Person[]): OrgConfi
   return {
     codehost: { ...view.config.codehost, rework_allowed_user_ids: view.config.codehost.rework_allowed_user_ids || [] },
     im: { ...view.config.im, reviewer_mentions: view.config.im.reviewer_mentions || [] },
-    runner: { provider: view.config.runner.provider || '', effort: view.config.runner.effort || '' },
+    runner: { provider: view.config.runner.provider || '', effort: view.config.runner.effort || '', task_timeout: view.config.runner.task_timeout || '', task_timeout_minutes: durationMinutes(view.config.runner.task_timeout) },
     people: resolveTenantConfigurationPeople(view, people),
     secrets: {},
   }
@@ -243,11 +250,34 @@ function toUpdateRequest(values: OrgConfigFormValues, people: Person[], view: Te
         feishu: { ...values.im.feishu, mention_map: view?.config.im.feishu.mention_map ?? {} },
         reviewer_mentions: resolved.reviewer_mentions,
       },
-      runner: { provider: values.runner?.provider ?? '', effort: values.runner?.effort ?? '' },
+      runner: {
+        provider: values.runner?.provider ?? '',
+        effort: values.runner?.effort ?? '',
+        task_timeout: minutesToDuration(values.runner?.task_timeout_minutes),
+      },
     },
     secrets: values.secrets || {},
     expected_revision: expectedRevision,
   }
+}
+
+// durationMinutes 把时长字符串换算为分钟；空值或非常规形态回 0（表单空态）。
+function durationMinutes(raw: string): number {
+  const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)$/.exec((raw || '').trim())
+  if (!match) return 0
+  const amount = Number(match[1])
+  switch (match[2]) {
+    case 'ms': return Math.max(0, Math.round(amount / 60000))
+    case 's': return Math.max(0, Math.round(amount / 60))
+    case 'h': return Math.round(amount * 60)
+    default: return Math.round(amount)
+  }
+}
+
+// minutesToDuration 把分钟换算回时长字符串；空/非正数返回空串（跟随系统默认）。
+function minutesToDuration(minutes?: number): string {
+  const value = Number(minutes)
+  return Number.isFinite(value) && value > 0 ? `${Math.round(value)}m` : ''
 }
 
 function validateHTTPURL(_: unknown, value?: string) {

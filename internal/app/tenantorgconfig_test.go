@@ -2,8 +2,9 @@ package app
 
 import (
 	"context"
-	"path/filepath"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/configuration"
 	"sdlc-coordinator/internal/orgconfig"
@@ -163,12 +164,23 @@ func TestTenantRunnerProviderLookupFollowsConfigSaves(t *testing.T) {
 
 	if _, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
 		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
-		Runner:   orgconfig.RunnerConfig{Provider: "codex-cli", Effort: "high"},
+		Runner:   orgconfig.RunnerConfig{Provider: "codex-cli", Effort: "high", TaskTimeout: "45m"},
 	}, 0); err != nil {
 		t.Fatalf("save org config: %v", err)
 	}
 	selection := lookup(ctx)
-	if selection.Provider != "codex-cli" || selection.Effort != "high" {
+	if selection.Provider != "codex-cli" || selection.Effort != "high" || selection.TaskTimeout != 45*time.Minute {
 		t.Fatalf("runner selection did not observe the save: %#v", selection)
+	}
+
+	// 坏值只可能是历史脏数据(保存链已按区间校验):记日志并按未配置回落。
+	if _, err := orgconfig.NewStore(db).Save(ctx, orgconfig.Config{
+		CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
+		Runner:   orgconfig.RunnerConfig{TaskTimeout: "not-a-duration"},
+	}, 1); err != nil {
+		t.Fatalf("save org config with bad timeout: %v", err)
+	}
+	if bad := lookup(ctx); bad.TaskTimeout != 0 {
+		t.Fatalf("unparsable timeout must fall back to zero, got %s", bad.TaskTimeout)
 	}
 }

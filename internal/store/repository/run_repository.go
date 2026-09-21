@@ -56,6 +56,18 @@ func (r *RunRepository) UpdateEffortIfEmpty(ctx context.Context, runID, effort s
 	return nil
 }
 
+// UpdateTaskTimeoutIfEmpty 仅在 run 尚未钉住单任务超时时写入
+// task_timeout_seconds 列；动机与 UpdateProviderIfEmpty 相同：列级条件
+// 更新不整行覆盖，避免把并发终态化的状态字段回滚成旧值。
+func (r *RunRepository) UpdateTaskTimeoutIfEmpty(ctx context.Context, runID string, seconds int64) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (task_timeout_seconds = 0 OR task_timeout_seconds IS NULL)", runID).
+		Update("task_timeout_seconds", seconds).Error; err != nil {
+		return fmt.Errorf("update run task timeout: %w", err)
+	}
+	return nil
+}
+
 func (r *RunRepository) GetByRunID(ctx context.Context, runID string) (*model.Run, error) {
 	var run model.Run
 	if err := r.db.WithContext(ctx).Where("run_id = ?", runID).First(&run).Error; err != nil {

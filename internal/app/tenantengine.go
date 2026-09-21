@@ -149,10 +149,12 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎
 	// 租户，回传端按声明路由回同一引擎（无租户声明的 token 一律拒绝）。
-	ingressIssuer := orchestrator.RunTokenIssuerFunc(func(taskID, runID, role string) (string, error) {
+	// TTL 跟随本次派发解析出的实际超时：组织放宽超时后 token 不能先于任务
+	// 结束过期，轮询余量在 resultTokenTTLGrace 上叠加。
+	ingressIssuer := orchestrator.RunTokenIssuerFunc(func(taskID, runID, role string, taskTimeout time.Duration) (string, error) {
 		return resulttoken.Issue(shared.resultTokenSecret, resulttoken.Claims{
 			TaskID: taskID, RunID: runID, Role: role, TenantID: tenantID,
-			TTL: shared.cfg.AgentRunner.TaskTimeout + resultTokenTTLGrace,
+			TTL: taskTimeout + resultTokenTTLGrace,
 		}, time.Now())
 	})
 	mcpChannel := orchestrator.NewResultChannelCoordinator(

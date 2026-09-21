@@ -40,6 +40,7 @@ type RunRepository interface {
 	Update(context.Context, *model.Run) error
 	UpdateProviderIfEmpty(context.Context, string, string) error
 	UpdateEffortIfEmpty(context.Context, string, string) error
+	UpdateTaskTimeoutIfEmpty(context.Context, string, int64) error
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)

@@ -347,6 +347,7 @@ export interface TenantConfigurationConfig {
   runner: {
     provider: '' | 'codex-cli' | 'claude-cli'
     effort: '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    task_timeout: string
   }
 }
 

@@ -36,12 +36,16 @@ type Run struct {
 	// Effort 钉住本 run 派发时实际生效的推理强度，语义与 Provider 一致：
 	// 请求哈希覆盖推理强度，热切换后按钉住值重放才能与远端既有执行对上；
 	// 空串表示派发于钉住机制之前，恢复路径回落现取值。
-	Effort            string     `gorm:"index"`
-	StartedAt         *time.Time `gorm:"index"`
-	CompletedAt       *time.Time `gorm:"index"`
-	ArtifactsPurgedAt *time.Time `gorm:"index"`
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	Effort string `gorm:"index"`
+	// TaskTimeoutSeconds 钉住本 run 派发时实际生效的单任务超时（秒），语义
+	// 与 Provider/Effort 一致：请求哈希覆盖超时秒数，热切换后按钉住值重放
+	// 才能与远端既有执行对上；0 表示派发于钉住机制之前，恢复路径回落现取值。
+	TaskTimeoutSeconds int64      `gorm:"index"`
+	StartedAt          *time.Time `gorm:"index"`
+	CompletedAt        *time.Time `gorm:"index"`
+	ArtifactsPurgedAt  *time.Time `gorm:"index"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (r *Run) BeforeCreate(tx *gorm.DB) error {

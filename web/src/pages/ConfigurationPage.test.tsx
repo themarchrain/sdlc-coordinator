@@ -87,9 +87,9 @@ describe('ConfigurationPage', () => {
     expect(screen.queryByLabelText('执行 Provider')).not.toBeInTheDocument()
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument()
     expect(screen.getByLabelText('执行模型')).toHaveValue('deepseek-v4-flash-0731')
-    // 推理强度已下沉组织配置：系统向导不再渲染编辑 UI。
+    // 推理强度与单任务超时已下沉组织配置：系统向导不再渲染编辑 UI。
     expect(screen.queryByLabelText('推理强度')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('单任务超时（分钟）')).toHaveValue('30')
+    expect(screen.queryByLabelText('单任务超时（分钟）')).not.toBeInTheDocument()
     expect(screen.getByText('裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。')).toBeInTheDocument()
     expect(screen.getAllByText('已配置').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByDisplayValue('runner-api-key')).not.toBeInTheDocument()

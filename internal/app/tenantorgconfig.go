@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"sdlc-coordinator/internal/adapters/im"
 	effectexec "sdlc-coordinator/internal/effects"
@@ -85,18 +86,28 @@ func tenantReviewerMentionsProvider(provider *orgconfig.Provider, logger *zap.Lo
 	}
 }
 
-// tenantRunnerProviderLookup 产出执行选择（CLI 与推理强度）的动态来源
-// （审查/开发派发时现取）；未配置的字段返回空串（调用方回落系统默认值）。
+// tenantRunnerProviderLookup 产出执行选择（CLI/推理强度/单任务超时）的
+// 动态来源（审查/开发派发时现取）；未配置的字段返回零值（调用方回落
+// 系统默认值）。超时坏值（保存链已按 1 分钟到 4 小时校验，只可能是历史
+// 脏数据）记日志并按未配置处理。
 func tenantRunnerProviderLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) orchestrator.RunnerSelection {
 	return func(ctx context.Context) orchestrator.RunnerSelection {
 		config, err := provider.Get(ctx)
 		if err != nil && logger != nil {
 			logger.Warn("load tenant runtime config for runner selection failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		}
-		return orchestrator.RunnerSelection{
+		selection := orchestrator.RunnerSelection{
 			Provider: strings.TrimSpace(config.Runner.Provider),
 			Effort:   strings.TrimSpace(config.Runner.Effort),
 		}
+		if raw := strings.TrimSpace(config.Runner.TaskTimeout); raw != "" {
+			if value, parseErr := time.ParseDuration(raw); parseErr == nil {
+				selection.TaskTimeout = value
+			} else if logger != nil {
+				logger.Warn("tenant runner task timeout unparsable, falling back to system default", zap.Uint("tenant_id", tenantID), zap.String("raw", raw))
+			}
+		}
+		return selection
 	}
 }
 
