@@ -131,17 +131,28 @@ func TestAdminAPISuperAdminBusinessAPISupportOnly(t *testing.T) {
 		t.Fatalf("super_admin get configuration = %d body=%s", config.Code, config.Body.String())
 	}
 
-	overview := world.portalDo(t, http.MethodGet, "/api/admin/overview", token, nil)
-	if overview.Code != http.StatusOK {
-		t.Fatalf("super_admin overview = %d body=%s", overview.Code, overview.Body.String())
-	}
-
 	schedulerDefaults := world.portalDo(t, http.MethodGet, "/api/admin/scheduler/defaults", token, nil)
 	if schedulerDefaults.Code != http.StatusOK {
 		t.Fatalf("super_admin scheduler defaults = %d body=%s", schedulerDefaults.Code, schedulerDefaults.Body.String())
 	}
 
-	// 未支持访问：业务面 403。
+	// 未支持访问：业务面 403（查询/观测/连接器四个面与任务/人员/需求同收）。
+	overview := world.portalDo(t, http.MethodGet, "/api/admin/overview", token, nil)
+	if overview.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support overview = %d, want 403 body=%s", overview.Code, overview.Body.String())
+	}
+	metrics := world.portalDo(t, http.MethodGet, "/api/admin/metrics", token, nil)
+	if metrics.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support metrics = %d, want 403", metrics.Code)
+	}
+	agents := world.portalDo(t, http.MethodGet, "/api/admin/agents/executions/summary", token, nil)
+	if agents.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support agent summary = %d, want 403", agents.Code)
+	}
+	connectors := world.portalDo(t, http.MethodGet, "/api/admin/connectors", token, nil)
+	if connectors.Code != http.StatusForbidden {
+		t.Fatalf("super_admin without support list connectors = %d, want 403", connectors.Code)
+	}
 	tasks := world.portalDo(t, http.MethodGet, "/api/admin/tasks?page=1&page_size=10", token, nil)
 	if tasks.Code != http.StatusForbidden {
 		t.Fatalf("super_admin without support list tasks = %d, want 403 body=%s", tasks.Code, tasks.Body.String())
@@ -167,6 +178,10 @@ func TestAdminAPISuperAdminBusinessAPISupportOnly(t *testing.T) {
 	tasksSupported := world.portalDo(t, http.MethodGet, "/api/admin/tasks?page=1&page_size=10", token, nil)
 	if tasksSupported.Code != http.StatusOK {
 		t.Fatalf("super_admin with support list tasks = %d body=%s", tasksSupported.Code, tasksSupported.Body.String())
+	}
+	overviewSupported := world.portalDo(t, http.MethodGet, "/api/admin/overview", token, nil)
+	if overviewSupported.Code != http.StatusOK {
+		t.Fatalf("super_admin with support overview = %d body=%s", overviewSupported.Code, overviewSupported.Body.String())
 	}
 	peopleSupported := world.portalDo(t, http.MethodGet, "/api/admin/people", token, nil)
 	if peopleSupported.Code != http.StatusOK {
