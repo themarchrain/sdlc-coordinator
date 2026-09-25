@@ -68,6 +68,28 @@ func (r *RunRepository) UpdateTaskTimeoutIfEmpty(ctx context.Context, runID stri
 	return nil
 }
 
+// UpdateFailedIfInFlight 仅在 run 仍处于在途状态时把状态置为 failed 并写
+// error_message、completed_at，返回是否实际生效。在途集合取 pending、
+// running、finalizing，是既有终态写路径界定终态集合（succeeded、failed、
+// blocked）的补集：迟到失败回写持有派发前的旧快照，分钟级工作区准备窗口
+// 内 run 可能已被结果回传通道终态化，条件不满足时不落任何列、不整行覆盖，
+// 避免把并发终态回滚成旧值。
+func (r *RunRepository) UpdateFailedIfInFlight(ctx context.Context, runID, message string, completedAt time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND status IN ?", runID, []model.RunStatus{
+			model.RunStatusPending, model.RunStatusRunning, model.RunStatusFinalizing,
+		}).
+		Updates(map[string]any{
+			"status":        model.RunStatusFailed,
+			"error_message": message,
+			"completed_at":  completedAt,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("update run failure if in flight: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
 func (r *RunRepository) GetByRunID(ctx context.Context, runID string) (*model.Run, error) {
 	var run model.Run
 	if err := r.db.WithContext(ctx).Where("run_id = ?", runID).First(&run).Error; err != nil {

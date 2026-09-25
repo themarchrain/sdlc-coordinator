@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type RunRepository interface {
 	UpdateProviderIfEmpty(context.Context, string, string) error
 	UpdateEffortIfEmpty(context.Context, string, string) error
 	UpdateTaskTimeoutIfEmpty(context.Context, string, int64) error
+	UpdateFailedIfInFlight(context.Context, string, string, time.Time) (bool, error)
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
@@ -476,11 +478,21 @@ type RecoveryResult struct {
 
 func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Task, run *model.Run, cause error) {
 	nextTaskStatus := o.policy.NextFailureStatus(task)
-	run.Status = model.RunStatusFailed
-	run.ErrorMessage = cause.Error()
+	// 列级条件更新只碰状态、错误信息与完成时间：本函数持有的是派发前的
+	// 旧快照，分钟级工作区准备窗口内 run 可能已被结果回传通道终态化，
+	// 整行保存会把库中的终态回滚成旧值。
 	completedAt := o.now()
-	run.CompletedAt = &completedAt
-	_ = o.runs.Update(ctx, run)
+	applied, err := o.runs.UpdateFailedIfInFlight(ctx, run.RunID, cause.Error(), completedAt)
+	if err != nil {
+		log.Printf("orchestrator: record dispatch failure for run %s (task %s): update failed: %v; dispatch cause: %v", run.RunID, task.TaskID, err, cause)
+		return
+	}
+	if !applied {
+		// 未生效说明并发方已把 run 终态化且任务已随结果推进：失败回写到此
+		// 为止，不推进任务也不回写 LastError，防止把已推进的任务回拉。
+		log.Printf("orchestrator: skip dispatch failure writeback for run %s: run already finalized concurrently", run.RunID)
+		return
+	}
 
 	advanced, err := o.AdvanceTask(ctx, task.TaskID, nextTaskStatus)
 	if err == nil {
