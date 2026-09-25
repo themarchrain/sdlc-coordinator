@@ -732,3 +732,64 @@ func TestCreateToleratesTransientRouteWriteThroughFailure(t *testing.T) {
 		t.Fatalf("row must survive a transient write-through failure: repos=%d err=%v", len(repos), listErr)
 	}
 }
+
+func TestCreatePersistsVerifyCommand(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	request := validCreateRequest()
+	request.VerifyCommand = "  go test ./...  "
+	view, err := svc.Create(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.VerifyCommand != "go test ./..." {
+		t.Fatalf("view verify command=%q", view.VerifyCommand)
+	}
+	stored, err := svc.store.Get(context.Background(), view.RepositoryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.VerifyCommand != "go test ./..." {
+		t.Fatalf("stored verify command=%q", stored.VerifyCommand)
+	}
+}
+
+func TestPatchUpdatesVerifyCommandOnlyWhenProvided(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	request := validCreateRequest()
+	request.VerifyCommand = "go test ./..."
+	view, err := svc.Create(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.Patch(context.Background(), view.RepositoryID, PatchRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.VerifyCommand != "go test ./..." {
+		t.Fatalf("verify command must survive an empty patch, got %q", updated.VerifyCommand)
+	}
+	replaced := "make test"
+	updated, err = svc.Patch(context.Background(), view.RepositoryID, PatchRequest{VerifyCommand: &replaced})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.VerifyCommand != "make test" {
+		t.Fatalf("verify command=%q", updated.VerifyCommand)
+	}
+	stored, err := svc.store.Get(context.Background(), view.RepositoryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.VerifyCommand != "make test" {
+		t.Fatalf("stored verify command=%q", stored.VerifyCommand)
+	}
+}
+
+func TestRejectsOverlongVerifyCommand(t *testing.T) {
+	svc, _ := newServiceWithProbe(t)
+	request := validCreateRequest()
+	request.VerifyCommand = strings.Repeat("x", maxVerifyCommandLength+1)
+	if _, err := svc.Create(context.Background(), request); !errors.Is(err, ErrVerifyCommandTooLong) {
+		t.Fatalf("got %v", err)
+	}
+}

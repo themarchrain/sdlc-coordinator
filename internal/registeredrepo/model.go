@@ -39,13 +39,16 @@ type RegisteredRepository struct {
 	CodeHostProjectID string `gorm:"column:codehost_project_id"`
 	// PathWithNamespace 的唯一性由 provider 作用域索引承担
 	// (EnsureIdentityIndexes),跨平台同 path 是合法共存。
-	PathWithNamespace      string           `gorm:"column:path_with_namespace;not null"`
-	Token                  string           `gorm:"column:token;type:text"`
-	WebhookSecret          string           `gorm:"column:webhook_secret;type:text"`
-	TokenScopeAttested     bool             `gorm:"column:token_scope_attested;not null;default:false"`
-	DefaultBranch          string           `gorm:"column:default_branch;type:text"`
-	CodeHostIssueLabels    string           `gorm:"column:codehost_issue_labels;type:text"`
-	ReviewerMentions       string           `gorm:"column:reviewer_mentions;type:text"`
+	PathWithNamespace   string `gorm:"column:path_with_namespace;not null"`
+	Token               string `gorm:"column:token;type:text"`
+	WebhookSecret       string `gorm:"column:webhook_secret;type:text"`
+	TokenScopeAttested  bool   `gorm:"column:token_scope_attested;not null;default:false"`
+	DefaultBranch       string `gorm:"column:default_branch;type:text"`
+	CodeHostIssueLabels string `gorm:"column:codehost_issue_labels;type:text"`
+	ReviewerMentions    string `gorm:"column:reviewer_mentions;type:text"`
+	// VerifyCommand 是仓库级声明的验证命令下限,验证任务派发时并进处方;
+	// 空=仓库未声明下限,验证只复放开发者记录的命令。
+	VerifyCommand          string           `gorm:"column:verify_command;type:text"`
 	Status                 RepositoryStatus `gorm:"column:status;index;not null"`
 	LastConfigurationError string           `gorm:"column:last_configuration_error;type:text"`
 	CreatedAt              time.Time

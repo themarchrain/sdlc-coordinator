@@ -132,8 +132,8 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
   const configuration = useRemote(() => adminApi.tenantConfiguration(), [])
   const provider = Form.useWatch('provider', form) || 'gitlab'
   const initialValues = creating
-    ? { display_name: '', path_with_namespace: '', provider: 'gitlab', base_url: '', token: '', token_scope_attested: false, webhook_secret: '' }
-    : { display_name: repository.display_name, path_with_namespace: repository.path_with_namespace, provider: repository.provider, base_url: repository.base_url, token: '', token_scope_attested: false, webhook_secret: '' }
+    ? { display_name: '', path_with_namespace: '', provider: 'gitlab', base_url: '', token: '', token_scope_attested: false, webhook_secret: '', verify_command: '' }
+    : { display_name: repository.display_name, path_with_namespace: repository.path_with_namespace, provider: repository.provider, base_url: repository.base_url, token: '', token_scope_attested: false, webhook_secret: '', verify_command: repository.verify_command ?? '' }
 
   // 组织段 codehost 配置作为注册表单默认值:仅创建时注入,运行时不再消费。
   useEffect(() => {
@@ -166,6 +166,7 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
         if (values.webhook_secret) {
           patch.webhook_secret = values.webhook_secret
         }
+        patch.verify_command = values.verify_command
         await adminApi.patchRepository(repository.repository_id, patch)
         message.success('仓库已更新')
       }
@@ -219,6 +220,10 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
           </Checkbox>
         </Form.Item>
         <p className="form-note">Token 只用于创建或轮换，列表和详情只展示是否已配置，不会回显原值。</p>
+        <Form.Item name="verify_command" label="验证命令" tooltip="仓库级验证命令下限：自动验证任务会在 MR 工作区执行它；留空表示本仓库未声明下限">
+          <Input className="mono" placeholder="例如 go test ./..." maxLength={512} />
+        </Form.Item>
+        <p className="form-note">验证命令是自动验证的测试面下限（一条测试或构建命令）；除它之外，验证任务还会复放开发记录里登记的测试命令。</p>
       </Form>
     </Modal>
   )

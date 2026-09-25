@@ -347,3 +347,50 @@ func TestAdminRepositoriesCreateReturns409WhenRouteClaimLosesRace(t *testing.T) 
 		t.Fatalf("race loser must leave no orphan row, got %d", count)
 	}
 }
+
+func TestAdminRepositoriesVerifyCommandRoundTrip(t *testing.T) {
+	router := newRepositoryRouter(t, nil)
+	created := performAdminRepositoryJSON(t, router, http.MethodPost, "/api/admin/repositories", map[string]any{
+		"display_name":         "Coordinator",
+		"path_with_namespace":  "group/coordinator",
+		"provider":             "gitlab",
+		"base_url":             "https://gitlab.example.com",
+		"token":                "repo-token-value",
+		"token_scope_attested": true,
+		"webhook_secret":       "repo-hook-secret",
+		"verify_command":       "go test ./...",
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create %d %s", created.Code, created.Body.String())
+	}
+	var repository struct {
+		RepositoryID  string `json:"repository_id"`
+		VerifyCommand string `json:"verify_command"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &repository); err != nil {
+		t.Fatal(err)
+	}
+	if repository.VerifyCommand != "go test ./..." {
+		t.Fatalf("verify_command=%q", repository.VerifyCommand)
+	}
+
+	patched := performAdminRepositoryJSON(t, router, http.MethodPatch, "/api/admin/repositories/"+repository.RepositoryID, map[string]any{
+		"verify_command": "make test",
+	})
+	if patched.Code != http.StatusOK {
+		t.Fatalf("patch %d %s", patched.Code, patched.Body.String())
+	}
+	if err := json.Unmarshal(patched.Body.Bytes(), &repository); err != nil {
+		t.Fatal(err)
+	}
+	if repository.VerifyCommand != "make test" {
+		t.Fatalf("patched verify_command=%q", repository.VerifyCommand)
+	}
+
+	rejected := performAdminRepositoryJSON(t, router, http.MethodPatch, "/api/admin/repositories/"+repository.RepositoryID, map[string]any{
+		"verify_command": strings.Repeat("x", 513),
+	})
+	if rejected.Code != http.StatusUnprocessableEntity || !strings.Contains(rejected.Body.String(), "verify_command_too_long") {
+		t.Fatalf("overlong command must be rejected 422, got %d: %s", rejected.Code, rejected.Body.String())
+	}
+}
