@@ -347,16 +347,23 @@ func TestReviewerContractSchemaExposesNoNewChangesVerdict(t *testing.T) {
 	}
 }
 
-func TestTesterContractBuildsUpstreamDependencyResult(t *testing.T) {
-	contract := NewTesterContract()
+func verificationTaskFixture() (*model.Task, *model.Run) {
 	task, run := resultContractFixture("TesterWorker")
-	task.SourceRepo = "group/framework"
+	task.ContextJSON = `{
+        "project":{"id":"15594","path":"group/project"},
+        "merge_request":{"iid":12,"head_sha":"abc123","source_branch":"agent/task-1","target_branch":"main"},
+        "repos":[{"name":"project","url":"https://git.example/group/project.git","branch":"main","access":"readable"}]
+    }`
+	return task, run
+}
+
+func TestTesterContractVerificationPassedBindsHeadSHAAndWritesReport(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
 	input, err := contract.DecodeStrict(json.RawMessage(`{
-        "task_id":"task-1","run_id":"run-1","outcome":"upstream_dependency_defect",
-        "summary":"downstream failure belongs to framework",
-        "tests":[{"command":"python -m unittest","passed":false,"summary":"normalization failed"}],
-        "evidence":{"files":["framework/status.py"],"failure_excerpt":"expected ok got OK"},
-        "defect":{"repository":"group/framework","title":"fix status normalization","description":"normalize to lowercase","dependency_relation":"upstream_fix"}
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_passed",
+        "summary":"floor and replay commands are green",
+        "tests":[{"command":"go test ./...","passed":true,"summary":"ok","attempts":1}]
     }`))
 	if err != nil {
 		t.Fatalf("decode tester result: %v", err)
@@ -368,14 +375,159 @@ func TestTesterContractBuildsUpstreamDependencyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize tester result: %v", err)
 	}
-	if len(result.NextTasks) != 1 || result.NextTasks[0].Role != "DeveloperWorker" {
-		t.Fatalf("unexpected next tasks: %#v", result.NextTasks)
+	if result.Status != StatusSucceeded {
+		t.Fatalf("verification result status=%q", result.Status)
 	}
-	if result.NextTasks[0].TargetRepo != "group/framework" || result.NextTasks[0].DependencyRelation != "upstream_fix" {
-		t.Fatalf("unexpected dependency task: %#v", result.NextTasks[0])
+	if result.Artifacts["verification_verdict"] != "verification_passed" {
+		t.Fatalf("verdict artifact=%v", result.Artifacts["verification_verdict"])
 	}
-	if len(result.Writebacks) != 1 || result.Writebacks[0].Kind != "create_issue" || result.Writebacks[0].ProjectID != "group/framework" {
-		t.Fatalf("unexpected upstream issue intent: %#v", result.Writebacks)
+	if result.Artifacts["verification_head_sha"] != "abc123" {
+		t.Fatalf("head sha artifact=%v", result.Artifacts["verification_head_sha"])
+	}
+	if len(result.Writebacks) != 1 {
+		t.Fatalf("expected one writeback, got %d", len(result.Writebacks))
+	}
+	writeback := result.Writebacks[0]
+	if writeback.Kind != "create_merge_request_note" || writeback.ProjectID != "group/project" || writeback.MergeRequestIID != 12 {
+		t.Fatalf("unexpected writeback identity: %#v", writeback)
+	}
+	for _, want := range []string{"abc123", "go test ./..."} {
+		if !strings.Contains(writeback.Body, want) {
+			t.Fatalf("report body must contain %q, got: %s", want, writeback.Body)
+		}
+	}
+}
+
+func TestTesterContractVerificationFailedKeepsTaskSucceededWithRedVerdict(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_failed",
+        "summary":"one command stays red after retries",
+        "tests":[
+            {"command":"go test ./...","passed":true,"summary":"ok","attempts":1},
+            {"command":"make e2e","passed":false,"summary":"timeout on attempt 1, 2, 3","attempts":3}
+        ]
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	if err := contract.Validate(task, run, input); err != nil {
+		t.Fatalf("validate tester result: %v", err)
+	}
+	result, err := contract.Normalize(task, run, input)
+	if err != nil {
+		t.Fatalf("normalize tester result: %v", err)
+	}
+	if result.Status != StatusSucceeded {
+		t.Fatalf("a red verdict still completes the verification task, got %q", result.Status)
+	}
+	if result.Artifacts["verification_verdict"] != "verification_failed" {
+		t.Fatalf("verdict artifact=%v", result.Artifacts["verification_verdict"])
+	}
+	if !strings.Contains(result.Writebacks[0].Body, "未通过") {
+		t.Fatalf("report body must carry the failed verdict, got: %s", result.Writebacks[0].Body)
+	}
+}
+
+func TestTesterContractVerificationFailedRequiresTestsEvidence(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_failed",
+        "summary":"red without evidence"
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	err = contract.Validate(task, run, input)
+	if err == nil || !strings.Contains(err.Error(), "tests evidence is required") {
+		t.Fatalf("expected missing tests evidence error, got %v", err)
+	}
+}
+
+func TestTesterContractVerificationPassedRejectsRedEntry(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_passed",
+        "summary":"claiming green with a red entry",
+        "tests":[{"command":"go test ./...","passed":false,"summary":"flaky"}]
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	err = contract.Validate(task, run, input)
+	if err == nil || !strings.Contains(err.Error(), "must pass") {
+		t.Fatalf("expected passed enforcement error, got %v", err)
+	}
+}
+
+func TestTesterContractBlockersRequireBlockerReason(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	missing, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"environment_blocker",
+        "summary":"runner cannot start"
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	err = contract.Validate(task, run, missing)
+	if err == nil || !strings.Contains(err.Error(), "blocker_reason is required") {
+		t.Fatalf("expected blocker reason requirement, got %v", err)
+	}
+
+	reason := "docker daemon unreachable"
+	blocked, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"environment_blocker",
+        "summary":"runner cannot start","blocker_reason":"docker daemon unreachable"
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	if err := contract.Validate(task, run, blocked); err != nil {
+		t.Fatalf("validate tester result: %v", err)
+	}
+	result, err := contract.Normalize(task, run, blocked)
+	if err != nil {
+		t.Fatalf("normalize tester result: %v", err)
+	}
+	if result.Status != StatusBlocked || result.BlockerReason == nil || *result.BlockerReason != reason {
+		t.Fatalf("environment blocker must park blocked with reason, got %#v", result)
+	}
+
+	unclear, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"insufficient_context",
+        "summary":"no verification commands available","blocker_reason":"no prescription"
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	if err := contract.Validate(task, run, unclear); err != nil {
+		t.Fatalf("validate tester result: %v", err)
+	}
+	result, err = contract.Normalize(task, run, unclear)
+	if err != nil {
+		t.Fatalf("normalize tester result: %v", err)
+	}
+	if result.Status != StatusHumanRequired {
+		t.Fatalf("insufficient context must require human, got %q", result.Status)
+	}
+}
+
+func TestTesterContractSchemaDeclaresVerificationOutcomes(t *testing.T) {
+	schema := NewTesterContract().InputSchema()
+	properties := schema["properties"].(map[string]any)
+	outcome := properties["outcome"].(map[string]any)
+	values := outcome["enum"].([]string)
+	for _, want := range []string{"verification_passed", "verification_failed", "environment_blocker", "insufficient_context"} {
+		if !slices.Contains(values, want) {
+			t.Fatalf("tester outcome schema must expose %s, got %#v", want, values)
+		}
+	}
+	if slices.Contains(values, "test_patch_passed") {
+		t.Fatalf("legacy outcome must not survive the rework, got %#v", values)
 	}
 }
 
@@ -410,7 +562,7 @@ func TestRoleContractSchemasDescribeNestedObjectsStrictly(t *testing.T) {
 		fields   []string
 	}{
 		{name: "developer", contract: NewDeveloperContract(), fields: []string{"delivery", "tests", "merge_request", "defect"}},
-		{name: "tester", contract: NewTesterContract(), fields: []string{"tests", "evidence", "delivery", "merge_request", "defect"}},
+		{name: "tester", contract: NewTesterContract(), fields: []string{"tests"}},
 		{name: "reviewer", contract: NewReviewerContract(), fields: []string{"findings"}},
 	}
 

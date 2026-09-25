@@ -123,6 +123,9 @@ type TestEvidence struct {
 	Command string `json:"command"`
 	Passed  bool   `json:"passed"`
 	Summary string `json:"summary"`
+	// Attempts 记录该命令的执行次数(含重跑);0 视同 1。验证任务用机械
+	// 重跑消化偶发抖动,逐次留痕让红绿判定可审计。
+	Attempts int `json:"attempts,omitempty"`
 }
 
 type DeliveryEvidence struct {
@@ -262,9 +265,10 @@ func testEvidenceArraySchema() map[string]any {
 		"items": strictObjectSchema(
 			[]string{"command", "passed", "summary"},
 			map[string]any{
-				"command": map[string]any{"type": "string"},
-				"passed":  map[string]any{"type": "boolean", "description": "交付验证要求全部通过（passed=true）"},
-				"summary": map[string]any{"type": "string"},
+				"command":  map[string]any{"type": "string"},
+				"passed":   map[string]any{"type": "boolean", "description": "交付验证要求全部通过（passed=true）"},
+				"summary":  map[string]any{"type": "string"},
+				"attempts": map[string]any{"type": "integer", "description": "该命令的执行次数（含重跑），缺省视为 1"},
 			},
 		),
 	}
