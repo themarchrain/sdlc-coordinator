@@ -3,6 +3,7 @@ package workers
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"sdlc-coordinator/internal/agent"
 	"sdlc-coordinator/internal/model"
@@ -109,3 +110,57 @@ func resultSubmissionPolicy(toolName string) string {
 		"2. 自矫正——工具返回 rejected 时，按 problems 中列出的问题逐条修正参数，在同一会话内重新调用；响应中的 attempts_remaining 是剩余矫正次数，耗尽时返回 rejected_final。" +
 		"3. 降级——仅当收到 rejected_final、工具不可用或调用报传输错误时，才把结果按 result-schema.json 写成最终消息（只能输出一段 JSON，禁止 Markdown 围栏、解释文字或前后缀，不输出 schema 之外的字段），然后停止。"
 }
+
+func BuildTesterRunnerTaskBundle(task *model.Task, run *model.Run) (agent.TaskBundle, error) {
+	pkg, err := testerRunnerTaskPackage(task, run)
+	if err != nil {
+		return agent.TaskBundle{}, err
+	}
+	prompt, err := BuildTesterRunnerPrompt(pkg)
+	if err != nil {
+		return agent.TaskBundle{}, err
+	}
+	return agent.TaskBundle{
+		TaskPackage:  pkg,
+		ResultSchema: results.NewTesterContract().InputSchema(),
+		Prompt:       prompt,
+	}, nil
+}
+
+// testerRunnerTaskPackage 优先复用派发时持久化进 run.InputJSON 的任务包
+// （其中携带验证处方），投影重建等路径据此恢复同一处方；InputJSON 缺失或
+// 不含有效任务包时退回按 task+run 现构（无处方段）。
+func testerRunnerTaskPackage(task *model.Task, run *model.Run) (agent.TaskPackage, error) {
+	if strings.TrimSpace(run.InputJSON) != "" {
+		var pkg agent.TaskPackage
+		if err := json.Unmarshal([]byte(run.InputJSON), &pkg); err == nil && pkg.TaskID == task.TaskID && pkg.Role == task.Role {
+			return pkg, nil
+		}
+	}
+	return BuildRunnerTaskPackage(task, run)
+}
+
+func BuildTesterRunnerPrompt(pkg agent.TaskPackage) (string, error) {
+	if pkg.Role != "TesterWorker" {
+		return "", errors.New("tester runner prompt requires TesterWorker task package")
+	}
+	raw, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return testerRunnerInstruction +
+		"\n\n执行现场：\n" +
+		"- 当前目录由 Coordinator 按本次 Run 独立准备；代码和 workspace-manifest.json 是唯一 Git 事实来源，head_sha 即本次验证对象。\n" +
+		resultSubmissionPolicy(results.SubmitTesterResultTool) +
+		"\n任务包如下：\n```json\n" + string(raw) + "\n```", nil
+}
+
+const testerRunnerInstruction = `你是 TesterWorker，职责是对任务包指定的 MR 头部执行验证命令并回传真实执行证据。红绿判定只认命令退出码，你的分析只能写进 summary 作归因说明。
+
+任务边界：
+- 只读纪律：不得修改、暂存、提交或推送任何文件，不得切换提交，不得读取或修改 Git 凭据；测试运行产生的构建产物与临时文件除外。
+- 处方执行：任务包 verification.floor_command 是注册仓声明的验证命令下限（存在时必须执行）；verification.replay_commands 是开发记录登记的测试命令复放清单，逐条照单执行。
+- 机械重试：命令失败时自动重跑，同一条命令最多再执行 2 次；任一次绿即记 passed=true 并在 attempts 写实际执行次数，次次红才记 passed=false。AI 的 flaky/环境怀疑只能写进 summary，不改变红绿判定。
+- 判定：全部处方命令最终通过 → outcome=verification_passed；任一命令次次红 → outcome=verification_failed；环境导致命令无法执行 → outcome=environment_blocker 与具体 blocker_reason；处方缺失或上下文不足以执行 → outcome=insufficient_context 与具体 blocker_reason。
+- tests 逐条记录实际执行：command 必填、passed 为最终红绿、summary 写关键输出摘要、attempts 写执行次数；不得虚构条目，不得把未执行的命令写进 tests。
+- 不创建 Issue、MR、Comment 或 Label，不负责调度、重试、恢复或状态推进。`

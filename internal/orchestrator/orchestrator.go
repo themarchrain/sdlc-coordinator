@@ -116,6 +116,8 @@ type Orchestrator struct {
 	reviewerRunnerSettings         ReviewerRunnerSettings
 	developerRunner                DeveloperRunnerExecutionCoordinator
 	developerRunnerSettings        ReviewerRunnerSettings
+	testerRunner                   TesterRunnerExecutionCoordinator
+	testerRunnerSettings           ReviewerRunnerSettings
 	agentExecutions                AgentExecutionLookup
 	runnerArtifacts                RunnerArtifactStore
 	stateMachine                   *StateMachine
@@ -131,6 +133,11 @@ type ReviewerRunnerExecutionCoordinator interface {
 type DeveloperRunnerExecutionCoordinator interface {
 	Start(context.Context, DeveloperRunnerStartRequest) (*model.AgentExecution, error)
 	Reconcile(context.Context, string) (*DeveloperRunnerReconcileResult, error)
+}
+
+type TesterRunnerExecutionCoordinator interface {
+	Start(context.Context, TesterRunnerStartRequest) (*model.AgentExecution, error)
+	Reconcile(context.Context, string) (*ReviewerRunnerReconcileResult, error)
 }
 
 type AgentExecutionLookup interface {
@@ -219,6 +226,13 @@ func WithDeveloperRunner(coordinator DeveloperRunnerExecutionCoordinator, settin
 	return func(o *Orchestrator) {
 		o.developerRunner = coordinator
 		o.developerRunnerSettings = settings
+	}
+}
+
+func WithTesterRunner(coordinator TesterRunnerExecutionCoordinator, settings ReviewerRunnerSettings) Option {
+	return func(o *Orchestrator) {
+		o.testerRunner = coordinator
+		o.testerRunnerSettings = settings
 	}
 }
 

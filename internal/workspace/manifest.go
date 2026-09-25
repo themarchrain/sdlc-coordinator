@@ -47,6 +47,9 @@ type ReviewerRequest struct {
 	BaseSHA             string
 	RequestedReviewMode string
 	Credential          *GitCredential
+	// WorkerRole 标记工作区服务的角色(审计进 manifest);空值视为
+	// ReviewerWorker 以兼容既有调用方。验证任务复用本请求结构。
+	WorkerRole string
 }
 
 type RepositoryManifest struct {

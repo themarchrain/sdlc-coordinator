@@ -88,12 +88,16 @@ func (p *ReviewerPreparer) Prepare(ctx context.Context, request ReviewerRequest)
 		return nil, err
 	}
 
+	role := strings.TrimSpace(req.WorkerRole)
+	if role == "" {
+		role = "ReviewerWorker"
+	}
 	manifest := &Manifest{
 		Version: 1,
 		Status:  ManifestStatusReady,
 		TaskID:  req.TaskID,
 		RunID:   req.RunID,
-		Role:    "ReviewerWorker",
+		Role:    role,
 		Repository: RepositoryManifest{
 			Project:             req.Project,
 			Path:                "repo",

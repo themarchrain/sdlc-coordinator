@@ -19,16 +19,25 @@ type DeliverySpec struct {
 	BaseBranch string `json:"base_branch"`
 }
 
+// VerificationPlan 是验证任务的执行处方:floor_command 是注册仓声明的
+// 验证命令下限(存在则必须执行);replay_commands 是开发记录里登记的
+// 测试命令复放清单。两者都为空表示没有可用处方。
+type VerificationPlan struct {
+	FloorCommand   string   `json:"floor_command,omitempty"`
+	ReplayCommands []string `json:"replay_commands,omitempty"`
+}
+
 type TaskPackage struct {
-	TaskID            string         `json:"task_id"`
-	RunID             string         `json:"run_id"`
-	Type              string         `json:"type"`
-	Role              string         `json:"role"`
-	Objective         string         `json:"objective"`
-	AllowedRepos      AllowedRepos   `json:"allowed_repos"`
-	SuccessCriteria   []string       `json:"success_criteria"`
-	WorkspaceStrategy string         `json:"workspace_strategy"`
-	Repos             []RepoSpec     `json:"repos,omitempty"`
-	Delivery          *DeliverySpec  `json:"delivery,omitempty"`
-	Context           map[string]any `json:"context,omitempty"`
+	TaskID            string            `json:"task_id"`
+	RunID             string            `json:"run_id"`
+	Type              string            `json:"type"`
+	Role              string            `json:"role"`
+	Objective         string            `json:"objective"`
+	AllowedRepos      AllowedRepos      `json:"allowed_repos"`
+	SuccessCriteria   []string          `json:"success_criteria"`
+	WorkspaceStrategy string            `json:"workspace_strategy"`
+	Repos             []RepoSpec        `json:"repos,omitempty"`
+	Delivery          *DeliverySpec     `json:"delivery,omitempty"`
+	Verification      *VerificationPlan `json:"verification,omitempty"`
+	Context           map[string]any    `json:"context,omitempty"`
 }

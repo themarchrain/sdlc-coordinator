@@ -49,7 +49,28 @@ type DispatchTickResult struct {
 	Error  string           `json:"error,omitempty"`
 }
 
-const unsupportedTesterWorkerReason = "TesterWorker 暂未迁移到 Agent Runner，已转人工处理"
+// unsupportedWorkerRoleReason 是派发循环对未知 worker 角色的统一停靠文案:
+// developer/reviewer/tester 都有专属派发路径,走到这里的角色没有执行面。
+const unsupportedWorkerRoleReason = "该 worker 角色暂未迁移到 Agent Runner，已转人工处理"
+
+// testerRunnerNotConfiguredReason 是验证执行面未装配时的停靠文案:装配缺失
+// 不是任务失败,回退到既有转人工行为,等执行面就绪后由人恢复或重开。
+const testerRunnerNotConfiguredReason = "TesterWorker 验证执行面未装配，已转人工处理"
+
+// parkWorkerRoleWithoutRunner 把没有执行面的任务停靠出派发队列并留痕:
+// 停靠会清空 current_run_id,重取快照后由 helper 的状态门禁决定是否物化通知。
+func (o *Orchestrator) parkWorkerRoleWithoutRunner(ctx context.Context, task model.Task, reason string, result *TickResult) error {
+	if err := o.tasks.MarkHumanRequiredIfDispatchable(ctx, task.TaskID, reason); err != nil {
+		return err
+	}
+	result.DispatchFailures = append(result.DispatchFailures, DispatchTickResult{
+		TaskID: task.TaskID, Status: model.TaskStatusHumanRequired, Error: reason,
+	})
+	if parked, getErr := o.tasks.GetByTaskID(ctx, task.TaskID); getErr == nil {
+		o.materializeHumanRequiredIMEffect(ctx, parked, reason)
+	}
+	return nil
+}
 
 // ErrTickInProgress 表示已有一个 Tick 在执行。Tick 内部包含非幂等的外部副作用
 // （developer 交付的 git commit/push），并发执行会在同一 workspace 上竞争并把
@@ -68,6 +89,8 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 		var reconcileErr error
 		if run.WorkerRole == "DeveloperWorker" {
 			runnerResult, reconcileErr = o.ReconcileDeveloperRunner(ctx, run.RunID)
+		} else if run.WorkerRole == "TesterWorker" {
+			runnerResult, reconcileErr = o.ReconcileTesterRunner(ctx, run.RunID)
 		} else {
 			runnerResult, reconcileErr = o.ReconcileReviewerRunner(ctx, run.RunID)
 		}
@@ -164,17 +187,17 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 			dispatchResult, err = o.DispatchReviewerTask(ctx, task.TaskID)
 		} else if task.Role == "DeveloperWorker" {
 			dispatchResult, err = o.DispatchDeveloperTask(ctx, task.TaskID)
+		} else if task.Role == "TesterWorker" && o.testerRunner != nil {
+			dispatchResult, err = o.DispatchTesterTask(ctx, task.TaskID)
 		} else {
-			err = o.tasks.MarkHumanRequiredIfDispatchable(ctx, task.TaskID, unsupportedTesterWorkerReason)
-			if err == nil {
-				result.DispatchFailures = append(result.DispatchFailures, DispatchTickResult{
-					TaskID: task.TaskID, Status: model.TaskStatusHumanRequired, Error: unsupportedTesterWorkerReason,
-				})
-				// repo 停车会清空 current_run_id,循环变量里的 task 是迁移前快照;
-				// 重取后由 helper 的状态门禁决定是否物化通知。
-				if parked, getErr := o.tasks.GetByTaskID(ctx, task.TaskID); getErr == nil {
-					o.materializeHumanRequiredIMEffect(ctx, parked, unsupportedTesterWorkerReason)
-				}
+			// 未知角色,或验证任务但执行面未装配:统一停靠人工(fail-closed 到人)。
+			reason := unsupportedWorkerRoleReason
+			if task.Role == "TesterWorker" {
+				reason = testerRunnerNotConfiguredReason
+			}
+			if parkErr := o.parkWorkerRoleWithoutRunner(ctx, task, reason, result); parkErr != nil {
+				err = parkErr
+			} else {
 				continue
 			}
 		}

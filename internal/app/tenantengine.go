@@ -141,9 +141,17 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchSubmitter,
 		runnerSettings,
 	)
+	// 验证任务与 reviewer 共用同一只读工作区 preparer:两者都是按冻结头部
+	// SHA 的只读检出,差别只在角色门禁与回传工具;tester pool 路由随核心
+	// coordinator 注入(装配于 NewReady 前,构造后接入安全)。
+	testerRunnerCoordinator := orchestrator.NewTesterRunnerCoordinator(
+		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), shared.defaultRunner,
+		orchSubmitter,
+	)
 	opts = append(opts,
 		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
+		orchestrator.WithTesterRunner(testerRunnerCoordinator, runnerSettings),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
 		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
 	)
@@ -180,11 +188,13 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	)
 	reviewerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
 	developerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
+	testerRunnerCoordinator.SetTenantRunnerRouter(tenantRunnerRouter)
 	// 组织段执行选择（CLI 与推理强度）：引擎派发时现取（保存即热生效），
 	// 未配置的字段回落系统默认。
 	runnerProviderLookup := tenantRunnerProviderLookup(orgConfig, shared.logger, tenantID)
 	reviewerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
 	developerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
+	testerRunnerCoordinator.SetRunnerProviderLookup(runnerProviderLookup)
 
 	return &tenantEngine{
 		tenantID:     tenantID,
