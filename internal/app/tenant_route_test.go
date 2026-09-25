@@ -367,3 +367,111 @@ func TestControlPlaneRouteIndexTranslatesClaimedSentinel(t *testing.T) {
 		t.Fatalf("cross-tenant upsert must surface the registration-scope claimed sentinel, got %v", err)
 	}
 }
+
+// 读失败降级冻结：活跃租户的句柄解析或租户库读取失败时，其既有索引行
+// 冻结保留（与停用组织同一语义），不得当作多余行清掉——清掉会让 webhook
+// 验签按未注册 401 拒收，代码托管平台可能停挂持续失败的钩子；恢复后
+// 下一轮对账自动收敛。其他正常租户的对账不受影响。
+func TestReconcileRepoRouteIndexFreezesRowsOnTenantReadFailure(t *testing.T) {
+	cases := []struct {
+		name       string
+		breakStore func(t *testing.T, ctx context.Context, resolver tenantdb.Resolver, victimID uint) tenantdb.Resolver
+	}{
+		{
+			name: "tenant store list fails",
+			breakStore: func(t *testing.T, ctx context.Context, resolver tenantdb.Resolver, victimID uint) tenantdb.Resolver {
+				store, err := resolver.Handle(ctx, victimID)
+				if err != nil {
+					t.Fatalf("open victim store: %v", err)
+				}
+				sqlDB, err := store.DB.DB()
+				if err != nil {
+					t.Fatalf("get victim sql db: %v", err)
+				}
+				_ = sqlDB.Close()
+				return resolver
+			},
+		},
+		{
+			name: "tenant store handle fails",
+			breakStore: func(t *testing.T, ctx context.Context, resolver tenantdb.Resolver, victimID uint) tenantdb.Resolver {
+				return &failingHandleResolver{Resolver: resolver, failFor: map[uint]bool{victimID: true}}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cpRepo := openControlPlaneRepository(t, testControlPlaneSettings(t))
+			ctx := context.Background()
+			victim := &controlplane.Tenant{Slug: "victim-org", DisplayName: "Victim"}
+			healthy := &controlplane.Tenant{Slug: "healthy-org", DisplayName: "Healthy"}
+			for _, tenant := range []*controlplane.Tenant{victim, healthy} {
+				if err := cpRepo.CreateTenant(ctx, tenant); err != nil {
+					t.Fatalf("seed tenant %s: %v", tenant.Slug, err)
+				}
+			}
+
+			root := t.TempDir()
+			resolver := tenantdb.NewSqliteFileResolver(nil, root, 0)
+			t.Cleanup(resolver.Close)
+			healthyStore, err := resolver.Handle(ctx, healthy.ID)
+			if err != nil {
+				t.Fatalf("open healthy store: %v", err)
+			}
+			healthyRepoStore := registeredrepo.NewStore(healthyStore.DB)
+			if err := healthyRepoStore.Migrate(); err != nil {
+				t.Fatalf("migrate healthy repo store: %v", err)
+			}
+			if err := healthyRepoStore.Create(ctx, &registeredrepo.RegisteredRepository{
+				RepositoryID: "repo-healthy", DisplayName: "Healthy", Provider: "gitlab",
+				BaseURL: "https://gitlab.example.com", PathWithNamespace: "healthy/app",
+			}); err != nil {
+				t.Fatalf("seed healthy repo: %v", err)
+			}
+
+			victimIdentity := controlplane.RepoRouteIdentity{Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "victim/app"}
+			healthyIdentity := controlplane.RepoRouteIdentity{Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "healthy/app"}
+			phantomIdentity := controlplane.RepoRouteIdentity{Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "healthy/phantom"}
+			for _, seed := range []controlplane.RepoRouteIndex{
+				{Provider: victimIdentity.Provider, BaseURL: victimIdentity.BaseURL, PathWithNamespace: victimIdentity.PathWithNamespace,
+					TenantID: victim.ID, RepoFingerprint: "repo-victim"},
+				{Provider: healthyIdentity.Provider, BaseURL: healthyIdentity.BaseURL, PathWithNamespace: healthyIdentity.PathWithNamespace,
+					TenantID: healthy.ID, RepoFingerprint: "repo-healthy"},
+				{Provider: phantomIdentity.Provider, BaseURL: phantomIdentity.BaseURL, PathWithNamespace: phantomIdentity.PathWithNamespace,
+					TenantID: healthy.ID, RepoFingerprint: "repo-phantom"},
+			} {
+				if err := cpRepo.UpsertRepoRouteIndex(ctx, seed); err != nil {
+					t.Fatalf("seed index: %v", err)
+				}
+			}
+
+			reconcileResolver := tc.breakStore(t, ctx, resolver, victim.ID)
+			if err := reconcileRepoRouteIndex(ctx, cpRepo, reconcileResolver, nil); err != nil {
+				t.Fatalf("reconcile: %v", err)
+			}
+
+			if _, err := cpRepo.GetRepoRouteIndex(ctx, victimIdentity); err != nil {
+				t.Fatalf("victim row must survive the tenant read failure: %v", err)
+			}
+			route, err := cpRepo.GetRepoRouteIndex(ctx, healthyIdentity)
+			if err != nil || route.TenantID != healthy.ID || route.RepoFingerprint != "repo-healthy" {
+				t.Fatalf("healthy tenant reconcile must be unaffected: route=%#v err=%v", route, err)
+			}
+			if _, err := cpRepo.GetRepoRouteIndex(ctx, phantomIdentity); err == nil {
+				t.Fatalf("phantom row of the healthy tenant must still be removed")
+			}
+		})
+	}
+}
+
+type failingHandleResolver struct {
+	tenantdb.Resolver
+	failFor map[uint]bool
+}
+
+func (r *failingHandleResolver) Handle(ctx context.Context, tenantID uint) (*tenantdb.Store, error) {
+	if r.failFor[tenantID] {
+		return nil, errors.New("tenant store unavailable")
+	}
+	return r.Resolver.Handle(ctx, tenantID)
+}

@@ -142,7 +142,9 @@ func (l *tenantRouteSecretLookup) WebhookSecretByPath(ctx context.Context, provi
 // 的仓决定索引应有的行；指派错租户的行修正（先删后建，Upsert 拒绝跨
 // 租户换主），同租户的指纹漂移原地更新；索引多出的行删除。停用组织
 // 的行冻结保留（身份认领持续占用，防停用窗口被抢注；其数据面已由
-// 引擎层状态门切断）。同身份被多个租户同时声称时视为冲突：保留现状
+// 引擎层状态门切断）。活跃租户的句柄解析或租户库读取失败时同样冻结
+// 其既有行保留（基础设施不可用不等同于未注册），恢复后下一轮对账自动
+// 收敛。同身份被多个租户同时声称时视为冲突：保留现状
 // 不翻转、不删除，告警交由人工裁决。
 func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository, resolver tenantdb.Resolver, logger *zap.Logger) error {
 	tenants, err := repo.ListTenantSummaries(ctx)
@@ -161,10 +163,22 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 		}
 		store, err := resolver.Handle(ctx, tenant.ID)
 		if err != nil {
+			// 读失败降级冻结：基础设施不可用不等同于未注册，既有行按冻结
+			// 保留，等恢复后下一轮对账自动收敛。
+			frozen[tenant.ID] = true
+			if logger != nil {
+				logger.Warn("repo route reconcile cannot resolve tenant store; freezing its index rows",
+					zap.Uint("tenant_id", tenant.ID), zap.Error(err))
+			}
 			continue
 		}
 		rows, err := registeredrepo.NewStore(store.DB).List(ctx)
 		if err != nil {
+			frozen[tenant.ID] = true
+			if logger != nil {
+				logger.Warn("repo route reconcile cannot list tenant repositories; freezing its index rows",
+					zap.Uint("tenant_id", tenant.ID), zap.Error(err))
+			}
 			continue
 		}
 		for i := range rows {
@@ -201,10 +215,10 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 		if current, ok := existingKeys[key]; !ok || current.TenantID != row.TenantID || current.RepoFingerprint != row.RepoFingerprint {
 			if ok && current.TenantID != row.TenantID {
 				if frozen[current.TenantID] {
-					// 既有行属于冻结组织：停用不等于放弃身份，按冲突保留
+					// 既有行属于冻结组织：停用或读失败都不等于放弃身份，按冲突保留
 					// 现状，不翻给活跃认领方。
 					if logger != nil {
-						logger.Warn("repo route identity of a disabled tenant claimed by another tenant; keeping current assignment",
+						logger.Warn("repo route identity of a frozen tenant claimed by another tenant; keeping current assignment",
 							zap.String("route", strings.ReplaceAll(key, "\x00", " ")))
 					}
 					continue
@@ -234,7 +248,7 @@ func reconcileRepoRouteIndex(ctx context.Context, repo *controlplane.Repository,
 			continue
 		}
 		if frozen[row.TenantID] {
-			// 冻结组织的行保留：恢复后立即可路由，停用窗口内身份持续占用。
+			// 冻结组织的行保留：恢复后立即可路由，冻结窗口内身份持续占用。
 			continue
 		}
 		if err := repo.DeleteRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
