@@ -2,6 +2,7 @@ package results
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -344,6 +345,105 @@ func TestReviewerContractSchemaExposesNoNewChangesVerdict(t *testing.T) {
 	values := verdict["enum"].([]string)
 	if !slices.Contains(values, "no_new_changes") {
 		t.Fatalf("reviewer verdict schema must expose no_new_changes, got %#v", values)
+	}
+}
+
+func reviewerApprovalFixture() (*model.Task, *model.Run) {
+	task, run := resultContractFixture("ReviewerWorker")
+	task.ContextJSON = `{
+        "project":{"id":"15594","path":"group/project"},
+        "merge_request":{"iid":12,"head_sha":"abc123","base_sha":"def456","source_branch":"agent/task-1","target_branch":"main","review_mode":"incremental"},
+        "repos":[{"name":"project","url":"https://git.example/group/project.git","branch":"main","access":"readable"}]
+    }`
+	return task, run
+}
+
+func TestReviewerApprovalDerivesVerificationTask(t *testing.T) {
+	contract := NewReviewerContract()
+	task, run := reviewerApprovalFixture()
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","verdict":"approved",
+        "summary":"looks good","findings":[],"test_summary":"passed","comment_body":"approved, nice work"
+    }`))
+	if err != nil {
+		t.Fatalf("decode reviewer result: %v", err)
+	}
+	if err := contract.Validate(task, run, input); err != nil {
+		t.Fatalf("validate reviewer result: %v", err)
+	}
+	result, err := contract.Normalize(task, run, input)
+	if err != nil {
+		t.Fatalf("normalize reviewer result: %v", err)
+	}
+	if len(result.NextTasks) != 1 {
+		t.Fatalf("approval must derive exactly one verification task, got %d", len(result.NextTasks))
+	}
+	intent := result.NextTasks[0]
+	if intent.Role != "TesterWorker" || intent.Type != "verify_merge_request" {
+		t.Fatalf("unexpected intent role/type: %s/%s", intent.Role, intent.Type)
+	}
+	if intent.DedupeKey != "verify:group/project:12:abc123" {
+		t.Fatalf("dedupe key must bind repo, MR and head SHA, got %q", intent.DedupeKey)
+	}
+	if intent.SourceRepo != "group/project" || intent.TargetRepo != "group/project" {
+		t.Fatalf("unexpected intent repos: %s -> %s", intent.SourceRepo, intent.TargetRepo)
+	}
+	if intent.DependencyRelation != "verification" {
+		t.Fatalf("unexpected dependency relation %q", intent.DependencyRelation)
+	}
+	if intent.AllowedRepos.Readable == nil || len(intent.AllowedRepos.Readable) != 1 || intent.AllowedRepos.Readable[0] != "group/project" {
+		t.Fatalf("verification must only read the review target: %#v", intent.AllowedRepos)
+	}
+	mergeRequest, _ := intent.Context["merge_request"].(map[string]any)
+	if mergeRequest == nil || mergeRequest["head_sha"] != "abc123" {
+		t.Fatalf("verification context must carry the reviewed head SHA: %#v", intent.Context["merge_request"])
+	}
+}
+
+func TestReviewerNoNewChangesAlsoDerivesVerificationTask(t *testing.T) {
+	contract := NewReviewerContract()
+	task, run := reviewerApprovalFixture()
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","verdict":"no_new_changes",
+        "summary":"nothing reviewable in this push","findings":[],"test_summary":"n/a",
+        "comment_body":"本轮无新增可审内容，不产生新的合并建议；以最近一次实质审查结论为准"
+    }`))
+	if err != nil {
+		t.Fatalf("decode reviewer result: %v", err)
+	}
+	if err := contract.Validate(task, run, input); err != nil {
+		t.Fatalf("validate reviewer result: %v", err)
+	}
+	result, err := contract.Normalize(task, run, input)
+	if err != nil {
+		t.Fatalf("normalize reviewer result: %v", err)
+	}
+	if len(result.NextTasks) != 1 || result.NextTasks[0].DedupeKey != "verify:group/project:12:abc123" {
+		t.Fatalf("no_new_changes must still verify the new head, got %#v", result.NextTasks)
+	}
+}
+
+func TestReviewerRejectedVerdictsDeriveNoVerificationTask(t *testing.T) {
+	contract := NewReviewerContract()
+	for _, verdict := range []string{"changes_requested", "human_required"} {
+		task, run := reviewerApprovalFixture()
+		input, err := contract.DecodeStrict(json.RawMessage(fmt.Sprintf(`{
+            "task_id":"task-1","run_id":"run-1","verdict":%q,
+            "summary":"needs work","findings":[],"test_summary":"failed","comment_body":"please fix"
+        }`, verdict)))
+		if err != nil {
+			t.Fatalf("decode reviewer result: %v", err)
+		}
+		if err := contract.Validate(task, run, input); err != nil {
+			t.Fatalf("validate reviewer result (%s): %v", verdict, err)
+		}
+		result, err := contract.Normalize(task, run, input)
+		if err != nil {
+			t.Fatalf("normalize reviewer result (%s): %v", verdict, err)
+		}
+		if len(result.NextTasks) != 0 {
+			t.Fatalf("verdict %s must not derive verification tasks, got %#v", verdict, result.NextTasks)
+		}
 	}
 }
 

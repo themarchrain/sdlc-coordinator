@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -132,5 +133,25 @@ func TestBuildNextTaskExpansionRejectsMissingRequiredFields(t *testing.T) {
 		Role: "DeveloperWorker",
 	}, 0); err == nil {
 		t.Fatal("expected missing objective to fail")
+	}
+}
+
+func TestApplyCanonicalResultSkipsExpansionWithoutDependencyRepository(t *testing.T) {
+	ctx := context.Background()
+	taskRepo, runRepo, _ := newCallbackNextTaskRepositories(t)
+	orch := New(taskRepo, runRepo)
+	createCallbackNextTaskFixture(t, ctx, taskRepo, runRepo, "task-next-nodedeps", "run-next-nodedeps")
+
+	if _, _, err := orch.ApplyCanonicalResult(ctx, results.CanonicalResult{
+		TaskID:  "task-next-nodedeps",
+		RunID:   "run-next-nodedeps",
+		Status:  results.StatusSucceeded,
+		Summary: "done",
+		NextTasks: []results.NextTaskIntent{{
+			Role:      "TesterWorker",
+			Objective: "verify the merge request",
+		}},
+	}); err != nil {
+		t.Fatalf("missing dependency port must not block result application: %v", err)
 	}
 }

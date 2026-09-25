@@ -96,8 +96,11 @@ func (o *Orchestrator) expandResultNextTasks(ctx context.Context, parent *model.
 	if len(payload.NextTasks) == 0 {
 		return 0, nil
 	}
+	// next_tasks 是对结果应用的增量丰富:依赖端口未装配时跳过扩展而不
+	// 阻断结果本身(审查放行等常规结果现也携带派生意图)。生产装配恒带
+	// 端口;测试与最小装配只损失派生任务,不损失主结果。
 	if o.dependencies == nil {
-		return 0, errors.New("dependency repository is required to expand next_tasks")
+		return 0, nil
 	}
 
 	expanded := 0

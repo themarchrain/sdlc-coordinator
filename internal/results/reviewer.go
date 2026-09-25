@@ -93,11 +93,60 @@ func (ReviewerContract) Normalize(task *model.Task, _ *model.Run, raw RoleResult
 		reason := input.Summary
 		blockerReason = &reason
 	}
-	return CanonicalResult{
+	result := CanonicalResult{
 		TaskID: input.TaskID, RunID: input.RunID, Status: status, Summary: input.Summary, BlockerReason: blockerReason,
 		Artifacts:  map[string]any{"review_verdict": input.Verdict, "review_findings": input.Findings, "review_test_summary": input.TestSummary},
 		Writebacks: []CodeHostWritebackIntent{{Kind: "create_merge_request_note", ProjectID: projectID, MergeRequestIID: mrIID, Body: input.CommentBody}},
-	}, nil
+	}
+	// 审查放行(approved/no_new_changes)即派生验证子任务:changes_requested
+	// 与 human_required 意味着 MR 还会变化,验证留给放行后的那一轮头部。
+	if input.Verdict == "approved" || input.Verdict == "no_new_changes" {
+		result.NextTasks = reviewerVerificationNextTasks(task)
+	}
+	return result, nil
+}
+
+// reviewerVerificationNextTasks 构造验证子任务意图:上下文整块继承审查任务
+// 的 project/merge_request/repos(头部 SHA 在任务创建时冻结),同 MR 同头部
+// 的重复放行经确定性去重键幂等,不会重复建任务。
+func reviewerVerificationNextTasks(task *model.Task) []NextTaskIntent {
+	context, err := parseTaskContext(task)
+	if err != nil {
+		return nil
+	}
+	project := objectField(context, "project")
+	mergeRequest := objectField(context, "merge_request")
+	projectPath := stringField(project, "path")
+	if projectPath == "" {
+		projectPath = task.TargetRepo
+	}
+	headSHA := stringField(mergeRequest, "head_sha")
+	mrIID := numberField(mergeRequest, "iid")
+	if projectPath == "" || headSHA == "" || mrIID <= 0 {
+		return nil
+	}
+	childContext := map[string]any{}
+	if raw, ok := context["project"]; ok {
+		childContext["project"] = raw
+	}
+	if raw, ok := context["merge_request"]; ok {
+		childContext["merge_request"] = raw
+	}
+	if raw, ok := context["repos"]; ok {
+		childContext["repos"] = raw
+	}
+	return []NextTaskIntent{{
+		DedupeKey:          fmt.Sprintf("verify:%s:%d:%s", projectPath, mrIID, headSHA),
+		Type:               "verify_merge_request",
+		Role:               "TesterWorker",
+		SourceRepo:         projectPath,
+		TargetRepo:         projectPath,
+		Objective:          fmt.Sprintf("Verify MR !%d in %s at head %s by running the prescribed verification commands.", mrIID, projectPath, headSHA),
+		AcceptanceCriteria: "按处方执行验证命令并回传真实执行证据（命令、尝试次数、红绿、摘要）；红绿以退出码为准。",
+		DependencyRelation: "verification",
+		AllowedRepos:       AllowedRepos{Readable: []string{projectPath}},
+		Context:            childContext,
+	}}
 }
 
 func (ReviewerContract) InputSchema() map[string]any {
