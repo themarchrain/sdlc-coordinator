@@ -93,6 +93,18 @@ func runnerDeliverySpecForTask(task *model.Task, repos []agent.RepoSpec) (*agent
 
 func runnerAllowedRepos(task *model.Task) agent.AllowedRepos {
 	repos := agent.AllowedRepos{}
+	// 验证任务是只读面:工作区按冻结 SHA 只读检出,提示词也声明只读纪律,
+	// 权限口径不得把目标仓标成可写误导执行者。
+	if task.Role == "TesterWorker" {
+		readable := task.TargetRepo
+		if readable == "" {
+			readable = task.SourceRepo
+		}
+		if readable != "" {
+			repos.Readable = append(repos.Readable, readable)
+		}
+		return repos
+	}
 	if task.TargetRepo != "" {
 		repos.Writable = append(repos.Writable, task.TargetRepo)
 	}
