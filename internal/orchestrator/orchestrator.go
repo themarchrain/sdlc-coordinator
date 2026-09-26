@@ -30,7 +30,7 @@ type TaskRepository interface {
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)
 	ListByDeliveryBranch(context.Context, string) ([]model.Task, error)
-	ListSucceededVerificationsWithoutAudit(context.Context, int) ([]model.Task, error)
+	ListSucceededVerificationsWithoutAuditAfter(context.Context, uint, int) ([]model.Task, error)
 	ResumeHumanRequired(context.Context, string, string) error
 	ResumeRework(context.Context, string, string) error
 	MarkHumanRequiredIfDispatchable(context.Context, string, string) error
@@ -111,6 +111,8 @@ type ResultSubmissionRepository interface {
 
 type Orchestrator struct {
 	tickMu                         sync.Mutex
+	mergeGateMu                    sync.Mutex
+	mergeGateCursor                uint
 	tasks                          TaskRepository
 	runs                           RunRepository
 	artifacts                      ArtifactRepository

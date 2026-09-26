@@ -403,7 +403,7 @@ func TestReviewerApprovalDerivesVerificationTask(t *testing.T) {
 	}
 }
 
-func TestReviewerNoNewChangesAlsoDerivesVerificationTask(t *testing.T) {
+func TestReviewerNoNewChangesDoesNotAuthorizeVerificationByItself(t *testing.T) {
 	contract := NewReviewerContract()
 	task, run := reviewerApprovalFixture()
 	input, err := contract.DecodeStrict(json.RawMessage(`{
@@ -421,8 +421,8 @@ func TestReviewerNoNewChangesAlsoDerivesVerificationTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize reviewer result: %v", err)
 	}
-	if len(result.NextTasks) != 1 || result.NextTasks[0].DedupeKey != "verify:group/project:12:abc123" {
-		t.Fatalf("no_new_changes must still verify the new head, got %#v", result.NextTasks)
+	if len(result.NextTasks) != 0 {
+		t.Fatalf("no_new_changes preserves an earlier substantive verdict and must not authorize verification by itself, got %#v", result.NextTasks)
 	}
 }
 
@@ -457,7 +457,46 @@ func verificationTaskFixture() (*model.Task, *model.Run) {
         "merge_request":{"iid":12,"head_sha":"abc123","source_branch":"agent/task-1","target_branch":"main"},
         "repos":[{"name":"project","url":"https://git.example/group/project.git","branch":"main","access":"readable"}]
     }`
+	run.InputJSON = `{"verification":{"floor_command":"go test ./..."}}`
 	return task, run
+}
+
+func TestTesterContractRejectsEvidenceThatOmitsPrescribedCommand(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	run.InputJSON = `{"verification":{"floor_command":"go test ./...","replay_commands":["npm test -- --run"]}}`
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_passed",
+        "summary":"only the floor was executed",
+        "tests":[{"command":"go test ./...","passed":true,"summary":"ok"}]
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	err = contract.Validate(task, run, input)
+	if err == nil || !strings.Contains(err.Error(), "npm test -- --run") {
+		t.Fatalf("expected omitted replay command to be rejected, got %v", err)
+	}
+}
+
+func TestTesterContractAcceptsCompletePrescriptionRegardlessOfEvidenceOrder(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	run.InputJSON = `{"verification":{"floor_command":"go test ./...","replay_commands":["npm test -- --run"]}}`
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_passed",
+        "summary":"the complete frozen prescription is green",
+        "tests":[
+            {"command":"npm test -- --run","passed":true,"summary":"189 passed"},
+            {"command":"go test ./...","passed":true,"summary":"ok"}
+        ]
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	if err := contract.Validate(task, run, input); err != nil {
+		t.Fatalf("complete prescription must validate independent of evidence order: %v", err)
+	}
 }
 
 func TestTesterContractVerificationPassedBindsHeadSHAAndWritesReport(t *testing.T) {

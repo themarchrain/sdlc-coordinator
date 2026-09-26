@@ -35,7 +35,7 @@ func gateArtifact(t *testing.T, repo *storerepo.ArtifactRepository, taskID, runI
 		t.Fatal(err)
 	}
 	if err := repo.UpsertByIdentity(context.Background(), &model.Artifact{
-		ArtifactID:   "artifact-" + taskID + "-" + name,
+		ArtifactID:   "artifact-" + taskID + "-" + runID + "-" + name,
 		TaskID:       taskID,
 		RunID:        runID,
 		Kind:         "generic",
@@ -51,29 +51,33 @@ const gateHeadSHA = "abc123abc123abc123abc123abc123abc123abc1"
 // gateFixture 铺一条绿证据链:验证任务 succeeded(上下文带 MR 身份与父任务),
 // tester verdict=passed 且 head 绑定一致,父审查任务 approved 且同一头部。
 func gateFixture(t *testing.T, ctx context.Context, tasks *storerepo.TaskRepository, artifacts *storerepo.ArtifactRepository) *model.Task {
+	return gateFixtureWithIDs(t, ctx, tasks, artifacts, "task-gate-verify", "task-gate-review", 12)
+}
+
+func gateFixtureWithIDs(t *testing.T, ctx context.Context, tasks *storerepo.TaskRepository, artifacts *storerepo.ArtifactRepository, verifierTaskID, reviewerTaskID string, mergeRequestIID int) *model.Task {
 	t.Helper()
 	repositoryID := fixtureRepositoryID
 	verifier := &model.Task{
-		TaskID: "task-gate-verify", DedupeKey: "verify:group/project:12:" + gateHeadSHA, Type: "verify_merge_request", Role: "TesterWorker",
+		TaskID: verifierTaskID, DedupeKey: fmt.Sprintf("verify:group/project:%d:%s", mergeRequestIID, gateHeadSHA), Type: "verify_merge_request", Role: "TesterWorker",
 		SourceRepo: "group/project", TargetRepo: "group/project", RepositoryID: &repositoryID, Status: model.TaskStatusSucceeded,
 		Objective: "verify", AcceptanceCriteria: "evidence",
-		ContextJSON: `{"parent_task_id":"task-gate-review","project":{"path":"group/project"},"merge_request":{"iid":12,"head_sha":"` + gateHeadSHA + `"},"repos":[{"name":"project","branch":"feature/change","access":"readable"}]}`,
+		ContextJSON: fmt.Sprintf(`{"parent_task_id":%q,"project":{"path":"group/project"},"merge_request":{"iid":%d,"head_sha":%q},"repos":[{"name":"project","branch":"feature/change","access":"readable"}]}`, reviewerTaskID, mergeRequestIID, gateHeadSHA),
 	}
 	if err := tasks.Create(ctx, verifier); err != nil {
 		t.Fatal(err)
 	}
 	parent := &model.Task{
-		TaskID: "task-gate-review", DedupeKey: "review:task-gate-review", Type: "review_mr", Role: "ReviewerWorker",
+		TaskID: reviewerTaskID, DedupeKey: "review:" + reviewerTaskID, Type: "review_mr", Role: "ReviewerWorker",
 		SourceRepo: "group/project", TargetRepo: "group/project", RepositoryID: &repositoryID, Status: model.TaskStatusSucceeded,
 		Objective: "review", AcceptanceCriteria: "verdict",
-		ContextJSON: `{"project":{"path":"group/project"},"merge_request":{"iid":12,"head_sha":"` + gateHeadSHA + `"},"repos":[{"name":"project","branch":"feature/change","access":"readable"}]}`,
+		ContextJSON: fmt.Sprintf(`{"project":{"path":"group/project"},"merge_request":{"iid":%d,"head_sha":%q},"repos":[{"name":"project","branch":"feature/change","access":"readable"}]}`, mergeRequestIID, gateHeadSHA),
 	}
 	if err := tasks.Create(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
-	gateArtifact(t, artifacts, verifier.TaskID, "run-gate-verify", "verification_verdict", "verification_passed")
-	gateArtifact(t, artifacts, verifier.TaskID, "run-gate-verify", "verification_head_sha", gateHeadSHA)
-	gateArtifact(t, artifacts, parent.TaskID, "run-gate-review", "review_verdict", "approved")
+	gateArtifact(t, artifacts, verifier.TaskID, "run-"+verifier.TaskID, "verification_verdict", "verification_passed")
+	gateArtifact(t, artifacts, verifier.TaskID, "run-"+verifier.TaskID, "verification_head_sha", gateHeadSHA)
+	gateArtifact(t, artifacts, parent.TaskID, "run-"+reviewerTaskID, "review_verdict", "approved")
 	return verifier
 }
 
@@ -84,6 +88,7 @@ type fakeGateClient struct {
 	mergedAfterRead int
 	mergeCommitSHA  string
 	readErr         error
+	transientReads  int
 	mergeCalls      int
 	mergeReq        codehost.MergePullRequestRequest
 	mergeErr        error
@@ -92,7 +97,7 @@ type fakeGateClient struct {
 
 func (f *fakeGateClient) GetMergeRequest(context.Context, string, int) (*codehost.MergeRequest, error) {
 	f.reads++
-	if f.readErr != nil {
+	if f.readErr != nil && (f.transientReads == 0 || f.reads <= f.transientReads) {
 		return nil, f.readErr
 	}
 	if f.mergedAfterRead > 0 && f.reads >= f.mergedAfterRead {
@@ -116,6 +121,17 @@ type gateRepositoryLookup struct {
 
 func (f gateRepositoryLookup) Get(context.Context, string) (*registeredrepo.RegisteredRepository, error) {
 	return f.repo, nil
+}
+
+type failingGateEffectRepository struct {
+	*storerepo.EffectRepository
+	upsertErr   error
+	upsertCalls int
+}
+
+func (r *failingGateEffectRepository) UpsertByDedupeKey(context.Context, *model.Effect) error {
+	r.upsertCalls++
+	return r.upsertErr
 }
 
 // newGateOrch 组装被测编排器:开关恒开、客户端由 fakeGateClient 承载。
@@ -170,6 +186,32 @@ func TestAutoMergeGateMergesWhenEvidenceChainIsGreen(t *testing.T) {
 	repeat, err := orch.RunAutoMergeGate(ctx, 5)
 	if err != nil || len(repeat) != 0 {
 		t.Fatalf("audited task must not be re-evaluated: %#v err=%v", repeat, err)
+	}
+}
+
+func TestAutoMergeGateDoesNotTreatNoNewChangesAsApproval(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+	gateArtifact(t, artifacts, "task-gate-review", "run-gate-review", "review_verdict", "no_new_changes")
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != MergeGateDecisionFallback {
+		t.Fatalf("no_new_changes must not authorize an automatic merge, got %#v", decisions)
+	}
+	if client.mergeCalls != 0 {
+		t.Fatalf("non-approving reviewer evidence must not reach the merge API")
+	}
+	audit, err := audits.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatalf("the fail-closed decision must be audited: %v", err)
+	}
+	if !strings.Contains(audit.ReasonsJSON, "not approving") {
+		t.Fatalf("audit must explain the missing substantive approval: %s", audit.ReasonsJSON)
 	}
 }
 
@@ -331,6 +373,34 @@ func TestAutoMergeGateDoesNotAuditAmbiguousMergeFailure(t *testing.T) {
 	}
 }
 
+func TestAutoMergeGateRotatesPastTransientCandidate(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{
+		liveHeadSHA:    gateHeadSHA,
+		readErr:        errors.New("network unreachable"),
+		transientReads: 1,
+	}
+	orch, tasks, artifacts, _ := newGateOrch(t, client)
+	first := gateFixture(t, ctx, tasks, artifacts)
+	second := gateFixtureWithIDs(t, ctx, tasks, artifacts, "task-gate-verify-2", "task-gate-review-2", 13)
+
+	firstTick, err := orch.RunAutoMergeGate(ctx, 1)
+	if err != nil {
+		t.Fatalf("first gate tick: %v", err)
+	}
+	if len(firstTick) != 1 || firstTick[0].TaskID != first.TaskID || firstTick[0].Decision != MergeGateDecisionSkipped {
+		t.Fatalf("oldest transient candidate must be deferred first, got %#v", firstTick)
+	}
+
+	secondTick, err := orch.RunAutoMergeGate(ctx, 1)
+	if err != nil {
+		t.Fatalf("second gate tick: %v", err)
+	}
+	if len(secondTick) != 1 || secondTick[0].TaskID != second.TaskID || secondTick[0].Decision != MergeGateDecisionMerged {
+		t.Fatalf("cursor must rotate to the next candidate instead of starving it, got %#v", secondTick)
+	}
+}
+
 func TestAutoMergeGateFallsBackWhenMergeCapabilityMissing(t *testing.T) {
 	ctx := context.Background()
 	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
@@ -361,7 +431,7 @@ func TestListSucceededVerificationsWithoutAuditExcludesAuditedTasks(t *testing.T
 		t.Fatal(err)
 	}
 
-	candidates, err := tasks.ListSucceededVerificationsWithoutAudit(ctx, 5)
+	candidates, err := tasks.ListSucceededVerificationsWithoutAuditAfter(ctx, 0, 5)
 	if err != nil {
 		t.Fatalf("list candidates: %v", err)
 	}
@@ -551,6 +621,54 @@ func TestAutoMergeGateMaterializesFallbackIM(t *testing.T) {
 	}
 	if !strings.Contains(effect.RequestJSON, "回落人工") {
 		t.Fatalf("IM body must carry the fallback notice: %s", effect.RequestJSON)
+	}
+}
+
+func TestAutoMergeGateRetriesFallbackWhenIMPersistenceFails(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: "movedhead"}
+	tasks, runs, artifacts, audits := newMergeGateRepositories(t)
+	db, err := store.Open(testDatabaseDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(db, &model.Effect{}); err != nil {
+		t.Fatal(err)
+	}
+	effectRepo := &failingGateEffectRepository{
+		EffectRepository: storerepo.NewEffectRepository(db),
+		upsertErr:        errors.New("effect store unavailable"),
+	}
+	orch := New(tasks, runs,
+		WithArtifactRepository(artifacts),
+		WithVerificationArtifactReader(artifacts),
+		WithMergeGateAuditRepository(audits),
+		WithRepositoryLookup(gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
+			RepositoryID: fixtureRepositoryID, Provider: "github",
+			BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token",
+		}}),
+		WithAutoMergeEnabled(func(context.Context) bool { return true }),
+		WithMergeGateClients(func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
+			return client, client, nil
+		}),
+		WithEffectRepository(effectRepo),
+	)
+	gateFixture(t, ctx, tasks, artifacts)
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != MergeGateDecisionSkipped || !strings.Contains(decisions[0].Error, "effect store unavailable") {
+		t.Fatalf("failed IM persistence must defer the terminal decision, got %#v", decisions)
+	}
+	if _, err := audits.GetByTaskID(ctx, "task-gate-verify"); !errors.Is(err, storerepo.ErrNotFound) {
+		t.Fatalf("audit must remain absent so the next tick retries, got %v", err)
+	}
+
+	_, _ = orch.RunAutoMergeGate(ctx, 5)
+	if effectRepo.upsertCalls != 2 {
+		t.Fatalf("next tick must retry IM persistence, calls=%d", effectRepo.upsertCalls)
 	}
 }
 

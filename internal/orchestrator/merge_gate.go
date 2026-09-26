@@ -64,16 +64,19 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 	if !o.autoMergeEnabled(ctx) {
 		return nil, nil
 	}
+	o.mergeGateMu.Lock()
+	defer o.mergeGateMu.Unlock()
 	if limit <= 0 {
 		limit = defaultMergeGateLimit
 	}
-	candidates, err := o.tasks.ListSucceededVerificationsWithoutAudit(ctx, limit)
+	candidates, err := o.tasks.ListSucceededVerificationsWithoutAuditAfter(ctx, o.mergeGateCursor, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list gate candidates: %w", err)
 	}
 	decisions := make([]MergeGateTickResult, 0, len(candidates))
 	for i := range candidates {
 		task := &candidates[i]
+		o.mergeGateCursor = task.ID
 		result := o.evaluateAutoMergeGate(ctx, task)
 		if result.Transient != nil {
 			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped 并留
@@ -84,17 +87,21 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 			})
 			continue
 		}
+		if result.Decision == MergeGateDecisionFallback && result.NotifyHuman {
+			// 先持久化通知再写终态审计。若通知落库失败,保留无审计
+			// 状态让下一 tick 重试,避免终态防重先截断人工触点。
+			if notifyErr := o.materializeGateFallbackIM(ctx, task, result); notifyErr != nil {
+				decisions = append(decisions, MergeGateTickResult{
+					TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: notifyErr.Error(),
+				})
+				continue
+			}
+		}
 		if writeErr := o.writeMergeGateAudit(ctx, task, result); writeErr != nil {
 			decisions = append(decisions, MergeGateTickResult{
 				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: writeErr.Error(),
 			})
 			continue
-		}
-		if result.Decision == MergeGateDecisionFallback && result.NotifyHuman {
-			// 证据链全绿却没被合并的回落必须有触点,通知必须送到 IM,否则
-			// 只能靠查库发现(与停靠通知同款 best-effort);红验证与血缘
-			// 过期的回落不在此列,前者有 MR 报告覆盖,后者自有新链在跑。
-			o.materializeGateFallbackIM(ctx, task, result)
 		}
 		decisions = append(decisions, MergeGateTickResult{
 			TaskID: task.TaskID, HeadSHA: result.HeadSHA, Decision: result.Decision, Reasons: strings.Join(result.Reasons, "; "),
@@ -191,7 +198,7 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 		result.Transient = err
 		return result
 	}
-	if reviewerVerdict != "approved" && reviewerVerdict != "no_new_changes" {
+	if reviewerVerdict != "approved" {
 		return fallback(fmt.Sprintf("reviewer verdict is %q, not approving", reviewerVerdict))
 	}
 	if strings.TrimSpace(parentContext.MergeRequest.HeadSHA) != result.HeadSHA {
@@ -347,18 +354,17 @@ func (o *Orchestrator) writeMergeGateAudit(ctx context.Context, task *model.Task
 	return nil
 }
 
-// materializeGateFallbackIM 把门禁回落物化为 IM 通知(与停靠通知同款
-// best-effort:落库失败不改变决策;去重按验证任务,至多一条)。
-func (o *Orchestrator) materializeGateFallbackIM(ctx context.Context, task *model.Task, result gateEvaluation) {
+// materializeGateFallbackIM 把门禁回落物化为 IM 通知。去重按验证任务,
+// 已有即成功;持久化失败向上返回,让门禁保留可重试状态。
+func (o *Orchestrator) materializeGateFallbackIM(ctx context.Context, task *model.Task, result gateEvaluation) error {
 	if o.effects == nil || task == nil {
-		return
+		return nil
 	}
 	dedupeKey := mergeGateFallbackIMPrefix + task.TaskID
 	if _, err := o.effects.GetByDedupeKey(ctx, dedupeKey); err == nil {
-		return
+		return nil
 	} else if !isLookupNotFound(err) {
-		// 读错误(非 NotFound)时宁可漏发也不落库,防止整行覆盖已执行 effect。
-		return
+		return fmt.Errorf("read merge gate fallback IM effect: %w", err)
 	}
 	body := fmt.Sprintf(
 		"自动合并门禁已回落人工处理。\n\n- Task: `%s`\n- MR: `%s` iid %d\n- Head: `%s`\n- 原因:\n%s\n\n证据链与验证任务见执行观测页;人工核验后可直接合并,或按原因处理后重推。",
@@ -370,13 +376,13 @@ func (o *Orchestrator) materializeGateFallbackIM(ctx context.Context, task *mode
 	)
 	requestJSON, err := json.Marshal(map[string]string{"body": body, "format": "markdown"})
 	if err != nil {
-		return
+		return fmt.Errorf("encode merge gate fallback IM effect: %w", err)
 	}
 	runID := ""
 	if task.CurrentRunID != nil {
 		runID = strings.TrimSpace(*task.CurrentRunID)
 	}
-	_ = o.effects.UpsertByDedupeKey(ctx, &model.Effect{
+	if err := o.effects.UpsertByDedupeKey(ctx, &model.Effect{
 		TaskID:      task.TaskID,
 		RunID:       runID,
 		DedupeKey:   dedupeKey,
@@ -385,7 +391,10 @@ func (o *Orchestrator) materializeGateFallbackIM(ctx context.Context, task *mode
 		Critical:    false,
 		Status:      model.EffectStatusPending,
 		RequestJSON: string(requestJSON),
-	})
+	}); err != nil {
+		return fmt.Errorf("persist merge gate fallback IM effect: %w", err)
+	}
+	return nil
 }
 
 func joinReasonsAsQuotes(reasons []string) string {

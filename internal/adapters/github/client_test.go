@@ -311,6 +311,49 @@ func TestMergePullRequestProtectionRejectionMapsToSentinel(t *testing.T) {
 	}
 }
 
+func TestMergePullRequestPrimaryRateLimit403StaysTransientRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", "1799999999")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !codehost.IsTransientRejection(err) {
+		t.Fatalf("primary rate limit 403 must stay transient, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("primary rate limit 403 must not become deterministic, got %v", err)
+	}
+}
+
+func TestMergePullRequestSecondaryRateLimit403StaysTransientRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !codehost.IsTransientRejection(err) {
+		t.Fatalf("secondary rate limit 403 must stay transient, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("secondary rate limit 403 must not become deterministic, got %v", err)
+	}
+}
+
 // 读路径 404(PR 已删/仓库转移)与合并路径同属确定性拒绝:门禁据此回落
 // 人工而不是无限重评。
 func TestGetMergeRequestNotFoundMapsToRejectionSentinel(t *testing.T) {

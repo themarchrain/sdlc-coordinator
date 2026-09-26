@@ -35,7 +35,10 @@ func testerApplicationFixture(taskID, runID string) (*model.Task, *model.Run) {
 		Objective: "verify MR !12 at head abc123", AcceptanceCriteria: "report real evidence",
 		ContextJSON: `{"project":{"path":"group/project"},"merge_request":{"iid":12,"head_sha":"abc123","source_branch":"alice/issue-13-20260727"},"repos":[{"name":"project","branch":"alice/issue-13-20260727","access":"readable"}]}`,
 	}
-	run := &model.Run{RunID: runID, TaskID: taskID, WorkerRole: "TesterWorker", Status: model.RunStatusRunning}
+	run := &model.Run{
+		RunID: runID, TaskID: taskID, WorkerRole: "TesterWorker", Status: model.RunStatusRunning,
+		InputJSON: `{"verification":{"floor_command":"go test ./..."}}`,
+	}
 	return task, run
 }
 
@@ -120,6 +123,7 @@ func TestTesterFailedVerdictStillCompletesTaskWithRedEvidence(t *testing.T) {
 		WithCodeHostBackendResolver(&staticCodeHostResolver{backends: map[string]codehost.Backend{fixtureRepositoryID: &reviewerRunnerCodeHostBackend{}}}),
 	)
 	task, run := testerApplicationFixture("task-tester-red", "run-tester-red")
+	run.InputJSON = `{"verification":{"floor_command":"make e2e"}}`
 	if err := taskRepo.Create(ctx, task); err != nil {
 		t.Fatal(err)
 	}

@@ -98,9 +98,10 @@ func (ReviewerContract) Normalize(task *model.Task, _ *model.Run, raw RoleResult
 		Artifacts:  map[string]any{"review_verdict": input.Verdict, "review_findings": input.Findings, "review_test_summary": input.TestSummary},
 		Writebacks: []CodeHostWritebackIntent{{Kind: "create_merge_request_note", ProjectID: projectID, MergeRequestIID: mrIID, Body: input.CommentBody}},
 	}
-	// 审查放行(approved/no_new_changes)即派生验证子任务:changes_requested
-	// 与 human_required 意味着 MR 还会变化,验证留给放行后的那一轮头部。
-	if input.Verdict == "approved" || input.Verdict == "no_new_changes" {
+	// 只有本轮实质批准才能派生验证。no_new_changes 明确不产生新的合并
+	// 建议；在系统能可靠解析同 MR 最近一次实质结论前，必须 fail-closed，
+	// 不能把它自行提升为 approved。
+	if input.Verdict == "approved" {
 		result.NextTasks = reviewerVerificationNextTasks(task)
 	}
 	return result, nil

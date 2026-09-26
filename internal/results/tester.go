@@ -53,9 +53,15 @@ func (TesterContract) Validate(task *model.Task, run *model.Run, raw RoleResultI
 	}
 	switch input.Outcome {
 	case TesterOutcomeVerificationPassed:
-		return validateTests(input.Tests, true)
+		if err := validateTests(input.Tests, true); err != nil {
+			return err
+		}
+		return validateVerificationPrescription(run, input.Tests)
 	case TesterOutcomeVerificationFailed:
-		return validateTests(input.Tests, false)
+		if err := validateTests(input.Tests, false); err != nil {
+			return err
+		}
+		return validateVerificationPrescription(run, input.Tests)
 	case TesterOutcomeEnvironmentBlocker, TesterOutcomeInsufficientContext:
 		if input.BlockerReason == nil || strings.TrimSpace(*input.BlockerReason) == "" {
 			return fmt.Errorf("blocker_reason is required for %s", input.Outcome)
@@ -64,6 +70,56 @@ func (TesterContract) Validate(task *model.Task, run *model.Run, raw RoleResultI
 	default:
 		return fmt.Errorf("unsupported tester outcome %q", input.Outcome)
 	}
+}
+
+// validateVerificationPrescription 把 agent 回传的命令集合与派发前冻结在
+// run.InputJSON 的处方机械核对。允许额外诊断命令与不同顺序，但 floor 与
+// replay 中每条命令都必须有执行证据；否则 verification_passed/failed 都
+// 只是未覆盖完整处方的自报，不能进入门禁。
+func validateVerificationPrescription(run *model.Run, tests []TestEvidence) error {
+	var taskPackage struct {
+		Verification *struct {
+			FloorCommand   string   `json:"floor_command"`
+			ReplayCommands []string `json:"replay_commands"`
+		} `json:"verification"`
+	}
+	if run == nil || strings.TrimSpace(run.InputJSON) == "" {
+		return errors.New("frozen verification prescription is required")
+	}
+	if err := json.Unmarshal([]byte(run.InputJSON), &taskPackage); err != nil {
+		return fmt.Errorf("decode frozen verification prescription: %w", err)
+	}
+	if taskPackage.Verification == nil {
+		return errors.New("frozen verification prescription is required")
+	}
+
+	reported := make(map[string]struct{}, len(tests))
+	for _, test := range tests {
+		if command := strings.TrimSpace(test.Command); command != "" {
+			reported[command] = struct{}{}
+		}
+	}
+	required := append([]string{taskPackage.Verification.FloorCommand}, taskPackage.Verification.ReplayCommands...)
+	hasRequired := false
+	seen := make(map[string]struct{}, len(required))
+	for _, raw := range required {
+		command := strings.TrimSpace(raw)
+		if command == "" {
+			continue
+		}
+		hasRequired = true
+		if _, duplicate := seen[command]; duplicate {
+			continue
+		}
+		seen[command] = struct{}{}
+		if _, ok := reported[command]; !ok {
+			return fmt.Errorf("tests evidence omits prescribed command %q", command)
+		}
+	}
+	if !hasRequired {
+		return errors.New("frozen verification prescription has no commands")
+	}
+	return nil
 }
 
 func (TesterContract) Normalize(task *model.Task, _ *model.Run, raw RoleResultInput) (CanonicalResult, error) {
