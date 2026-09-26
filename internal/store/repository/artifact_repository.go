@@ -70,3 +70,16 @@ func (r *ArtifactRepository) UpsertByIdentity(ctx context.Context, artifact *mod
 	}
 	return nil
 }
+
+// ListByTaskAndName 按 (task, kind, name) 读取 artifact(id 升序),供验证
+// 处方复放开发记录的测试命令等只读消费。
+func (r *ArtifactRepository) ListByTaskAndName(ctx context.Context, taskID, kind, name string) ([]model.Artifact, error) {
+	var artifacts []model.Artifact
+	if err := r.db.WithContext(ctx).
+		Where("task_id = ? AND kind = ? AND name = ?", taskID, kind, name).
+		Order("id ASC").
+		Find(&artifacts).Error; err != nil {
+		return nil, fmt.Errorf("list artifacts by task and name: %w", err)
+	}
+	return artifacts, nil
+}

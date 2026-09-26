@@ -152,6 +152,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
 		orchestrator.WithTesterRunner(testerRunnerCoordinator, runnerSettings),
+		orchestrator.WithVerificationArtifactReader(artifactRepo),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
 		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
 	)

@@ -44,7 +44,7 @@ func (o *Orchestrator) DispatchTesterTask(ctx context.Context, taskID string) (*
 		o.recordDispatchFailure(ctx, task, run, err)
 		return nil, err
 	}
-	pkg, err := buildTesterTaskPackage(task, run, repoRow)
+	pkg, err := o.buildTesterTaskPackage(ctx, task, run, repoRow)
 	if err != nil {
 		o.recordDispatchFailure(ctx, task, run, err)
 		return nil, err
@@ -140,27 +140,18 @@ func (o *Orchestrator) rebuildTesterRunnerProjection(ctx context.Context, runID 
 	})
 }
 
-// buildTesterTaskPackage 构造验证任务包:按注册仓行的验证命令下限组装处方,
-// 任务包经 run.InputJSON 持久化,投影重建时由 bundle 侧恢复同一处方。
-func buildTesterTaskPackage(task *model.Task, run *model.Run, repoRow *registeredrepo.RegisteredRepository) (agent.TaskPackage, error) {
+// buildTesterTaskPackage 构造验证任务包:处方=下限∪复放(见
+// buildVerificationPlan),任务包经 run.InputJSON 持久化,投影重建时由
+// bundle 侧恢复同一处方。
+func (o *Orchestrator) buildTesterTaskPackage(ctx context.Context, task *model.Task, run *model.Run, repoRow *registeredrepo.RegisteredRepository) (agent.TaskPackage, error) {
 	pkg, err := workers.BuildRunnerTaskPackage(task, run)
 	if err != nil {
 		return agent.TaskPackage{}, err
 	}
-	if plan := floorVerificationPlan(repoRow); plan != nil {
+	if plan := o.buildVerificationPlan(ctx, task, repoRow); plan != nil {
 		pkg.Verification = plan
 	}
 	return pkg, nil
-}
-
-// floorVerificationPlan 从注册仓行取验证命令下限;仓行未声明时返回 nil,
-// 任务包不带处方段(提示词据实说明)。
-func floorVerificationPlan(repoRow *registeredrepo.RegisteredRepository) *agent.VerificationPlan {
-	floor := strings.TrimSpace(repoRow.VerifyCommand)
-	if floor == "" {
-		return nil
-	}
-	return &agent.VerificationPlan{FloorCommand: floor}
 }
 
 // buildTesterWorkspaceRequest 组装验证工作区请求:与 reviewer 同一只读检出

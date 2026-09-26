@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"sdlc-coordinator/internal/model"
@@ -314,4 +315,21 @@ func (r *TaskRepository) BlockRunAndRequireHuman(ctx context.Context, runID, mes
 		task.LastError = message
 		return tx.Save(&task).Error
 	})
+}
+
+// ListByDeliveryBranch 按交付分支读任务(id 降序,最新在前),供验证处方
+// 反查产生该分支的开发任务;分支不唯一(历史多轮),调用方按角色过滤。
+func (r *TaskRepository) ListByDeliveryBranch(ctx context.Context, deliveryBranch string) ([]model.Task, error) {
+	branch := strings.TrimSpace(deliveryBranch)
+	if branch == "" {
+		return []model.Task{}, nil
+	}
+	var tasks []model.Task
+	if err := r.db.WithContext(ctx).
+		Where("delivery_branch = ?", branch).
+		Order("id DESC").
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by delivery branch: %w", err)
+	}
+	return tasks, nil
 }

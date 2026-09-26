@@ -29,6 +29,7 @@ type TaskRepository interface {
 	Claim(context.Context, string, string, time.Time) error
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)
+	ListByDeliveryBranch(context.Context, string) ([]model.Task, error)
 	ResumeHumanRequired(context.Context, string, string) error
 	ResumeRework(context.Context, string, string) error
 	MarkHumanRequiredIfDispatchable(context.Context, string, string) error
@@ -51,6 +52,12 @@ type RunRepository interface {
 
 type ArtifactRepository interface {
 	UpsertByIdentity(context.Context, *model.Artifact) error
+}
+
+// VerificationArtifactReader 是验证处方的只读窄端口:按 (task, kind, name)
+// 读取 artifact,复放开发记录的测试命令。独立于写端口,最小装配可不提供。
+type VerificationArtifactReader interface {
+	ListByTaskAndName(context.Context, string, string, string) ([]model.Artifact, error)
 }
 
 type EffectRepository interface {
@@ -118,6 +125,7 @@ type Orchestrator struct {
 	developerRunnerSettings        ReviewerRunnerSettings
 	testerRunner                   TesterRunnerExecutionCoordinator
 	testerRunnerSettings           ReviewerRunnerSettings
+	verificationArtifacts          VerificationArtifactReader
 	agentExecutions                AgentExecutionLookup
 	runnerArtifacts                RunnerArtifactStore
 	stateMachine                   *StateMachine
@@ -233,6 +241,12 @@ func WithTesterRunner(coordinator TesterRunnerExecutionCoordinator, settings Rev
 	return func(o *Orchestrator) {
 		o.testerRunner = coordinator
 		o.testerRunnerSettings = settings
+	}
+}
+
+func WithVerificationArtifactReader(reader VerificationArtifactReader) Option {
+	return func(o *Orchestrator) {
+		o.verificationArtifacts = reader
 	}
 }
 
