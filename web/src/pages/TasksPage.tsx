@@ -14,7 +14,7 @@ import { useTheme } from '../theme/useTheme'
 import { useRemote } from '../hooks/useRemote'
 
 const roles = ['DeveloperWorker', 'TesterWorker', 'ReviewerWorker']
-const taskTypes = ['develop_from_issue', 'review_mr', 'rework_merge_request', 'upstream_fix', 'generated_from_next_task']
+const taskTypes = ['develop_from_issue', 'review_mr', 'rework_merge_request', 'upstream_fix', 'verify_merge_request', 'generated_from_next_task']
 const taskStatuses = ['pending', 'claimed', 'running', 'finalizing', 'waiting_upstream', 'waiting_merge', 'retry_pending', 'human_required', 'blocked', 'succeeded']
 const taskFilterKeys = ['status', 'role', 'type', 'repository'] as const
 
@@ -160,6 +160,7 @@ function optionLabel(value: string) {
   return ({
     pending: '待派发', claimed: '已领取', running: '运行中', finalizing: '结果收口中', retry_pending: '等待重试', waiting_upstream: '等待上游',
     waiting_merge: '等待合并', human_required: '需要人工', blocked: '已阻塞', succeeded: '已成功', develop_from_issue: 'Issue 开发', review_mr: 'MR 审查',
-    rework_merge_request: 'MR 接续开发', upstream_fix: '上游修复', generated_from_next_task: '派生任务',
+    rework_merge_request: 'MR 接续开发', upstream_fix: '上游修复', verify_merge_request: 'MR 验证', generated_from_next_task: '派生任务',
+    DeveloperWorker: '开发', TesterWorker: '验证', ReviewerWorker: '审查',
   } as Record<string, string>)[value] ?? value
 }

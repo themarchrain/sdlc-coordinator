@@ -53,7 +53,8 @@ DB.Where("tenant_id = ?", tenantID)
 			if entry.IsDir() {
 				name := entry.Name()
 				switch name {
-				case ".git", "node_modules", "vendor", "dist":
+				case ".git", "node_modules", "vendor", "dist", ".worktrees":
+					// .worktrees 是本仓其他分支的嵌套检出,不属于本分支业务树。
 					return filepath.SkipDir
 				}
 				if exempt[name] {
