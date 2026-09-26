@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -236,5 +237,76 @@ func TestNewClientDerivesAPIHost(t *testing.T) {
 	client := NewClient("https://github.com", "test-token")
 	if client.baseURL != "https://api.github.com" {
 		t.Fatalf("baseURL = %q, want https://api.github.com", client.baseURL)
+	}
+}
+
+func TestMergePullRequestSendsHeadAssertionAndReturnsCommit(t *testing.T) {
+	var seenPath string
+	var seenMethod string
+	var seenPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenMethod = r.Method
+		seenPath = r.URL.EscapedPath()
+		_ = json.NewDecoder(r.Body).Decode(&seenPayload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"sha":"dddd0444d","merged":true,"message":"Pull Request successfully merged"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	result, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "cccccccccccccccccccccccccccccccccccccccc",
+		MergeMethod:     "squash",
+		CommitTitle:     "feat: merge verification",
+	})
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if seenMethod != http.MethodPut || seenPath != "/repos/agent/framework/pulls/7/merge" {
+		t.Fatalf("unexpected call: %s %s", seenMethod, seenPath)
+	}
+	if seenPayload["sha"] != "cccccccccccccccccccccccccccccccccccccccc" || seenPayload["merge_method"] != "squash" || seenPayload["commit_title"] != "feat: merge verification" {
+		t.Fatalf("head assertion or merge options missing: %#v", seenPayload)
+	}
+	if !result.Merged || result.MergedCommitSHA != "dddd0444d" {
+		t.Fatalf("unexpected merge result: %#v", result)
+	}
+}
+
+func TestMergePullRequestHeadMismatchMapsToSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message":"Head branch was modified out of the base branch"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "cccccccccccccccccccccccccccccccccccccccc",
+	})
+	if !errors.Is(err, codehost.ErrMergeHeadMismatch) {
+		t.Fatalf("head mismatch must map to the sentinel, got %v", err)
+	}
+}
+
+func TestMergePullRequestProtectionRejectionMapsToSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Required status checks have not passed"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "cccccccccccccccccccccccccccccccccccccccc",
+	})
+	if !errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("protection rejection must map to the sentinel, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Required status checks") {
+		t.Fatalf("platform reason must be carried, got %v", err)
 	}
 }

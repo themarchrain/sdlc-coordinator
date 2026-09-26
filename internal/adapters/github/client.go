@@ -164,6 +164,58 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	}, nil
 }
 
+// mergeResponse 是 PUT pulls/{n}/merge 的响应体:merged 与最终 commit sha。
+type mergeResponse struct {
+	SHA     string `json:"sha"`
+	Merged  bool   `json:"merged"`
+	Message string `json:"message"`
+}
+
+// MergePullRequest 执行 PR 合并,sha 参数即头部断言:头部漂移平台返回 409,
+// 映射为 ErrMergeHeadMismatch;保护规则等明确拒绝(403/405/422)映射为
+// ErrMergeRejected 并携带平台原因——门禁层据此回落人工,不绕平台规则。
+func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, req codehost.MergePullRequestRequest) (*codehost.MergePullRequestResult, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{
+		"sha": req.ExpectedHeadSHA,
+	}
+	if strings.TrimSpace(req.MergeMethod) != "" {
+		payload["merge_method"] = strings.TrimSpace(req.MergeMethod)
+	}
+	if strings.TrimSpace(req.CommitTitle) != "" {
+		payload["commit_title"] = req.CommitTitle
+	}
+	if strings.TrimSpace(req.CommitMessage) != "" {
+		payload["commit_message"] = req.CommitMessage
+	}
+
+	var merged mergeResponse
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), mrIID)
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &merged); err != nil {
+		return nil, mapMergeStatusError(err)
+	}
+	return &codehost.MergePullRequestResult{Merged: merged.Merged, MergedCommitSHA: strings.TrimSpace(merged.SHA)}, nil
+}
+
+// mapMergeStatusError 把确定性的合并拒绝归到哨兵错误上;5xx/网络类歧义
+// 保持 Ambiguous/StatusError 原样,由调用方按未知处理(fail-closed)。
+func mapMergeStatusError(err error) error {
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return err
+	}
+	switch status.StatusCode {
+	case http.StatusConflict:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
+	case http.StatusForbidden, http.StatusMethodNotAllowed, http.StatusUnprocessableEntity:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)
+	}
+	return err
+}
+
 func splitRepo(repo string) (string, string, error) {
 	parts := strings.Split(strings.Trim(repo, "/"), "/")
 	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
