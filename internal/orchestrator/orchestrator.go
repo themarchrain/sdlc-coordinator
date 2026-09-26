@@ -30,6 +30,7 @@ type TaskRepository interface {
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)
 	ListByDeliveryBranch(context.Context, string) ([]model.Task, error)
+	ListSucceededVerificationsWithoutAudit(context.Context, int) ([]model.Task, error)
 	ResumeHumanRequired(context.Context, string, string) error
 	ResumeRework(context.Context, string, string) error
 	MarkHumanRequiredIfDispatchable(context.Context, string, string) error
@@ -52,6 +53,13 @@ type RunRepository interface {
 
 type ArtifactRepository interface {
 	UpsertByIdentity(context.Context, *model.Artifact) error
+}
+
+// MergeGateAuditRepository 留痕自动合并门禁的裁决:每验证任务至多一行,
+// 审计即防重。
+type MergeGateAuditRepository interface {
+	Create(context.Context, *model.MergeGateAudit) error
+	GetByTaskID(context.Context, string) (*model.MergeGateAudit, error)
 }
 
 // VerificationArtifactReader 是验证处方的只读窄端口:按 (task, kind, name)
@@ -126,6 +134,9 @@ type Orchestrator struct {
 	testerRunner                   TesterRunnerExecutionCoordinator
 	testerRunnerSettings           ReviewerRunnerSettings
 	verificationArtifacts          VerificationArtifactReader
+	mergeAudits                    MergeGateAuditRepository
+	autoMergeEnabled               func(context.Context) bool
+	mergeGateClients               func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)
 	agentExecutions                AgentExecutionLookup
 	runnerArtifacts                RunnerArtifactStore
 	stateMachine                   *StateMachine
@@ -247,6 +258,24 @@ func WithTesterRunner(coordinator TesterRunnerExecutionCoordinator, settings Rev
 func WithVerificationArtifactReader(reader VerificationArtifactReader) Option {
 	return func(o *Orchestrator) {
 		o.verificationArtifacts = reader
+	}
+}
+
+func WithMergeGateAuditRepository(audits MergeGateAuditRepository) Option {
+	return func(o *Orchestrator) {
+		o.mergeAudits = audits
+	}
+}
+
+func WithAutoMergeEnabled(lookup func(context.Context) bool) Option {
+	return func(o *Orchestrator) {
+		o.autoMergeEnabled = lookup
+	}
+}
+
+func WithMergeGateClients(factory func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)) Option {
+	return func(o *Orchestrator) {
+		o.mergeGateClients = factory
 	}
 }
 

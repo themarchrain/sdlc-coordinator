@@ -18,6 +18,7 @@ type TickRequest struct {
 	FinalizationLimit   int    `json:"finalization_limit,omitempty"`
 	RecoveryLimit       int    `json:"recovery_limit,omitempty"`
 	EffectLimit         int    `json:"effect_limit,omitempty"`
+	GateLimit           int    `json:"gate_limit,omitempty"`
 }
 
 type TickResult struct {
@@ -27,8 +28,17 @@ type TickResult struct {
 	Recoveries           []RecoveryResult                `json:"recoveries"`
 	DispatchedTasks      []DispatchTickResult            `json:"dispatched_tasks"`
 	DispatchFailures     []DispatchTickResult            `json:"dispatch_failures"`
+	GateDecisions        []MergeGateTickResult           `json:"gate_decisions,omitempty"`
 	ExecutedEffects      []EffectExecutionResult         `json:"executed_effects"`
 	CleanedArtifacts     []ArtifactCleanupResult         `json:"cleaned_artifacts,omitempty"`
+}
+
+type MergeGateTickResult struct {
+	TaskID   string `json:"task_id"`
+	HeadSHA  string `json:"head_sha,omitempty"`
+	Decision string `json:"decision"`
+	Reasons  string `json:"reasons,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type PollRunTickResult struct {
@@ -155,6 +165,15 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 		}
 		result.FinalizedResults = finalized
 	}
+
+	// 自动合并门禁:消费已完成的验证任务(证据合取全绿才动合并,缺一环
+	// 回落人工并留审计)。开关关闭时内部零开销短路;查询失败不阻断 Tick
+	// 主链路,下一轮自然重评。
+	gateDecisions, err := o.RunAutoMergeGate(ctx, req.GateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("run auto merge gate: %w", err)
+	}
+	result.GateDecisions = gateDecisions
 
 	recoveries, err := o.RecoverExpiredTasks(ctx, req.RecoveryLimit)
 	if err != nil {

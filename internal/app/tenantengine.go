@@ -74,6 +74,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	runRepo := repository.NewRunRepository(db)
 	agentExecutionRepo := repository.NewAgentExecutionRepository(db)
 	artifactRepo := repository.NewArtifactRepository(db)
+	auditRepo := repository.NewMergeGateAuditRepository(db)
 	dependencyRepo := repository.NewDependencyRepository(db)
 	writebackRepo := repository.NewWritebackRepository(db)
 	effectRepo := repository.NewEffectRepository(db)
@@ -153,6 +154,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
 		orchestrator.WithTesterRunner(testerRunnerCoordinator, runnerSettings),
 		orchestrator.WithVerificationArtifactReader(artifactRepo),
+		orchestrator.WithMergeGateAuditRepository(auditRepo),
+		orchestrator.WithAutoMergeEnabled(tenantAutoMergeEnabledLookup(orgConfig, shared.logger, tenantID)),
+		orchestrator.WithMergeGateClients(orchestrator.DefaultMergeGateClientFactory),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
 		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
 	)
@@ -399,6 +403,7 @@ func (p *enginePool) tickAll(ctx context.Context, request orchestrator.TickReque
 		merged.DispatchedTasks = append(merged.DispatchedTasks, result.DispatchedTasks...)
 		merged.DispatchFailures = append(merged.DispatchFailures, result.DispatchFailures...)
 		merged.ExecutedEffects = append(merged.ExecutedEffects, result.ExecutedEffects...)
+		merged.GateDecisions = append(merged.GateDecisions, result.GateDecisions...)
 		merged.CleanedArtifacts = append(merged.CleanedArtifacts, result.CleanedArtifacts...)
 	}
 	return merged, nil

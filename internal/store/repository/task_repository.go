@@ -333,3 +333,21 @@ func (r *TaskRepository) ListByDeliveryBranch(ctx context.Context, deliveryBranc
 	}
 	return tasks, nil
 }
+
+// ListSucceededVerificationsWithoutAudit 读出已完成且从未被门禁评估过的
+// 验证任务(反连接审计表):门禁每任务至多裁决一次,审计行即防重边界。
+func (r *TaskRepository) ListSucceededVerificationsWithoutAudit(ctx context.Context, limit int) ([]model.Task, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var tasks []model.Task
+	if err := r.db.WithContext(ctx).
+		Where("type = ? AND role = ? AND status = ?", "verify_merge_request", "TesterWorker", model.TaskStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM merge_gate_audits a WHERE a.task_id = tasks.task_id)").
+		Order("id ASC").
+		Limit(limit).
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list unevaluated verification tasks: %w", err)
+	}
+	return tasks, nil
+}

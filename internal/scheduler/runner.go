@@ -98,7 +98,8 @@ func tickResultIsIdle(result *orchestrator.TickResult) bool {
 		len(result.Recoveries) == 0 &&
 		len(result.DispatchedTasks) == 0 &&
 		len(result.DispatchFailures) == 0 &&
-		len(result.ExecutedEffects) == 0
+		len(result.ExecutedEffects) == 0 &&
+		len(result.GateDecisions) == 0
 }
 
 func waitForInterval(ctx context.Context, interval time.Duration) bool {
