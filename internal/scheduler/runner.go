@@ -85,6 +85,7 @@ func (r *Runner) Run(ctx context.Context) {
 			zap.Int("recoveries", len(result.Recoveries)),
 			zap.Int("dispatched_tasks", len(result.DispatchedTasks)),
 			zap.Int("dispatch_failures", len(result.DispatchFailures)),
+			zap.Int("gate_decisions", len(result.GateDecisions)),
 			zap.Int("executed_effects", len(result.ExecutedEffects)),
 			zap.Duration("duration", time.Since(startedAt)),
 		)

@@ -58,10 +58,12 @@ type noteResponse struct {
 }
 
 type pullResponse struct {
-	Number  int           `json:"number"`
-	HTMLURL string        `json:"html_url"`
-	Head    pullBranchRef `json:"head"`
-	Base    pullBranchRef `json:"base"`
+	Number         int           `json:"number"`
+	HTMLURL        string        `json:"html_url"`
+	Merged         bool          `json:"merged"`
+	MergeCommitSHA string        `json:"merge_commit_sha"`
+	Head           pullBranchRef `json:"head"`
+	Base           pullBranchRef `json:"base"`
 }
 
 type pullBranchRef struct {
@@ -153,14 +155,16 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	}
 	var pr pullResponse
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), mrIID), nil, &pr); err != nil {
-		return nil, err
+		return nil, mapMergeStatusError(err)
 	}
 	return &codehost.MergeRequest{
-		IID:          pr.Number,
-		WebURL:       pr.HTMLURL,
-		SourceBranch: strings.TrimSpace(pr.Head.Ref),
-		TargetBranch: strings.TrimSpace(pr.Base.Ref),
-		HeadSHA:      strings.TrimSpace(pr.Head.SHA),
+		IID:            pr.Number,
+		WebURL:         pr.HTMLURL,
+		SourceBranch:   strings.TrimSpace(pr.Head.Ref),
+		TargetBranch:   strings.TrimSpace(pr.Base.Ref),
+		HeadSHA:        strings.TrimSpace(pr.Head.SHA),
+		Merged:         pr.Merged,
+		MergeCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
 	}, nil
 }
 
@@ -200,17 +204,20 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 	return &codehost.MergePullRequestResult{Merged: merged.Merged, MergedCommitSHA: strings.TrimSpace(merged.SHA)}, nil
 }
 
-// mapMergeStatusError 把确定性的合并拒绝归到哨兵错误上;5xx/网络类歧义
-// 保持 Ambiguous/StatusError 原样,由调用方按未知处理(fail-closed)。
+// mapMergeStatusError 把确定性拒绝归到哨兵错误上:409=头部断言失配
+// (ErrMergeHeadMismatch),其余 4xx 家族=平台明确拒绝、不可重试
+// (ErrMergeRejected,含 404 的 PR 已删/仓库转移与 401/403 的凭据问题);
+// 5xx 与网络类保持 Ambiguous/StatusError 原样,由调用方按未知处理
+// (fail-closed)。读与合两个入口共用同一分类,门禁据此区分回落与重评。
 func mapMergeStatusError(err error) error {
 	var status *StatusError
 	if !errors.As(err, &status) {
 		return err
 	}
-	switch status.StatusCode {
-	case http.StatusConflict:
+	switch {
+	case status.StatusCode == http.StatusConflict:
 		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
-	case http.StatusForbidden, http.StatusMethodNotAllowed, http.StatusUnprocessableEntity:
+	case status.StatusCode >= 400 && status.StatusCode < 500:
 		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)
 	}
 	return err

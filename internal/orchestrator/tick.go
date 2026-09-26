@@ -167,13 +167,14 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 	}
 
 	// 自动合并门禁:消费已完成的验证任务(证据合取全绿才动合并,缺一环
-	// 回落人工并留审计)。开关关闭时内部零开销短路;查询失败不阻断 Tick
-	// 主链路,下一轮自然重评。
-	gateDecisions, err := o.RunAutoMergeGate(ctx, req.GateLimit)
-	if err != nil {
-		return nil, fmt.Errorf("run auto merge gate: %w", err)
+	// 回落人工并留审计)。开关关闭时内部零开销短路;扫描失败有意降级为
+	// 日志而非上抛——门禁是可选阶段,不得拖住同轮的恢复/派发/效果执行。
+	gateDecisions, gateErr := o.RunAutoMergeGate(ctx, req.GateLimit)
+	if gateErr != nil {
+		logGateScanFailure(gateErr)
+	} else {
+		result.GateDecisions = gateDecisions
 	}
-	result.GateDecisions = gateDecisions
 
 	recoveries, err := o.RecoverExpiredTasks(ctx, req.RecoveryLimit)
 	if err != nil {

@@ -310,3 +310,55 @@ func TestMergePullRequestProtectionRejectionMapsToSentinel(t *testing.T) {
 		t.Fatalf("platform reason must be carried, got %v", err)
 	}
 }
+
+// 读路径 404(PR 已删/仓库转移)与合并路径同属确定性拒绝:门禁据此回落
+// 人工而不是无限重评。
+func TestGetMergeRequestNotFoundMapsToRejectionSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.GetMergeRequest(context.Background(), "agent/framework", 7)
+	if !errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("read 404 must map to the rejection sentinel, got %v", err)
+	}
+}
+
+func TestGetMergeRequestReturnsMergedState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"number":7,"merged":true,"merge_commit_sha":"merged444","head":{"ref":"feature","sha":"abc"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	mergeRequest, err := client.GetMergeRequest(context.Background(), "agent/framework", 7)
+	if err != nil {
+		t.Fatalf("get merge request: %v", err)
+	}
+	if !mergeRequest.Merged || mergeRequest.MergeCommitSHA != "merged444" {
+		t.Fatalf("merged state must surface: %#v", mergeRequest)
+	}
+}
+
+func TestMergePullRequest404MapsToRejectionSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("merge 404 must map to the rejection sentinel, got %v", err)
+	}
+}

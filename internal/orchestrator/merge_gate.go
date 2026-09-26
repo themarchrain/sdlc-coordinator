@@ -5,37 +5,63 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+
+	"gorm.io/gorm"
 
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
+	storerepo "sdlc-coordinator/internal/store/repository"
 )
 
-// 自动合并门禁的裁决取值:merged=平台接受合并;fallback=任一环缺失、证据
-// 过期或平台拒绝而回落人工(原因逐项留审计);skipped=查询类瞬时故障,不
-// 写审计,等下一轮重评(fail-closed 的同时保留收敛机会)。
+// 自动合并门禁的裁决取值:merged=平台接受合并(含回读证实已合并);fallback=
+// 任一环缺失、证据过期或平台确定性拒绝而回落人工(原因逐项留审计+IM 触点);
+// skipped=查询类瞬时故障,不写审计,等下一轮重评(fail-closed 的同时保留收敛
+// 机会)。确定性故障必须归 fallback:留在 skipped 会形成每轮重扫的静默死信
+// 队列,还会占满取数窗口饿死后续任务。
 const (
 	MergeGateDecisionMerged   = "merged"
 	MergeGateDecisionFallback = "fallback"
 	MergeGateDecisionSkipped  = "skipped"
 )
 
-const mergeGateActorKind = "auto_merge_gate"
+const (
+	mergeGateActorKind        = "auto_merge_gate"
+	mergeGateFallbackIMPrefix = "merge-gate-fallback-im:"
+)
+
+const defaultMergeGateLimit = 5
 
 // mergeGateClientFactory 按仓行构造门禁客户端(读实时头部 + 执行合并);
 // merger 返回 nil 表示平台不具备合并能力,门禁回落人工。
 type mergeGateClientFactory = func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)
 
+// gateEvaluation 是单条验证任务的评估产物:确定性结果(merged/fallback)
+// 必写审计;Transient 非空表示查询/网络类故障,本轮跳过、不写审计。
+type gateEvaluation struct {
+	Decision        string
+	Reasons         []string
+	HeadSHA         string
+	ProjectPath     string
+	MergeRequestIID int
+	MergedCommitSHA string
+	Transient       error
+}
+
 // RunAutoMergeGate 扫描已完成且从未被评估过的验证任务,逐个评估证据合取,
 // 全绿即凭租户仓行 PAT 调平台合并 API(带头部 SHA 断言)。开关关闭时零开销
-// 短路;端口未装配(最小装配)同样跳过。
+// 短路;端口未装配(最小装配)同样跳过;limit 未传按默认批量。
 func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]MergeGateTickResult, error) {
-	if limit <= 0 || o.mergeAudits == nil || o.repositoryLookup == nil || o.autoMergeEnabled == nil || o.mergeGateClients == nil {
+	if o.mergeAudits == nil || o.repositoryLookup == nil || o.autoMergeEnabled == nil || o.mergeGateClients == nil {
 		return nil, nil
 	}
 	if !o.autoMergeEnabled(ctx) {
 		return nil, nil
+	}
+	if limit <= 0 {
+		limit = defaultMergeGateLimit
 	}
 	candidates, err := o.tasks.ListSucceededVerificationsWithoutAudit(ctx, limit)
 	if err != nil {
@@ -44,22 +70,27 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 	decisions := make([]MergeGateTickResult, 0, len(candidates))
 	for i := range candidates {
 		task := &candidates[i]
-		decision, reasons, mergedSHA, transientErr := o.evaluateAutoMergeGate(ctx, task)
-		if transientErr != nil {
+		result := o.evaluateAutoMergeGate(ctx, task)
+		if result.Transient != nil {
 			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped。
 			decisions = append(decisions, MergeGateTickResult{
-				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: transientErr.Error(),
+				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: result.Transient.Error(),
 			})
 			continue
 		}
-		if writeErr := o.writeMergeGateAudit(ctx, task, decision, reasons, mergedSHA); writeErr != nil {
+		if writeErr := o.writeMergeGateAudit(ctx, task, result); writeErr != nil {
 			decisions = append(decisions, MergeGateTickResult{
 				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: writeErr.Error(),
 			})
 			continue
 		}
+		if result.Decision == MergeGateDecisionFallback {
+			// 回落人工必须有触点:MR 上证据链看着全绿却没被合并,通知必须
+			// 送到 IM,否则只能靠查库发现(与停靠通知同款 best-effort)。
+			o.materializeGateFallbackIM(ctx, task, result)
+		}
 		decisions = append(decisions, MergeGateTickResult{
-			TaskID: task.TaskID, Decision: decision, Reasons: strings.Join(reasons, "; "),
+			TaskID: task.TaskID, HeadSHA: result.HeadSHA, Decision: result.Decision, Reasons: strings.Join(result.Reasons, "; "),
 		})
 	}
 	return decisions, nil
@@ -80,10 +111,11 @@ func DefaultMergeGateClientFactory(repo *registeredrepo.RegisteredRepository) (c
 	return reader, merger, nil
 }
 
-// evaluateAutoMergeGate 评估单条验证任务的证据合取。返回值:决策、逐项
-// 理由、合并产出的平台提交号、瞬时错误。瞬时错误(平台读失败、审计写失败、
-// 网络歧义)不产生决策,由调用方留待下一轮——fail-closed 且保留收敛机会。
-func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Task) (string, []string, string, error) {
+// evaluateAutoMergeGate 评估单条验证任务的证据合取。确定性失败(上下文不可
+// 读、血缘/仓行缺失、平台 4xx 拒绝、头部漂移)一律 fallback+审计,只有查询
+// 类瞬时故障才返回 Transient 留待下轮。
+func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Task) gateEvaluation {
+	result := gateEvaluation{}
 	var taskContext struct {
 		ParentTaskID string `json:"parent_task_id"`
 		MergeRequest struct {
@@ -95,12 +127,15 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 		} `json:"project"`
 	}
 	if err := json.Unmarshal([]byte(task.ContextJSON), &taskContext); err != nil {
-		return "", nil, "", fmt.Errorf("decode verification context: %w", err)
+		result.Decision = MergeGateDecisionFallback
+		result.Reasons = []string{fmt.Sprintf("verification context is unreadable: %v", err)}
+		return result
 	}
-	headSHA := strings.TrimSpace(taskContext.MergeRequest.HeadSHA)
-	projectPath := strings.TrimSpace(taskContext.Project.Path)
-	if projectPath == "" {
-		projectPath = task.TargetRepo
+	result.HeadSHA = strings.TrimSpace(taskContext.MergeRequest.HeadSHA)
+	result.MergeRequestIID = taskContext.MergeRequest.IID
+	result.ProjectPath = strings.TrimSpace(taskContext.Project.Path)
+	if result.ProjectPath == "" {
+		result.ProjectPath = task.TargetRepo
 	}
 	reasons := make([]string, 0, 4)
 
@@ -108,25 +143,33 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	// 不信任 agent 回显)。
 	verifierVerdict, headBinding, err := o.gateArtifactValues(ctx, task.TaskID, "verification_verdict", "verification_head_sha")
 	if err != nil {
-		return "", nil, "", err
+		result.Transient = err
+		return result
+	}
+	fallback := func(reason string) gateEvaluation {
+		result.Decision = MergeGateDecisionFallback
+		result.Reasons = append(reasons, reason)
+		return result
 	}
 	if verifierVerdict != "verification_passed" {
-		reasons = append(reasons, fmt.Sprintf("tester verdict is %q, not passed", verifierVerdict))
-		return MergeGateDecisionFallback, reasons, "", nil
+		return fallback(fmt.Sprintf("tester verdict is %q, not passed", verifierVerdict))
 	}
-	if headSHA == "" || headBinding == "" || headBinding != headSHA {
-		reasons = append(reasons, fmt.Sprintf("tester head binding %q does not match task head %q", headBinding, headSHA))
-		return MergeGateDecisionFallback, reasons, "", nil
+	if result.HeadSHA == "" || headBinding == "" || headBinding != result.HeadSHA {
+		return fallback(fmt.Sprintf("tester head binding %q does not match task head %q", headBinding, result.HeadSHA))
 	}
 
-	// reviewer 放行且审查的正是同一头部:SHA 不一致即审查证据过期。
+	// reviewer 放行且审查的正是同一头部:此比对是血缘簿记一致性,真正拦
+	// 头部漂移的是后面的平台实时头部校验与合并 SHA 断言。
 	if strings.TrimSpace(taskContext.ParentTaskID) == "" {
-		reasons = append(reasons, "verification context has no reviewer lineage")
-		return MergeGateDecisionFallback, reasons, "", nil
+		return fallback("verification context has no reviewer lineage")
 	}
 	parent, err := o.tasks.GetByTaskID(ctx, taskContext.ParentTaskID)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("load reviewer task %s: %w", taskContext.ParentTaskID, err)
+		if isLookupNotFound(err) {
+			return fallback(fmt.Sprintf("reviewer task %s no longer exists", taskContext.ParentTaskID))
+		}
+		result.Transient = fmt.Errorf("load reviewer task %s: %w", taskContext.ParentTaskID, err)
+		return result
 	}
 	var parentContext struct {
 		MergeRequest struct {
@@ -134,69 +177,97 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 		} `json:"merge_request"`
 	}
 	if err := json.Unmarshal([]byte(parent.ContextJSON), &parentContext); err != nil {
-		return "", nil, "", fmt.Errorf("decode reviewer context: %w", err)
+		return fallback(fmt.Sprintf("reviewer context is unreadable: %v", err))
 	}
 	reviewerVerdict, _, err := o.gateArtifactValues(ctx, parent.TaskID, "review_verdict", "")
 	if err != nil {
-		return "", nil, "", err
+		result.Transient = err
+		return result
 	}
 	if reviewerVerdict != "approved" && reviewerVerdict != "no_new_changes" {
-		reasons = append(reasons, fmt.Sprintf("reviewer verdict is %q, not approving", reviewerVerdict))
-		return MergeGateDecisionFallback, reasons, "", nil
+		return fallback(fmt.Sprintf("reviewer verdict is %q, not approving", reviewerVerdict))
 	}
-	if strings.TrimSpace(parentContext.MergeRequest.HeadSHA) != headSHA {
-		reasons = append(reasons, fmt.Sprintf("reviewer head %q differs from verification head %q", parentContext.MergeRequest.HeadSHA, headSHA))
-		return MergeGateDecisionFallback, reasons, "", nil
+	if strings.TrimSpace(parentContext.MergeRequest.HeadSHA) != result.HeadSHA {
+		return fallback(fmt.Sprintf("reviewer head %q differs from verification head %q", parentContext.MergeRequest.HeadSHA, result.HeadSHA))
 	}
 
 	if task.RepositoryID == nil {
-		reasons = append(reasons, "verification task is not bound to a repository")
-		return MergeGateDecisionFallback, reasons, "", nil
+		return fallback("verification task is not bound to a repository")
 	}
 	repoRow, err := o.repositoryLookup.Get(ctx, *task.RepositoryID)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("lookup repository %s: %w", *task.RepositoryID, err)
+		if isLookupNotFound(err) {
+			return fallback(fmt.Sprintf("repository row %s no longer exists", *task.RepositoryID))
+		}
+		result.Transient = fmt.Errorf("lookup repository %s: %w", *task.RepositoryID, err)
+		return result
 	}
 	reader, merger, err := o.mergeGateClients(repoRow)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("build gate client: %w", err)
+		return fallback(fmt.Sprintf("gate client unavailable: %v", err))
 	}
 	if merger == nil {
-		reasons = append(reasons, fmt.Sprintf("platform %s does not expose a merge capability", repoRow.Provider))
-		return MergeGateDecisionFallback, reasons, "", nil
+		return fallback(fmt.Sprintf("platform %s does not expose a merge capability", repoRow.Provider))
 	}
 
-	// 防线二的后半:平台实时头部必须仍等于证据头部(消费校验)。
-	mergeRequest, err := reader.GetMergeRequest(ctx, projectPath, taskContext.MergeRequest.IID)
+	// 防线二的后半:平台实时头部必须仍等于证据头部(消费校验)。平台已
+	// 显示合并时按 merged 补审计——这是合并成功但审计写失败轮次的
+	// 真相恢复路径,防止重复合并调用把审计误记成 fallback。
+	mergeRequest, err := reader.GetMergeRequest(ctx, result.ProjectPath, result.MergeRequestIID)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("read live merge request head: %w", err)
+		if isDeterministicRejection(err) {
+			return fallback(fmt.Sprintf("platform rejected the read: %v", err))
+		}
+		result.Transient = fmt.Errorf("read live merge request head: %w", err)
+		return result
 	}
-	if strings.TrimSpace(mergeRequest.HeadSHA) != headSHA {
-		reasons = append(reasons, fmt.Sprintf("live head %q moved past evidence head %q", mergeRequest.HeadSHA, headSHA))
-		return MergeGateDecisionFallback, reasons, "", nil
+	if mergeRequest.Merged {
+		result.Decision = MergeGateDecisionMerged
+		result.MergedCommitSHA = strings.TrimSpace(mergeRequest.MergeCommitSHA)
+		result.Reasons = append(reasons, fmt.Sprintf("platform already reports the merge request as merged at %s", result.MergedCommitSHA))
+		return result
+	}
+	if strings.TrimSpace(mergeRequest.HeadSHA) != result.HeadSHA {
+		return fallback(fmt.Sprintf("live head %q moved past evidence head %q", mergeRequest.HeadSHA, result.HeadSHA))
 	}
 
 	// 防线三:合并调用再次断言头部,读合之间头部漂移由平台拒合。
-	result, err := merger.MergePullRequest(ctx, projectPath, taskContext.MergeRequest.IID, codehost.MergePullRequestRequest{
-		ExpectedHeadSHA: headSHA,
+	mergeResult, err := merger.MergePullRequest(ctx, result.ProjectPath, result.MergeRequestIID, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: result.HeadSHA,
 	})
 	if err != nil {
-		if errors.Is(err, codehost.ErrMergeHeadMismatch) || errors.Is(err, codehost.ErrMergeRejected) {
-			reasons = append(reasons, fmt.Sprintf("platform rejected the merge: %v", err))
-			return MergeGateDecisionFallback, reasons, "", nil
+		if isDeterministicRejection(err) {
+			// 拒绝先回读真相:合并可能已在更早的歧义轮次生效。
+			recheck, readErr := reader.GetMergeRequest(ctx, result.ProjectPath, result.MergeRequestIID)
+			if readErr == nil && recheck.Merged {
+				result.Decision = MergeGateDecisionMerged
+				result.MergedCommitSHA = strings.TrimSpace(recheck.MergeCommitSHA)
+				result.Reasons = append(reasons, fmt.Sprintf("merge call was rejected but the platform reports the merge request merged at %s", result.MergedCommitSHA))
+				return result
+			}
+			return fallback(fmt.Sprintf("platform rejected the merge: %v", err))
 		}
-		return "", nil, "", fmt.Errorf("merge pull request: %w", err)
+		result.Transient = fmt.Errorf("merge pull request: %w", err)
+		return result
 	}
-	if !result.Merged {
-		reasons = append(reasons, "platform returned an unmerged result")
-		return MergeGateDecisionFallback, reasons, "", nil
+	if !mergeResult.Merged {
+		return fallback("platform returned an unmerged result")
 	}
-	reasons = append(reasons,
-		fmt.Sprintf("tester verdict passed at head %s", headSHA),
+	result.Decision = MergeGateDecisionMerged
+	result.MergedCommitSHA = strings.TrimSpace(mergeResult.MergedCommitSHA)
+	result.Reasons = append(reasons,
+		fmt.Sprintf("tester verdict passed at head %s", result.HeadSHA),
 		fmt.Sprintf("reviewer verdict %q at the same head", reviewerVerdict),
 		fmt.Sprintf("platform merged at commit %s", result.MergedCommitSHA),
 	)
-	return MergeGateDecisionMerged, reasons, result.MergedCommitSHA, nil
+	return result
+}
+
+// isDeterministicRejection 判定平台侧确定性拒绝:门禁两个哨兵覆盖 409 头部
+// 断言失配与 4xx 家族(404 删除/401 凭据/403 保护规则等);5xx、429/408 与
+// 网络类走 Ambiguous/TransientRejection,不属于此类。
+func isDeterministicRejection(err error) bool {
+	return errors.Is(err, codehost.ErrMergeHeadMismatch) || errors.Is(err, codehost.ErrMergeRejected)
 }
 
 // gateArtifactValues 按名字读取至多两个 verdict/绑定 artifact 并解码
@@ -236,13 +307,7 @@ func (o *Orchestrator) gateArtifactValues(ctx context.Context, taskID, firstName
 	return first, second, nil
 }
 
-func (o *Orchestrator) writeMergeGateAudit(ctx context.Context, task *model.Task, decision string, reasons []string, mergedCommitSHA string) error {
-	var taskContext struct {
-		MergeRequest struct {
-			HeadSHA string `json:"head_sha"`
-		} `json:"merge_request"`
-	}
-	_ = json.Unmarshal([]byte(task.ContextJSON), &taskContext)
+func (o *Orchestrator) writeMergeGateAudit(ctx context.Context, task *model.Task, result gateEvaluation) error {
 	repositoryID := ""
 	if task.RepositoryID != nil {
 		repositoryID = *task.RepositoryID
@@ -251,7 +316,7 @@ func (o *Orchestrator) writeMergeGateAudit(ctx context.Context, task *model.Task
 	if task.CurrentRunID != nil {
 		runID = strings.TrimSpace(*task.CurrentRunID)
 	}
-	reasonsJSON, err := json.Marshal(reasons)
+	reasonsJSON, err := json.Marshal(result.Reasons)
 	if err != nil {
 		return fmt.Errorf("marshal gate reasons: %w", err)
 	}
@@ -260,13 +325,76 @@ func (o *Orchestrator) writeMergeGateAudit(ctx context.Context, task *model.Task
 		TaskID:          task.TaskID,
 		RunID:           runID,
 		RepositoryID:    repositoryID,
-		HeadSHA:         strings.TrimSpace(taskContext.MergeRequest.HeadSHA),
-		Decision:        decision,
+		ProjectPath:     result.ProjectPath,
+		MergeRequestIID: result.MergeRequestIID,
+		HeadSHA:         result.HeadSHA,
+		Decision:        result.Decision,
 		ReasonsJSON:     string(reasonsJSON),
-		MergedCommitSHA: mergedCommitSHA,
+		MergedCommitSHA: result.MergedCommitSHA,
 		ActorKind:       mergeGateActorKind,
 	}); err != nil {
 		return fmt.Errorf("write merge gate audit: %w", err)
 	}
 	return nil
+}
+
+// materializeGateFallbackIM 把门禁回落物化为 IM 通知(与停靠通知同款
+// best-effort:落库失败不改变决策;去重按验证任务,至多一条)。
+func (o *Orchestrator) materializeGateFallbackIM(ctx context.Context, task *model.Task, result gateEvaluation) {
+	if o.effects == nil || task == nil {
+		return
+	}
+	dedupeKey := mergeGateFallbackIMPrefix + task.TaskID
+	if _, err := o.effects.GetByDedupeKey(ctx, dedupeKey); err == nil {
+		return
+	} else if !isLookupNotFound(err) {
+		// 读错误(非 NotFound)时宁可漏发也不落库,防止整行覆盖已执行 effect。
+		return
+	}
+	body := fmt.Sprintf(
+		"自动合并门禁已回落人工处理。\n\n- Task: `%s`\n- MR: `%s`!%d\n- Head: `%s`\n- 原因:\n%s\n\n证据链与验证任务见执行观测页;人工核验后可直接合并,或按原因处理后重推。",
+		task.TaskID,
+		result.ProjectPath,
+		result.MergeRequestIID,
+		result.HeadSHA,
+		joinReasonsAsQuotes(result.Reasons),
+	)
+	requestJSON, err := json.Marshal(map[string]string{"body": body, "format": "markdown"})
+	if err != nil {
+		return
+	}
+	runID := ""
+	if task.CurrentRunID != nil {
+		runID = strings.TrimSpace(*task.CurrentRunID)
+	}
+	_ = o.effects.UpsertByDedupeKey(ctx, &model.Effect{
+		TaskID:      task.TaskID,
+		RunID:       runID,
+		DedupeKey:   dedupeKey,
+		Kind:        leaseRecoveryIMEffectKind,
+		Target:      leaseRecoveryIMEffectTarget,
+		Critical:    false,
+		Status:      model.EffectStatusPending,
+		RequestJSON: string(requestJSON),
+	})
+}
+
+func joinReasonsAsQuotes(reasons []string) string {
+	lines := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		lines = append(lines, "- "+reason)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isLookupNotFound 统一识别仓储层的"查无"哨兵(具体仓统一映射为
+// ErrNotFound;兼容直接透出 gorm 裸错误的实现)。
+func isLookupNotFound(err error) bool {
+	return errors.Is(err, storerepo.ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+// logGateScanFailure 把门禁扫描失败降级为日志:门禁是插在必经主链路之前的
+// 可选阶段,查询失败不得拖住同轮的恢复/派发/效果执行(下一轮自然重试)。
+func logGateScanFailure(err error) {
+	log.Printf("orchestrator: auto merge gate scan deferred to next tick: %v", err)
 }

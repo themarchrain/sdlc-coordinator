@@ -130,6 +130,10 @@ type MergeRequest struct {
 	SourceBranch string `json:"source_branch,omitempty"`
 	TargetBranch string `json:"target_branch,omitempty"`
 	HeadSHA      string `json:"sha,omitempty"`
+	// Merged/MergeCommitSHA 透出平台侧真实合并状态,供自动合并门禁在拒绝
+	// 或歧义之后回读真相(合并已生效则按 merged 补审计,不误记 fallback)。
+	Merged         bool   `json:"merged,omitempty"`
+	MergeCommitSHA string `json:"merge_commit_sha,omitempty"`
 }
 
 type Note struct {

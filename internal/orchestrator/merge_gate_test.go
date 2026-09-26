@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/adapters/codehost"
@@ -78,15 +79,24 @@ func gateFixture(t *testing.T, ctx context.Context, tasks *storerepo.TaskReposit
 
 type fakeGateClient struct {
 	liveHeadSHA string
-	readErr     error
-	mergeCalls  int
-	mergeReq    codehost.MergePullRequestRequest
-	mergeErr    error
+	// mergedAfterRead 从第 N 次读起报告平台已合并(0=从不),模拟「合并已
+	// 在更早轮次生效」的真相恢复场景。
+	mergedAfterRead int
+	mergeCommitSHA  string
+	readErr         error
+	mergeCalls      int
+	mergeReq        codehost.MergePullRequestRequest
+	mergeErr        error
+	reads           int
 }
 
 func (f *fakeGateClient) GetMergeRequest(context.Context, string, int) (*codehost.MergeRequest, error) {
+	f.reads++
 	if f.readErr != nil {
 		return nil, f.readErr
+	}
+	if f.mergedAfterRead > 0 && f.reads >= f.mergedAfterRead {
+		return &codehost.MergeRequest{IID: 12, HeadSHA: f.liveHeadSHA, Merged: true, MergeCommitSHA: f.mergeCommitSHA}, nil
 	}
 	return &codehost.MergeRequest{IID: 12, HeadSHA: f.liveHeadSHA}, nil
 }
@@ -357,5 +367,205 @@ func TestListSucceededVerificationsWithoutAuditExcludesAuditedTasks(t *testing.T
 	}
 	if len(candidates) != 0 {
 		t.Fatalf("audited verification must be excluded: %#v", candidates)
+	}
+}
+
+// 确定性故障必须归 fallback 并写审计:留在 skipped 会形成每轮重扫的静默
+// 死信队列,还会占满取数窗口饿死后续任务。
+func TestAutoMergeGateFallsBackOnUnreadableContext(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+	corrupted, err := tasks.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrupted.ContextJSON = "{not-json"
+	if err := tasks.Update(ctx, corrupted); err != nil {
+		t.Fatal(err)
+	}
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != "fallback" {
+		t.Fatalf("unreadable context must fall back, got %#v", decisions)
+	}
+	if client.mergeCalls != 0 {
+		t.Fatalf("fallback must not merge")
+	}
+	if _, err := audits.GetByTaskID(ctx, "task-gate-verify"); err != nil {
+		t.Fatalf("deterministic failure must be audited: %v", err)
+	}
+}
+
+func TestAutoMergeGateFallsBackWhenReviewerTaskMissing(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
+	orch, tasks, artifacts, _ := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+	// 把血缘指向不存在的审查任务:父任务查无是确定性缺环。
+	orphaned, err := tasks.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphaned.ContextJSON = `{"parent_task_id":"task-gone","project":{"path":"group/project"},"merge_request":{"iid":12,"head_sha":"` + gateHeadSHA + `"},"repos":[{"name":"project","branch":"feature/change","access":"readable"}]}`
+	if err := tasks.Update(ctx, orphaned); err != nil {
+		t.Fatal(err)
+	}
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != "fallback" {
+		t.Fatalf("missing reviewer task must fall back, got %#v", decisions)
+	}
+	if client.mergeCalls != 0 {
+		t.Fatalf("fallback must not merge")
+	}
+}
+
+func TestAutoMergeGateFallsBackOnPlatformReadRejection(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{
+		readErr: fmt.Errorf("%w: not found after repository transfer", codehost.ErrMergeRejected),
+	}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != "fallback" {
+		t.Fatalf("deterministic platform rejection must fall back, got %#v", decisions)
+	}
+	if _, err := audits.GetByTaskID(ctx, "task-gate-verify"); err != nil {
+		t.Fatalf("deterministic rejection must be audited: %v", err)
+	}
+}
+
+// 平台已显示合并=此前某轮合并已生效(审计丢失或人工合并):按 merged 补
+// 审计,不再重发合并调用。
+func TestAutoMergeGateRecordsMergedWhenPlatformAlreadyMerged(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{
+		liveHeadSHA:     gateHeadSHA,
+		mergedAfterRead: 1,
+		mergeCommitSHA:  "already777",
+	}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != "merged" {
+		t.Fatalf("already-merged platform state must record merged, got %#v", decisions)
+	}
+	if client.mergeCalls != 0 {
+		t.Fatalf("already-merged platform must not be merged again")
+	}
+	audit, err := audits.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.MergedCommitSHA != "already777" || audit.MergeRequestIID != 12 || audit.ProjectPath != "group/project" {
+		t.Fatalf("audit must carry the platform commit and MR identity: %#v", audit)
+	}
+}
+
+// 拒绝先回读真相:合并已在更早的歧义轮次生效时,按 merged 补审计而不是
+// 误记 fallback。
+func TestAutoMergeGateRecoversMergedTruthAfterRejection(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{
+		liveHeadSHA:     gateHeadSHA,
+		mergedAfterRead: 2,
+		mergeCommitSHA:  "truthy888",
+		mergeErr:        fmt.Errorf("%w: pull request is not mergeable", codehost.ErrMergeRejected),
+	}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != "merged" {
+		t.Fatalf("rejection with merged truth must record merged, got %#v", decisions)
+	}
+	audit, err := audits.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.MergedCommitSHA != "truthy888" {
+		t.Fatalf("audit must carry the recovered commit: %#v", audit)
+	}
+}
+
+// 回落人工必须有 IM 触点:MR 上证据链看着全绿却没被合并,通知必须送达,
+// 否则只能靠查库发现(与停靠通知同款 best-effort,按验证任务去重)。
+func TestAutoMergeGateMaterializesFallbackIM(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: "movedhead"}
+	tasks, runs, artifacts, audits := newMergeGateRepositories(t)
+	db, err := store.Open(testDatabaseDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(db, &model.Effect{}); err != nil {
+		t.Fatal(err)
+	}
+	effectRepo := storerepo.NewEffectRepository(db)
+	orch := New(tasks, runs,
+		WithArtifactRepository(artifacts),
+		WithVerificationArtifactReader(artifacts),
+		WithMergeGateAuditRepository(audits),
+		WithRepositoryLookup(gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
+			RepositoryID: fixtureRepositoryID, Provider: "github",
+			BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token",
+		}}),
+		WithAutoMergeEnabled(func(context.Context) bool { return true }),
+		WithMergeGateClients(func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
+			return client, client, nil
+		}),
+		WithEffectRepository(effectRepo),
+	)
+	gateFixture(t, ctx, tasks, artifacts)
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != "fallback" {
+		t.Fatalf("head drift must fall back, got %#v", decisions)
+	}
+	effect, err := effectRepo.GetByDedupeKey(ctx, "merge-gate-fallback-im:task-gate-verify")
+	if err != nil {
+		t.Fatalf("fallback must materialize the IM effect: %v", err)
+	}
+	if !strings.Contains(effect.RequestJSON, "回落人工") {
+		t.Fatalf("IM body must carry the fallback notice: %s", effect.RequestJSON)
+	}
+}
+
+// 手动 tick 等入口未传批量时按默认值执行,而不是零值静默短路。
+func TestAutoMergeGateNormalizesZeroLimit(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
+	orch, tasks, artifacts, _ := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 0)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 {
+		t.Fatalf("zero limit must normalize to the default batch, got %#v", decisions)
 	}
 }
