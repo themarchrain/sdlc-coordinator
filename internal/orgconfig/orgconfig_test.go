@@ -321,3 +321,32 @@ func TestMaskCarriesRunnerSelection(t *testing.T) {
 		t.Fatalf("mask must carry the runner selection, got %+v", view.Config.Runner)
 	}
 }
+
+// 自动合并开关默认关(零值),提交值经 Merge 原样落库、Mask 原样透出:
+// 握有合并写权限的能力必须显式开启,观察期取证不受开关影响。
+func TestAutoMergeEnabledRoundTrip(t *testing.T) {
+	merged := Merge(Config{}, UpdateRequest{
+		Config: EditableConfig{
+			CodeHost: configuration.EditableCodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com", AutoMergeEnabled: true},
+		},
+	})
+	if !merged.CodeHost.AutoMergeEnabled {
+		t.Fatalf("submitted auto merge flag must persist: %+v", merged)
+	}
+	raw, err := json.Marshal(Mask(merged))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"auto_merge_enabled":true`) {
+		t.Fatalf("masked view must expose the switch, got %s", raw)
+	}
+
+	rolledBack := Merge(merged, UpdateRequest{
+		Config: EditableConfig{
+			CodeHost: configuration.EditableCodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"},
+		},
+	})
+	if rolledBack.CodeHost.AutoMergeEnabled {
+		t.Fatalf("unsubmitted switch must fall back to off on full-payload saves: %+v", rolledBack)
+	}
+}

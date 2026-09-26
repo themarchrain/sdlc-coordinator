@@ -27,6 +27,7 @@ type EditableCodeHostConfig struct {
 	Provider             string   `json:"provider"`
 	BaseURL              string   `json:"base_url"`
 	ReworkAllowedUserIDs []string `json:"rework_allowed_user_ids"`
+	AutoMergeEnabled     bool     `json:"auto_merge_enabled"`
 }
 
 type EditableIMConfig struct {

@@ -333,6 +333,7 @@ export interface TenantConfigurationConfig {
     provider: 'gitlab' | 'gitea' | 'github'
     base_url: string
     rework_allowed_user_ids: string[]
+    auto_merge_enabled?: boolean
   }
   im: {
     provider: '' | 'none' | 'telegram' | 'feishu'
