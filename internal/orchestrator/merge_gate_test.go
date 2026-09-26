@@ -116,11 +116,18 @@ func (f *fakeGateClient) MergePullRequest(_ context.Context, _ string, _ int, re
 }
 
 type gateRepositoryLookup struct {
-	repo *registeredrepo.RegisteredRepository
+	repo     *registeredrepo.RegisteredRepository
+	statuses []registeredrepo.RepositoryStatus
+	calls    int
 }
 
-func (f gateRepositoryLookup) Get(context.Context, string) (*registeredrepo.RegisteredRepository, error) {
-	return f.repo, nil
+func (f *gateRepositoryLookup) Get(context.Context, string) (*registeredrepo.RegisteredRepository, error) {
+	f.calls++
+	copy := *f.repo
+	if index := f.calls - 1; index < len(f.statuses) {
+		copy.Status = f.statuses[index]
+	}
+	return &copy, nil
 }
 
 type failingGateEffectRepository struct {
@@ -138,9 +145,9 @@ func (r *failingGateEffectRepository) UpsertByDedupeKey(context.Context, *model.
 func newGateOrch(t *testing.T, client *fakeGateClient) (*Orchestrator, *storerepo.TaskRepository, *storerepo.ArtifactRepository, *storerepo.MergeGateAuditRepository) {
 	t.Helper()
 	tasks, runs, artifacts, audits := newMergeGateRepositories(t)
-	lookup := gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
+	lookup := &gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
 		RepositoryID: fixtureRepositoryID, Provider: "github",
-		BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token",
+		BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token", Status: registeredrepo.StatusEnabled,
 	}}
 	orch := New(tasks, runs,
 		WithArtifactRepository(artifacts),
@@ -153,6 +160,65 @@ func newGateOrch(t *testing.T, client *fakeGateClient) (*Orchestrator, *storerep
 		}),
 	)
 	return orch, tasks, artifacts, audits
+}
+
+func TestAutoMergeGateFallsBackBeforeUsingDisabledRepository(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+	lookup := orch.repositoryLookup.(*gateRepositoryLookup)
+	lookup.repo.Status = registeredrepo.StatusDisabled
+	clientFactoryCalls := 0
+	orch.mergeGateClients = func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
+		clientFactoryCalls++
+		return client, client, nil
+	}
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != MergeGateDecisionFallback {
+		t.Fatalf("disabled repository must fall back, got %#v", decisions)
+	}
+	if clientFactoryCalls != 0 || client.reads != 0 || client.mergeCalls != 0 {
+		t.Fatalf("disabled repository must not expose credentials to a platform client: factory=%d reads=%d merges=%d", clientFactoryCalls, client.reads, client.mergeCalls)
+	}
+	audit, err := audits.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatalf("disabled repository fallback must be audited: %v", err)
+	}
+	if !strings.Contains(audit.ReasonsJSON, "disabled") {
+		t.Fatalf("audit must record the disabled repository status: %s", audit.ReasonsJSON)
+	}
+}
+
+func TestAutoMergeGateRechecksRepositoryStatusBeforeMerge(t *testing.T) {
+	ctx := context.Background()
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA}
+	orch, tasks, artifacts, audits := newGateOrch(t, client)
+	gateFixture(t, ctx, tasks, artifacts)
+	lookup := orch.repositoryLookup.(*gateRepositoryLookup)
+	lookup.statuses = []registeredrepo.RepositoryStatus{registeredrepo.StatusEnabled, registeredrepo.StatusDisabled}
+
+	decisions, err := orch.RunAutoMergeGate(ctx, 5)
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Decision != MergeGateDecisionFallback {
+		t.Fatalf("repository disabled before merge must fall back, got %#v", decisions)
+	}
+	if client.reads != 1 || client.mergeCalls != 0 {
+		t.Fatalf("gate may read the live MR but must not merge after disable: reads=%d merges=%d", client.reads, client.mergeCalls)
+	}
+	audit, err := audits.GetByTaskID(ctx, "task-gate-verify")
+	if err != nil {
+		t.Fatalf("late disable fallback must be audited: %v", err)
+	}
+	if !strings.Contains(audit.ReasonsJSON, "disabled") {
+		t.Fatalf("audit must record the latest repository status: %s", audit.ReasonsJSON)
+	}
 }
 
 func TestAutoMergeGateMergesWhenEvidenceChainIsGreen(t *testing.T) {
@@ -223,7 +289,7 @@ func TestAutoMergeGateSkipsWhenSwitchOff(t *testing.T) {
 		WithArtifactRepository(artifacts),
 		WithVerificationArtifactReader(artifacts),
 		WithMergeGateAuditRepository(audits),
-		WithRepositoryLookup(gateRepositoryLookup{}),
+		WithRepositoryLookup(&gateRepositoryLookup{}),
 		WithAutoMergeEnabled(func(context.Context) bool { return false }),
 		WithMergeGateClients(func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
 			return client, client, nil
@@ -596,9 +662,9 @@ func TestAutoMergeGateMaterializesFallbackIM(t *testing.T) {
 		WithArtifactRepository(artifacts),
 		WithVerificationArtifactReader(artifacts),
 		WithMergeGateAuditRepository(audits),
-		WithRepositoryLookup(gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
+		WithRepositoryLookup(&gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
 			RepositoryID: fixtureRepositoryID, Provider: "github",
-			BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token",
+			BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token", Status: registeredrepo.StatusEnabled,
 		}}),
 		WithAutoMergeEnabled(func(context.Context) bool { return true }),
 		WithMergeGateClients(func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
@@ -643,9 +709,9 @@ func TestAutoMergeGateRetriesFallbackWhenIMPersistenceFails(t *testing.T) {
 		WithArtifactRepository(artifacts),
 		WithVerificationArtifactReader(artifacts),
 		WithMergeGateAuditRepository(audits),
-		WithRepositoryLookup(gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
+		WithRepositoryLookup(&gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
 			RepositoryID: fixtureRepositoryID, Provider: "github",
-			BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token",
+			BaseURL: "https://github.example", PathWithNamespace: "group/project", Token: "gate-token", Status: registeredrepo.StatusEnabled,
 		}}),
 		WithAutoMergeEnabled(func(context.Context) bool { return true }),
 		WithMergeGateClients(func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {

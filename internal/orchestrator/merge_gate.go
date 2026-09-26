@@ -218,6 +218,9 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 		result.Transient = fmt.Errorf("lookup repository %s: %w", *task.RepositoryID, err)
 		return result
 	}
+	if repoRow.Status != registeredrepo.StatusEnabled {
+		return fallback(fmt.Sprintf("repository status is %q, not enabled", repoRow.Status))
+	}
 	reader, merger, err := o.mergeGateClients(repoRow)
 	if err != nil {
 		return fallback(fmt.Sprintf("gate client unavailable: %v", err))
@@ -245,6 +248,20 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	}
 	if strings.TrimSpace(mergeRequest.HeadSHA) != result.HeadSHA {
 		return fallback(fmt.Sprintf("live head %q moved past evidence head %q", mergeRequest.HeadSHA, result.HeadSHA))
+	}
+
+	// 管理员可能在实时头部读取期间禁用仓库。合并前重新读取组织开关，
+	// 避免继续使用此前取出的仓库凭据执行写操作。
+	latestRepo, err := o.repositoryLookup.Get(ctx, *task.RepositoryID)
+	if err != nil {
+		if isLookupNotFound(err) {
+			return fallback(fmt.Sprintf("repository row %s no longer exists before merge", *task.RepositoryID))
+		}
+		result.Transient = fmt.Errorf("recheck repository %s before merge: %w", *task.RepositoryID, err)
+		return result
+	}
+	if latestRepo.Status != registeredrepo.StatusEnabled {
+		return fallback(fmt.Sprintf("repository status is %q before merge, not enabled", latestRepo.Status))
 	}
 
 	// 防线三:合并调用再次断言头部,读合之间头部漂移由平台拒合。
