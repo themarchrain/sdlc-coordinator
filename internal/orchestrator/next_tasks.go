@@ -96,13 +96,10 @@ func (o *Orchestrator) expandResultNextTasks(ctx context.Context, parent *model.
 	if len(payload.NextTasks) == 0 {
 		return 0, nil
 	}
-	// next_tasks 是对结果应用的增量丰富:依赖端口未装配时跳过扩展而不
-	// 阻断结果本身(审查放行等常规结果现也携带派生意图)。生产装配恒带
-	// 端口;测试与最小装配只损失派生任务,不损失主结果。
-	if o.dependencies == nil {
-		return 0, nil
-	}
 
+	// 返回值是阻塞式子任务的展开数:仅它们驱动父任务进 waiting_upstream。
+	// fire-and-forget 子任务照常创建,但不建依赖行也不计数——父任务状态
+	// 不受其成败影响(子任务血缘留在其上下文的 parent 字段里)。
 	expanded := 0
 	for i, next := range payload.NextTasks {
 		child, dependency, err := BuildNextTaskExpansion(parent, parentRun, next, i)
@@ -113,6 +110,14 @@ func (o *Orchestrator) expandResultNextTasks(ctx context.Context, parent *model.
 		createdChild, err := o.CreateTask(ctx, child)
 		if err != nil {
 			return 0, fmt.Errorf("create next task %d: %w", i, err)
+		}
+		if next.FireAndForget {
+			continue
+		}
+		// 阻塞式子任务需要依赖记账:端口未装配时跳过(不建行、不计数,
+		// 不阻断主结果);生产装配恒带端口。
+		if o.dependencies == nil {
+			continue
 		}
 		dependency.ChildTaskID = createdChild.TaskID
 		if err := o.dependencies.UpsertByIdentity(ctx, dependency); err != nil {

@@ -116,6 +116,53 @@ func TestApplyCanonicalResultExpandsNextTasksIdempotently(t *testing.T) {
 	}
 }
 
+// fire-and-forget 派生即派生但不等待:父任务照常落终态(不进
+// waiting_upstream)、不建依赖行,子任务血缘留在其上下文的 parent 字段里。
+// 阻塞式派生(upstream_fix)的 waiting_upstream 语义由既有测试钉住,不受影响。
+func TestApplyCanonicalResultFireAndForgetNextTaskLeavesParentSucceeded(t *testing.T) {
+	ctx := context.Background()
+	taskRepo, runRepo, dependencyRepo := newCallbackNextTaskRepositories(t)
+	orch := New(taskRepo, runRepo, WithDependencyRepository(dependencyRepo))
+	createCallbackNextTaskFixture(t, ctx, taskRepo, runRepo, "task-next-fnf-parent", "run-next-fnf-parent")
+
+	task, _, err := orch.ApplyCanonicalResult(ctx, results.CanonicalResult{
+		TaskID:  "task-next-fnf-parent",
+		RunID:   "run-next-fnf-parent",
+		Status:  results.StatusSucceeded,
+		Summary: "approved",
+		NextTasks: []results.NextTaskIntent{
+			{
+				DedupeKey:     "verify:group/project:21:abc123",
+				Role:          "TesterWorker",
+				Type:          "verify_merge_request",
+				Objective:     "verify the merge request",
+				FireAndForget: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("apply callback: %v", err)
+	}
+	if task.Status != model.TaskStatusSucceeded {
+		t.Fatalf("fire-and-forget derivation must leave the parent on its normal terminal status, got %s", task.Status)
+	}
+
+	child, err := taskRepo.GetByDedupeKey(ctx, "verify:group/project:21:abc123")
+	if err != nil {
+		t.Fatalf("get fire-and-forget child: %v", err)
+	}
+	if child.Status != model.TaskStatusPending || child.Role != "TesterWorker" {
+		t.Fatalf("child must be a dispatchable verification task: %#v", child)
+	}
+	dependencies, err := dependencyRepo.ListByParentTaskID(ctx, "task-next-fnf-parent")
+	if err != nil {
+		t.Fatalf("list dependencies: %v", err)
+	}
+	if len(dependencies) != 0 {
+		t.Fatalf("fire-and-forget derivation must not create dependency rows, got %d", len(dependencies))
+	}
+}
+
 func TestApplyCanonicalResultNextTaskValidationFailureDoesNotAdvanceParentOrRun(t *testing.T) {
 	ctx := context.Background()
 	taskRepo, runRepo, dependencyRepo := newCallbackNextTaskRepositories(t)
@@ -521,4 +568,3 @@ func assertDependencyStatus(t *testing.T, dependencies []model.Dependency, child
 	}
 	t.Fatalf("dependency for child %s not found", childTaskID)
 }
-

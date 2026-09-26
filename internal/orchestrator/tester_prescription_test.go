@@ -162,12 +162,12 @@ func TestBuildVerificationPlanUsesLatestDeveloperRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := artifacts.UpsertByIdentity(ctx, prescriptionArtifact("task-dev-latest", "run-dev-latest-2",
-		`{"source_key":"test_results","value":[{"command":"go test ./... -count=1","passed":true,"summary":"new round"}]}`)); err != nil {
+		`{"source_key":"test_results","value":[{"command":"go test ./... -count=1","passed":true,"summary":"new round"},{"command":"make e2e","passed":false,"summary":"known red in a failed round"}]}`)); err != nil {
 		t.Fatal(err)
 	}
 
 	plan := orch.buildVerificationPlan(ctx, prescriptionTesterTask("task-verify-latest", "alice/issue-13-20260727"), &registeredrepo.RegisteredRepository{})
 	if plan == nil || len(plan.ReplayCommands) != 1 || plan.ReplayCommands[0] != "go test ./... -count=1" {
-		t.Fatalf("replay must come from the latest recorded round: plan=%#v", plan)
+		t.Fatalf("replay must come from the latest recorded round and skip red entries: plan=%#v", plan)
 	}
 }

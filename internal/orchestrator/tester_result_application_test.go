@@ -153,3 +153,44 @@ func TestTesterFailedVerdictStillCompletesTaskWithRedEvidence(t *testing.T) {
 		t.Fatalf("failed verdict must be recorded as evidence: %#v", artifacts)
 	}
 }
+
+// insufficient_context 停靠人工必须有 IM 通知物化:否则整条信任链在
+// 无证据出口静默消失,人工侧无触点(健壮性审查修复轮引入)。
+func TestTesterInsufficientContextMaterializesHumanRequiredIM(t *testing.T) {
+	ctx := context.Background()
+	taskRepo, runRepo, _, writebackRepo := newTesterResultRepositories(t)
+	db, err := store.Open(testDatabaseDSN(t))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db, &model.Effect{}); err != nil {
+		t.Fatalf("migrate effects: %v", err)
+	}
+	effectRepo := storerepo.NewEffectRepository(db)
+	orch := New(taskRepo, runRepo,
+		WithWritebackRepository(writebackRepo),
+		WithEffectRepository(effectRepo),
+	)
+	task, run := testerApplicationFixture("task-tester-unclear", "run-tester-unclear")
+	if err := taskRepo.Create(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRepo.Create(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+
+	canonical := testerCanonicalResult(t, task, run, `{
+		"task_id":"task-tester-unclear","run_id":"run-tester-unclear","outcome":"insufficient_context",
+		"summary":"no verification commands available","blocker_reason":"repo declares no floor and no replay source"
+	}`)
+	appliedTask, _, err := orch.ApplyCanonicalResult(ctx, canonical)
+	if err != nil {
+		t.Fatalf("apply tester result: %v", err)
+	}
+	if appliedTask.Status != model.TaskStatusHumanRequired {
+		t.Fatalf("insufficient context must park for human, got %s", appliedTask.Status)
+	}
+	if _, err := effectRepo.GetByDedupeKey(ctx, "human-required-im:task-tester-unclear:run-tester-unclear"); err != nil {
+		t.Fatalf("human required IM effect must be materialized: %v", err)
+	}
+}

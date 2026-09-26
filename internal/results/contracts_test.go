@@ -391,6 +391,9 @@ func TestReviewerApprovalDerivesVerificationTask(t *testing.T) {
 	if intent.DependencyRelation != "verification" {
 		t.Fatalf("unexpected dependency relation %q", intent.DependencyRelation)
 	}
+	if !intent.FireAndForget {
+		t.Fatal("verification must derive fire-and-forget: the reviewer task must not wait upstream for it")
+	}
 	if intent.AllowedRepos.Readable == nil || len(intent.AllowedRepos.Readable) != 1 || intent.AllowedRepos.Readable[0] != "group/project" {
 		t.Fatalf("verification must only read the review target: %#v", intent.AllowedRepos)
 	}
@@ -593,8 +596,10 @@ func TestTesterContractBlockersRequireBlockerReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize tester result: %v", err)
 	}
-	if result.Status != StatusBlocked || result.BlockerReason == nil || *result.BlockerReason != reason {
-		t.Fatalf("environment blocker must park blocked with reason, got %#v", result)
+	// 环境阻塞走失败重试路径(健壮性审查修复轮定稿):orchestrator 侧给
+	// retry_pending,预算耗尽才转人工;判停会静默杀死环境瞬态下的验证链。
+	if result.Status != StatusFailed || result.BlockerReason == nil || *result.BlockerReason != reason {
+		t.Fatalf("environment blocker must enter the failure retry path with reason, got %#v", result)
 	}
 
 	unclear, err := contract.DecodeStrict(json.RawMessage(`{
@@ -613,6 +618,36 @@ func TestTesterContractBlockersRequireBlockerReason(t *testing.T) {
 	}
 	if result.Status != StatusHumanRequired {
 		t.Fatalf("insufficient context must require human, got %q", result.Status)
+	}
+}
+
+func TestTesterContractEnvironmentBlockerWalksFailureRetryPath(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	blocked, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"environment_blocker",
+        "summary":"docker daemon unreachable","blocker_reason":"docker daemon unreachable"
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	if err := contract.Validate(task, run, blocked); err != nil {
+		t.Fatalf("validate tester result: %v", err)
+	}
+	result, err := contract.Normalize(task, run, blocked)
+	if err != nil {
+		t.Fatalf("normalize tester result: %v", err)
+	}
+	// 验证自身没跑成=无证据,按用户拍板走失败重试路径:orchestrator 侧
+	// policy.NextFailureStatus 给 retry_pending,预算耗尽才转人工。
+	if result.Status != StatusFailed {
+		t.Fatalf("environment blocker must enter the failure retry path, got %q", result.Status)
+	}
+	if result.Artifacts["verification_verdict"] != "environment_blocker" {
+		t.Fatalf("verdict artifact=%v", result.Artifacts["verification_verdict"])
+	}
+	if result.Artifacts["verification_head_sha"] != "abc123" {
+		t.Fatalf("head sha artifact=%v", result.Artifacts["verification_head_sha"])
 	}
 }
 

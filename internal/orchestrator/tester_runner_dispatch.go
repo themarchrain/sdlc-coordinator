@@ -56,6 +56,8 @@ func (o *Orchestrator) DispatchTesterTask(ctx context.Context, taskID string) (*
 	}
 	run.InputJSON = string(rawInput)
 	if err := o.runs.Update(ctx, run); err != nil {
+		// InputJSON 已组好但落库失败:任务回退重试路径,不留孤儿 run。
+		o.recordDispatchFailure(ctx, task, run, err)
 		return nil, err
 	}
 	workspaceRequest, err := buildTesterWorkspaceRequest(task, run, repoRow, o.testerRunnerSettings)

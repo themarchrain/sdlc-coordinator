@@ -145,7 +145,10 @@ func reviewerVerificationNextTasks(task *model.Task) []NextTaskIntent {
 		AcceptanceCriteria: "按处方执行验证命令并回传真实执行证据（命令、尝试次数、红绿、摘要）；红绿以退出码为准。",
 		DependencyRelation: "verification",
 		AllowedRepos:       AllowedRepos{Readable: []string{projectPath}},
-		Context:            childContext,
+		// 派生但不等待:验证子任务与审查任务解耦,reviewer 照常落 succeeded;
+		// 否则审查任务会进 waiting_upstream,验证收口后整场重跑审查并悬挂。
+		FireAndForget: true,
+		Context:       childContext,
 	}}
 }
 

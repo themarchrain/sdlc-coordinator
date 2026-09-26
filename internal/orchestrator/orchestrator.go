@@ -624,6 +624,8 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	}
 
 	nextTaskStatus := resultTaskStatus(task, payload, o.policy)
+	// expandedNextTasks 现在只统计阻塞式子任务(fire-and-forget 不计):
+	// 只有父任务必须等子任务收口的阻塞式派生才把父任务送进 waiting_upstream。
 	if payload.Status == results.StatusSucceeded && expandedNextTasks > 0 {
 		nextTaskStatus = model.TaskStatusWaitingUpstream
 	}
@@ -665,6 +667,18 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	}
 	if err := o.resolveDependenciesForResult(ctx, task, payload); err != nil {
 		return nil, nil, err
+	}
+
+	// 验证链的人工停靠必须有触点:tester 任务经结果应用落到 human_required
+	// (上下文不足等)时物化 IM 通知,否则无证据出口对人工侧不可见。
+	// 本轮只收窄到 tester 角色控制风险半径;developer/reviewer 同类停靠的
+	// 统一通知收口挂账。
+	if task.Role == "TesterWorker" && nextTaskStatus == model.TaskStatusHumanRequired {
+		cause := ""
+		if payload.BlockerReason != nil {
+			cause = *payload.BlockerReason
+		}
+		o.materializeHumanRequiredIMEffect(ctx, task, cause)
 	}
 
 	return task, run, nil

@@ -96,7 +96,10 @@ func (TesterContract) Normalize(task *model.Task, _ *model.Run, raw RoleResultIn
 			Body: buildVerificationReportBody(task, input),
 		}}
 	case TesterOutcomeEnvironmentBlocker:
-		result.Status = StatusBlocked
+		// 验证自身没跑成=无证据,按失败重试路径走(policy.NextFailureStatus
+		// 给 retry_pending,预算耗尽才转人工),与 fail-closed 拍板口径一致;
+		// 判停 parked 会让环境瞬态问题静默杀死整条验证链。
+		result.Status = StatusFailed
 	case TesterOutcomeInsufficientContext:
 		result.Status = StatusHumanRequired
 	}

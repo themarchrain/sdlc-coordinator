@@ -83,7 +83,8 @@ func testerSourceBranch(task *model.Task) string {
 }
 
 // decodeTestResultCommands 从 test_results artifact 的 MetadataJSON 提取命令
-// 清单。developer 契约只放行 passed=true 的条目,复放清单天然全绿。
+// 清单。developer 的失败轮(fix_failed 等)会携带红测试入 artifacts,复放只取
+// 通过记录——它们才是开发者作为交付依据登记的验证。
 func decodeTestResultCommands(metadataJSON string) []string {
 	var metadata struct {
 		Value []results.TestEvidence `json:"value"`
@@ -93,6 +94,9 @@ func decodeTestResultCommands(metadataJSON string) []string {
 	}
 	commands := make([]string, 0, len(metadata.Value))
 	for _, evidence := range metadata.Value {
+		if !evidence.Passed {
+			continue
+		}
 		command := strings.TrimSpace(evidence.Command)
 		if command == "" {
 			continue
