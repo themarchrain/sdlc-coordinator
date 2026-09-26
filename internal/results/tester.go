@@ -96,9 +96,9 @@ func (TesterContract) Normalize(task *model.Task, _ *model.Run, raw RoleResultIn
 			Body: buildVerificationReportBody(task, input),
 		}}
 	case TesterOutcomeEnvironmentBlocker:
-		// 验证自身没跑成=无证据,按失败重试路径走(policy.NextFailureStatus
-		// 给 retry_pending,预算耗尽才转人工),与 fail-closed 拍板口径一致;
-		// 判停 parked 会让环境瞬态问题静默杀死整条验证链。
+		// 验证自身没跑成=无证据,按失败重试路径走:编排器按重试预算给
+		// retry_pending 循环重派,预算耗尽停靠 blocked 并对 tester 物化 IM
+		// 通知;判停 parked 会让环境瞬态问题静默杀死整条验证链。
 		result.Status = StatusFailed
 	case TesterOutcomeInsufficientContext:
 		result.Status = StatusHumanRequired
@@ -158,10 +158,17 @@ func buildVerificationReportBody(task *model.Task, input *TesterResultInput) str
 			attempts = 1
 		}
 		summary := strings.ReplaceAll(test.Summary, "\n", " ")
-		fmt.Fprintf(&body, "| `%s` | %d | %s | %s |\n", test.Command, attempts, verdict, summary)
+		fmt.Fprintf(&body, "| `%s` | %d | %s | %s |\n", escapeMarkdownTableCell(test.Command), attempts, verdict, escapeMarkdownTableCell(summary))
 	}
 	fmt.Fprintf(&body, "\n%s\n", input.Summary)
 	return body.String()
+}
+
+// escapeMarkdownTableCell 转义表格单元内的管道符并抹掉反引号,防止命令或
+// 摘要里的特殊字符把报告表格打穿(纯展示防御,不影响证据本体)。
+func escapeMarkdownTableCell(value string) string {
+	value = strings.ReplaceAll(value, "|", "\\|")
+	return strings.ReplaceAll(value, "`", "'")
 }
 
 func validateDefect(defect *DefectResult) error {

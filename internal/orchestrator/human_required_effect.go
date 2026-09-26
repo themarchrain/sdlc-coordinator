@@ -12,12 +12,17 @@ import (
 )
 
 // materializeHumanRequiredIMEffect 把「任务进入人工介入位」物化为 IM 通知。
+// 触达面=human_required 与 blocked 两种停靠:前者是显式转人工,后者是重试
+// 预算耗尽的终态停靠——两者都需要人工触点,静默终态即链路无声消失。
 // 与租约恢复通知同构(best-effort:落库失败绝不阻塞状态迁移),但去重语义更严:
 // 调用点(结果校验拒绝/写回停车/tick 停车/对账升级)可能对同一状态重复触达,而
 // UpsertByDedupeKey 会整行覆盖已存在 effect(含把已执行 Status 重置回 pending),
 // 故先查存在性——同一 (taskID, runID) 至多物化一次。
 func (o *Orchestrator) materializeHumanRequiredIMEffect(ctx context.Context, task *model.Task, cause string) {
-	if o.effects == nil || task == nil || task.Status != model.TaskStatusHumanRequired {
+	if o.effects == nil || task == nil {
+		return
+	}
+	if task.Status != model.TaskStatusHumanRequired && task.Status != model.TaskStatusBlocked {
 		return
 	}
 	runID := ""
@@ -64,11 +69,12 @@ func humanRequiredIMBody(task *model.Task, cause string) string {
 		cause = "unknown"
 	}
 	return fmt.Sprintf(
-		"Agent Task 已进入人工介入位，等待人工核验后再决定是否恢复。\n\n- Task: `%s`\n- Worker: `%s`\n- Previous Run: `%s`\n- Attempt: %d\n- Reason: %s\n- Next status: `human_required`",
+		"Agent Task 已进入人工介入位，等待人工核验后再决定是否恢复。\n\n- Task: `%s`\n- Worker: `%s`\n- Previous Run: `%s`\n- Attempt: %d\n- Reason: %s\n- Status: `%s`",
 		task.TaskID,
 		task.Role,
 		runID,
 		task.AttemptCount,
 		cause,
+		task.Status,
 	)
 }

@@ -651,6 +651,30 @@ func TestTesterContractEnvironmentBlockerWalksFailureRetryPath(t *testing.T) {
 	}
 }
 
+func TestTesterReportBodyEscapesTableCells(t *testing.T) {
+	contract := NewTesterContract()
+	task, run := verificationTaskFixture()
+	input, err := contract.DecodeStrict(json.RawMessage(`{
+        "task_id":"task-1","run_id":"run-1","outcome":"verification_passed",
+        "summary":"floor is green",
+        "tests":[{"command":"go test ./...","passed":true,"summary":"cell a|b and rare|cell"}]
+    }`))
+	if err != nil {
+		t.Fatalf("decode tester result: %v", err)
+	}
+	result, err := contract.Normalize(task, run, input)
+	if err != nil {
+		t.Fatalf("normalize tester result: %v", err)
+	}
+	body := result.Writebacks[0].Body
+	if strings.Contains(body, "cell a|b and") || strings.Contains(body, "rare|cell") {
+		t.Fatalf("raw pipes must be escaped inside table cells, got: %s", body)
+	}
+	if !strings.Contains(body, `a\|b`) || !strings.Contains(body, `rare\|cell`) {
+		t.Fatalf("escaped cells expected, got: %s", body)
+	}
+}
+
 func TestTesterContractSchemaDeclaresVerificationOutcomes(t *testing.T) {
 	schema := NewTesterContract().InputSchema()
 	properties := schema["properties"].(map[string]any)

@@ -670,10 +670,11 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	}
 
 	// 验证链的人工停靠必须有触点:tester 任务经结果应用落到 human_required
-	// (上下文不足等)时物化 IM 通知,否则无证据出口对人工侧不可见。
-	// 本轮只收窄到 tester 角色控制风险半径;developer/reviewer 同类停靠的
-	// 统一通知收口挂账。
-	if task.Role == "TesterWorker" && nextTaskStatus == model.TaskStatusHumanRequired {
+	// (上下文不足)或 blocked(重试预算耗尽)时物化 IM 通知,否则无证据出口
+	// 对人工侧不可见。本轮只收窄到 tester 角色控制风险半径;developer/
+	// reviewer 同类停靠的统一通知收口挂账。
+	if task.Role == "TesterWorker" &&
+		(nextTaskStatus == model.TaskStatusHumanRequired || nextTaskStatus == model.TaskStatusBlocked) {
 		cause := ""
 		if payload.BlockerReason != nil {
 			cause = *payload.BlockerReason

@@ -194,3 +194,73 @@ func TestTesterInsufficientContextMaterializesHumanRequiredIM(t *testing.T) {
 		t.Fatalf("human required IM effect must be materialized: %v", err)
 	}
 }
+
+// 重试预算耗尽的 environment_blocker 是无证据出口的最后落点:必须停靠
+// blocked 且有 IM 触点,静默死亡即整条信任链消失。
+func TestTesterEnvironmentBlockerExhaustionParksBlockedWithIM(t *testing.T) {
+	ctx := context.Background()
+	taskRepo, runRepo, _, writebackRepo := newTesterResultRepositories(t)
+	db, err := store.Open(testDatabaseDSN(t))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db, &model.Effect{}); err != nil {
+		t.Fatalf("migrate effects: %v", err)
+	}
+	effectRepo := storerepo.NewEffectRepository(db)
+	orch := New(taskRepo, runRepo,
+		WithWritebackRepository(writebackRepo),
+		WithEffectRepository(effectRepo),
+	)
+	task, run := testerApplicationFixture("task-tester-exhaust", "run-tester-exhaust-1")
+	if err := taskRepo.Create(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRepo.Create(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+
+	canonical := testerCanonicalResult(t, task, run, `{
+		"task_id":"task-tester-exhaust","run_id":"run-tester-exhaust-1","outcome":"environment_blocker",
+		"summary":"runner cannot start","blocker_reason":"docker daemon unreachable"
+	}`)
+	appliedTask, _, err := orch.ApplyCanonicalResult(ctx, canonical)
+	if err != nil {
+		t.Fatalf("apply tester result: %v", err)
+	}
+	if appliedTask.Status != model.TaskStatusRetryPending {
+		t.Fatalf("budget not exhausted must enter the retry path, got %s", appliedTask.Status)
+	}
+
+	// 模拟两次重派再败后的预算耗尽:任务经重派回到 running、计数推过预算,
+	// 再走一轮结果应用(真实流里失败应用发生在 running 态)。
+	stored, err := taskRepo.GetByTaskID(ctx, task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.Status = model.TaskStatusRunning
+	stored.AttemptCount = 99
+	nextRunID := "run-tester-exhaust-2"
+	stored.CurrentRunID = &nextRunID
+	if err := taskRepo.Update(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+	nextRun := &model.Run{RunID: nextRunID, TaskID: task.TaskID, WorkerRole: "TesterWorker", Status: model.RunStatusRunning}
+	if err := runRepo.Create(ctx, nextRun); err != nil {
+		t.Fatal(err)
+	}
+	retryCanonical := testerCanonicalResult(t, stored, nextRun, `{
+		"task_id":"task-tester-exhaust","run_id":"run-tester-exhaust-2","outcome":"environment_blocker",
+		"summary":"runner still cannot start","blocker_reason":"docker daemon unreachable"
+	}`)
+	finalTask, _, err := orch.ApplyCanonicalResult(ctx, retryCanonical)
+	if err != nil {
+		t.Fatalf("apply exhausted tester result: %v", err)
+	}
+	if finalTask.Status != model.TaskStatusBlocked {
+		t.Fatalf("exhausted environment blocker must park blocked, got %s", finalTask.Status)
+	}
+	if _, err := effectRepo.GetByDedupeKey(ctx, "human-required-im:task-tester-exhaust:run-tester-exhaust-2"); err != nil {
+		t.Fatalf("exhausted parking must materialize the IM effect: %v", err)
+	}
+}

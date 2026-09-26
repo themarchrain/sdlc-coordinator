@@ -38,10 +38,12 @@ type Task struct {
 	CurrentRunID       *string    `gorm:"index"`
 	ContextJSON        string     `gorm:"type:text"`
 	CallbackURL        string     `gorm:"type:text"`
-	DeliveryBranch     string     `gorm:"type:text"`
-	LastError          string     `gorm:"type:text"`
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// DeliveryBranch 带索引:验证处方按它反查产生源分支的开发任务,是
+	// 派发热路径上的等值查询。
+	DeliveryBranch string `gorm:"type:text;index"`
+	LastError      string `gorm:"type:text"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type DeveloperResumeRequest struct {
