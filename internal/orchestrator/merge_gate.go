@@ -47,7 +47,11 @@ type gateEvaluation struct {
 	ProjectPath     string
 	MergeRequestIID int
 	MergedCommitSHA string
-	Transient       error
+	// NotifyHuman 只在证据链全绿、卡点发生在平台层(实时头部漂移/平台拒绝/
+	// 能力缺失)时为真:红验证已有 MR 报告覆盖、血缘过期自有新链在跑,这类
+	// fallback 发 IM 是重复触达甚至错误建议,不通知。
+	NotifyHuman bool
+	Transient   error
 }
 
 // RunAutoMergeGate 扫描已完成且从未被评估过的验证任务,逐个评估证据合取,
@@ -72,7 +76,9 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 		task := &candidates[i]
 		result := o.evaluateAutoMergeGate(ctx, task)
 		if result.Transient != nil {
-			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped。
+			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped 并留
+			// 日志——持续瞬态失败时每轮可见,不静默。
+			log.Printf("orchestrator: auto merge gate deferred task %s to next tick: %v", task.TaskID, result.Transient)
 			decisions = append(decisions, MergeGateTickResult{
 				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: result.Transient.Error(),
 			})
@@ -84,9 +90,10 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 			})
 			continue
 		}
-		if result.Decision == MergeGateDecisionFallback {
-			// 回落人工必须有触点:MR 上证据链看着全绿却没被合并,通知必须
-			// 送到 IM,否则只能靠查库发现(与停靠通知同款 best-effort)。
+		if result.Decision == MergeGateDecisionFallback && result.NotifyHuman {
+			// 证据链全绿却没被合并的回落必须有触点,通知必须送到 IM,否则
+			// 只能靠查库发现(与停靠通知同款 best-effort);红验证与血缘
+			// 过期的回落不在此列,前者有 MR 报告覆盖,后者自有新链在跑。
 			o.materializeGateFallbackIM(ctx, task, result)
 		}
 		decisions = append(decisions, MergeGateTickResult{
@@ -190,6 +197,8 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	if strings.TrimSpace(parentContext.MergeRequest.HeadSHA) != result.HeadSHA {
 		return fallback(fmt.Sprintf("reviewer head %q differs from verification head %q", parentContext.MergeRequest.HeadSHA, result.HeadSHA))
 	}
+	// 证据链到此全绿:之后任何卡点都发生在平台层,值得人工触达。
+	result.NotifyHuman = true
 
 	if task.RepositoryID == nil {
 		return fallback("verification task is not bound to a repository")
@@ -352,7 +361,7 @@ func (o *Orchestrator) materializeGateFallbackIM(ctx context.Context, task *mode
 		return
 	}
 	body := fmt.Sprintf(
-		"自动合并门禁已回落人工处理。\n\n- Task: `%s`\n- MR: `%s`!%d\n- Head: `%s`\n- 原因:\n%s\n\n证据链与验证任务见执行观测页;人工核验后可直接合并,或按原因处理后重推。",
+		"自动合并门禁已回落人工处理。\n\n- Task: `%s`\n- MR: `%s` iid %d\n- Head: `%s`\n- 原因:\n%s\n\n证据链与验证任务见执行观测页;人工核验后可直接合并,或按原因处理后重推。",
 		task.TaskID,
 		result.ProjectPath,
 		result.MergeRequestIID,

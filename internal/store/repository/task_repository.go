@@ -337,9 +337,7 @@ func (r *TaskRepository) ListByDeliveryBranch(ctx context.Context, deliveryBranc
 // ListSucceededVerificationsWithoutAudit 读出已完成且从未被门禁评估过的
 // 验证任务(反连接审计表):门禁每任务至多裁决一次,审计行即防重边界。
 func (r *TaskRepository) ListSucceededVerificationsWithoutAudit(ctx context.Context, limit int) ([]model.Task, error) {
-	if limit <= 0 {
-		limit = 10
-	}
+	// limit 的归一点在门禁侧(默认批量);此处不代设默认值。
 	var tasks []model.Task
 	if err := r.db.WithContext(ctx).
 		Where("type = ? AND role = ? AND status = ?", "verify_merge_request", "TesterWorker", model.TaskStatusSucceeded).

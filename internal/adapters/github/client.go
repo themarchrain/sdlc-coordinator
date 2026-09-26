@@ -207,9 +207,13 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 // mapMergeStatusError 把确定性拒绝归到哨兵错误上:409=头部断言失配
 // (ErrMergeHeadMismatch),其余 4xx 家族=平台明确拒绝、不可重试
 // (ErrMergeRejected,含 404 的 PR 已删/仓库转移与 401/403 的凭据问题);
-// 5xx 与网络类保持 Ambiguous/StatusError 原样,由调用方按未知处理
-// (fail-closed)。读与合两个入口共用同一分类,门禁据此区分回落与重评。
+// 5xx 与网络类保持 Ambiguous 原样。429/408 是本系统语义里唯一该重试的
+// 4xx(TransientRejection),必须先于 4xx 归类原样返回,不得改写。
+// 读与合两个入口共用同一分类,门禁据此区分回落与重评。
 func mapMergeStatusError(err error) error {
+	if codehost.IsTransientRejection(err) {
+		return err
+	}
 	var status *StatusError
 	if !errors.As(err, &status) {
 		return err

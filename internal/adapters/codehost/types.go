@@ -132,6 +132,8 @@ type MergeRequest struct {
 	HeadSHA      string `json:"sha,omitempty"`
 	// Merged/MergeCommitSHA 透出平台侧真实合并状态,供自动合并门禁在拒绝
 	// 或歧义之后回读真相(合并已生效则按 merged 补审计,不误记 fallback)。
+	// MergeRequestMerger 的实现方必须同步透出这两项,否则拒绝回读与
+	// 歧义恢复两条路径会静默失效。
 	Merged         bool   `json:"merged,omitempty"`
 	MergeCommitSHA string `json:"merge_commit_sha,omitempty"`
 }

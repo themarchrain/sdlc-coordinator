@@ -362,3 +362,25 @@ func TestMergePullRequest404MapsToRejectionSentinel(t *testing.T) {
 		t.Fatalf("merge 404 must map to the rejection sentinel, got %v", err)
 	}
 }
+
+// 429/408 是本系统语义里唯一该重试的 4xx:mapMergeStatusError 不得把它
+// 改写成确定性拒绝,否则限流窗口内的验证任务会被成批永久记为 fallback。
+func TestMergePullRequest429StaysTransientRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !codehost.IsTransientRejection(err) {
+		t.Fatalf("429 must stay a transient rejection, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) || errors.Is(err, codehost.ErrMergeHeadMismatch) {
+		t.Fatalf("429 must not be rewritten to a deterministic sentinel, got %v", err)
+	}
+}
