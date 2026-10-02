@@ -147,6 +147,94 @@ func TestBuildVerificationPlanSkipsNonDeveloperCandidates(t *testing.T) {
 	}
 }
 
+// 同租户内不同仓库可存在同名交付分支:分支相等不构成同仓证据,复放候选
+// 必须与验证任务同仓,否则验证依据错配(错误阻断或无关命令放行)。
+func TestBuildVerificationPlanRejectsCrossRepoReplayCandidate(t *testing.T) {
+	ctx := context.Background()
+	tasks, runs, artifacts := newPrescriptionRepositories(t)
+	orch := New(tasks, runs, WithVerificationArtifactReader(artifacts))
+	if err := tasks.Create(ctx, prescriptionTesterTask("task-verify-crossrepo", "alice/issue-13-20260727")); err != nil {
+		t.Fatal(err)
+	}
+	other := prescriptionDeveloperTask("task-dev-crossrepo", "alice/issue-13-20260727")
+	other.SourceRepo = "group/other"
+	other.TargetRepo = "group/other"
+	otherRepoID := "repo-other"
+	other.RepositoryID = &otherRepoID
+	if err := tasks.Create(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if err := artifacts.UpsertByIdentity(ctx, prescriptionArtifact("task-dev-crossrepo", "run-crossrepo-1",
+		`{"source_key":"test_results","value":[{"command":"go test ./group/other/...","passed":true,"summary":"ok"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	if plan := orch.buildVerificationPlan(ctx, prescriptionTesterTask("task-verify-crossrepo", "alice/issue-13-20260727"), &registeredrepo.RegisteredRepository{}); plan != nil {
+		t.Fatalf("wrong-repo replay must not materialize a plan without a floor: %#v", plan)
+	}
+	floored := orch.buildVerificationPlan(ctx, prescriptionTesterTask("task-verify-crossrepo", "alice/issue-13-20260727"), &registeredrepo.RegisteredRepository{VerifyCommand: "go test ./..."})
+	if floored == nil || floored.FloorCommand != "go test ./..." || len(floored.ReplayCommands) != 0 {
+		t.Fatalf("wrong-repo replay must degrade to floor only: %#v", floored)
+	}
+}
+
+// 同路径但注册仓 ID 不同(跨平台同名路径):双侧注册仓 ID 可用时必须严格相等。
+func TestBuildVerificationPlanRejectsRepositoryIDMismatchOnSamePath(t *testing.T) {
+	ctx := context.Background()
+	tasks, runs, artifacts := newPrescriptionRepositories(t)
+	orch := New(tasks, runs, WithVerificationArtifactReader(artifacts))
+	if err := tasks.Create(ctx, prescriptionTesterTask("task-verify-ridmismatch", "alice/issue-13-20260727")); err != nil {
+		t.Fatal(err)
+	}
+	impersonator := prescriptionDeveloperTask("task-dev-ridmismatch", "alice/issue-13-20260727")
+	impersonatorRepoID := "repo-impersonator"
+	impersonator.RepositoryID = &impersonatorRepoID
+	if err := tasks.Create(ctx, impersonator); err != nil {
+		t.Fatal(err)
+	}
+	if err := artifacts.UpsertByIdentity(ctx, prescriptionArtifact("task-dev-ridmismatch", "run-ridmismatch-1",
+		`{"source_key":"test_results","value":[{"command":"go test ./...","passed":true,"summary":"ok"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := orch.buildVerificationPlan(ctx, prescriptionTesterTask("task-verify-ridmismatch", "alice/issue-13-20260727"), &registeredrepo.RegisteredRepository{})
+	if plan != nil {
+		t.Fatalf("repository id mismatch must not contribute replay commands: %#v", plan)
+	}
+}
+
+// 错仓候选只跳过不抢占:反查继续向更早候选进行,同仓最新证据仍生效。
+func TestBuildVerificationPlanLetsSameRepoCandidateOutliveWrongRepoOne(t *testing.T) {
+	ctx := context.Background()
+	tasks, runs, artifacts := newPrescriptionRepositories(t)
+	orch := New(tasks, runs, WithVerificationArtifactReader(artifacts))
+	if err := tasks.Create(ctx, prescriptionTesterTask("task-verify-preempt", "alice/issue-13-20260727")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tasks.Create(ctx, prescriptionDeveloperTask("task-dev-samerepo-old", "alice/issue-13-20260727")); err != nil {
+		t.Fatal(err)
+	}
+	if err := artifacts.UpsertByIdentity(ctx, prescriptionArtifact("task-dev-samerepo-old", "run-samerepo-1",
+		`{"source_key":"test_results","value":[{"command":"go test ./internal/...","passed":true,"summary":"ok"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	wrongRepo := prescriptionDeveloperTask("task-dev-wrongrepo-new", "alice/issue-13-20260727")
+	wrongRepo.SourceRepo = "group/other"
+	wrongRepo.TargetRepo = "group/other"
+	if err := tasks.Create(ctx, wrongRepo); err != nil {
+		t.Fatal(err)
+	}
+	if err := artifacts.UpsertByIdentity(ctx, prescriptionArtifact("task-dev-wrongrepo-new", "run-wrongrepo-1",
+		`{"source_key":"test_results","value":[{"command":"go test ./group/other/...","passed":true,"summary":"ok"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := orch.buildVerificationPlan(ctx, prescriptionTesterTask("task-verify-preempt", "alice/issue-13-20260727"), &registeredrepo.RegisteredRepository{})
+	if plan == nil || len(plan.ReplayCommands) != 1 || plan.ReplayCommands[0] != "go test ./internal/..." {
+		t.Fatalf("wrong-repo candidate must not preempt the same-repo evidence: plan=%#v", plan)
+	}
+}
+
 func TestBuildVerificationPlanUsesLatestDeveloperRun(t *testing.T) {
 	ctx := context.Background()
 	tasks, runs, artifacts := newPrescriptionRepositories(t)

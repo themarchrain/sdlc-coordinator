@@ -38,6 +38,8 @@ func (o *Orchestrator) buildVerificationPlan(ctx context.Context, task *model.Ta
 // 最新一轮记录的测试命令。链接口径:任务的 DeliveryBranch 与 MR 源分支
 // 相等(主流程 develop_from_issue 的交付分支即 MR 源分支);接续开发
 // (rework)轮次的交付分支不等于源分支,本期不参与复放,由下限兜底。
+// 证据来源必须与验证任务同仓:同租户内不同仓库可存在同名交付分支,分支
+// 相等不构成同仓证据,错仓命令混入处方会让验证依据错配。
 func (o *Orchestrator) replayCommandsFromDeveloperTask(ctx context.Context, task *model.Task) []string {
 	if o.verificationArtifacts == nil {
 		return nil
@@ -50,9 +52,14 @@ func (o *Orchestrator) replayCommandsFromDeveloperTask(ctx context.Context, task
 	if err != nil {
 		return nil
 	}
-	// id 降序,最新任务优先;只认 developer 任务,防同分支异物混入处方。
+	// id 降序,最新任务优先;只认同仓的 developer 任务,防同分支异物混入
+	// 处方。错仓候选只跳过不抢占:反查继续向更早候选进行,同仓最新证据
+	// 仍然生效。
 	for _, candidate := range candidates {
 		if candidate.Role != "DeveloperWorker" {
+			continue
+		}
+		if !sameRepositoryEvidence(&candidate, task) {
 			continue
 		}
 		artifacts, readErr := o.verificationArtifacts.ListByTaskAndName(ctx, candidate.TaskID, "test_result", "test_results")
@@ -65,6 +72,22 @@ func (o *Orchestrator) replayCommandsFromDeveloperTask(ctx context.Context, task
 		}
 	}
 	return nil
+}
+
+// sameRepositoryEvidence 判定复放候选与验证任务是否同仓。双侧注册仓 ID
+// 都存在时严格相等;任一侧缺失(历史任务)退回仓库路径身份相等——与验证
+// 任务去重键同一身份口径,绝非分支名相等;路径也缺失即视为未证实同仓,
+// 宁可损失复放覆盖(下限兜底),不引入跨仓命令。
+func sameRepositoryEvidence(candidate, task *model.Task) bool {
+	if candidate == nil || task == nil {
+		return false
+	}
+	if candidate.RepositoryID != nil && task.RepositoryID != nil {
+		return strings.TrimSpace(*candidate.RepositoryID) == strings.TrimSpace(*task.RepositoryID)
+	}
+	candidateRepo := strings.TrimSpace(candidate.TargetRepo)
+	taskRepo := strings.TrimSpace(task.TargetRepo)
+	return candidateRepo != "" && candidateRepo == taskRepo
 }
 
 func testerSourceBranch(task *model.Task) string {
