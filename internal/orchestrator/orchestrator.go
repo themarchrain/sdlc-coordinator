@@ -290,13 +290,17 @@ func WithAgentExecutionLookup(executions AgentExecutionLookup) Option {
 // WithResultIngress enables the MCP result submission channel on installed runner
 // coordinators. issuer 为 nil（或 endpoint 为空）时通道保持关闭（纯文本模式）。
 // 必须排在已安装的 WithReviewerRunner/WithDeveloperRunner/WithTesterRunner 之后调用。
+// reviewer/developer 缺失是装配失效，必须 fail-fast；tester 注入是可选能力：
+// 仅内建 *TesterRunnerCoordinator 生效，自定义实现静默跳过（JSON 文本回退
+// 兜底），不参与 fail-fast。
 func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
 	return func(o *Orchestrator) {
 		reviewerCoordinator, reviewerOK := o.reviewerRunner.(*ReviewerRunnerCoordinator)
 		developerCoordinator, developerOK := o.developerRunner.(*DeveloperRunnerCoordinator)
 		testerCoordinator, testerOK := o.testerRunner.(*TesterRunnerCoordinator)
 		// 装配失效必须 fail-fast：静默 no-op 意味着 dispatch 永远不带 token，
-		// agent 全部落文本降级通道且无从排查。
+		// agent 全部落文本降级通道且无从排查（仅指 reviewer/developer，
+		// tester 的可选语义见函数注释）。
 		if issuer != nil && endpointURL != "" && (!reviewerOK || !developerOK) {
 			panic("orchestrator: WithResultIngress requires WithReviewerRunner/WithDeveloperRunner to be applied first")
 		}
