@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/model"
@@ -129,6 +130,51 @@ func TestRecordReviewerRunnerFailureNotifiesWhenTesterBudgetExhausted(t *testing
 	}
 	if _, err := effectRepo.GetByDedupeKey(ctx, "human-required-im:"+task.TaskID+":"+runID); err != nil {
 		t.Fatalf("blocked tester must materialize a human notification effect: %v", err)
+	}
+}
+
+// failingLastErrorTaskRepository 只在 LastError 回写（整行带非空 LastError）
+// 时失败,模拟 AdvanceTask 落库后的瞬态写故障。
+type failingLastErrorTaskRepository struct {
+	TaskRepository
+}
+
+func (r *failingLastErrorTaskRepository) Update(ctx context.Context, task *model.Task) error {
+	if strings.TrimSpace(task.LastError) != "" {
+		return errors.New("transient write failure")
+	}
+	return r.TaskRepository.Update(ctx, task)
+}
+
+// 通知物化先于 LastError 回写:回写失败提前返回时停靠状态已落库且 run 已
+// 终态,此轮错过即永失——锁定回写失败也不得丢通知。
+func TestRecordReviewerRunnerFailureKeepsNotificationWhenWritebackFails(t *testing.T) {
+	ctx := context.Background()
+	taskRepo, runRepo, effectRepo := newRecoveryRepositoriesWithEffects(t)
+	runID := "run-tester-writeback-fails"
+	task := testerFailureStopTask("task-tester-writeback-fails", runID, "TesterWorker", 3)
+	if err := taskRepo.Create(ctx, task); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run := &model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusRunning}
+	if err := runRepo.Create(ctx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	orch := New(&failingLastErrorTaskRepository{TaskRepository: taskRepo}, runRepo, WithEffectRepository(effectRepo))
+
+	if err := orch.recordReviewerRunnerFailure(ctx, runID, "agent runner execution failed"); err == nil {
+		t.Fatal("last-error writeback failure must surface")
+	}
+
+	advanced, err := taskRepo.GetByTaskID(ctx, task.TaskID)
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if advanced.Status != model.TaskStatusBlocked {
+		t.Fatalf("blocked must already be persisted by the advance step, got %s", advanced.Status)
+	}
+	if _, err := effectRepo.GetByDedupeKey(ctx, "human-required-im:"+task.TaskID+":"+runID); err != nil {
+		t.Fatalf("notification must survive the last-error writeback failure: %v", err)
 	}
 }
 
