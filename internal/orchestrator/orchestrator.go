@@ -29,6 +29,8 @@ type TaskRepository interface {
 	Claim(context.Context, string, string, time.Time) error
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)
+	ListByDeliveryBranch(context.Context, string) ([]model.Task, error)
+	ListSucceededVerificationsWithoutAuditAfter(context.Context, uint, int) ([]model.Task, error)
 	ResumeHumanRequired(context.Context, string, string) error
 	ResumeRework(context.Context, string, string) error
 	MarkHumanRequiredIfDispatchable(context.Context, string, string) error
@@ -51,6 +53,19 @@ type RunRepository interface {
 
 type ArtifactRepository interface {
 	UpsertByIdentity(context.Context, *model.Artifact) error
+}
+
+// MergeGateAuditRepository 留痕自动合并门禁的裁决:每验证任务至多一行,
+// 审计即防重。
+type MergeGateAuditRepository interface {
+	Create(context.Context, *model.MergeGateAudit) error
+	GetByTaskID(context.Context, string) (*model.MergeGateAudit, error)
+}
+
+// VerificationArtifactReader 是验证处方的只读窄端口:按 (task, kind, name)
+// 读取 artifact,复放开发记录的测试命令。独立于写端口,最小装配可不提供。
+type VerificationArtifactReader interface {
+	ListByTaskAndName(context.Context, string, string, string) ([]model.Artifact, error)
 }
 
 type EffectRepository interface {
@@ -96,6 +111,8 @@ type ResultSubmissionRepository interface {
 
 type Orchestrator struct {
 	tickMu                         sync.Mutex
+	mergeGateMu                    sync.Mutex
+	mergeGateCursor                uint
 	tasks                          TaskRepository
 	runs                           RunRepository
 	artifacts                      ArtifactRepository
@@ -116,6 +133,12 @@ type Orchestrator struct {
 	reviewerRunnerSettings         ReviewerRunnerSettings
 	developerRunner                DeveloperRunnerExecutionCoordinator
 	developerRunnerSettings        ReviewerRunnerSettings
+	testerRunner                   TesterRunnerExecutionCoordinator
+	testerRunnerSettings           ReviewerRunnerSettings
+	verificationArtifacts          VerificationArtifactReader
+	mergeAudits                    MergeGateAuditRepository
+	autoMergeEnabled               func(context.Context) bool
+	mergeGateClients               func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)
 	agentExecutions                AgentExecutionLookup
 	runnerArtifacts                RunnerArtifactStore
 	stateMachine                   *StateMachine
@@ -131,6 +154,11 @@ type ReviewerRunnerExecutionCoordinator interface {
 type DeveloperRunnerExecutionCoordinator interface {
 	Start(context.Context, DeveloperRunnerStartRequest) (*model.AgentExecution, error)
 	Reconcile(context.Context, string) (*DeveloperRunnerReconcileResult, error)
+}
+
+type TesterRunnerExecutionCoordinator interface {
+	Start(context.Context, TesterRunnerStartRequest) (*model.AgentExecution, error)
+	Reconcile(context.Context, string) (*ReviewerRunnerReconcileResult, error)
 }
 
 type AgentExecutionLookup interface {
@@ -222,21 +250,57 @@ func WithDeveloperRunner(coordinator DeveloperRunnerExecutionCoordinator, settin
 	}
 }
 
+func WithTesterRunner(coordinator TesterRunnerExecutionCoordinator, settings ReviewerRunnerSettings) Option {
+	return func(o *Orchestrator) {
+		o.testerRunner = coordinator
+		o.testerRunnerSettings = settings
+	}
+}
+
+func WithVerificationArtifactReader(reader VerificationArtifactReader) Option {
+	return func(o *Orchestrator) {
+		o.verificationArtifacts = reader
+	}
+}
+
+func WithMergeGateAuditRepository(audits MergeGateAuditRepository) Option {
+	return func(o *Orchestrator) {
+		o.mergeAudits = audits
+	}
+}
+
+func WithAutoMergeEnabled(lookup func(context.Context) bool) Option {
+	return func(o *Orchestrator) {
+		o.autoMergeEnabled = lookup
+	}
+}
+
+func WithMergeGateClients(factory func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)) Option {
+	return func(o *Orchestrator) {
+		o.mergeGateClients = factory
+	}
+}
+
 func WithAgentExecutionLookup(executions AgentExecutionLookup) Option {
 	return func(o *Orchestrator) {
 		o.agentExecutions = executions
 	}
 }
 
-// WithResultIngress enables the MCP result submission channel on both runner
+// WithResultIngress enables the MCP result submission channel on installed runner
 // coordinators. issuer 为 nil（或 endpoint 为空）时通道保持关闭（纯文本模式）。
-// 必须排在 WithReviewerRunner/WithDeveloperRunner 之后调用。
+// 必须排在已安装的 WithReviewerRunner/WithDeveloperRunner/WithTesterRunner 之后调用。
+// reviewer/developer 缺失是装配失效，必须 fail-fast；tester 注入是可选能力：
+// 仅内建 *TesterRunnerCoordinator 生效，自定义实现静默跳过（JSON 文本回退
+// 兜底），不参与 fail-fast。
 func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
 	return func(o *Orchestrator) {
 		reviewerCoordinator, reviewerOK := o.reviewerRunner.(*ReviewerRunnerCoordinator)
 		developerCoordinator, developerOK := o.developerRunner.(*DeveloperRunnerCoordinator)
+		testerCoordinator, testerOK := o.testerRunner.(*TesterRunnerCoordinator)
 		// 装配失效必须 fail-fast：静默 no-op 意味着 dispatch 永远不带 token，
-		// agent 全部落文本降级通道且无从排查。
+		// agent 全部落文本降级通道且无从排查（仅指 reviewer/developer，
+		// tester 的可选语义见函数注释）。
 		if issuer != nil && endpointURL != "" && (!reviewerOK || !developerOK) {
 			panic("orchestrator: WithResultIngress requires WithReviewerRunner/WithDeveloperRunner to be applied first")
 		}
@@ -245,6 +309,9 @@ func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
 		}
 		if developerOK {
 			developerCoordinator.core.setResultIngress(issuer, endpointURL)
+		}
+		if testerOK {
+			testerCoordinator.core.setResultIngress(issuer, endpointURL)
 		}
 	}
 }
@@ -498,6 +565,7 @@ func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Ta
 	if err == nil {
 		advanced.LastError = cause.Error()
 		_ = o.tasks.Update(ctx, advanced)
+		o.materializeTesterStopIMEffect(ctx, advanced, cause.Error())
 	}
 }
 
@@ -596,6 +664,8 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	}
 
 	nextTaskStatus := resultTaskStatus(task, payload, o.policy)
+	// expandedNextTasks 现在只统计阻塞式子任务(fire-and-forget 不计):
+	// 只有父任务必须等子任务收口的阻塞式派生才把父任务送进 waiting_upstream。
 	if payload.Status == results.StatusSucceeded && expandedNextTasks > 0 {
 		nextTaskStatus = model.TaskStatusWaitingUpstream
 	}
@@ -637,6 +707,19 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	}
 	if err := o.resolveDependenciesForResult(ctx, task, payload); err != nil {
 		return nil, nil, err
+	}
+
+	// 验证链的人工停靠必须有触点:tester 任务经结果应用落到 human_required
+	// (上下文不足)或 blocked(重试预算耗尽)时物化 IM 通知,否则无证据出口
+	// 对人工侧不可见。本轮只收窄到 tester 角色控制风险半径;developer/
+	// reviewer 同类停靠的统一通知收口挂账。
+	if task.Role == "TesterWorker" &&
+		(nextTaskStatus == model.TaskStatusHumanRequired || nextTaskStatus == model.TaskStatusBlocked) {
+		cause := ""
+		if payload.BlockerReason != nil {
+			cause = *payload.BlockerReason
+		}
+		o.materializeHumanRequiredIMEffect(ctx, task, cause)
 	}
 
 	return task, run, nil

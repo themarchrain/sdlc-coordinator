@@ -21,6 +21,7 @@ base_url: 'https://gitlab.example.com',
     default_branch: 'main',
     status: 'enabled',
     last_configuration_error: '',
+    verify_command: 'go test ./...',
   },
   {
     repository_id: 'repo_b',
@@ -126,6 +127,40 @@ describe('RepositoriesPage', () => {
       provider: 'gitea',
       base_url: 'https://gitea.example.com',
     })))
+  })
+
+  it('submits the verification command on create', async () => {
+    renderPage([])
+    const create = vi.spyOn(adminApi, 'createRepository').mockResolvedValue(repositories[0])
+
+    fireEvent.click(await screen.findByRole('button', { name: /新增仓库/ }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByLabelText('平台地址')).toHaveValue('https://gitea.example.com'))
+    fireEvent.change(within(dialog).getByLabelText('显示名称'), { target: { value: 'Gitea 仓' } })
+    fireEvent.change(within(dialog).getByLabelText('仓库路径'), { target: { value: 'group/gitea-repo' } })
+    fireEvent.change(within(dialog).getByLabelText('项目级 Token'), { target: { value: 'token-input' } })
+    fireEvent.change(within(dialog).getByLabelText('Webhook Secret'), { target: { value: 'hook-secret' } })
+    fireEvent.change(within(dialog).getByLabelText('验证命令'), { target: { value: '  go test ./...  ' } })
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /项目级（repository 级）token/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '保 存' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      verify_command: '  go test ./...  ',
+    })))
+  })
+
+  it('prefills and updates the verification command on edit', async () => {
+    renderPage()
+    const patch = vi.spyOn(adminApi, 'patchRepository').mockResolvedValue(repositories[0])
+
+    const row = await screen.findByText('Coordinator').then((node) => node.closest('tr')!)
+    fireEvent.click(within(row).getByRole('button', { name: '编辑仓库' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByLabelText('验证命令')).toHaveValue('go test ./...'))
+    fireEvent.change(within(dialog).getByLabelText('验证命令'), { target: { value: 'make test' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保 存' }))
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('repo_a', expect.objectContaining({ verify_command: 'make test' })))
   })
 
   it('opens the edit dialog with repository basic fields', async () => {

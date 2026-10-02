@@ -58,10 +58,12 @@ type noteResponse struct {
 }
 
 type pullResponse struct {
-	Number  int           `json:"number"`
-	HTMLURL string        `json:"html_url"`
-	Head    pullBranchRef `json:"head"`
-	Base    pullBranchRef `json:"base"`
+	Number         int           `json:"number"`
+	HTMLURL        string        `json:"html_url"`
+	Merged         bool          `json:"merged"`
+	MergeCommitSHA string        `json:"merge_commit_sha"`
+	Head           pullBranchRef `json:"head"`
+	Base           pullBranchRef `json:"base"`
 }
 
 type pullBranchRef struct {
@@ -153,15 +155,76 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	}
 	var pr pullResponse
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), mrIID), nil, &pr); err != nil {
-		return nil, err
+		return nil, mapMergeStatusError(err)
 	}
 	return &codehost.MergeRequest{
-		IID:          pr.Number,
-		WebURL:       pr.HTMLURL,
-		SourceBranch: strings.TrimSpace(pr.Head.Ref),
-		TargetBranch: strings.TrimSpace(pr.Base.Ref),
-		HeadSHA:      strings.TrimSpace(pr.Head.SHA),
+		IID:            pr.Number,
+		WebURL:         pr.HTMLURL,
+		SourceBranch:   strings.TrimSpace(pr.Head.Ref),
+		TargetBranch:   strings.TrimSpace(pr.Base.Ref),
+		HeadSHA:        strings.TrimSpace(pr.Head.SHA),
+		Merged:         pr.Merged,
+		MergeCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
 	}, nil
+}
+
+// mergeResponse 是 PUT pulls/{n}/merge 的响应体:merged 与最终 commit sha。
+type mergeResponse struct {
+	SHA     string `json:"sha"`
+	Merged  bool   `json:"merged"`
+	Message string `json:"message"`
+}
+
+// MergePullRequest 执行 PR 合并,sha 参数即头部断言:头部漂移平台返回 409,
+// 映射为 ErrMergeHeadMismatch;保护规则等明确拒绝(403/405/422)映射为
+// ErrMergeRejected 并携带平台原因——门禁层据此回落人工,不绕平台规则。
+func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, req codehost.MergePullRequestRequest) (*codehost.MergePullRequestResult, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{
+		"sha": req.ExpectedHeadSHA,
+	}
+	if strings.TrimSpace(req.MergeMethod) != "" {
+		payload["merge_method"] = strings.TrimSpace(req.MergeMethod)
+	}
+	if strings.TrimSpace(req.CommitTitle) != "" {
+		payload["commit_title"] = req.CommitTitle
+	}
+	if strings.TrimSpace(req.CommitMessage) != "" {
+		payload["commit_message"] = req.CommitMessage
+	}
+
+	var merged mergeResponse
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), mrIID)
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &merged); err != nil {
+		return nil, mapMergeStatusError(err)
+	}
+	return &codehost.MergePullRequestResult{Merged: merged.Merged, MergedCommitSHA: strings.TrimSpace(merged.SHA)}, nil
+}
+
+// mapMergeStatusError 把确定性拒绝归到哨兵错误上:409=头部断言失配
+// (ErrMergeHeadMismatch),其余 4xx 家族=平台明确拒绝、不可重试
+// (ErrMergeRejected,含 404 的 PR 已删/仓库转移与 401/403 的凭据问题);
+// 5xx 与网络类保持 Ambiguous 原样。429/408 以及带有 GitHub 限流信号的 403
+// 属于可重试的 4xx(TransientRejection),必须先于 4xx 归类原样返回,不得改写。
+// 读与合两个入口共用同一分类,门禁据此区分回落与重评。
+func mapMergeStatusError(err error) error {
+	if codehost.IsTransientRejection(err) {
+		return err
+	}
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return err
+	}
+	switch {
+	case status.StatusCode == http.StatusConflict:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
+	case status.StatusCode >= 400 && status.StatusCode < 500:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)
+	}
+	return err
 }
 
 func splitRepo(repo string) (string, string, error) {
@@ -231,11 +294,17 @@ func (c *Client) doJSON(ctx context.Context, method, path string, in any, out an
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		err := &StatusError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("github %s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))}
+		err := &StatusError{
+			StatusCode:         resp.StatusCode,
+			Message:            fmt.Sprintf("github %s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(data))),
+			RetryAfter:         strings.TrimSpace(resp.Header.Get("Retry-After")),
+			RateLimitRemaining: strings.TrimSpace(resp.Header.Get("X-RateLimit-Remaining")),
+			RateLimitReset:     strings.TrimSpace(resp.Header.Get("X-RateLimit-Reset")),
+		}
 		if resp.StatusCode >= http.StatusInternalServerError {
 			return codehost.NewAmbiguousError(err)
 		}
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout {
+		if isTransientHTTPRejection(err) {
 			return codehost.NewTransientRejection(err)
 		}
 		return err
@@ -254,6 +323,20 @@ func (c *Client) doJSON(ctx context.Context, method, path string, in any, out an
 	return nil
 }
 
+func isTransientHTTPRejection(err *StatusError) bool {
+	if err.StatusCode == http.StatusTooManyRequests || err.StatusCode == http.StatusRequestTimeout {
+		return true
+	}
+	if err.StatusCode != http.StatusForbidden {
+		return false
+	}
+	if err.RetryAfter != "" || err.RateLimitRemaining == "0" {
+		return true
+	}
+	message := strings.ToLower(err.Message)
+	return strings.Contains(message, "rate limit")
+}
+
 func isMutatingMethod(method string) bool {
 	switch method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
@@ -265,8 +348,11 @@ func isMutatingMethod(method string) bool {
 
 // StatusError 携带 HTTP 状态码,供写回凭据降级(401/403)等调用方识别。
 type StatusError struct {
-	StatusCode int
-	Message    string
+	StatusCode         int
+	Message            string
+	RetryAfter         string
+	RateLimitRemaining string
+	RateLimitReset     string
 }
 
 func (err *StatusError) Error() string { return err.Message }

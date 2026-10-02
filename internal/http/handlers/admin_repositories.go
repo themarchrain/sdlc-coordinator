@@ -57,6 +57,7 @@ type createRepositoryBody struct {
 	WebhookSecret       string   `json:"webhook_secret"`
 	CodeHostIssueLabels []string `json:"codehost_issue_labels"`
 	ReviewerMentions    string   `json:"reviewer_mentions"`
+	VerifyCommand       string   `json:"verify_command"`
 }
 
 type patchRepositoryBody struct {
@@ -69,6 +70,7 @@ type patchRepositoryBody struct {
 	WebhookSecret       string    `json:"webhook_secret"`
 	CodeHostIssueLabels *[]string `json:"codehost_issue_labels"`
 	ReviewerMentions    *string   `json:"reviewer_mentions"`
+	VerifyCommand       *string   `json:"verify_command"`
 }
 
 func (handler *AdminRepositoryHandler) List(c *gin.Context) {
@@ -99,6 +101,7 @@ func (handler *AdminRepositoryHandler) Create(c *gin.Context) {
 		WebhookSecret:       body.WebhookSecret,
 		CodeHostIssueLabels: body.CodeHostIssueLabels,
 		ReviewerMentions:    body.ReviewerMentions,
+		VerifyCommand:       body.VerifyCommand,
 	})
 	if err != nil && view == nil {
 		writeAdminRepositoryError(c, err)
@@ -131,6 +134,7 @@ func (handler *AdminRepositoryHandler) Patch(c *gin.Context) {
 		WebhookSecret:       body.WebhookSecret,
 		CodeHostIssueLabels: body.CodeHostIssueLabels,
 		ReviewerMentions:    body.ReviewerMentions,
+		VerifyCommand:       body.VerifyCommand,
 	})
 	if err != nil && view == nil {
 		writeAdminRepositoryError(c, err)
@@ -179,6 +183,7 @@ func repositoryResponse(view registeredrepo.View) gin.H {
 		"default_branch":            view.DefaultBranch,
 		"status":                    view.Status,
 		"last_configuration_error":  view.LastConfigurationError,
+		"verify_command":            view.VerifyCommand,
 	}
 }
 
@@ -204,6 +209,8 @@ func writeAdminRepositoryError(c *gin.Context, err error) {
 		writeAdminError(c, http.StatusConflict, "repository_identity_mismatch", "GitLab 项目身份与已登记记录不一致")
 	case errors.Is(err, registeredrepo.ErrInvalidRepository):
 		writeAdminError(c, http.StatusBadRequest, "invalid_repository", "仓库配置不合法")
+	case errors.Is(err, registeredrepo.ErrVerifyCommandTooLong):
+		writeAdminError(c, http.StatusUnprocessableEntity, "verify_command_too_long", "验证命令不能超过 512 个字符")
 	default:
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			writeAdminError(c, http.StatusConflict, "repository_conflict", "仓库路径或项目 ID 已存在")

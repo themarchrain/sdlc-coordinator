@@ -85,6 +85,7 @@ func (r *Runner) Run(ctx context.Context) {
 			zap.Int("recoveries", len(result.Recoveries)),
 			zap.Int("dispatched_tasks", len(result.DispatchedTasks)),
 			zap.Int("dispatch_failures", len(result.DispatchFailures)),
+			zap.Int("gate_decisions", len(result.GateDecisions)),
 			zap.Int("executed_effects", len(result.ExecutedEffects)),
 			zap.Duration("duration", time.Since(startedAt)),
 		)
@@ -98,7 +99,8 @@ func tickResultIsIdle(result *orchestrator.TickResult) bool {
 		len(result.Recoveries) == 0 &&
 		len(result.DispatchedTasks) == 0 &&
 		len(result.DispatchFailures) == 0 &&
-		len(result.ExecutedEffects) == 0
+		len(result.ExecutedEffects) == 0 &&
+		len(result.GateDecisions) == 0
 }
 
 func waitForInterval(ctx context.Context, interval time.Duration) bool {

@@ -93,7 +93,7 @@ func (p *ReviewerPreparer) Prepare(ctx context.Context, request ReviewerRequest)
 		Status:  ManifestStatusReady,
 		TaskID:  req.TaskID,
 		RunID:   req.RunID,
-		Role:    "ReviewerWorker",
+		Role:    effectiveWorkerRole(req.WorkerRole),
 		Repository: RepositoryManifest{
 			Project:             req.Project,
 			Path:                "repo",

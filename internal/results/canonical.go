@@ -45,6 +45,10 @@ type NextTaskIntent struct {
 	AllowedRepos       AllowedRepos   `json:"allowed_repos,omitempty"`
 	SuccessCriteria    []string       `json:"success_criteria,omitempty"`
 	Context            map[string]any `json:"context,omitempty"`
+	// FireAndForget 标记派生但不等待的子任务:父任务照常落终态,不进
+	// waiting_upstream,也不建依赖行(子任务血缘留在其上下文的 parent 字段)。
+	// 缺省 false=阻塞式派生(上游修复等父任务必须等子任务收口的场景)。
+	FireAndForget bool `json:"fire_and_forget,omitempty"`
 }
 
 type CodeHostWritebackIntent struct {

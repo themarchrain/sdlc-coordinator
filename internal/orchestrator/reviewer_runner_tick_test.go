@@ -11,7 +11,7 @@ import (
 	"sdlc-coordinator/internal/store/repository"
 )
 
-func TestTickDispatchesReviewerAndDeveloperToRunnerAndMovesTesterToHumanRequired(t *testing.T) {
+func TestTickDispatchesReviewerAndDeveloperToRunnerAndParksUnknownRoles(t *testing.T) {
 	ctx := context.Background()
 	tasks, runs := newTickRepositories(t)
 	reviewer := &fakeReviewerRunnerCoordinator{}
@@ -43,11 +43,11 @@ func TestTickDispatchesReviewerAndDeveloperToRunnerAndMovesTesterToHumanRequired
 		t.Fatalf("create developer task: %v", err)
 	}
 	if err := tasks.Create(ctx, &model.Task{
-		TaskID: "task-tick-legacy-tester", DedupeKey: "tick-legacy-tester", Type: "test", Role: "TesterWorker",
+		TaskID: "task-tick-unknown-role", DedupeKey: "tick-unknown-role", Type: "unknown", Role: "MysteryWorker",
 		RepositoryID: reviewerTask.RepositoryID,
-		Status:       model.TaskStatusPending, Objective: "test change", AcceptanceCriteria: "tests pass",
+		Status:       model.TaskStatusPending, Objective: "do something", AcceptanceCriteria: "n/a",
 	}); err != nil {
-		t.Fatalf("create tester task: %v", err)
+		t.Fatalf("create unknown task: %v", err)
 	}
 
 	result, err := orch.Tick(ctx, TickRequest{DispatchLimit: 10})
@@ -66,19 +66,19 @@ func TestTickDispatchesReviewerAndDeveloperToRunnerAndMovesTesterToHumanRequired
 	if developer.startRequest.Task.Role != "DeveloperWorker" || developer.startRequest.Workspace.WorkspaceRoot != "/app/workspaces" || developer.startRequest.Workspace.DeliveryBranch != "agent/task-tick-runner-developer" {
 		t.Fatalf("unexpected developer runner request: %#v", developer.startRequest)
 	}
-	tester, err := tasks.GetByTaskID(ctx, "task-tick-legacy-tester")
+	unknown, err := tasks.GetByTaskID(ctx, "task-tick-unknown-role")
 	if err != nil {
-		t.Fatalf("get tester task: %v", err)
+		t.Fatalf("get unknown task: %v", err)
 	}
-	if tester.Status != model.TaskStatusHumanRequired || tester.CurrentRunID != nil || tester.LastError != unsupportedTesterWorkerReason {
-		t.Fatalf("tester was not moved to stable human handling: %#v", tester)
+	if unknown.Status != model.TaskStatusHumanRequired || unknown.CurrentRunID != nil || unknown.LastError != unsupportedWorkerRoleReason {
+		t.Fatalf("unknown role was not moved to stable human handling: %#v", unknown)
 	}
 	repeated, err := orch.Tick(ctx, TickRequest{DispatchLimit: 10})
 	if err != nil {
 		t.Fatalf("repeat tick: %v", err)
 	}
 	if len(repeated.DispatchedTasks) != 0 || len(repeated.DispatchFailures) != 0 {
-		t.Fatalf("repeat tick retried unsupported tester: %#v", repeated)
+		t.Fatalf("repeat tick retried unsupported role: %#v", repeated)
 	}
 	reviewerRun, err := runs.GetByRunID(ctx, reviewer.startRequest.Run.RunID)
 	if err != nil || reviewerRun.ExternalSystem != agentRunnerExternalSystem || reviewerRun.ExternalID != reviewerRun.RunID || reviewerRun.InputJSON == "" {

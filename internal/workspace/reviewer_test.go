@@ -255,6 +255,70 @@ func TestReviewerPreparerReusesMatchingReadyWorkspace(t *testing.T) {
 	}
 }
 
+// Tester 工作区复用:验证任务复用同一请求结构但角色为 TesterWorker,同一
+// 请求连续 Prepare 必须复用已发布的 ready 工作区——否则执行投影丢失后的
+// 恢复路径(重建 → 再次 Prepare)会被既有工作区挡死,恢复只能靠换新 run。
+func TestReviewerPreparerReusesMatchingReadyTesterWorkspace(t *testing.T) {
+	t.Parallel()
+
+	origin, _, featureHead := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.ReviewerRequest{
+		WorkspaceRoot:       root,
+		TaskID:              "task-tester-reuse",
+		RunID:               "run-tester-reuse",
+		Project:             "group/project",
+		RepositoryURL:       origin,
+		SourceBranch:        "feature/review",
+		TargetBranch:        "master",
+		HeadSHA:             featureHead,
+		RequestedReviewMode: workspace.ReviewModeFull,
+		WorkerRole:          "TesterWorker",
+	}
+	preparer := workspace.NewReviewerPreparer()
+	first, err := preparer.Prepare(context.Background(), request)
+	if err != nil {
+		t.Fatalf("prepare initial tester workspace: %v", err)
+	}
+	second, err := preparer.Prepare(context.Background(), request)
+	if err != nil {
+		t.Fatalf("reuse matching ready tester workspace: %v", err)
+	}
+	if second.PreparedAt != first.PreparedAt || second.Repository.DiffRange != first.Repository.DiffRange {
+		t.Fatalf("ready tester workspace was rebuilt instead of reused: first=%#v second=%#v", first, second)
+	}
+}
+
+// 跨角色复用仍是冲突:同一 task/run 的工作区已按 Tester 身份发布,缺省角色
+// (ReviewerWorker)的请求不得静默共享同一工作区。
+func TestReviewerPreparerRejectsRoleMismatchOnReadyWorkspace(t *testing.T) {
+	t.Parallel()
+
+	origin, _, featureHead := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.ReviewerRequest{
+		WorkspaceRoot:       root,
+		TaskID:              "task-role-mismatch",
+		RunID:               "run-role-mismatch",
+		Project:             "group/project",
+		RepositoryURL:       origin,
+		SourceBranch:        "feature/review",
+		TargetBranch:        "master",
+		HeadSHA:             featureHead,
+		RequestedReviewMode: workspace.ReviewModeFull,
+		WorkerRole:          "TesterWorker",
+	}
+	preparer := workspace.NewReviewerPreparer()
+	if _, err := preparer.Prepare(context.Background(), request); err != nil {
+		t.Fatalf("prepare tester workspace: %v", err)
+	}
+	reviewerRequest := request
+	reviewerRequest.WorkerRole = ""
+	if _, err := preparer.Prepare(context.Background(), reviewerRequest); !errors.Is(err, workspace.ErrWorkspaceConflict) {
+		t.Fatalf("role mismatch on the same task/run must stay a conflict: err=%v", err)
+	}
+}
+
 func TestReviewerPreparerConcurrentSameRunConvergesOnOneReadyWorkspace(t *testing.T) {
 	t.Parallel()
 

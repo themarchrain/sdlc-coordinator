@@ -250,6 +250,7 @@ func Merge(current Config, request UpdateRequest) Config {
 			Provider:             request.Config.CodeHost.Provider,
 			BaseURL:              request.Config.CodeHost.BaseURL,
 			ReworkAllowedUserIDs: cloneStringSlice(request.Config.CodeHost.ReworkAllowedUserIDs),
+			AutoMergeEnabled:     request.Config.CodeHost.AutoMergeEnabled,
 		},
 		IM: configuration.IMConfig{
 			Provider: request.Config.IM.Provider,
@@ -290,6 +291,7 @@ func Mask(config Config) View {
 				Provider:             config.CodeHost.Provider,
 				BaseURL:              config.CodeHost.BaseURL,
 				ReworkAllowedUserIDs: cloneStringSlice(config.CodeHost.ReworkAllowedUserIDs),
+				AutoMergeEnabled:     config.CodeHost.AutoMergeEnabled,
 			},
 			IM: configuration.EditableIMConfig{
 				Provider: config.IM.Provider,

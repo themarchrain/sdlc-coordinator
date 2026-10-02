@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"sdlc-coordinator/internal/model"
@@ -314,4 +315,60 @@ func (r *TaskRepository) BlockRunAndRequireHuman(ctx context.Context, runID, mes
 		task.LastError = message
 		return tx.Save(&task).Error
 	})
+}
+
+// ListByDeliveryBranch 按交付分支读任务(id 降序,最新在前),供验证处方
+// 反查产生该分支的开发任务;分支不唯一(历史多轮),调用方按角色过滤。
+func (r *TaskRepository) ListByDeliveryBranch(ctx context.Context, deliveryBranch string) ([]model.Task, error) {
+	branch := strings.TrimSpace(deliveryBranch)
+	if branch == "" {
+		return []model.Task{}, nil
+	}
+	var tasks []model.Task
+	if err := r.db.WithContext(ctx).
+		Where("delivery_branch = ?", branch).
+		Order("id DESC").
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by delivery branch: %w", err)
+	}
+	return tasks, nil
+}
+
+// ListSucceededVerificationsWithoutAudit 读出已完成且从未被门禁评估过的
+// 验证任务(反连接审计表):门禁每任务至多裁决一次,审计行即防重边界。
+func (r *TaskRepository) ListSucceededVerificationsWithoutAudit(ctx context.Context, limit int) ([]model.Task, error) {
+	return r.ListSucceededVerificationsWithoutAuditAfter(ctx, 0, limit)
+}
+
+// ListSucceededVerificationsWithoutAuditAfter 从 afterID 之后扫描,到尾后
+// 回绕补齐。这使未审计的瞬时失败任务保留重试机会,又不会长期
+// 占满固定取数窗口。
+func (r *TaskRepository) ListSucceededVerificationsWithoutAuditAfter(ctx context.Context, afterID uint, limit int) ([]model.Task, error) {
+	// limit 的归一点在门禁侧(默认批量);此处不代设默认值。
+	var tasks []model.Task
+	base := func() *gorm.DB {
+		return r.db.WithContext(ctx).
+			Where("type = ? AND role = ? AND status = ?", "verify_merge_request", "TesterWorker", model.TaskStatusSucceeded).
+			Where("NOT EXISTS (SELECT 1 FROM merge_gate_audits a WHERE a.task_id = tasks.task_id)")
+	}
+	if err := base().
+		Where("id > ?", afterID).
+		Order("id ASC").
+		Limit(limit).
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list unevaluated verification tasks: %w", err)
+	}
+	if afterID == 0 || len(tasks) >= limit {
+		return tasks, nil
+	}
+	var wrapped []model.Task
+	if err := base().
+		Where("id <= ?", afterID).
+		Order("id ASC").
+		Limit(limit - len(tasks)).
+		Find(&wrapped).Error; err != nil {
+		return nil, fmt.Errorf("list wrapped unevaluated verification tasks: %w", err)
+	}
+	tasks = append(tasks, wrapped...)
+	return tasks, nil
 }

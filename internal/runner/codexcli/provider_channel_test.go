@@ -25,53 +25,63 @@ func writeCodexChannelFiles(t *testing.T, workspaceRoot string) {
 }
 
 func TestProviderInjectsCoordinatorMCPServerWhenChannelPresent(t *testing.T) {
-	workspaceRoot := t.TempDir()
-	writeCodexChannelFiles(t, workspaceRoot)
-	command := &fakeCommandRunner{lines: [][]byte{[]byte(`{"type":"turn.completed","usage":{}}`)}}
-	provider := newProvider("codex-test", command)
-	channel := &runner.ResultSubmissionChannel{EndpointURL: "http://coordinator.example:8080/mcp", BearerToken: "run-token-secret-value"}
+	for _, role := range []string{"DeveloperWorker", "TesterWorker"} {
+		t.Run(role, func(t *testing.T) {
+			workspaceRoot := t.TempDir()
+			writeCodexChannelFiles(t, workspaceRoot)
+			command := &fakeCommandRunner{lines: [][]byte{[]byte(`{"type":"turn.completed","usage":{}}`)}}
+			provider := newProvider("codex-test", command)
+			channel := &runner.ResultSubmissionChannel{EndpointURL: "http://coordinator.example:8080/mcp", BearerToken: "run-token-secret-value"}
 
-	request := channelRequest(workspaceRoot, channel)
-	if _, err := provider.Execute(context.Background(), request, func(string, map[string]any) {}); err != nil {
-		t.Fatalf("execute provider: %v", err)
-	}
+			request := channelRequest(workspaceRoot, channel)
+			request.Role = role
+			if _, err := provider.Execute(context.Background(), request, func(string, map[string]any) {}); err != nil {
+				t.Fatalf("execute provider: %v", err)
+			}
 
-	joinedArgs := strings.Join(command.spec.Args, " ")
-	for _, setting := range []string{
-		`mcp_servers.coordinator.url="http://coordinator.example:8080/mcp"`,
-		`mcp_servers.coordinator.bearer_token_env_var="COORDINATOR_RUN_TOKEN"`,
-	} {
-		if !containsArgumentPair(command.spec.Args, "-c", setting) {
-			t.Fatalf("missing -c %s in %#v", setting, command.spec.Args)
-		}
-	}
-	if strings.Contains(joinedArgs, "run-token-secret-value") {
-		t.Fatalf("run token leaked into arguments: %#v", command.spec.Args)
-	}
-	environment := environmentMap(command.spec.Env)
-	if environment["COORDINATOR_RUN_TOKEN"] != "run-token-secret-value" {
-		t.Fatalf("run token missing from codex environment: %#v", environment)
-	}
-	if last := command.spec.Args[len(command.spec.Args)-1]; last != "-" {
-		t.Fatalf("stdin placeholder must stay last: %#v", command.spec.Args)
+			joinedArgs := strings.Join(command.spec.Args, " ")
+			for _, setting := range []string{
+				`mcp_servers.coordinator.url="http://coordinator.example:8080/mcp"`,
+				`mcp_servers.coordinator.bearer_token_env_var="COORDINATOR_RUN_TOKEN"`,
+			} {
+				if !containsArgumentPair(command.spec.Args, "-c", setting) {
+					t.Fatalf("missing -c %s in %#v", setting, command.spec.Args)
+				}
+			}
+			if strings.Contains(joinedArgs, "run-token-secret-value") {
+				t.Fatalf("run token leaked into arguments: %#v", command.spec.Args)
+			}
+			environment := environmentMap(command.spec.Env)
+			if environment["COORDINATOR_RUN_TOKEN"] != "run-token-secret-value" {
+				t.Fatalf("run token missing from codex environment: %#v", environment)
+			}
+			if last := command.spec.Args[len(command.spec.Args)-1]; last != "-" {
+				t.Fatalf("stdin placeholder must stay last: %#v", command.spec.Args)
+			}
+		})
 	}
 }
 
 func TestProviderOmitsMCPServerWithoutChannel(t *testing.T) {
-	workspaceRoot := t.TempDir()
-	writeCodexChannelFiles(t, workspaceRoot)
-	command := &fakeCommandRunner{lines: [][]byte{[]byte(`{"type":"turn.completed","usage":{}}`)}}
-	provider := newProvider("codex-test", command)
-
-	if _, err := provider.Execute(context.Background(), channelRequest(workspaceRoot, nil), func(string, map[string]any) {}); err != nil {
-		t.Fatalf("execute provider: %v", err)
-	}
-	joinedArgs := strings.Join(command.spec.Args, " ")
-	if strings.Contains(joinedArgs, "mcp_servers") || strings.Contains(joinedArgs, "COORDINATOR_RUN_TOKEN") {
-		t.Fatalf("mcp config injected without channel: %#v", command.spec.Args)
-	}
-	if _, exists := environmentMap(command.spec.Env)["COORDINATOR_RUN_TOKEN"]; exists {
-		t.Fatal("run token env injected without channel")
+	for _, role := range []string{"DeveloperWorker", "TesterWorker"} {
+		t.Run(role, func(t *testing.T) {
+			workspaceRoot := t.TempDir()
+			writeCodexChannelFiles(t, workspaceRoot)
+			command := &fakeCommandRunner{lines: [][]byte{[]byte(`{"type":"turn.completed","usage":{}}`)}}
+			provider := newProvider("codex-test", command)
+			request := channelRequest(workspaceRoot, nil)
+			request.Role = role
+			if _, err := provider.Execute(context.Background(), request, func(string, map[string]any) {}); err != nil {
+				t.Fatalf("execute provider: %v", err)
+			}
+			joinedArgs := strings.Join(command.spec.Args, " ")
+			if strings.Contains(joinedArgs, "mcp_servers") || strings.Contains(joinedArgs, "COORDINATOR_RUN_TOKEN") {
+				t.Fatalf("mcp config injected without channel: %#v", command.spec.Args)
+			}
+			if _, exists := environmentMap(command.spec.Env)["COORDINATOR_RUN_TOKEN"]; exists {
+				t.Fatal("run token env injected without channel")
+			}
+		})
 	}
 }
 

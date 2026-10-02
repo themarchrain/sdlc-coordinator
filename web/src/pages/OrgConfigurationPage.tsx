@@ -11,6 +11,7 @@ import {
   message,
   Select,
   Steps,
+  Switch,
   Tag,
   Typography,
 } from 'antd'
@@ -152,6 +153,9 @@ function CodeHostStep({ people, onManagePeople }: { people: Person[]; onManagePe
     <div className="configuration-form-grid">
       <Form.Item name={['codehost', 'provider']} label="代码托管平台" rules={[{ required: true }]}><Select aria-label="代码托管平台" options={[{ value: 'gitlab', label: 'GitLab' }, { value: 'gitea', label: 'Gitea' }, { value: 'github', label: 'GitHub' }]} /></Form.Item>
       <Form.Item name={['codehost', 'base_url']} label="平台地址" rules={[{ required: true }, { validator: validateHTTPURL }]}><Input placeholder="https://gitlab.example.com" /></Form.Item>
+      <Form.Item name={['codehost', 'auto_merge_enabled']} label="自动合并" valuePropName="checked" extra="开启后，审查与验证证据全绿的 MR 由系统自动合并；缺一环即回落人工。默认关闭。">
+        <Switch aria-label="自动合并" checkedChildren="启用" unCheckedChildren="停用" />
+      </Form.Item>
       <Form.Item name={['runner', 'provider']} label="执行 CLI" extra="组织任务用哪个命令行 Agent 执行。">
         <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, { value: 'codex-cli', label: 'Codex CLI' }, { value: 'claude-cli', label: 'Claude CLI' }]} />
       </Form.Item>

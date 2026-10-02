@@ -95,6 +95,26 @@ describe('OrgConfigurationPage', () => {
     expect(await screen.findByText('组织配置已保存并生效')).toBeInTheDocument()
   })
 
+  it('carries the auto merge switch in the saved payload', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue({ ...view, revision: 5 })
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+    fireEvent.click(screen.getByRole('switch', { name: '自动合并' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        codehost: expect.objectContaining({ auto_merge_enabled: true }),
+      }),
+    }))
+  })
+
   it('preserves api-managed im mention maps when saving', async () => {
     const withMentions = {
       ...view,

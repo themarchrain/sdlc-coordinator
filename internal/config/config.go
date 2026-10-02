@@ -155,6 +155,7 @@ func loadSchedulerSettings() SchedulerSettings {
 			FinalizationLimit:   getEnvNonNegativeInt("TICK_FINALIZATION_LIMIT", 10),
 			RecoveryLimit:       getEnvNonNegativeInt("TICK_RECOVERY_LIMIT", 10),
 			EffectLimit:         getEnvNonNegativeInt("TICK_EFFECT_LIMIT", 0),
+			GateLimit:           getEnvNonNegativeInt("TICK_GATE_LIMIT", 5),
 		},
 	}
 }

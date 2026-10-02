@@ -54,6 +54,9 @@ type CodeHostConfig struct {
 	Provider             string   `json:"provider"`
 	BaseURL              string   `json:"base_url"`
 	ReworkAllowedUserIDs []string `json:"rework_allowed_user_ids"`
+	// AutoMergeEnabled 是自动合并门禁的组织级开关:握有合并写权限的能力
+	// 必须显式开启,缺省零值=关闭(观察期取证不受开关影响)。
+	AutoMergeEnabled bool `json:"auto_merge_enabled"`
 }
 
 // UnmarshalJSON 兼容历史快照:rework_allowed_user_ids 曾以数字数组落库,

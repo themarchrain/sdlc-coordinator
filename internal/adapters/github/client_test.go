@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -236,5 +237,193 @@ func TestNewClientDerivesAPIHost(t *testing.T) {
 	client := NewClient("https://github.com", "test-token")
 	if client.baseURL != "https://api.github.com" {
 		t.Fatalf("baseURL = %q, want https://api.github.com", client.baseURL)
+	}
+}
+
+func TestMergePullRequestSendsHeadAssertionAndReturnsCommit(t *testing.T) {
+	var seenPath string
+	var seenMethod string
+	var seenPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenMethod = r.Method
+		seenPath = r.URL.EscapedPath()
+		_ = json.NewDecoder(r.Body).Decode(&seenPayload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"sha":"dddd0444d","merged":true,"message":"Pull Request successfully merged"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	result, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "cccccccccccccccccccccccccccccccccccccccc",
+		MergeMethod:     "squash",
+		CommitTitle:     "feat: merge verification",
+	})
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if seenMethod != http.MethodPut || seenPath != "/repos/agent/framework/pulls/7/merge" {
+		t.Fatalf("unexpected call: %s %s", seenMethod, seenPath)
+	}
+	if seenPayload["sha"] != "cccccccccccccccccccccccccccccccccccccccc" || seenPayload["merge_method"] != "squash" || seenPayload["commit_title"] != "feat: merge verification" {
+		t.Fatalf("head assertion or merge options missing: %#v", seenPayload)
+	}
+	if !result.Merged || result.MergedCommitSHA != "dddd0444d" {
+		t.Fatalf("unexpected merge result: %#v", result)
+	}
+}
+
+func TestMergePullRequestHeadMismatchMapsToSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message":"Head branch was modified out of the base branch"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "cccccccccccccccccccccccccccccccccccccccc",
+	})
+	if !errors.Is(err, codehost.ErrMergeHeadMismatch) {
+		t.Fatalf("head mismatch must map to the sentinel, got %v", err)
+	}
+}
+
+func TestMergePullRequestProtectionRejectionMapsToSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Required status checks have not passed"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "cccccccccccccccccccccccccccccccccccccccc",
+	})
+	if !errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("protection rejection must map to the sentinel, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Required status checks") {
+		t.Fatalf("platform reason must be carried, got %v", err)
+	}
+}
+
+func TestMergePullRequestPrimaryRateLimit403StaysTransientRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", "1799999999")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !codehost.IsTransientRejection(err) {
+		t.Fatalf("primary rate limit 403 must stay transient, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("primary rate limit 403 must not become deterministic, got %v", err)
+	}
+}
+
+func TestMergePullRequestSecondaryRateLimit403StaysTransientRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !codehost.IsTransientRejection(err) {
+		t.Fatalf("secondary rate limit 403 must stay transient, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("secondary rate limit 403 must not become deterministic, got %v", err)
+	}
+}
+
+// 读路径 404(PR 已删/仓库转移)与合并路径同属确定性拒绝:门禁据此回落
+// 人工而不是无限重评。
+func TestGetMergeRequestNotFoundMapsToRejectionSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.GetMergeRequest(context.Background(), "agent/framework", 7)
+	if !errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("read 404 must map to the rejection sentinel, got %v", err)
+	}
+}
+
+func TestGetMergeRequestReturnsMergedState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"number":7,"merged":true,"merge_commit_sha":"merged444","head":{"ref":"feature","sha":"abc"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	mergeRequest, err := client.GetMergeRequest(context.Background(), "agent/framework", 7)
+	if err != nil {
+		t.Fatalf("get merge request: %v", err)
+	}
+	if !mergeRequest.Merged || mergeRequest.MergeCommitSHA != "merged444" {
+		t.Fatalf("merged state must surface: %#v", mergeRequest)
+	}
+}
+
+func TestMergePullRequest404MapsToRejectionSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !errors.Is(err, codehost.ErrMergeRejected) {
+		t.Fatalf("merge 404 must map to the rejection sentinel, got %v", err)
+	}
+}
+
+// 429/408 是本系统语义里唯一该重试的 4xx:mapMergeStatusError 不得把它
+// 改写成确定性拒绝,否则限流窗口内的验证任务会被成批永久记为 fallback。
+func TestMergePullRequest429StaysTransientRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "agent/framework", 7, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc",
+	})
+	if !codehost.IsTransientRejection(err) {
+		t.Fatalf("429 must stay a transient rejection, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) || errors.Is(err, codehost.ErrMergeHeadMismatch) {
+		t.Fatalf("429 must not be rewritten to a deterministic sentinel, got %v", err)
 	}
 }

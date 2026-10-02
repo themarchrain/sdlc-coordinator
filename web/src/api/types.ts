@@ -242,6 +242,7 @@ export interface RegisteredRepository {
   default_branch: string
   status: string
   last_configuration_error: string
+  verify_command?: string
 }
 
 export interface RepositoryCreateInput {
@@ -254,6 +255,7 @@ export interface RepositoryCreateInput {
   webhook_secret: string
   codehost_issue_labels?: string[]
   reviewer_mentions?: string
+  verify_command?: string
 }
 
 export interface RepositoryPatchInput {
@@ -266,6 +268,7 @@ export interface RepositoryPatchInput {
   webhook_secret?: string
   codehost_issue_labels?: string[]
   reviewer_mentions?: string
+  verify_command?: string
 }
 
 export type ConfigurationMode = 'setup_pending' | 'ready' | 'restart_required' | 'configuration_error'
@@ -330,6 +333,7 @@ export interface TenantConfigurationConfig {
     provider: 'gitlab' | 'gitea' | 'github'
     base_url: string
     rework_allowed_user_ids: string[]
+    auto_merge_enabled?: boolean
   }
   im: {
     provider: '' | 'none' | 'telegram' | 'feishu'

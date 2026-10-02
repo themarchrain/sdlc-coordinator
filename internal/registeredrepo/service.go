@@ -20,6 +20,9 @@ var (
 	ErrIdentityMismatch  = errors.New("repository_identity_mismatch")
 	ErrNotFound          = errors.New("repository_not_found")
 	ErrInvalidRepository = errors.New("invalid_repository")
+	// ErrVerifyCommandTooLong 表示仓库级验证命令超过长度上限:它是自由文本
+	// 单命令声明,超长值几乎必然是误填,落库前显式拒绝。
+	ErrVerifyCommandTooLong = errors.New("verify_command_too_long")
 	// ErrWebhookSecretRequired 表示按仓 webhook secret 缺失。secret 是该仓事件
 	// 验签的唯一凭据(fail-closed),缺失时 enable 必须拒绝,把补配强制在配置面。
 	ErrWebhookSecretRequired = errors.New("webhook_secret_required")
@@ -59,6 +62,7 @@ type CreateRequest struct {
 	WebhookSecret       string
 	CodeHostIssueLabels []string
 	ReviewerMentions    string
+	VerifyCommand       string
 }
 
 type PatchRequest struct {
@@ -71,6 +75,7 @@ type PatchRequest struct {
 	WebhookSecret       string
 	CodeHostIssueLabels *[]string
 	ReviewerMentions    *string
+	VerifyCommand       *string
 }
 
 type View struct {
@@ -86,6 +91,7 @@ type View struct {
 	Status                  RepositoryStatus
 	CodeHostIssueLabels     []string
 	LastConfigurationError  string
+	VerifyCommand           string
 }
 
 func ViewFrom(repo *RegisteredRepository) View {
@@ -105,7 +111,18 @@ func ViewFrom(repo *RegisteredRepository) View {
 		Status:                  repo.Status,
 		CodeHostIssueLabels:     decodeLabels(repo.CodeHostIssueLabels),
 		LastConfigurationError:  repo.LastConfigurationError,
+		VerifyCommand:           repo.VerifyCommand,
 	}
+}
+
+const maxVerifyCommandLength = 512
+
+func normalizeVerifyCommand(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) > maxVerifyCommandLength {
+		return "", ErrVerifyCommandTooLong
+	}
+	return trimmed, nil
 }
 
 type Service struct {
@@ -229,6 +246,10 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidPlatformIdentity, err)
 	}
+	verifyCommand, err := normalizeVerifyCommand(request.VerifyCommand)
+	if err != nil {
+		return nil, err
+	}
 	// secret 摄入即去首尾空白:平台侧按原值计算签名,行内保存归一化值,
 	// 避免配置面误带空白导致运行期验签恒败。
 	repo := &RegisteredRepository{
@@ -241,6 +262,7 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 		TokenScopeAttested:  true,
 		CodeHostIssueLabels: encodeLabels(request.CodeHostIssueLabels),
 		ReviewerMentions:    request.ReviewerMentions,
+		VerifyCommand:       verifyCommand,
 		Status:              StatusConfiguring,
 	}
 	if repo.DisplayName == "" {
@@ -411,6 +433,13 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 	}
 	if request.ReviewerMentions != nil {
 		repo.ReviewerMentions = *request.ReviewerMentions
+	}
+	if request.VerifyCommand != nil {
+		normalized, normErr := normalizeVerifyCommand(*request.VerifyCommand)
+		if normErr != nil {
+			return nil, normErr
+		}
+		repo.VerifyCommand = normalized
 	}
 	if pathChanged || providerChanged || baseURLChanged {
 		if err := s.ensureRouteIdentityAvailable(ctx, repo); err != nil {

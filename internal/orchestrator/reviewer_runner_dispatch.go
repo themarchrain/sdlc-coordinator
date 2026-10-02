@@ -197,6 +197,10 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 	if err != nil {
 		return err
 	}
+	// 通知物化先于错误信息回写:AdvanceTask 已把停靠状态落库,LastError
+	// 回写遇瞬态故障提前返回时 run 已终态、后续对账被吸收,错过即永失
+	// (与 recordDispatchFailure 的吞错照发对齐)。
+	o.materializeTesterStopIMEffect(ctx, advanced, message)
 	advanced.LastError = message
 	return o.tasks.Update(ctx, advanced)
 }

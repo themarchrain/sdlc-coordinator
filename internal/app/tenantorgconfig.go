@@ -146,3 +146,19 @@ func (e *tenantEngine) tenantWebhookView(ctx context.Context) (*handlers.Webhook
 		GitHubNormalizer: events.NewGitHubNormalizer(events.WithGitHubReworkAllowedUserIDs(ids)),
 	}, nil
 }
+
+// tenantAutoMergeEnabledLookup 产出自动合并门禁的组织级开关来源(评估时
+// 现取,保存即生效);配置读失败按关闭处理——握有合并写权限的能力,在
+// 无法确认授权状态时一律不动(fail-closed)。
+func tenantAutoMergeEnabledLookup(provider *orgconfig.Provider, logger *zap.Logger, tenantID uint) func(context.Context) bool {
+	return func(ctx context.Context) bool {
+		config, err := provider.Get(ctx)
+		if err != nil {
+			if logger != nil {
+				logger.Warn("load tenant runtime config for auto merge failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
+			}
+			return false
+		}
+		return config.CodeHost.AutoMergeEnabled
+	}
+}

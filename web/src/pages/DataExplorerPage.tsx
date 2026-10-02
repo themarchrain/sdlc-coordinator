@@ -308,6 +308,7 @@ function optionLabel(value: string) {
     pending: '待处理', received: '已接收', normalized: '已规范化', task_created: '已创建 Task', running: '运行中', finalizing: '结果收口中',
     processing: '处理中', ready: '已就绪', resolved: '已解决', blocked: '已阻塞', unknown: '结果未知', succeeded: '已成功', failed: '已失败',
     ignored: '已忽略', skipped: '已跳过', develop_from_issue: 'Issue 开发', review_mr: 'MR 审查', rework_merge_request: 'MR 接续开发',
+    verify_merge_request: 'MR 验证', DeveloperWorker: '开发', TesterWorker: '验证', ReviewerWorker: '审查',
     merge_request: 'Merge Request', issue: 'Issue', branch: '分支', diff: 'Diff', test_result: '测试结果', commit: 'Commit', generic: '其他',
     send_im_message: '发送 IM 消息', create_issue: '创建 Issue', create_merge_request: '创建 MR',
     create_issue_note: '创建 Issue 评论', create_merge_request_note: '创建 MR 评论', set_issue_labels: '设置 Issue 标签',
