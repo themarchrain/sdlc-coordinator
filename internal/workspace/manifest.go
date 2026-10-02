@@ -130,12 +130,23 @@ func validateReviewerRequest(req ReviewerRequest) (ReviewerRequest, error) {
 	return req, nil
 }
 
+// effectiveWorkerRole 归一请求角色:空值视为 ReviewerWorker 以兼容既有
+// 调用方;验证任务显式带 TesterWorker。写入 manifest 与复用匹配共用本
+// 归一,保证两个口径永不漂移。
+func effectiveWorkerRole(role string) string {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "ReviewerWorker"
+	}
+	return role
+}
+
 func manifestMatchesReviewerRequest(manifest *Manifest, req ReviewerRequest) bool {
 	return manifest != nil &&
 		manifest.Status == ManifestStatusReady &&
 		manifest.TaskID == req.TaskID &&
 		manifest.RunID == req.RunID &&
-		manifest.Role == "ReviewerWorker" &&
+		manifest.Role == effectiveWorkerRole(req.WorkerRole) &&
 		manifest.Repository.Project == req.Project &&
 		manifest.Repository.SourceBranch == req.SourceBranch &&
 		manifest.Repository.TargetBranch == req.TargetBranch &&
