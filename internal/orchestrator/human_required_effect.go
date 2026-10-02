@@ -59,6 +59,19 @@ func (o *Orchestrator) materializeHumanRequiredIMEffect(ctx context.Context, tas
 	_ = o.effects.UpsertByDedupeKey(ctx, effect)
 }
 
+// materializeTesterStopIMEffect 给无结构化结果而停靠人工位的 tester 任务补
+// IM 触点:派发失败与 runner 执行失败两条路径不经过结果应用,重试预算耗尽
+// 落 blocked 后若不通知即无声消失。角色收窄到 tester 控制风险半径
+// (developer/reviewer 同类停靠的统一通知收口挂账);停靠状态门禁与去重由
+// materializeHumanRequiredIMEffect 裁决,retry_pending 不打扰,迟到失败撞上
+// 并发终态时调用点根本不会到达这里。
+func (o *Orchestrator) materializeTesterStopIMEffect(ctx context.Context, task *model.Task, cause string) {
+	if task == nil || task.Role != "TesterWorker" {
+		return
+	}
+	o.materializeHumanRequiredIMEffect(ctx, task, cause)
+}
+
 func humanRequiredIMBody(task *model.Task, cause string) string {
 	runID := "none"
 	if task != nil && task.CurrentRunID != nil && strings.TrimSpace(*task.CurrentRunID) != "" {

@@ -198,7 +198,11 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 		return err
 	}
 	advanced.LastError = message
-	return o.tasks.Update(ctx, advanced)
+	if err := o.tasks.Update(ctx, advanced); err != nil {
+		return err
+	}
+	o.materializeTesterStopIMEffect(ctx, advanced, message)
+	return nil
 }
 
 // buildReviewerWorkspaceRequest 组装 reviewer 工作区请求并按任务解析注册仓行

@@ -557,6 +557,7 @@ func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Ta
 	if err == nil {
 		advanced.LastError = cause.Error()
 		_ = o.tasks.Update(ctx, advanced)
+		o.materializeTesterStopIMEffect(ctx, advanced, cause.Error())
 	}
 }
 
