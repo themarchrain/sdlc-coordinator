@@ -107,6 +107,74 @@ func TestProviderOmitsMCPConfigWithoutChannel(t *testing.T) {
 	}
 }
 
+func TestProviderInjectsCoordinatorMCPConfigForTesterWorker(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	writeClaudeTestFile(t, workspaceRoot, "prompt.md", "Verify the task.\n")
+	writeClaudeTestFile(t, workspaceRoot, "result-schema.json", `{"type":"object","required":["verdict"],"properties":{"verdict":{"type":"string"}}}`)
+	command := &fakeCommandRunner{lines: [][]byte{
+		[]byte(`{"type":"result","subtype":"success","is_error":false,"structured_output":{"verdict":"passed"}}`),
+	}}
+	var configRaw []byte
+	command.onRun = func(spec commandSpec) {
+		for index, arg := range spec.Args {
+			if arg == "--mcp-config" && index+1 < len(spec.Args) {
+				raw, err := os.ReadFile(spec.Args[index+1])
+				if err != nil {
+					t.Errorf("read mcp config: %v", err)
+					return
+				}
+				configRaw = raw
+				return
+			}
+		}
+		t.Errorf("--mcp-config missing: %#v", spec.Args)
+	}
+	provider := newProvider("claude-test", command)
+	channel := &runner.ResultSubmissionChannel{EndpointURL: "http://coordinator.example:8080/mcp", BearerToken: "tester-run-token"}
+	_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-claude-tester", TaskID: "task-claude-tester", Role: "TesterWorker",
+		WorkspacePath: workspaceRoot, PromptFile: "prompt.md", SchemaFile: "result-schema.json",
+		Provider: runner.ProviderConfig{Name: "claude-cli", Revision: 2}, ResultSubmission: channel,
+	}, func(string, map[string]any) {})
+	if err != nil {
+		t.Fatalf("execute TesterWorker provider: %v", err)
+	}
+	var config struct {
+		MCPServers map[string]struct {
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(configRaw, &config); err != nil {
+		t.Fatalf("decode mcp config: %v", err)
+	}
+	server := config.MCPServers["coordinator"]
+	if server.URL != channel.EndpointURL || server.Headers["Authorization"] != "Bearer "+channel.BearerToken {
+		t.Fatalf("TesterWorker MCP config missing endpoint or run credential: %#v", server)
+	}
+}
+
+func TestProviderOmitsMCPConfigForTesterWorkerWithoutChannel(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	writeClaudeTestFile(t, workspaceRoot, "prompt.md", "Verify the task.\n")
+	writeClaudeTestFile(t, workspaceRoot, "result-schema.json", `{"type":"object","required":["verdict"],"properties":{"verdict":{"type":"string"}}}`)
+	command := &fakeCommandRunner{lines: [][]byte{
+		[]byte(`{"type":"result","subtype":"success","is_error":false,"structured_output":{"verdict":"passed"}}`),
+	}}
+	provider := newProvider("claude-test", command)
+	if _, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-claude-tester-plain", TaskID: "task-claude-tester-plain", Role: "TesterWorker",
+		WorkspacePath: workspaceRoot, PromptFile: "prompt.md", SchemaFile: "result-schema.json",
+		Provider: runner.ProviderConfig{Name: "claude-cli", Revision: 2},
+	}, func(string, map[string]any) {}); err != nil {
+		t.Fatalf("execute TesterWorker provider: %v", err)
+	}
+	joinedArgs := strings.Join(command.spec.Args, " ")
+	if strings.Contains(joinedArgs, "mcp") || strings.Contains(joinedArgs, "mcp-config") {
+		t.Fatalf("mcp flags injected without channel: %#v", command.spec.Args)
+	}
+}
+
 func TestClaudeStreamSurfacesSubmitToolUse(t *testing.T) {
 	var events []capturedProviderEvent
 	parser := &streamParser{emit: func(eventType string, payload map[string]any) {

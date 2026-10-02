@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -25,16 +26,21 @@ import (
 const mcpTestEndpointTask = "task-mcp-handler"
 
 type mcpFixture struct {
-	handler    *MCPHandler
-	router     *gin.Engine
-	secret     []byte
-	rejections *repository.ResultRejectionRepository
-	tasks      *repository.TaskRepository
-	runs       *repository.RunRepository
-	now        func() time.Time
+	handler     *MCPHandler
+	router      *gin.Engine
+	secret      []byte
+	rejections  *repository.ResultRejectionRepository
+	submissions *repository.ResultSubmissionRepository
+	tasks       *repository.TaskRepository
+	runs        *repository.RunRepository
+	now         func() time.Time
 }
 
 func newMCPFixture(t *testing.T) mcpFixture {
+	return newMCPFixtureWithCodeHost(t, false)
+}
+
+func newMCPFixtureWithCodeHost(t *testing.T, withCodeHost bool) mcpFixture {
 	t.Helper()
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {
@@ -47,11 +53,15 @@ func newMCPFixture(t *testing.T) mcpFixture {
 	runs := repository.NewRunRepository(db)
 	submissions := repository.NewResultSubmissionRepository(db)
 	rejections := repository.NewResultRejectionRepository(db)
-	orch := orchestrator.New(tasks, runs,
+	options := []orchestrator.Option{
 		orchestrator.WithArtifactRepository(repository.NewArtifactRepository(db)),
 		orchestrator.WithWritebackRepository(repository.NewWritebackRepository(db)),
 		orchestrator.WithResultSubmissionRepository(submissions),
-	)
+	}
+	if withCodeHost {
+		options = append(options, orchestrator.WithCodeHostBackendResolver(mcpCodeHostResolver{}))
+	}
+	orch := orchestrator.New(tasks, runs, options...)
 	submitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
 		return orch.SubmitResult(ctx, request)
 	})
@@ -66,10 +76,42 @@ func newMCPFixture(t *testing.T) mcpFixture {
 	router.POST("/mcp", handler.Handle)
 	router.DELETE("/mcp", handler.CloseSession)
 	router.GET("/mcp", handler.Handle)
-	return mcpFixture{handler: handler, router: router, secret: secret, rejections: rejections, tasks: tasks, runs: runs, now: time.Now}
+	return mcpFixture{handler: handler, router: router, secret: secret, rejections: rejections, submissions: submissions, tasks: tasks, runs: runs, now: time.Now}
 }
 
 type stubMCPFinalizer struct{ calls int }
+
+type mcpCodeHostResolver struct{}
+
+func (mcpCodeHostResolver) Resolve(context.Context, *model.Task, *model.Writeback) (codehost.Backend, error) {
+	return mcpCodeHostBackend{}, nil
+}
+
+type mcpCodeHostBackend struct{}
+
+func (mcpCodeHostBackend) CreateIssue(context.Context, string, codehost.CreateIssueRequest) (*codehost.Issue, error) {
+	return &codehost.Issue{IID: 1}, nil
+}
+
+func (mcpCodeHostBackend) CreateMergeRequest(context.Context, string, codehost.CreateMergeRequestRequest) (*codehost.MergeRequest, error) {
+	return &codehost.MergeRequest{IID: 1}, nil
+}
+
+func (mcpCodeHostBackend) CreateIssueNote(context.Context, string, int, codehost.CreateNoteRequest) (*codehost.Note, error) {
+	return &codehost.Note{ID: 1}, nil
+}
+
+func (mcpCodeHostBackend) CreateMergeRequestNote(_ context.Context, _ string, _ int, request codehost.CreateNoteRequest) (*codehost.Note, error) {
+	return &codehost.Note{ID: 1, Body: request.Body}, nil
+}
+
+func (mcpCodeHostBackend) SetIssueLabels(context.Context, string, int, codehost.SetLabelsRequest) (*codehost.Issue, error) {
+	return &codehost.Issue{IID: 1}, nil
+}
+
+func (mcpCodeHostBackend) SetMergeRequestLabels(context.Context, string, int, codehost.SetLabelsRequest) (*codehost.MergeRequest, error) {
+	return &codehost.MergeRequest{IID: 1}, nil
+}
 
 func (f *stubMCPFinalizer) Finalize(_ context.Context, _ workspace.DeveloperFinalizeRequest) (*workspace.DeveloperDelivery, error) {
 	f.calls++
@@ -209,6 +251,63 @@ func TestMCPToolsListIsRoleFiltered(t *testing.T) {
 	}
 	if tool["inputSchema"] == nil {
 		t.Fatal("tool schema must be published")
+	}
+}
+
+func TestMCPTesterToolListAndSubmissionPersistBusinessResult(t *testing.T) {
+	f := newMCPFixtureWithCodeHost(t, true)
+	const taskID, runID = "task-mcp-tester", "run-mcp-tester"
+	current := runID
+	repositoryID := "repo-mcp-fixture"
+	task := &model.Task{
+		TaskID: taskID, DedupeKey: "mcp-tester-" + runID, Type: "verify_merge_request", Role: "TesterWorker",
+		TargetRepo: "group/project", SourceRepo: "group/project", RepositoryID: &repositoryID, Objective: "verify MR", AcceptanceCriteria: "report test evidence",
+		Status: model.TaskStatusRunning, CurrentRunID: &current,
+		ContextJSON: `{"project":{"path":"group/project"},"merge_request":{"iid":21,"url":"https://gitlab.example/group/project/-/merge_requests/21","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"repos":[{"name":"project","url":"https://gitlab.example/group/project.git","branch":"master","access":"readable"}]}`,
+	}
+	run := &model.Run{RunID: runID, TaskID: taskID, WorkerRole: "TesterWorker", Status: model.RunStatusRunning,
+		InputJSON: `{"verification":{"floor_command":"go test ./..."}}`}
+	if err := f.tasks.Create(context.Background(), task); err != nil {
+		t.Fatalf("create TesterWorker task: %v", err)
+	}
+	if err := f.runs.Create(context.Background(), run); err != nil {
+		t.Fatalf("create TesterWorker run: %v", err)
+	}
+	token := f.token(taskID, runID, "TesterWorker", f.now())
+
+	_, response := f.postRPC(t, token, "tools/list", map[string]any{})
+	result, _ := response["result"].(map[string]any)
+	tools, _ := result["tools"].([]any)
+	if len(tools) != 1 {
+		t.Fatalf("TesterWorker token must see exactly its own tool: %#v", tools)
+	}
+	tool, _ := tools[0].(map[string]any)
+	if tool["name"] != results.SubmitTesterResultTool {
+		t.Fatalf("unexpected TesterWorker tool: %#v", tool)
+	}
+
+	code, toolResult, payload := f.callTool(t, token, results.SubmitTesterResultTool,
+		`{"task_id":"task-mcp-tester","run_id":"run-mcp-tester","outcome":"verification_passed","summary":"tests passed","tests":[{"command":"go test ./...","passed":true,"summary":"ok"}]}`)
+	if code != http.StatusOK || toolResult["isError"].(bool) || toolStatus(payload) != "accepted" {
+		t.Fatalf("TesterWorker submission must be accepted: code=%d result=%#v payload=%#v", code, toolResult, payload)
+	}
+	storedTask, err := f.tasks.GetByTaskID(context.Background(), taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedRun, err := f.runs.GetByRunID(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedTask.Status != model.TaskStatusSucceeded || storedRun.Status != model.RunStatusSucceeded {
+		t.Fatalf("accepted TesterWorker result must finalize task and run: task=%s run=%s", storedTask.Status, storedRun.Status)
+	}
+	submission, err := f.submissions.GetByRunID(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submission.Role != "TesterWorker" || submission.Status != model.ResultSubmissionStatusSucceeded {
+		t.Fatalf("accepted TesterWorker submission must be persisted: %#v", submission)
 	}
 }
 
