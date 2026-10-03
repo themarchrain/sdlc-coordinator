@@ -42,3 +42,14 @@ It does not own:
 - Code-host control-plane side effects go through adapters. Agents do not call CodeHost APIs directly.
 - Persist state first, then emit external side effects.
 - If a design would make the coordinator stop being the only state source, do not do it.
+- Except merge commits, commit messages must use this exact shape:
+
+  ```
+  feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert: <concise one-line summary>
+
+  - Key point 1
+  - Key point 2
+  - ...
+  ```
+
+  A scope segment is not allowed, e.g. `fix(auth): ...`.
