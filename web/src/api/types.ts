@@ -243,6 +243,8 @@ export interface RegisteredRepository {
   status: string
   last_configuration_error: string
   verify_command?: string
+  git_author_name?: string
+  git_author_email?: string
 }
 
 export interface RepositoryCreateInput {
@@ -256,6 +258,8 @@ export interface RepositoryCreateInput {
   codehost_issue_labels?: string[]
   reviewer_mentions?: string
   verify_command?: string
+  git_author_name?: string
+  git_author_email?: string
 }
 
 export interface RepositoryPatchInput {
@@ -269,6 +273,8 @@ export interface RepositoryPatchInput {
   codehost_issue_labels?: string[]
   reviewer_mentions?: string
   verify_command?: string
+  git_author_name?: string
+  git_author_email?: string
 }
 
 export type ConfigurationMode = 'setup_pending' | 'ready' | 'restart_required' | 'configuration_error'
