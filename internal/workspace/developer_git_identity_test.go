@@ -64,6 +64,7 @@ func TestDeveloperFinalizerCommitsAIAuthoredMessageWithTrustedIdentity(t *testin
 	message := "fix: reject invalid repository state\n\n- Validate the state before delivery\n- Cover the failure path with a regression test"
 	if _, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
 		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: message,
+		GitAuthorName: request.GitAuthorName, GitAuthorEmail: request.GitAuthorEmail,
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	}); err != nil {
@@ -104,6 +105,7 @@ func TestDeveloperFinalizerIgnoresAmbientAuthorEnvironment(t *testing.T) {
 	if _, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
 		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
 		CommitMessage: "fix: reject invalid repository state",
+		GitAuthorName: request.GitAuthorName, GitAuthorEmail: request.GitAuthorEmail,
 		TaskType:      request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	}); err != nil {
@@ -111,6 +113,61 @@ func TestDeveloperFinalizerIgnoresAmbientAuthorEnvironment(t *testing.T) {
 	}
 	if got := strings.TrimSpace(runGit(t, repoRoot, "show", "-s", "--format=%an %ae")); got != "Release Bot bot@example.com" {
 		t.Fatalf("ambient environment leaked into commit identity: %q", got)
+	}
+}
+
+func TestDeveloperFinalizerOverridesRunnerTamperedIdentity(t *testing.T) {
+	origin, targetSHA, _ := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.DeveloperRequest{
+		WorkspaceRoot: root, TaskID: "task-tamper", RunID: "run-tamper", TaskType: "develop_from_issue",
+		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-tamper",
+		GitAuthorName: "Release Bot", GitAuthorEmail: "bot@example.com",
+	}
+	repoRoot := prepareDeveloperRepo(t, request)
+	// 模拟共享工作区上的 Runner 改写仓库本地 config:git status 不显示这种改动。
+	runGit(t, repoRoot, "config", "--local", "user.name", "runner-tampered")
+	runGit(t, repoRoot, "config", "--local", "user.email", "runner@example.com")
+	if err := os.WriteFile(filepath.Join(repoRoot, "fix.go"), []byte("package fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
+		CommitMessage: "fix: reject invalid repository state",
+		GitAuthorName: request.GitAuthorName, GitAuthorEmail: request.GitAuthorEmail,
+		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
+	}); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	if got := strings.TrimSpace(runGit(t, repoRoot, "show", "-s", "--format=%an %ae")); got != "Release Bot bot@example.com" {
+		t.Fatalf("runner-tampered config leaked into commit identity: %q", got)
+	}
+}
+
+func TestDeveloperFinalizerPreservesConsecutiveBlankLines(t *testing.T) {
+	origin, targetSHA, _ := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.DeveloperRequest{
+		WorkspaceRoot: root, TaskID: "task-blank", RunID: "run-blank", TaskType: "develop_from_issue",
+		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-blank",
+	}
+	repoRoot := prepareDeveloperRepo(t, request)
+	if err := os.WriteFile(filepath.Join(repoRoot, "fix.go"), []byte("package fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	message := "fix: subject\n\n- a\n\n\n- b"
+	if _, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
+		CommitMessage: message,
+		TaskType:      request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
+	}); err != nil {
+		t.Fatalf("consecutive blank lines must survive git cleanup: %v", err)
+	}
+	expected := message + "\n\nCoordinator-Run-ID: " + request.RunID
+	if got := strings.TrimSpace(runGit(t, repoRoot, "log", "-1", "--format=%B")); got != expected {
+		t.Fatalf("committed message mismatch:\n got: %q\nwant: %q", got, expected)
 	}
 }
 

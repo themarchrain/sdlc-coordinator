@@ -22,7 +22,12 @@ type DeveloperFinalizeRequest struct {
 	RunID         string
 	// CommitMessage 是 AI 回传并经契约校验的提交正文;finalizer 只在末尾追加
 	// 可信追溯尾注,不再从 summary 派生标题。
-	CommitMessage          string
+	CommitMessage string
+	// GitAuthorName/GitAuthorEmail 是任务绑定的注册仓行受信身份快照。共享工作
+	// 区里 Runner 可改写 .git/config(status 不显示),commit 时以命令行 config
+	// 覆盖本地 config,保证落库身份恒为受信值。
+	GitAuthorName          string
+	GitAuthorEmail         string
 	TaskType               string
 	RepositoryURL          string
 	TargetBranch           string
@@ -63,6 +68,9 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 	if err != nil {
 		return nil, fmt.Errorf("developer commit message: %w", err)
 	}
+	// 受信身份快照:空值降级内置身份。共享工作区里 Runner 可改写 .git/config
+	// 且 git status 不显示,commit 必须用受信值覆盖,不信任仓库本地 config。
+	authorName, authorEmail := resolveGitIdentity(request.GitAuthorName, request.GitAuthorEmail)
 	runRoot := filepath.Join(request.WorkspaceRoot, "runs", request.RunID)
 	manifest, err := readManifest(filepath.Join(runRoot, ManifestFileName))
 	if err != nil {
@@ -113,11 +121,11 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		if err != nil {
 			return nil, err
 		}
-		// 提交正文即 AI 回传内容,追溯尾注由 Coordinator 统一追加;身份取
-		// prepare 写入的仓库本地 config,不再注入 -c 身份参数。多段消息经
-		// 临时文件交给 commit -F:Windows 的 git 会把 -m 参数在内嵌换行处
-		// 截断,-F 才能原样落库。落库后读回校验,保证磁盘上的消息形态与
-		// 受信拼装结果一致。
+		// 提交正文即 AI 回传内容,追溯尾注由 Coordinator 统一追加。身份以
+		// 命令行 config 覆盖 Runner 可写的本地 config;--cleanup=verbatim
+		// 保证已校验内容原样落库(Git 默认清理会折叠正文连续空行,读回比对
+		// 会误报冲突)。多段消息经临时文件交给 commit -F:Windows 的 git 会
+		// 把 -m 参数在内嵌换行处截断。
 		committed := commitMessage + "\n\n" + results.TrailerMarker + " " + request.RunID
 		messageFile, err := os.CreateTemp("", "developer-commit-message-*.txt")
 		if err != nil {
@@ -131,7 +139,10 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		if err := messageFile.Close(); err != nil {
 			return nil, err
 		}
-		if _, err := f.git.Run(ctx, repoRoot, nil, "commit", "-F", messageFile.Name()); err != nil {
+		if _, err := f.git.Run(ctx, repoRoot, nil,
+			"-c", "user.name="+authorName, "-c", "user.email="+authorEmail,
+			"commit", "--cleanup=verbatim", "-F", messageFile.Name(),
+		); err != nil {
 			return nil, err
 		}
 		written, err := f.git.Run(ctx, repoRoot, nil, "log", "-1", "--format=%B")
@@ -140,6 +151,9 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		}
 		if strings.TrimSpace(written) != committed {
 			return nil, fmt.Errorf("%w: committed message differs from requested content", ErrWorkspaceConflict)
+		}
+		if err := f.verifyCommitIdentity(ctx, repoRoot, authorName, authorEmail); err != nil {
+			return nil, err
 		}
 		head, err = f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD")
 		if err != nil {
@@ -197,6 +211,26 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		return nil, fmt.Errorf("%w: pushed branch resolved to %s instead of %s", ErrDeveloperDeliveryConflict, verifiedSHA, head)
 	}
 	return &DeveloperDelivery{CommitSHA: head, ChangedFiles: changedFiles, DiffSummary: strings.TrimSpace(diffSummary)}, nil
+}
+
+// verifyCommitIdentity 读回 HEAD 的作者与提交者,必须逐项等于受信身份快照。
+// 它是命令行 config 覆盖的可观测兜底:环境残留或未来引入的身份旁路在这里
+// 显式报错,而不是静默落库错身份。
+func (f *DeveloperFinalizer) verifyCommitIdentity(ctx context.Context, repoRoot, authorName, authorEmail string) error {
+	raw, err := f.git.Run(ctx, repoRoot, nil, "show", "-s", "--format=%an%n%ae%n%cn%n%ce", "HEAD")
+	if err != nil {
+		return err
+	}
+	fields := make([]string, 0, 4)
+	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
+		if value := strings.TrimSpace(line); value != "" {
+			fields = append(fields, value)
+		}
+	}
+	if len(fields) != 4 || fields[0] != authorName || fields[1] != authorEmail || fields[2] != authorName || fields[3] != authorEmail {
+		return fmt.Errorf("%w: committed identity differs from trusted repository configuration", ErrWorkspaceConflict)
+	}
+	return nil
 }
 
 func (f *DeveloperFinalizer) changedFiles(ctx context.Context, repoRoot string, diffArgs ...string) ([]string, error) {
