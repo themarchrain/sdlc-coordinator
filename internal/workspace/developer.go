@@ -25,6 +25,10 @@ type DeveloperRequest struct {
 	DeliveryBranch  string
 	ExpectedHeadSHA string
 	Credential      *GitCredential
+	// GitAuthorName/GitAuthorEmail 来自注册仓行的提交身份;任一为空时 prepare
+	// 降级使用内置身份,并以 git config --local 写入本 run 仓库成为快照。
+	GitAuthorName  string
+	GitAuthorEmail string
 }
 
 type DeveloperPreparer struct {
@@ -61,6 +65,16 @@ func (p *DeveloperPreparer) Prepare(ctx context.Context, request DeveloperReques
 		return nil, fmt.Errorf("create developer repository directory: %w", err)
 	}
 	if _, err := p.git.Run(ctx, repoRoot, nil, "init"); err != nil {
+		return nil, err
+	}
+	// 提交身份以仓库本地 config 落地为快照:优先注册仓配置,缺失即降级内置
+	// 身份。后续 commit 不再注入任何身份参数,也不依赖进程环境。取值来自
+	// 配置面校验(拒绝 dash 前缀)或内置常量,两参形态无选项歧义。
+	authorName, authorEmail := resolveGitIdentity(req.GitAuthorName, req.GitAuthorEmail)
+	if _, err := p.git.Run(ctx, repoRoot, nil, "config", "--local", "user.name", authorName); err != nil {
+		return nil, err
+	}
+	if _, err := p.git.Run(ctx, repoRoot, nil, "config", "--local", "user.email", authorEmail); err != nil {
 		return nil, err
 	}
 	if _, err := p.git.Run(ctx, repoRoot, nil, "remote", "add", "origin", req.RepositoryURL); err != nil {

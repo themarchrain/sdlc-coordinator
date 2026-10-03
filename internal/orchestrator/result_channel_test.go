@@ -35,7 +35,7 @@ func newResultChannelFixture(role string) resultChannelFixture {
 }
 
 func developerChangeReadyPayload() []byte {
-	return []byte(`{"taskId":"task-channel","runId":"run-channel","outcome":"change_ready","summary":"did it","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"mergeRequest":{"title":"fix","description":"desc"}}`)
+	return []byte(`{"taskId":"task-channel","runId":"run-channel","outcome":"change_ready","summary":"did it","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"mergeRequest":{"title":"fix","description":"desc"},"commit_message":"fix: implement the requested change"}`)
 }
 
 func TestResultChannelAcceptsDeveloperChangeReadyWithNormalization(t *testing.T) {
@@ -162,7 +162,7 @@ func TestResultChannelSurfacesSubmitterConflictsAsFailed(t *testing.T) {
 
 func TestResultChannelAcceptsChangeReadyWithEmptyValueShapes(t *testing.T) {
 	f := newResultChannelFixture("DeveloperWorker")
-	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"wrote readme and verified","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"docs: add readme","description":"records commit time"},"defect":{},"blocker_reason":"null"}`)
+	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"wrote readme and verified","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"docs: add readme","description":"records commit time"},"commit_message":"fix: implement the requested change","defect":{},"blocker_reason":"null"}`)
 	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, raw)
 	if err != nil {
 		t.Fatalf("submit agent result: %v", err)
@@ -182,7 +182,7 @@ func TestResultChannelAcceptsChangeReadyWithEmptyValueShapes(t *testing.T) {
 
 func TestResultChannelRejectsNullLiteralsInsideRequiredFields(t *testing.T) {
 	f := newResultChannelFixture("DeveloperWorker")
-	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"done","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"null","description":"records commit time"}}`)
+	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"done","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"null","description":"records commit time"},"commit_message":"fix: implement the requested change"}`)
 	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, raw)
 	if err != nil {
 		t.Fatalf("submit agent result: %v", err)

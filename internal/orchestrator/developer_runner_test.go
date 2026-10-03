@@ -30,7 +30,7 @@ func TestDeveloperRunnerFinalizesGitBeforeSubmittingChangeReady(t *testing.T) {
 	fixture.runner.execution.ResultHash = "result-hash"
 	fixture.runner.result = &runner.Result{
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
-		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"}}`),
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"},"commit_message":"fix: implement the requested change"}`),
 	}
 
 	observed, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
@@ -72,7 +72,7 @@ func TestDeveloperRunnerReworkPushesWithoutCreatingMergeRequest(t *testing.T) {
 	fixture.runner.execution.ResultHash = "result-hash"
 	fixture.runner.result = &runner.Result{
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
-		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"rework_ready","summary":"applied feedback","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}]}`),
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"rework_ready","summary":"applied feedback","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"commit_message":"fix: apply the rework request"}`),
 	}
 
 	if _, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID); err != nil {
@@ -96,7 +96,7 @@ func TestReconcileDeveloperRunnerConvergesDeliveryFailureToHumanRequired(t *test
 	fixture.runner.execution.ResultHash = "result-hash"
 	fixture.runner.result = &runner.Result{
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
-		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"}}`),
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"},"commit_message":"fix: implement the requested change"}`),
 	}
 	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
 

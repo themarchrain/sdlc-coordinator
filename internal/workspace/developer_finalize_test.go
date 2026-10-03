@@ -30,7 +30,7 @@ func TestDeveloperFinalizerCommitsPushesAndReusesDelivery(t *testing.T) {
 	}
 	finalizer := workspace.NewDeveloperFinalizer()
 	delivery, err := finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Implement requested fix",
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: "fix: implement requested fix",
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	})
@@ -55,7 +55,7 @@ func TestDeveloperFinalizerCommitsPushesAndReusesDelivery(t *testing.T) {
 	}
 
 	replayed, err := finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Implement requested fix",
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: "fix: implement requested fix",
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	})
@@ -83,7 +83,7 @@ func TestDeveloperFinalizerFastForwardsReworkBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	delivery, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Apply review feedback",
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: "fix: apply review feedback",
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: featureHead,
 	})
@@ -110,7 +110,7 @@ func TestDeveloperFinalizerRejectsNoChangesAndRemoteDrift(t *testing.T) {
 	}
 	finalizer := workspace.NewDeveloperFinalizer()
 	_, err := finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "No changes",
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: "fix: no-op attempt",
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	})
@@ -123,7 +123,7 @@ func TestDeveloperFinalizerRejectsNoChangesAndRemoteDrift(t *testing.T) {
 	}
 	runGit(t, origin, "update-ref", "refs/heads/agent/task-conflict", featureHead)
 	_, err = finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Conflicting fix",
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: "fix: conflicting attempt",
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	})
@@ -171,7 +171,7 @@ func TestDeveloperFinalizerRejectsMutatedManifestDeliveryMetadata(t *testing.T) 
 	}
 
 	_, err = workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Implement requested fix",
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, CommitMessage: "fix: implement requested fix",
 		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	})

@@ -253,6 +253,9 @@ func buildDeveloperWorkspaceRequest(ctx context.Context, task *model.Task, run *
 		Workspace: workspace.DeveloperRequest{
 			WorkspaceRoot: settings.WorkspaceRoot, RepositoryURL: cloneURL, TargetBranch: repo.Branch,
 			DeliveryBranch: model.DeliveryBranch(task), Credential: gitCredentialFrom(repoRow),
+			// 提交身份取注册仓行原值(可为空,prepare 侧降级内置身份),不
+			// 信任 Agent 输出或事件载荷里的任何身份字段。
+			GitAuthorName: repoRow.GitAuthorName, GitAuthorEmail: repoRow.GitAuthorEmail,
 		},
 	}
 	return normalizeDeveloperWorkspaceRequest(request)

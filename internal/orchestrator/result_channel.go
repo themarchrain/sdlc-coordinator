@@ -146,7 +146,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 		defer cancel()
 		delivery, err := c.finalizer.Finalize(finalizeCtx, workspace.DeveloperFinalizeRequest{
 			WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
-			Summary: inputValue.Summary, TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
+			CommitMessage: inputValue.CommitMessage, TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 			TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 			ExpectedInitialHeadSHA: workspaceRequest.ExpectedHeadSHA, Credential: workspaceRequest.Credential,
 		})

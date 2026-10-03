@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+
+	"sdlc-coordinator/internal/results"
 )
 
 var (
@@ -14,10 +17,12 @@ var (
 )
 
 type DeveloperFinalizeRequest struct {
-	WorkspaceRoot          string
-	TaskID                 string
-	RunID                  string
-	Summary                string
+	WorkspaceRoot string
+	TaskID        string
+	RunID         string
+	// CommitMessage 是 AI 回传并经契约校验的提交正文;finalizer 只在末尾追加
+	// 可信追溯尾注,不再从 summary 派生标题。
+	CommitMessage          string
 	TaskType               string
 	RepositoryURL          string
 	TargetBranch           string
@@ -44,15 +49,19 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 	request.WorkspaceRoot = strings.TrimSpace(request.WorkspaceRoot)
 	request.TaskID = strings.TrimSpace(request.TaskID)
 	request.RunID = strings.TrimSpace(request.RunID)
-	request.Summary = strings.TrimSpace(request.Summary)
 	request.TaskType = strings.TrimSpace(request.TaskType)
 	request.RepositoryURL = strings.TrimSpace(request.RepositoryURL)
 	request.TargetBranch = strings.TrimSpace(request.TargetBranch)
 	request.DeliveryBranch = strings.TrimSpace(request.DeliveryBranch)
 	request.ExpectedInitialHeadSHA = strings.ToLower(strings.TrimSpace(request.ExpectedInitialHeadSHA))
-	if request.WorkspaceRoot == "" || request.TaskID == "" || request.RunID == "" || request.Summary == "" ||
+	if request.WorkspaceRoot == "" || request.TaskID == "" || request.RunID == "" ||
 		request.TaskType == "" || request.RepositoryURL == "" || request.TargetBranch == "" || request.DeliveryBranch == "" {
-		return nil, errors.New("developer finalization workspace, task, run, summary and trusted delivery metadata are required")
+		return nil, errors.New("developer finalization workspace, task, run and trusted delivery metadata are required")
+	}
+	// 消息校验先于任何 Git 操作(含 staging):无效消息在触碰仓库前就被拒绝。
+	commitMessage, err := results.NormalizeCommitMessage(request.CommitMessage)
+	if err != nil {
+		return nil, fmt.Errorf("developer commit message: %w", err)
 	}
 	runRoot := filepath.Join(request.WorkspaceRoot, "runs", request.RunID)
 	manifest, err := readManifest(filepath.Join(runRoot, ManifestFileName))
@@ -104,12 +113,33 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		if err != nil {
 			return nil, err
 		}
-		subject := developerCommitSubject(request.Summary)
-		if _, err := f.git.Run(ctx, repoRoot, nil,
-			"-c", "user.name=AI Developer", "-c", "user.email=ai-developer@localhost",
-			"commit", "-m", subject, "-m", "Coordinator-Run-ID: "+request.RunID,
-		); err != nil {
+		// 提交正文即 AI 回传内容,追溯尾注由 Coordinator 统一追加;身份取
+		// prepare 写入的仓库本地 config,不再注入 -c 身份参数。多段消息经
+		// 临时文件交给 commit -F:Windows 的 git 会把 -m 参数在内嵌换行处
+		// 截断,-F 才能原样落库。落库后读回校验,保证磁盘上的消息形态与
+		// 受信拼装结果一致。
+		committed := commitMessage + "\n\n" + results.TrailerMarker + " " + request.RunID
+		messageFile, err := os.CreateTemp("", "developer-commit-message-*.txt")
+		if err != nil {
 			return nil, err
+		}
+		defer os.Remove(messageFile.Name())
+		if _, err := messageFile.WriteString(committed); err != nil {
+			messageFile.Close()
+			return nil, err
+		}
+		if err := messageFile.Close(); err != nil {
+			return nil, err
+		}
+		if _, err := f.git.Run(ctx, repoRoot, nil, "commit", "-F", messageFile.Name()); err != nil {
+			return nil, err
+		}
+		written, err := f.git.Run(ctx, repoRoot, nil, "log", "-1", "--format=%B")
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(written) != committed {
+			return nil, fmt.Errorf("%w: committed message differs from requested content", ErrWorkspaceConflict)
 		}
 		head, err = f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD")
 		if err != nil {
@@ -197,17 +227,6 @@ func (f *DeveloperFinalizer) remoteBranchSHA(ctx context.Context, repoRoot, repo
 		return "", nil
 	}
 	return strings.ToLower(fields[0]), nil
-}
-
-func developerCommitSubject(summary string) string {
-	line := strings.TrimSpace(strings.Split(strings.ReplaceAll(summary, "\r\n", "\n"), "\n")[0])
-	if len(line) > 68 {
-		line = strings.TrimSpace(line[:68])
-	}
-	if line == "" {
-		line = "apply requested change"
-	}
-	return "ai: " + line
 }
 
 func containsRunTrailer(message, runID string) bool {
