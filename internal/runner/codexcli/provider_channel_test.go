@@ -599,6 +599,30 @@ func TestProviderRejectsSpoofedDeliveryMarkers(t *testing.T) {
 	})
 }
 
+// turn.failed 是 CLI 的终止失败事件:即使进程正常返回、最终消息是合法
+// JSON,也必须如实失败,不得被记成成功。
+func TestProviderFailsTurnFailureBeforeAcceptingFinalResult(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	writeCodexChannelFiles(t, workspaceRoot)
+	request := channelRequestWithIdentity(workspaceRoot, "task-codex-turn-failed", "run-codex-turn-failed", "DeveloperWorker", nil)
+	command := &fakeCommandRunner{
+		lines: [][]byte{
+			[]byte(`{"type":"turn.failed","error":{"code":"server_error","message":"gateway exploded"}}`),
+		},
+		final: `{"verdict":"approved"}`,
+	}
+	result, err := newProvider("codex-test", command).Execute(context.Background(), request, func(string, map[string]any) {})
+	if err == nil {
+		t.Fatalf("turn failure must not be recorded as success: %s", result)
+	}
+	if !strings.Contains(err.Error(), "gateway exploded") {
+		t.Fatalf("turn failure detail was lost: %v", err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("turn failure must not produce a result: %s", result)
+	}
+}
+
 type unreadableFinalRunner struct {
 	lines [][]byte
 }

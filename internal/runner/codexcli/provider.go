@@ -157,6 +157,18 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		}
 		return nil, fmt.Errorf("run codex cli: %s", redactProviderError(err.Error(), request.Provider, request.ResultSubmission))
 	}
+	if parser.turnFailed {
+		// turn.failed 是 CLI 的终止失败事件:即使进程正常返回、最终消息是
+		// 合法 JSON,也不得记成成功,更不得被接受回执覆盖。
+		detail := parser.failureMessage
+		if detail == "" {
+			detail = "turn failed"
+		}
+		if parser.failureCode != "" {
+			detail = parser.failureCode + ": " + detail
+		}
+		return nil, fmt.Errorf("run codex cli: %s", detail)
+	}
 	result, err := os.ReadFile(finalPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -270,7 +282,7 @@ type eventParser struct {
 	runID        string
 	expectedTool string
 	// acceptedReceipt 表示已观测到本 run 的 MCP 成功回执;turnFailed 表示
-	// 出现了终止失败事件,两者同时存在时回执不得覆盖真实故障。
+	// 出现终止失败事件,Execute 在读取最终结果前即按失败收尾。
 	acceptedReceipt bool
 	turnFailed      bool
 }
@@ -397,10 +409,10 @@ func (p *eventParser) observeAcceptanceReceipt(item map[string]any) {
 	p.acceptedReceipt = true
 }
 
-// deliveryMarker 只在存在本 run 的 MCP 成功回执且没有终止失败事件时返回
-// 交付标记;CLI 正常退出由调用点保证。
+// deliveryMarker 只在存在本 run 的 MCP 成功回执时返回交付标记;CLI 正常
+// 退出由调用点保证,turn.failed 在读取最终结果前已被判失败。
 func (p *eventParser) deliveryMarker() json.RawMessage {
-	if !p.acceptedReceipt || p.turnFailed {
+	if !p.acceptedReceipt {
 		return nil
 	}
 	return runner.NewDeliveryMarker(p.taskID, p.runID)
