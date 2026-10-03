@@ -3,7 +3,6 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/model"
@@ -208,9 +207,9 @@ func TestReviewerReconcileAbsorbsDeliveryMarkerAfterMCPFinalizedRun(t *testing.T
 	}
 }
 
-// run 仍未终态时出现交付标记属于跨通道时序不一致:必须显式失败等待对账,
-// 绝不能把标记当作业务 JSON 送进结果通道。
-func TestReviewerReconcileRefusesDeliveryMarkerWhileRunRunning(t *testing.T) {
+// run 仍未终态时出现交付标记说明接受声明与协调器状态对不上:按无效结果
+// 显式收敛,绝不能把标记当作业务 JSON 送进结果通道。
+func TestReviewerReconcileConvergesDeliveryMarkerWhileRunRunning(t *testing.T) {
 	fixture := newReviewerRunnerFixture(t)
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
 		t.Fatalf("start reviewer execution: %v", err)
@@ -223,19 +222,16 @@ func TestReviewerReconcileRefusesDeliveryMarkerWhileRunRunning(t *testing.T) {
 	}
 
 	_, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
-	if err == nil || !strings.Contains(err.Error(), "delivery marker") {
-		t.Fatalf("delivery marker on a running run must fail explicitly, got %v", err)
-	}
-	if runnerResultNeedsConvergence(err) {
-		t.Fatalf("delivery marker must wait for reconciliation instead of converging the run: %v", err)
+	if err == nil || !runnerResultNeedsConvergence(err) {
+		t.Fatalf("delivery marker on a running run must converge as an invalid result, got %v", err)
 	}
 	if fixture.submitter.calls != 0 {
 		t.Fatalf("delivery marker must never reach SubmitAgentResult: calls=%d", fixture.submitter.calls)
 	}
 }
 
-// Developer 路径同样守住交付标记:显式失败等待对账,不落入业务提交。
-func TestDeveloperReconcileRefusesDeliveryMarkerWhileRunRunning(t *testing.T) {
+// Developer 路径同样把无主交付标记收敛为无效结果,不落入业务提交。
+func TestDeveloperReconcileConvergesDeliveryMarkerWhileRunRunning(t *testing.T) {
 	fixture := newDeveloperRunnerFixture(t, "develop_from_issue")
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
 		t.Fatalf("start developer execution: %v", err)
@@ -248,11 +244,88 @@ func TestDeveloperReconcileRefusesDeliveryMarkerWhileRunRunning(t *testing.T) {
 	}
 
 	_, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
-	if err == nil || !strings.Contains(err.Error(), "delivery marker") {
-		t.Fatalf("delivery marker on a running run must fail explicitly, got %v", err)
+	if err == nil || !runnerResultNeedsConvergence(err) {
+		t.Fatalf("delivery marker on a running run must converge as an invalid result, got %v", err)
 	}
-	if runnerResultNeedsConvergence(err) {
-		t.Fatalf("delivery marker must wait for reconciliation instead of converging the run: %v", err)
+	if fixture.submitter.calls != 0 {
+		t.Fatalf("delivery marker must never reach SubmitAgentResult: calls=%d", fixture.submitter.calls)
+	}
+}
+
+// 有界收敛:派发层遇到无主交付标记必须阻断 run 并转人工,让 run 离开轮询
+// 窗口,不留下无限对账的 running 行。
+func TestReviewerRunnerDispatchConvergesDeliveryMarkerWhileRunRunning(t *testing.T) {
+	fixture := newReviewerRunnerFixture(t)
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start reviewer execution: %v", err)
+	}
+	fixture.runner.execution.Status = runner.StatusSucceeded
+	fixture.runner.execution.ResultHash = "result-hash"
+	fixture.runner.result = &runner.Result{
+		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
+		StructuredOutput: runner.NewDeliveryMarker(fixture.task.TaskID, fixture.run.RunID),
+	}
+	orch := New(fixture.tasks, fixture.runs, WithReviewerRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root}))
+
+	if _, err := orch.ReconcileReviewerRunner(context.Background(), fixture.run.RunID); err != nil {
+		t.Fatalf("convergence must not surface as a poll error: %v", err)
+	}
+	storedRun, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if storedRun.Status != model.RunStatusBlocked {
+		t.Fatalf("run must be blocked after marker convergence, got %s", storedRun.Status)
+	}
+	storedTask, err := fixture.tasks.GetByTaskID(context.Background(), fixture.task.TaskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if storedTask.Status != model.TaskStatusHumanRequired {
+		t.Fatalf("task must require human after marker convergence, got %s", storedTask.Status)
+	}
+	running, err := fixture.runs.ListRunning(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("list running runs: %v", err)
+	}
+	if len(running) != 0 {
+		t.Fatalf("blocked run must leave the poll window: %#v", running)
+	}
+	if fixture.submitter.calls != 0 {
+		t.Fatalf("delivery marker must never reach SubmitAgentResult: calls=%d", fixture.submitter.calls)
+	}
+}
+
+// Developer 派发层同样有界收敛。
+func TestDeveloperRunnerDispatchConvergesDeliveryMarkerWhileRunRunning(t *testing.T) {
+	fixture := newDeveloperRunnerFixture(t, "develop_from_issue")
+	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
+		t.Fatalf("start developer execution: %v", err)
+	}
+	fixture.runner.execution.Status = runner.StatusSucceeded
+	fixture.runner.execution.ResultHash = "result-hash"
+	fixture.runner.result = &runner.Result{
+		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
+		StructuredOutput: runner.NewDeliveryMarker(fixture.task.TaskID, fixture.run.RunID),
+	}
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
+
+	if _, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID); err != nil {
+		t.Fatalf("convergence must not surface as a poll error: %v", err)
+	}
+	storedRun, err := fixture.runs.GetByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if storedRun.Status != model.RunStatusBlocked {
+		t.Fatalf("run must be blocked after marker convergence, got %s", storedRun.Status)
+	}
+	running, err := fixture.runs.ListRunning(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("list running runs: %v", err)
+	}
+	if len(running) != 0 {
+		t.Fatalf("blocked run must leave the poll window: %#v", running)
 	}
 	if fixture.submitter.calls != 0 {
 		t.Fatalf("delivery marker must never reach SubmitAgentResult: calls=%d", fixture.submitter.calls)

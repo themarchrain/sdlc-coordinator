@@ -36,16 +36,13 @@ func runnerResultNeedsConvergence(err error) bool {
 	return errors.As(err, &invalid) || errors.As(err, &delivery)
 }
 
-// errRunnerDeliveryMarkerPending 表示执行面报告了 MCP 已接受的交付标记,但
-// run 尚未终态化:显式失败等待对账,绝不把标记当作业务结果提交。
-var errRunnerDeliveryMarkerPending = errors.New("runner reported an MCP-accepted delivery marker while the run is not terminal; waiting for reconciliation")
-
-// refuseDeliveryMarker 拦截 Provider 生成的交付标记:标记不是业务结果,只能
-// 在 run 已终态时被吸收(该判断在各 Reconcile 的终态分支完成),绝不能送进
-// SubmitAgentResult。
+// refuseDeliveryMarker 拦截 Provider 生成的交付标记:标记只能在 run 已终态时
+// 被吸收(该判断在各 Reconcile 的终态分支完成)。run 未终态却出现标记说明
+// 接受声明与协调器状态对不上(接受会同步终态化 run),按无效结果显式收敛:
+// 阻断 run、转人工,绝不送进业务结果通道,也不留下无限对账的空转 run。
 func refuseDeliveryMarker(result *runner.Result) error {
 	if result != nil && runner.IsDeliveryMarker(result.StructuredOutput) {
-		return errRunnerDeliveryMarkerPending
+		return newInvalidRunnerResultError(errors.New("runner result claims an MCP-accepted delivery while the run is not terminal"))
 	}
 	return nil
 }

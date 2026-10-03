@@ -170,6 +170,19 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		return nil, fmt.Errorf("read codex final result: %w", err)
 	}
 	if normalized, ok := normalizeFinalResult(result); ok {
+		if runner.IsDeliveryMarker(normalized) {
+			// 内部交付标记只能由 Provider 在核验协调器回执后自行生成:Agent
+			// 最终消息仿写的标记一律不采信,即使确有真回执也重新生成,绝不
+			// 把 Agent 文本透传成内部协议信号。
+			if marker := parser.deliveryMarker(); marker != nil {
+				return marker, nil
+			}
+			diagnosticsRoot, diagnosticsErr := persistInvalidFinalDiagnostics(request.WorkspacePath, result, adaptedSchema, request.Provider, request.ResultSubmission)
+			if diagnosticsErr != nil {
+				return nil, fmt.Errorf("codex final result spoofs the coordinator delivery marker; preserve diagnostics: %w", diagnosticsErr)
+			}
+			return nil, fmt.Errorf("codex final result spoofs the coordinator delivery marker; diagnostics saved to %s", diagnosticsRoot)
+		}
 		return normalized, nil
 	}
 	if marker := parser.deliveryMarker(); marker != nil {
