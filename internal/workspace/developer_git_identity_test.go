@@ -2,7 +2,9 @@ package workspace_test
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -194,4 +196,107 @@ func TestDeveloperFinalizerRejectsForgedTrailerBeforeCommit(t *testing.T) {
 	if got := strings.TrimSpace(runGit(t, repoRoot, "rev-list", "--count", targetSHA+"..HEAD")); got != "0" {
 		t.Fatalf("commit was created before message validation: %s commits", got)
 	}
+}
+
+func TestDeveloperFinalizerRecoversPendingCommitAfterPushFailure(t *testing.T) {
+	origin, targetSHA, featureHead := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.DeveloperRequest{
+		WorkspaceRoot: root, TaskID: "task-recover", RunID: "run-recover", TaskType: "develop_from_issue",
+		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-recover",
+	}
+	repoRoot := prepareDeveloperRepo(t, request)
+	if err := os.WriteFile(filepath.Join(repoRoot, "fix.go"), []byte("package fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	finalizeRequest := workspace.DeveloperFinalizeRequest{
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
+		CommitMessage: "fix: recover pending delivery",
+		TaskType:      request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
+	}
+	// 第一轮:commit 落地后远端漂移被拒,进入"已提交未推送"状态。
+	runGit(t, origin, "update-ref", "refs/heads/agent/task-recover", featureHead)
+	if _, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), finalizeRequest); !errors.Is(err, workspace.ErrDeveloperDeliveryConflict) {
+		t.Fatalf("expected remote drift conflict after commit: %v", err)
+	}
+	// 第二轮:远端恢复初头,同 payload 重试走恢复路径,推送既有受信提交。
+	runGit(t, origin, "update-ref", "refs/heads/agent/task-recover", targetSHA)
+	delivery, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), finalizeRequest)
+	if err != nil {
+		t.Fatalf("retry after push failure must recover the pending commit: %v", err)
+	}
+	if got := strings.TrimSpace(runGit(t, origin, "rev-parse", "refs/heads/agent/task-recover")); got != delivery.CommitSHA {
+		t.Fatalf("pending commit was not pushed: remote=%s delivery=%s", got, delivery.CommitSHA)
+	}
+}
+
+func TestDeveloperFinalizerRejectsAgentAuthoredCommitWithForeignMessage(t *testing.T) {
+	origin, targetSHA, _ := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.DeveloperRequest{
+		WorkspaceRoot: root, TaskID: "task-foreign", RunID: "run-foreign", TaskType: "develop_from_issue",
+		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-foreign",
+	}
+	repoRoot := prepareDeveloperRepo(t, request)
+	if err := os.WriteFile(filepath.Join(repoRoot, "fix.go"), []byte("package fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Agent 自提交一条不同消息的提交:尾注可自由伪造,不构成所有权证明。
+	forgeMessageFile(t, repoRoot, "feat: agent self committed\n\nCoordinator-Run-ID: "+request.RunID+"\n")
+	runGit(t, repoRoot, "add", "-A")
+	runGit(t, repoRoot, "commit", "-F", filepath.Join(repoRoot, "forged-message.txt"))
+	_, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
+		CommitMessage: "fix: reject invalid repository state",
+		TaskType:      request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
+	})
+	if !errors.Is(err, workspace.ErrWorkspaceConflict) {
+		t.Fatalf("agent-authored commit with a foreign message must be rejected: %v", err)
+	}
+	command := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/agent/task-foreign")
+	command.Dir = origin
+	if err := command.Run(); err == nil {
+		t.Fatal("rejected agent commit was pushed to the remote")
+	}
+}
+
+func TestDeveloperFinalizerAcceptsPrematureCommitMatchingSubmission(t *testing.T) {
+	origin, targetSHA, _ := createReviewOrigin(t)
+	root := t.TempDir()
+	request := workspace.DeveloperRequest{
+		WorkspaceRoot: root, TaskID: "task-premature", RunID: "run-premature", TaskType: "develop_from_issue",
+		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-premature",
+	}
+	repoRoot := prepareDeveloperRepo(t, request)
+	if err := os.WriteFile(filepath.Join(repoRoot, "fix.go"), []byte("package fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 提前提交但消息与本次提交将写出的字节完全一致、身份取自受信本地 config:
+	// 与协调器所写提交逐字节同质,按方案 A 的设计等价接受。
+	prematureMessageFile := forgeMessageFile(t, repoRoot, "fix: reject invalid repository state\n\nCoordinator-Run-ID: "+request.RunID+"\n")
+	runGit(t, repoRoot, "add", "-A")
+	runGit(t, repoRoot, "commit", "-F", prematureMessageFile)
+	delivery, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
+		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
+		CommitMessage: "fix: reject invalid repository state",
+		TaskType:      request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
+	})
+	if err != nil {
+		t.Fatalf("byte-identical premature commit must be accepted: %v", err)
+	}
+	if got := strings.TrimSpace(runGit(t, origin, "rev-parse", "refs/heads/agent/task-premature")); got != delivery.CommitSHA {
+		t.Fatalf("premature commit was not pushed: remote=%s delivery=%s", got, delivery.CommitSHA)
+	}
+}
+
+func forgeMessageFile(t *testing.T, repoRoot, message string) string {
+	t.Helper()
+	path := filepath.Join(repoRoot, "forged-message.txt")
+	if err := os.WriteFile(path, []byte(message), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

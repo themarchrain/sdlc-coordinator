@@ -167,12 +167,20 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		if _, err := f.git.Run(ctx, repoRoot, nil, "merge-base", "--is-ancestor", manifest.Repository.InitialHeadSHA, head); err != nil {
 			return nil, fmt.Errorf("%w: local delivery commit is not based on initial head", ErrWorkspaceConflict)
 		}
+		// 恢复路径只接受本 run 内 Coordinator 已落的提交(如 push 失败后的
+		// 重试):消息必须与本次提交将写出的字节完全一致,作者/提交者必须等
+		// 于受信身份。尾注行可被 Agent 自由伪造,仅凭它不构成所有权证明;
+		// 逐字节同质的提交与协调器所写在消息、身份与尾注上无差异。
+		expected := commitMessage + "\n\n" + results.TrailerMarker + " " + request.RunID
 		message, err := f.git.Run(ctx, repoRoot, nil, "log", "-1", "--format=%B")
 		if err != nil {
 			return nil, err
 		}
-		if !containsRunTrailer(message, request.RunID) {
-			return nil, fmt.Errorf("%w: local commit is not owned by current run", ErrWorkspaceConflict)
+		if strings.TrimSpace(message) != expected {
+			return nil, fmt.Errorf("%w: local delivery commit does not match the submitted commit message", ErrWorkspaceConflict)
+		}
+		if err := f.verifyCommitIdentity(ctx, repoRoot, authorName, authorEmail); err != nil {
+			return nil, err
 		}
 		changedFiles, err = f.changedFiles(ctx, repoRoot, manifest.Repository.InitialHeadSHA+".."+head)
 		if err != nil {
@@ -261,13 +269,4 @@ func (f *DeveloperFinalizer) remoteBranchSHA(ctx context.Context, repoRoot, repo
 		return "", nil
 	}
 	return strings.ToLower(fields[0]), nil
-}
-
-func containsRunTrailer(message, runID string) bool {
-	for _, line := range strings.Split(strings.ReplaceAll(message, "\r\n", "\n"), "\n") {
-		if strings.TrimSpace(line) == "Coordinator-Run-ID: "+runID {
-			return true
-		}
-	}
-	return false
 }
