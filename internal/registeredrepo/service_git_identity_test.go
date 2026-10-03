@@ -84,8 +84,6 @@ func TestCreateRepositoryRejectsInvalidGitIdentityValues(t *testing.T) {
 		{strings.Repeat("长", 129), "bot@example.com"},
 		{"Release Bot", "not-an-email"},
 		{"Release Bot", "two@@example.com"},
-		{"-dashy", "bot@example.com"},
-		{"Release Bot", "-dashy@example.com"},
 		{"Release Bot", "bot@example.com " + strings.Repeat("长", 240)},
 	}
 	for _, tc := range cases {

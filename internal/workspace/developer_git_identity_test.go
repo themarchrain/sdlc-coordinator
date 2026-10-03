@@ -20,34 +20,22 @@ func prepareDeveloperRepo(t *testing.T, request workspace.DeveloperRequest) stri
 	return filepath.Join(request.WorkspaceRoot, "runs", request.RunID, "repo")
 }
 
-func TestDeveloperPreparerWritesRepositoryLocalIdentity(t *testing.T) {
+func TestDeveloperPreparerLeavesGitIdentityUnset(t *testing.T) {
 	origin, _, _ := createReviewOrigin(t)
 	root := t.TempDir()
 	repoRoot := prepareDeveloperRepo(t, workspace.DeveloperRequest{
-		WorkspaceRoot: root, TaskID: "task-identity", RunID: "run-identity", TaskType: "develop_from_issue",
-		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-identity",
+		WorkspaceRoot: root, TaskID: "task-no-config", RunID: "run-no-config", TaskType: "develop_from_issue",
+		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-no-config",
 		GitAuthorName: "Release Bot", GitAuthorEmail: "bot@example.com",
 	})
-	if got := strings.TrimSpace(runGit(t, repoRoot, "config", "--local", "user.name")); got != "Release Bot" {
-		t.Fatalf("repository local user.name = %q", got)
-	}
-	if got := strings.TrimSpace(runGit(t, repoRoot, "config", "--local", "user.email")); got != "bot@example.com" {
-		t.Fatalf("repository local user.email = %q", got)
-	}
-}
-
-func TestDeveloperPreparerFallsBackToBuiltInIdentity(t *testing.T) {
-	origin, _, _ := createReviewOrigin(t)
-	root := t.TempDir()
-	repoRoot := prepareDeveloperRepo(t, workspace.DeveloperRequest{
-		WorkspaceRoot: root, TaskID: "task-fallback", RunID: "run-fallback", TaskType: "develop_from_issue",
-		Project: "group/project", RepositoryURL: origin, TargetBranch: "master", DeliveryBranch: "agent/task-fallback",
-	})
-	if got := strings.TrimSpace(runGit(t, repoRoot, "config", "--local", "user.name")); got != workspace.FallbackGitAuthorName {
-		t.Fatalf("fallback user.name = %q, want %q", got, workspace.FallbackGitAuthorName)
-	}
-	if got := strings.TrimSpace(runGit(t, repoRoot, "config", "--local", "user.email")); got != workspace.FallbackGitAuthorEmail {
-		t.Fatalf("fallback user.email = %q, want %q", got, workspace.FallbackGitAuthorEmail)
+	// 提交身份不再落进 Runner 可写的仓库本地 config:唯一的生效点是
+	// Coordinator commit 命令上的受信 -c 覆盖。
+	for _, key := range []string{"user.name", "user.email"} {
+		command := exec.Command("git", "config", "--local", key)
+		command.Dir = repoRoot
+		if err := command.Run(); err == nil {
+			t.Fatalf("prepare must not write %s into the repository-local config", key)
+		}
 	}
 }
 
@@ -262,7 +250,7 @@ func TestDeveloperFinalizerRejectsAgentAuthoredCommitWithForeignMessage(t *testi
 	}
 }
 
-func TestDeveloperFinalizerAcceptsPrematureCommitMatchingSubmission(t *testing.T) {
+func TestDeveloperFinalizerRejectsPrematureCommitWithoutCoordinatorCheckpoint(t *testing.T) {
 	origin, targetSHA, _ := createReviewOrigin(t)
 	root := t.TempDir()
 	request := workspace.DeveloperRequest{
@@ -273,22 +261,24 @@ func TestDeveloperFinalizerAcceptsPrematureCommitMatchingSubmission(t *testing.T
 	if err := os.WriteFile(filepath.Join(repoRoot, "fix.go"), []byte("package fix\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// 提前提交但消息与本次提交将写出的字节完全一致、身份取自受信本地 config:
-	// 与协调器所写提交逐字节同质,按方案 A 的设计等价接受。
-	prematureMessageFile := forgeMessageFile(t, repoRoot, "fix: reject invalid repository state\n\nCoordinator-Run-ID: "+request.RunID+"\n")
+	// Agent 提前提交,消息与本次提交将写出的字节完全一致:尾注与身份都可由
+	// Agent 伪造,提交归属门禁不凭"长得像"认领,必须由检查点背书。
+	messageFile := forgeMessageFile(t, repoRoot, "fix: reject invalid repository state\n\nCoordinator-Run-ID: "+request.RunID+"\n")
 	runGit(t, repoRoot, "add", "-A")
-	runGit(t, repoRoot, "commit", "-F", prematureMessageFile)
-	delivery, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
+	runGit(t, repoRoot, "commit", "-F", messageFile)
+	_, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
 		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID,
 		CommitMessage: "fix: reject invalid repository state",
 		TaskType:      request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
 	})
-	if err != nil {
-		t.Fatalf("byte-identical premature commit must be accepted: %v", err)
+	if !errors.Is(err, workspace.ErrWorkspaceConflict) {
+		t.Fatalf("premature commit without a coordinator checkpoint must be rejected: %v", err)
 	}
-	if got := strings.TrimSpace(runGit(t, origin, "rev-parse", "refs/heads/agent/task-premature")); got != delivery.CommitSHA {
-		t.Fatalf("premature commit was not pushed: remote=%s delivery=%s", got, delivery.CommitSHA)
+	command := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/agent/task-premature")
+	command.Dir = origin
+	if err := command.Run(); err == nil {
+		t.Fatal("premature commit was pushed to the remote")
 	}
 }
 

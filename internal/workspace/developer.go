@@ -67,16 +67,9 @@ func (p *DeveloperPreparer) Prepare(ctx context.Context, request DeveloperReques
 	if _, err := p.git.Run(ctx, repoRoot, nil, "init"); err != nil {
 		return nil, err
 	}
-	// 提交身份以仓库本地 config 落地为快照:优先注册仓配置,缺失即降级内置
-	// 身份。后续 commit 不再注入任何身份参数,也不依赖进程环境。取值来自
-	// 配置面校验(拒绝 dash 前缀)或内置常量,两参形态无选项歧义。
-	authorName, authorEmail := resolveGitIdentity(req.GitAuthorName, req.GitAuthorEmail)
-	if _, err := p.git.Run(ctx, repoRoot, nil, "config", "--local", "user.name", authorName); err != nil {
-		return nil, err
-	}
-	if _, err := p.git.Run(ctx, repoRoot, nil, "config", "--local", "user.email", authorEmail); err != nil {
-		return nil, err
-	}
+	// 提交身份不写进 Runner 可写的仓库本地 config(.git/config 改动不进
+	// git status);唯一生效点是 Coordinator commit 命令上的受信 -c 覆盖,
+	// 身份值随交付请求由编排层从注册仓行传入。
 	if _, err := p.git.Run(ctx, repoRoot, nil, "remote", "add", "origin", req.RepositoryURL); err != nil {
 		return nil, err
 	}
