@@ -10,10 +10,14 @@ import (
 )
 
 type DeveloperAgentResultInput struct {
-	TaskID        string              `json:"task_id"`
-	RunID         string              `json:"run_id"`
-	Outcome       string              `json:"outcome"`
-	Summary       string              `json:"summary"`
+	TaskID  string `json:"task_id"`
+	RunID   string `json:"run_id"`
+	Outcome string `json:"outcome"`
+	Summary string `json:"summary"`
+	// CommitMessage 是 ready 类结果必填的提交说明(标题+可选正文);Coordinator
+	// 校验后作为 Git 提交正文并统一追加追溯尾注。summary 保持任务结果摘要
+	// 用途,不再派生提交标题。
+	CommitMessage string              `json:"commit_message,omitempty"`
 	Tests         []TestEvidence      `json:"tests,omitempty"`
 	MergeRequest  *MergeRequestResult `json:"merge_request,omitempty"`
 	Defect        *DefectResult       `json:"defect,omitempty"`
@@ -56,6 +60,9 @@ func (DeveloperAgentContract) Validate(task *model.Task, run *model.Run, raw Rol
 		if input.MergeRequest == nil || strings.TrimSpace(input.MergeRequest.Title) == "" {
 			return errors.New("merge_request title is required for change_ready")
 		}
+		if _, err := NormalizeCommitMessage(input.CommitMessage); err != nil {
+			return err
+		}
 		if input.Defect != nil || input.BlockerReason != nil {
 			return errors.New("change_ready must not include defect or blocker_reason")
 		}
@@ -68,11 +75,20 @@ func (DeveloperAgentContract) Validate(task *model.Task, run *model.Run, raw Rol
 		if input.MergeRequest != nil || input.Defect != nil || input.BlockerReason != nil {
 			return errors.New("rework_ready must not include merge_request, defect or blocker_reason")
 		}
+		if _, err := NormalizeCommitMessage(input.CommitMessage); err != nil {
+			return err
+		}
 		_, _, err := deliveryTarget(task)
 		return err
 	case "upstream_dependency_defect":
+		if strings.TrimSpace(input.CommitMessage) != "" {
+			return fmt.Errorf("outcome %s must not include commit_message", input.Outcome)
+		}
 		return validateUpstreamDefect(task, input.Defect)
 	case "fix_failed", "environment_blocker", "insufficient_context":
+		if strings.TrimSpace(input.CommitMessage) != "" {
+			return fmt.Errorf("outcome %s must not include commit_message", input.Outcome)
+		}
 		if input.BlockerReason == nil || strings.TrimSpace(*input.BlockerReason) == "" {
 			return fmt.Errorf("blocker_reason is required for %s", input.Outcome)
 		}
@@ -123,7 +139,8 @@ func (DeveloperAgentContract) InputSchema() map[string]any {
 			"task_id": map[string]any{"type": "string"}, "run_id": map[string]any{"type": "string"},
 			"outcome": map[string]any{"type": "string", "enum": append([]string(nil), developerOutcomeValues...)},
 			"summary": map[string]any{"type": "string"}, "tests": testEvidenceArraySchema(),
-			"merge_request": mergeRequestResultSchema(), "defect": defectResultSchema(),
+			"commit_message": map[string]any{"type": "string", "maxLength": MaxCommitMessageBytes},
+			"merge_request":  mergeRequestResultSchema(), "defect": defectResultSchema(),
 			"blocker_reason": map[string]any{"type": []string{"string", "null"}},
 		},
 	)

@@ -14,6 +14,7 @@ func TestDeveloperAgentContractAcceptsChangeReadyWithoutCommitEvidence(t *testin
 	input, err := contract.DecodeStrict(json.RawMessage(`{
         "task_id":"task-1","run_id":"run-1","outcome":"change_ready","summary":"implemented fix",
         "tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],
+        "commit_message":"fix: reject invalid repository state\n\n- Validate the state before delivery",
         "merge_request":{"title":"Fix issue","description":"Implements the requested fix."}
     }`))
 	if err != nil {
@@ -40,6 +41,7 @@ func TestDeveloperAgentContractPreservesReworkAndBlockerRules(t *testing.T) {
 
 	valid, err := contract.DecodeStrict(json.RawMessage(`{
         "task_id":"task-1","run_id":"run-1","outcome":"rework_ready","summary":"updated branch",
+        "commit_message":"fix: apply review feedback\n\n- Address reviewer findings",
         "tests":[{"command":"go test ./...","passed":true,"summary":"passed"}]
     }`))
 	if err != nil || contract.Validate(task, run, valid) != nil {
