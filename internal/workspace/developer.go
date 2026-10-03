@@ -25,6 +25,10 @@ type DeveloperRequest struct {
 	DeliveryBranch  string
 	ExpectedHeadSHA string
 	Credential      *GitCredential
+	// GitAuthorName/GitAuthorEmail 来自注册仓行的提交身份;任一为空时 prepare
+	// 降级使用内置身份,并以 git config --local 写入本 run 仓库成为快照。
+	GitAuthorName  string
+	GitAuthorEmail string
 }
 
 type DeveloperPreparer struct {
@@ -63,6 +67,9 @@ func (p *DeveloperPreparer) Prepare(ctx context.Context, request DeveloperReques
 	if _, err := p.git.Run(ctx, repoRoot, nil, "init"); err != nil {
 		return nil, err
 	}
+	// 提交身份不写进 Runner 可写的仓库本地 config(.git/config 改动不进
+	// git status);唯一生效点是 Coordinator commit 命令上的受信 -c 覆盖,
+	// 身份值随交付请求由编排层从注册仓行传入。
 	if _, err := p.git.Run(ctx, repoRoot, nil, "remote", "add", "origin", req.RepositoryURL); err != nil {
 		return nil, err
 	}

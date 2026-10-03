@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"sdlc-coordinator/internal/model"
 
@@ -36,6 +37,13 @@ var (
 	// 其他组织占用：跨租户抢占会劫持/打死对方的 webhook 路由，注册与改仓
 	// 必须显式拒绝。
 	ErrRouteIdentityClaimed = errors.New("route_identity_claimed")
+	// ErrInvalidGitIdentity 表示提交身份未成对提交或取值不合法。姓名/邮箱会
+	// 进入公开 Git 提交元数据,落库前显式拒绝控制字符、超长与残缺邮箱形态。
+	ErrInvalidGitIdentity = errors.New("invalid_git_identity")
+	// ErrGitIdentityRequiresDisabled 表示已启用/配置中的仓试图变更提交身份。
+	// 身份写入本 run 工作区仓库即成快照,启用态变更会让在途交付与配置面认知
+	// 漂移,因此与 token/path 同级:必须先停用。
+	ErrGitIdentityRequiresDisabled = errors.New("git_identity_requires_disabled")
 )
 
 // NormalizeProvider/ValidProvider 是 provider 的统一规范与枚举;仓行、事件
@@ -63,6 +71,8 @@ type CreateRequest struct {
 	CodeHostIssueLabels []string
 	ReviewerMentions    string
 	VerifyCommand       string
+	GitAuthorName       string
+	GitAuthorEmail      string
 }
 
 type PatchRequest struct {
@@ -76,6 +86,10 @@ type PatchRequest struct {
 	CodeHostIssueLabels *[]string
 	ReviewerMentions    *string
 	VerifyCommand       *string
+	// GitAuthorName/GitAuthorEmail 双指针成对语义:双方都 nil=保持,双方都给
+	// =设置(值可空=清除),只给一侧=配置面误操作,显式拒绝。
+	GitAuthorName  *string
+	GitAuthorEmail *string
 }
 
 type View struct {
@@ -92,6 +106,8 @@ type View struct {
 	CodeHostIssueLabels     []string
 	LastConfigurationError  string
 	VerifyCommand           string
+	GitAuthorName           string
+	GitAuthorEmail          string
 }
 
 func ViewFrom(repo *RegisteredRepository) View {
@@ -112,6 +128,8 @@ func ViewFrom(repo *RegisteredRepository) View {
 		CodeHostIssueLabels:     decodeLabels(repo.CodeHostIssueLabels),
 		LastConfigurationError:  repo.LastConfigurationError,
 		VerifyCommand:           repo.VerifyCommand,
+		GitAuthorName:           repo.GitAuthorName,
+		GitAuthorEmail:          repo.GitAuthorEmail,
 	}
 }
 
@@ -123,6 +141,52 @@ func normalizeVerifyCommand(value string) (string, error) {
 		return "", ErrVerifyCommandTooLong
 	}
 	return trimmed, nil
+}
+
+const (
+	maxGitAuthorNameLength  = 128
+	maxGitAuthorEmailLength = 254
+)
+
+// normalizeGitIdentity 校验并归一化成对提交身份。两侧都空=未配置(运行时降级
+// 内置身份,不在这里生成假身份);一侧缺失=配置面误操作,显式拒绝。取值会原样
+// 进入公开 Git 提交元数据,只放行无换行、无控制字符的可见文本;邮箱按单个
+// Git 邮箱地址的最小形态校验(一个 @、两侧非空、无空白)。
+func normalizeGitIdentity(name, email string) (string, string, error) {
+	name = strings.TrimSpace(name)
+	email = strings.TrimSpace(email)
+	if name == "" && email == "" {
+		return "", "", nil
+	}
+	if name == "" || email == "" {
+		return "", "", fmt.Errorf("%w: git author name and email must be configured as a pair", ErrInvalidGitIdentity)
+	}
+	if err := validateGitAuthorText(name, maxGitAuthorNameLength, "name"); err != nil {
+		return "", "", err
+	}
+	if err := validateGitAuthorText(email, maxGitAuthorEmailLength, "email"); err != nil {
+		return "", "", err
+	}
+	if strings.ContainsAny(email, " \t") || strings.Count(email, "@") != 1 {
+		return "", "", fmt.Errorf("%w: git author email must be a single address", ErrInvalidGitIdentity)
+	}
+	local, domain, _ := strings.Cut(email, "@")
+	if local == "" || domain == "" {
+		return "", "", fmt.Errorf("%w: git author email must be a single address", ErrInvalidGitIdentity)
+	}
+	return name, email, nil
+}
+
+func validateGitAuthorText(value string, maxRunes int, field string) error {
+	if len([]rune(value)) > maxRunes {
+		return fmt.Errorf("%w: git author %s must not exceed %d characters", ErrInvalidGitIdentity, field, maxRunes)
+	}
+	for _, r := range value {
+		if r == '\n' || r == '\r' || unicode.IsControl(r) {
+			return fmt.Errorf("%w: git author %s must not contain line breaks or control characters", ErrInvalidGitIdentity, field)
+		}
+	}
+	return nil
 }
 
 type Service struct {
@@ -250,6 +314,10 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 	if err != nil {
 		return nil, err
 	}
+	authorName, authorEmail, err := normalizeGitIdentity(request.GitAuthorName, request.GitAuthorEmail)
+	if err != nil {
+		return nil, err
+	}
 	// secret 摄入即去首尾空白:平台侧按原值计算签名,行内保存归一化值,
 	// 避免配置面误带空白导致运行期验签恒败。
 	repo := &RegisteredRepository{
@@ -263,6 +331,8 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 		CodeHostIssueLabels: encodeLabels(request.CodeHostIssueLabels),
 		ReviewerMentions:    request.ReviewerMentions,
 		VerifyCommand:       verifyCommand,
+		GitAuthorName:       authorName,
+		GitAuthorEmail:      authorEmail,
 		Status:              StatusConfiguring,
 	}
 	if repo.DisplayName == "" {
@@ -441,12 +511,36 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 		}
 		repo.VerifyCommand = normalized
 	}
+	// 提交身份只在停用态可变更:启用/配置中的仓改身份先显式拒绝,避免在途
+	// 交付的提交身份与配置面认知漂移。原值原样回传不算变更,不触发本门槛。
+	if request.GitAuthorName != nil || request.GitAuthorEmail != nil {
+		if (request.GitAuthorName == nil) != (request.GitAuthorEmail == nil) {
+			return nil, fmt.Errorf("%w: git author name and email must be updated as a pair", ErrInvalidGitIdentity)
+		}
+		authorName, authorEmail, normErr := normalizeGitIdentity(*request.GitAuthorName, *request.GitAuthorEmail)
+		if normErr != nil {
+			return nil, normErr
+		}
+		if changed := authorName != repo.GitAuthorName || authorEmail != repo.GitAuthorEmail; changed {
+			if repo.Status != StatusDisabled {
+				return nil, ErrGitIdentityRequiresDisabled
+			}
+			repo.GitAuthorName = authorName
+			repo.GitAuthorEmail = authorEmail
+		}
+	}
 	if pathChanged || providerChanged || baseURLChanged {
 		if err := s.ensureRouteIdentityAvailable(ctx, repo); err != nil {
 			return nil, err
 		}
 	}
-	repo.Status = StatusConfiguring
+	// 回到 configuring 的语义是"平台身份或凭据层变更,需要重新探活与启用"。
+	// 展示类字段(显示名、标签、@评审、验证命令)与提交身份不影响平台行为,
+	// 不触发 reconfigure:提交身份的变更本身要求停用态,改完保持停用等待
+	// 管理员重新启用。
+	if tokenChanged || pathChanged || providerChanged || baseURLChanged || strings.TrimSpace(request.WebhookSecret) != "" {
+		repo.Status = StatusConfiguring
+	}
 	if err := s.store.Update(ctx, repo); err != nil {
 		return nil, err
 	}

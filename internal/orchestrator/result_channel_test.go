@@ -12,11 +12,12 @@ import (
 )
 
 type resultChannelFixture struct {
-	task      *model.Task
-	run       *model.Run
-	finalizer *fakeDeveloperFinalizer
-	submitter *recordingResultSubmitter
-	core      *ResultChannelCoordinator
+	task        *model.Task
+	run         *model.Run
+	finalizer   *fakeDeveloperFinalizer
+	checkpoints *fakeDeliveryCheckpoints
+	submitter   *recordingResultSubmitter
+	core        *ResultChannelCoordinator
 }
 
 func newResultChannelFixture(role string) resultChannelFixture {
@@ -29,13 +30,19 @@ func newResultChannelFixture(role string) resultChannelFixture {
 	}
 	run := &model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: role, Status: model.RunStatusRunning}
 	finalizer := &fakeDeveloperFinalizer{delivery: &workspace.DeveloperDelivery{CommitSHA: "commit-1", ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}}
+	checkpoints := &fakeDeliveryCheckpoints{record: &model.DeveloperDeliveryCheckpoint{
+		TaskID: task.TaskID, RunID: run.RunID, TaskType: task.Type,
+		RepositoryURL: "https://gitlab.example/group/project.git", DeliveryBranch: task.DeliveryBranch,
+		BaselineSHA: "baseline-sha",
+	}}
 	submitter := &recordingResultSubmitter{}
 	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}, "mcp")
-	return resultChannelFixture{task: task, run: run, finalizer: finalizer, submitter: submitter, core: core}
+	core.SetDeveloperDeliveryCheckpoints(checkpoints)
+	return resultChannelFixture{task: task, run: run, finalizer: finalizer, checkpoints: checkpoints, submitter: submitter, core: core}
 }
 
 func developerChangeReadyPayload() []byte {
-	return []byte(`{"taskId":"task-channel","runId":"run-channel","outcome":"change_ready","summary":"did it","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"mergeRequest":{"title":"fix","description":"desc"}}`)
+	return []byte(`{"taskId":"task-channel","runId":"run-channel","outcome":"change_ready","summary":"did it","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"mergeRequest":{"title":"fix","description":"desc"},"commit_message":"fix: implement the requested change"}`)
 }
 
 func TestResultChannelAcceptsDeveloperChangeReadyWithNormalization(t *testing.T) {
@@ -47,8 +54,8 @@ func TestResultChannelAcceptsDeveloperChangeReadyWithNormalization(t *testing.T)
 	if outcome.Decision != ChannelAccepted || outcome.Response == nil {
 		t.Fatalf("unexpected outcome: %#v", outcome)
 	}
-	if f.finalizer.calls != 1 {
-		t.Fatalf("finalizer must run for change_ready, calls=%d", f.finalizer.calls)
+	if f.finalizer.commits != 1 || f.finalizer.pushes != 1 {
+		t.Fatalf("finalizer must commit and push for change_ready, commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
 	}
 	if f.submitter.calls != 1 {
 		t.Fatalf("submitter must be called once, calls=%d", f.submitter.calls)
@@ -98,6 +105,98 @@ func TestResultChannelRejectsContractViolationsWithProblems(t *testing.T) {
 	}
 }
 
+// TestResultChannelPushFailureAfterCommitSurfacesError 锁定:提交创建并写入
+// 检查点后推送失败,必须返回结构化错误(此前 err 遮蔽吞掉推送错误、再解引用
+// 空交付对象触发 panic);同一结果重试时走检查点恢复路径直推既有 SHA,不产
+// 生第二笔提交。
+func TestResultChannelPushFailureAfterCommitSurfacesError(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	f.finalizer.pushErr = workspace.ErrDeveloperDeliveryConflict
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelRejected || outcome.Stage != ChannelStageFinalize {
+		t.Fatalf("push failure after commit must surface as a structured rejection: %#v", outcome)
+	}
+	if len(outcome.Problems) == 0 || !strings.Contains(outcome.Problems[0].Problem, "push developer git delivery") {
+		t.Fatalf("push failure must be reported: %#v", outcome.Problems)
+	}
+	if f.finalizer.commits != 1 || f.finalizer.pushes != 1 {
+		t.Fatalf("commit must run once and push must be attempted once: commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
+	}
+	if f.checkpoints.record == nil || f.checkpoints.record.CommitSHA == "" {
+		t.Fatal("the created commit must be checkpointed before the push attempt")
+	}
+	// 重试:检查点已有 SHA,跳过新建提交,直推恢复。
+	f.finalizer.pushErr = nil
+	outcome, err = f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("resubmit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelAccepted {
+		t.Fatalf("checkpointed retry must recover: %#v", outcome)
+	}
+	if f.finalizer.commits != 1 || f.finalizer.pushes != 2 {
+		t.Fatalf("recovery must not create a second commit: commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
+	}
+}
+
+// TestResultChannelRecoversWithCheckpointedCommit 锁定恢复路径:检查点已记录
+// 交付 SHA(如推送成功但结果入库前失败后的重复回传)时,跳过新建提交,只
+// 按固定 SHA 重试推送。
+func TestResultChannelRecoversWithCheckpointedCommit(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	f.checkpoints.record.CommitSHA = "recorded-commit"
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelAccepted {
+		t.Fatalf("unexpected outcome: %#v", outcome)
+	}
+	if f.finalizer.commits != 0 || f.finalizer.pushes != 1 {
+		t.Fatalf("checkpointed recovery must push only: commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
+	}
+	if f.finalizer.pushRequest.CommitSHA != "recorded-commit" {
+		t.Fatalf("push must use the checkpointed sha: %#v", f.finalizer.pushRequest)
+	}
+}
+
+// TestResultChannelFailsClosedWithoutRecordedBaseline 锁定:基线缺失(部署前
+// 在途 run 或检查点未写入)时 fail-closed,不碰 git、不进矫正通道。
+func TestResultChannelFailsClosedWithoutRecordedBaseline(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	f.checkpoints.record = nil
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelFailed || outcome.Stage != ChannelStageFinalize {
+		t.Fatalf("missing baseline must fail closed: %#v", outcome)
+	}
+	if f.finalizer.commits != 0 || f.finalizer.pushes != 0 {
+		t.Fatalf("missing baseline must not touch git: commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
+	}
+}
+
+// TestResultChannelFailsClosedWhenCheckpointWriteFails 锁定:提交已创建但
+// 检查点写入失败时不得推送(fail-closed),由重试路径按缺失检查点拒绝。
+func TestResultChannelFailsClosedWhenCheckpointWriteFails(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	f.checkpoints.recordErr = errors.New("tenant db unavailable")
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelFailed || outcome.Stage != ChannelStageFinalize {
+		t.Fatalf("checkpoint write failure must fail closed: %#v", outcome)
+	}
+	if f.finalizer.pushes != 0 {
+		t.Fatalf("created commit must not be pushed without a persisted checkpoint: pushes=%d", f.finalizer.pushes)
+	}
+}
+
 func TestResultChannelRejectsUnknownFieldsFromDecode(t *testing.T) {
 	f := newResultChannelFixture("DeveloperWorker")
 	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"fix_failed","summary":"x","blocker_reason":"y","bogus_field":1}`)
@@ -116,7 +215,7 @@ func TestResultChannelRejectsUnknownFieldsFromDecode(t *testing.T) {
 
 func TestResultChannelMapsFinalizeFailureToRejectedDeliveryStage(t *testing.T) {
 	f := newResultChannelFixture("DeveloperWorker")
-	f.finalizer.err = workspace.ErrWorkspaceConflict
+	f.finalizer.commitErr = workspace.ErrWorkspaceConflict
 	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
 	if err != nil {
 		t.Fatalf("submit agent result: %v", err)
@@ -162,7 +261,7 @@ func TestResultChannelSurfacesSubmitterConflictsAsFailed(t *testing.T) {
 
 func TestResultChannelAcceptsChangeReadyWithEmptyValueShapes(t *testing.T) {
 	f := newResultChannelFixture("DeveloperWorker")
-	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"wrote readme and verified","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"docs: add readme","description":"records commit time"},"defect":{},"blocker_reason":"null"}`)
+	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"wrote readme and verified","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"docs: add readme","description":"records commit time"},"commit_message":"fix: implement the requested change","defect":{},"blocker_reason":"null"}`)
 	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, raw)
 	if err != nil {
 		t.Fatalf("submit agent result: %v", err)
@@ -182,7 +281,7 @@ func TestResultChannelAcceptsChangeReadyWithEmptyValueShapes(t *testing.T) {
 
 func TestResultChannelRejectsNullLiteralsInsideRequiredFields(t *testing.T) {
 	f := newResultChannelFixture("DeveloperWorker")
-	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"done","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"null","description":"records commit time"}}`)
+	raw := []byte(`{"task_id":"task-channel","run_id":"run-channel","outcome":"change_ready","summary":"done","tests":[{"command":"go test ./...","passed":true,"summary":"green"}],"merge_request":{"title":"null","description":"records commit time"},"commit_message":"fix: implement the requested change"}`)
 	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, raw)
 	if err != nil {
 		t.Fatalf("submit agent result: %v", err)

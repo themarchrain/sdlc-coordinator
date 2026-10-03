@@ -179,3 +179,50 @@ describe('RepositoriesPage', () => {
     await waitFor(() => expect(patch).toHaveBeenCalledWith('repo_a', expect.objectContaining({ display_name: 'Coordinator 2' })))
   })
 })
+
+describe('RepositoriesPage git identity', () => {
+  it('prefills, edits and submits git identity on a disabled repository', async () => {
+    const repo = { ...repositories[1], status: 'disabled', git_author_name: 'Release Bot', git_author_email: 'bot@example.com' }
+    renderPage([repo])
+    const patch = vi.spyOn(adminApi, 'patchRepository').mockResolvedValue(repo)
+
+    const row = await screen.findByText('Legacy').then((node) => node.closest('tr')!)
+    fireEvent.click(within(row).getByRole('button', { name: '编辑仓库' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('提交作者姓名')).toHaveValue('Release Bot')
+    expect(within(dialog).getByLabelText('提交作者邮箱')).toHaveValue('bot@example.com')
+    expect(within(dialog).getByText(/sdlc-coordinator-dev/)).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText('提交作者姓名'), { target: { value: 'Renamed Bot' } })
+    fireEvent.change(within(dialog).getByLabelText('提交作者邮箱'), { target: { value: 'renamed@example.com' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保 存' }))
+
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('repo_b', expect.objectContaining({
+      git_author_name: 'Renamed Bot',
+      git_author_email: 'renamed@example.com',
+    })))
+  })
+
+  it('offers disable for a configuring repository so identity becomes editable', async () => {
+    renderPage()
+    const disable = vi.spyOn(adminApi, 'disableRepository').mockResolvedValue(repositories[1])
+
+    const row = await screen.findByText('Legacy').then((node) => node.closest('tr')!)
+    fireEvent.click(within(row).getByRole('button', { name: /停\s*用/ }))
+    const confirmRoot = await screen.findByText('停用该仓库？').then((node) => node.closest('.ant-modal-confirm') as HTMLElement)
+    fireEvent.click(within(confirmRoot).getByRole('button', { name: /停\s*用/ }))
+
+    await waitFor(() => expect(disable).toHaveBeenCalledWith('repo_b'))
+  })
+
+  it('keeps git identity read-only while the repository is enabled', async () => {
+    renderPage()
+
+    const row = await screen.findByText('Coordinator').then((node) => node.closest('tr')!)
+    fireEvent.click(within(row).getByRole('button', { name: '编辑仓库' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('提交作者姓名')).toBeDisabled()
+    expect(within(dialog).getByLabelText('提交作者邮箱')).toBeDisabled()
+  })
+})

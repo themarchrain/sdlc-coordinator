@@ -58,6 +58,8 @@ type createRepositoryBody struct {
 	CodeHostIssueLabels []string `json:"codehost_issue_labels"`
 	ReviewerMentions    string   `json:"reviewer_mentions"`
 	VerifyCommand       string   `json:"verify_command"`
+	GitAuthorName       string   `json:"git_author_name"`
+	GitAuthorEmail      string   `json:"git_author_email"`
 }
 
 type patchRepositoryBody struct {
@@ -71,6 +73,8 @@ type patchRepositoryBody struct {
 	CodeHostIssueLabels *[]string `json:"codehost_issue_labels"`
 	ReviewerMentions    *string   `json:"reviewer_mentions"`
 	VerifyCommand       *string   `json:"verify_command"`
+	GitAuthorName       *string   `json:"git_author_name"`
+	GitAuthorEmail      *string   `json:"git_author_email"`
 }
 
 func (handler *AdminRepositoryHandler) List(c *gin.Context) {
@@ -102,6 +106,8 @@ func (handler *AdminRepositoryHandler) Create(c *gin.Context) {
 		CodeHostIssueLabels: body.CodeHostIssueLabels,
 		ReviewerMentions:    body.ReviewerMentions,
 		VerifyCommand:       body.VerifyCommand,
+		GitAuthorName:       body.GitAuthorName,
+		GitAuthorEmail:      body.GitAuthorEmail,
 	})
 	if err != nil && view == nil {
 		writeAdminRepositoryError(c, err)
@@ -135,6 +141,8 @@ func (handler *AdminRepositoryHandler) Patch(c *gin.Context) {
 		CodeHostIssueLabels: body.CodeHostIssueLabels,
 		ReviewerMentions:    body.ReviewerMentions,
 		VerifyCommand:       body.VerifyCommand,
+		GitAuthorName:       body.GitAuthorName,
+		GitAuthorEmail:      body.GitAuthorEmail,
 	})
 	if err != nil && view == nil {
 		writeAdminRepositoryError(c, err)
@@ -184,6 +192,8 @@ func repositoryResponse(view registeredrepo.View) gin.H {
 		"status":                    view.Status,
 		"last_configuration_error":  view.LastConfigurationError,
 		"verify_command":            view.VerifyCommand,
+		"git_author_name":           view.GitAuthorName,
+		"git_author_email":          view.GitAuthorEmail,
 	}
 }
 
@@ -205,6 +215,10 @@ func writeAdminRepositoryError(c *gin.Context, err error) {
 		writeAdminError(c, http.StatusConflict, "repository_busy", "仓库仍有活动任务，无法停用")
 	case errors.Is(err, registeredrepo.ErrMustDisableFirst):
 		writeAdminError(c, http.StatusConflict, "repository_must_disable_first", "请先停用仓库再更新 token 或路径")
+	case errors.Is(err, registeredrepo.ErrGitIdentityRequiresDisabled):
+		writeAdminError(c, http.StatusConflict, "git_identity_requires_disabled", "请先停用仓库再修改提交身份；身份修改不影响平台探活，保存后重新启用即可")
+	case errors.Is(err, registeredrepo.ErrInvalidGitIdentity):
+		writeAdminError(c, http.StatusUnprocessableEntity, "invalid_git_identity", "提交身份必须成对填写：姓名不超过 128 字符，邮箱为单个合法地址且不超过 254 字符，均不得含换行或控制字符")
 	case errors.Is(err, registeredrepo.ErrIdentityMismatch):
 		writeAdminError(c, http.StatusConflict, "repository_identity_mismatch", "GitLab 项目身份与已登记记录不一致")
 	case errors.Is(err, registeredrepo.ErrInvalidRepository):

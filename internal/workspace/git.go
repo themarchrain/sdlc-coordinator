@@ -31,11 +31,36 @@ type gitRunner interface {
 
 type execGitRunner struct{}
 
+// ambientIdentityEnvironmentKeys 是会在 Git 侧压过 config 的环境变量。提交
+// 身份的唯一来源是 prepare 阶段写入的仓库本地 config,这些继承键(哪怕来自
+// 部署环境误配)一律从子进程环境剔除。
+var ambientIdentityEnvironmentKeys = []string{
+	"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+}
+
+func sanitizeGitEnvironment(entries []string) []string {
+	filtered := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		ambient := false
+		for _, key := range ambientIdentityEnvironmentKeys {
+			if strings.HasPrefix(entry, key+"=") {
+				ambient = true
+				break
+			}
+		}
+		if !ambient {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
 func (execGitRunner) Run(ctx context.Context, dir string, environment []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	cmd.Env = append(cmd.Env, environment...)
+	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	env = append(env, environment...)
+	cmd.Env = sanitizeGitEnvironment(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), &GitCommandError{Args: append([]string(nil), args...), Output: string(out), Err: err}

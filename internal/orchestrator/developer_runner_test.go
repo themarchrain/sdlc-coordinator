@@ -30,21 +30,25 @@ func TestDeveloperRunnerFinalizesGitBeforeSubmittingChangeReady(t *testing.T) {
 	fixture.runner.execution.ResultHash = "result-hash"
 	fixture.runner.result = &runner.Result{
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
-		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"}}`),
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"},"commit_message":"fix: implement the requested change"}`),
 	}
 
 	observed, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID)
 	if err != nil {
 		t.Fatalf("reconcile developer result: %v", err)
 	}
-	if observed.Submission == nil || fixture.finalizer.calls != 1 || fixture.submitter.calls != 1 {
-		t.Fatalf("developer result was not finalized and submitted: observed=%#v finalizer=%d submit=%d", observed, fixture.finalizer.calls, fixture.submitter.calls)
+	if observed.Submission == nil || fixture.finalizer.commits != 1 || fixture.finalizer.pushes != 1 || fixture.submitter.calls != 1 {
+		t.Fatalf("developer result was not committed, pushed and submitted: observed=%#v commits=%d pushes=%d submit=%d", observed, fixture.finalizer.commits, fixture.finalizer.pushes, fixture.submitter.calls)
 	}
-	if fixture.finalizer.request.TaskType != fixture.task.Type ||
-		fixture.finalizer.request.RepositoryURL != "https://gitlab.example/group/project.git" ||
-		fixture.finalizer.request.TargetBranch != "master" ||
-		fixture.finalizer.request.DeliveryBranch != fixture.task.DeliveryBranch {
-		t.Fatalf("developer finalizer did not receive trusted task delivery metadata: %#v", fixture.finalizer.request)
+	if fixture.finalizer.commitRequest.TaskType != fixture.task.Type ||
+		fixture.finalizer.commitRequest.RepositoryURL != "https://gitlab.example/group/project.git" ||
+		fixture.finalizer.commitRequest.TargetBranch != "master" ||
+		fixture.finalizer.commitRequest.DeliveryBranch != fixture.task.DeliveryBranch ||
+		fixture.finalizer.commitRequest.BaselineSHA == "" {
+		t.Fatalf("developer finalizer did not receive trusted task delivery metadata: %#v", fixture.finalizer.commitRequest)
+	}
+	if fixture.checkpoints.record == nil || fixture.checkpoints.record.CommitSHA != "commit-123" {
+		t.Fatalf("delivery checkpoint must hold the pushed commit: %#v", fixture.checkpoints.record)
 	}
 	canonical := fixture.submitter.request.Canonical
 	if canonical.Status != results.StatusSucceeded || canonical.Artifacts["commit_sha"] != "commit-123" {
@@ -72,14 +76,14 @@ func TestDeveloperRunnerReworkPushesWithoutCreatingMergeRequest(t *testing.T) {
 	fixture.runner.execution.ResultHash = "result-hash"
 	fixture.runner.result = &runner.Result{
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
-		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"rework_ready","summary":"applied feedback","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}]}`),
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"rework_ready","summary":"applied feedback","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"commit_message":"fix: apply the rework request"}`),
 	}
 
 	if _, err := fixture.coordinator.Reconcile(context.Background(), fixture.run.RunID); err != nil {
 		t.Fatalf("reconcile rework result: %v", err)
 	}
-	if fixture.finalizer.request.RunID != fixture.run.RunID || fixture.submitter.calls != 1 {
-		t.Fatalf("rework delivery was not finalized: request=%#v submits=%d", fixture.finalizer.request, fixture.submitter.calls)
+	if fixture.finalizer.commitRequest.RunID != fixture.run.RunID || fixture.submitter.calls != 1 {
+		t.Fatalf("rework delivery was not finalized: request=%#v submits=%d", fixture.finalizer.commitRequest, fixture.submitter.calls)
 	}
 	if len(fixture.submitter.request.Canonical.Writebacks) != 0 {
 		t.Fatalf("rework created a new MR: %#v", fixture.submitter.request.Canonical.Writebacks)
@@ -88,7 +92,7 @@ func TestDeveloperRunnerReworkPushesWithoutCreatingMergeRequest(t *testing.T) {
 
 func TestReconcileDeveloperRunnerConvergesDeliveryFailureToHumanRequired(t *testing.T) {
 	fixture := newDeveloperRunnerFixture(t, "develop_from_issue")
-	fixture.finalizer.err = workspace.ErrWorkspaceConflict
+	fixture.finalizer.commitErr = workspace.ErrWorkspaceConflict
 	if _, err := fixture.coordinator.Start(context.Background(), fixture.startRequest()); err != nil {
 		t.Fatalf("start developer execution: %v", err)
 	}
@@ -96,7 +100,7 @@ func TestReconcileDeveloperRunnerConvergesDeliveryFailureToHumanRequired(t *test
 	fixture.runner.execution.ResultHash = "result-hash"
 	fixture.runner.result = &runner.Result{
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
-		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"}}`),
+		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"},"commit_message":"fix: implement the requested change"}`),
 	}
 	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
 
@@ -111,14 +115,14 @@ func TestReconcileDeveloperRunnerConvergesDeliveryFailureToHumanRequired(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if storedRun.Status != model.RunStatusBlocked || !strings.Contains(storedRun.ErrorMessage, "finalize developer git delivery") {
+	if storedRun.Status != model.RunStatusBlocked || !strings.Contains(storedRun.ErrorMessage, "create developer git delivery") {
 		t.Fatalf("delivery failure did not block the run: %#v", storedRun)
 	}
 	storedTask, err := fixture.tasks.GetByTaskID(context.Background(), fixture.task.TaskID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if storedTask.Status != model.TaskStatusHumanRequired || !strings.Contains(storedTask.LastError, "finalize developer git delivery") {
+	if storedTask.Status != model.TaskStatusHumanRequired || !strings.Contains(storedTask.LastError, "create developer git delivery") {
 		t.Fatalf("delivery failure did not move the task to human required: %#v", storedTask)
 	}
 
@@ -181,6 +185,7 @@ type developerRunnerFixture struct {
 	run         *model.Run
 	preparer    *fakeDeveloperWorkspacePreparer
 	finalizer   *fakeDeveloperFinalizer
+	checkpoints *fakeDeliveryCheckpoints
 	runner      *fakeReviewerRunnerClient
 	submitter   *recordingResultSubmitter
 	coordinator *DeveloperRunnerCoordinator
@@ -214,11 +219,14 @@ func newDeveloperRunnerFixture(t *testing.T, taskType string) developerRunnerFix
 	}
 	preparer := &fakeDeveloperWorkspacePreparer{}
 	finalizer := &fakeDeveloperFinalizer{delivery: &workspace.DeveloperDelivery{CommitSHA: "commit-123", ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}}
+	checkpoints := &fakeDeliveryCheckpoints{}
 	runnerClient := &fakeReviewerRunnerClient{}
 	submitter := &recordingResultSubmitter{}
+	coordinator := NewDeveloperRunnerCoordinator(tasks, runs, executions, preparer, finalizer, runnerClient, submitter, ReviewerRunnerSettings{WorkspaceRoot: "", ResolveRepository: stubRunnerRepository()})
+	coordinator.SetDeveloperDeliveryCheckpoints(checkpoints)
 	return developerRunnerFixture{
-		root: t.TempDir(), tasks: tasks, runs: runs, task: task, run: run, preparer: preparer, finalizer: finalizer, runner: runnerClient, submitter: submitter,
-		coordinator: NewDeveloperRunnerCoordinator(tasks, runs, executions, preparer, finalizer, runnerClient, submitter, ReviewerRunnerSettings{WorkspaceRoot: "", ResolveRepository: stubRunnerRepository()}),
+		root: t.TempDir(), tasks: tasks, runs: runs, task: task, run: run, preparer: preparer, finalizer: finalizer, checkpoints: checkpoints, runner: runnerClient, submitter: submitter,
+		coordinator: coordinator,
 	}
 }
 
@@ -242,23 +250,81 @@ func (f *fakeDeveloperWorkspacePreparer) Prepare(_ context.Context, request work
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &workspace.Manifest{Status: workspace.ManifestStatusReady, TaskID: request.TaskID, RunID: request.RunID, Role: "DeveloperWorker", TaskType: request.TaskType}, nil
+	return &workspace.Manifest{Status: workspace.ManifestStatusReady, TaskID: request.TaskID, RunID: request.RunID, Role: "DeveloperWorker", TaskType: request.TaskType,
+		Repository: workspace.RepositoryManifest{InitialHeadSHA: "baseline-sha", TargetSHA: "baseline-sha"}}, nil
 }
 
 type fakeDeveloperFinalizer struct {
-	calls    int
-	request  workspace.DeveloperFinalizeRequest
-	delivery *workspace.DeveloperDelivery
-	err      error
+	commits       int
+	pushes        int
+	commitRequest workspace.DeveloperCommitRequest
+	pushRequest   workspace.DeveloperPushRequest
+	commitErr     error
+	pushErr       error
+	commit        *workspace.DeveloperCommitResult
+	delivery      *workspace.DeveloperDelivery
 }
 
-func (f *fakeDeveloperFinalizer) Finalize(_ context.Context, request workspace.DeveloperFinalizeRequest) (*workspace.DeveloperDelivery, error) {
-	f.calls++
-	f.request = request
-	if f.err != nil {
-		return nil, f.err
+func (f *fakeDeveloperFinalizer) CommitDelivery(_ context.Context, request workspace.DeveloperCommitRequest) (*workspace.DeveloperCommitResult, error) {
+	f.commits++
+	f.commitRequest = request
+	if f.commitErr != nil {
+		return nil, f.commitErr
 	}
-	return f.delivery, nil
+	if f.commit != nil {
+		return f.commit, nil
+	}
+	return &workspace.DeveloperCommitResult{CommitSHA: "commit-123"}, nil
+}
+
+func (f *fakeDeveloperFinalizer) PushDelivery(_ context.Context, request workspace.DeveloperPushRequest) (*workspace.DeveloperDelivery, error) {
+	f.pushes++
+	f.pushRequest = request
+	if f.pushErr != nil {
+		return nil, f.pushErr
+	}
+	if f.delivery != nil {
+		return f.delivery, nil
+	}
+	return &workspace.DeveloperDelivery{CommitSHA: request.CommitSHA, ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}, nil
+}
+
+// fakeDeliveryCheckpoints 以内存态模拟租户库检查点:RecordBaseline 惰性钉
+// 基线(Start 路径调用),Load 返回当前记录,RecordCommit 记录翻转。
+type fakeDeliveryCheckpoints struct {
+	record      *model.DeveloperDeliveryCheckpoint
+	baselineErr error
+	loadErr     error
+	recordErr   error
+	commits     []string
+}
+
+func (f *fakeDeliveryCheckpoints) RecordBaseline(_ context.Context, record *model.DeveloperDeliveryCheckpoint) error {
+	if f.baselineErr != nil {
+		return f.baselineErr
+	}
+	if f.record == nil {
+		f.record = record
+	}
+	return nil
+}
+
+func (f *fakeDeliveryCheckpoints) Load(_ context.Context, _ string) (*model.DeveloperDeliveryCheckpoint, error) {
+	if f.loadErr != nil {
+		return nil, f.loadErr
+	}
+	return f.record, nil
+}
+
+func (f *fakeDeliveryCheckpoints) RecordCommit(_ context.Context, _ string, commitSHA string) error {
+	if f.recordErr != nil {
+		return f.recordErr
+	}
+	f.commits = append(f.commits, commitSHA)
+	if f.record != nil {
+		f.record.CommitSHA = commitSHA
+	}
+	return nil
 }
 
 func TestDeveloperRunnerStartHonorsPinnedProviderAndPinsOnDispatch(t *testing.T) {

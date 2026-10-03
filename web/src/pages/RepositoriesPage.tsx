@@ -40,6 +40,10 @@ export function RepositoriesPage() {
     }
   }
 
+  const confirmDisable = (repo: RegisteredRepository) => {
+    Modal.confirm({ title: '停用该仓库？', content: '活动任务未结束时会拒绝停用。', okText: '停用', cancelText: '取消', onOk: () => disable(repo) })
+  }
+
   return (
     <div>
       <PageHeading eyebrow="仓库配置" title="仓库管理" action={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>新增仓库</Button>} />
@@ -74,9 +78,10 @@ export function RepositoriesPage() {
                         void enable(row)
                         return
                       }
-                      Modal.confirm({ title: '停用该仓库？', content: '活动任务未结束时会拒绝停用。', okText: '停用', cancelText: '取消', onOk: () => disable(row) })
+                      confirmDisable(row)
                     }}
                   />
+                  {row.status === 'configuring' ? <Button onClick={() => confirmDisable(row)}>停用</Button> : null}
                   <Button aria-label="编辑仓库" onClick={() => setEditing(row)}>编辑</Button>
                 </Space>
               } },
@@ -132,8 +137,8 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
   const configuration = useRemote(() => adminApi.tenantConfiguration(), [])
   const provider = Form.useWatch('provider', form) || 'gitlab'
   const initialValues = creating
-    ? { display_name: '', path_with_namespace: '', provider: 'gitlab', base_url: '', token: '', token_scope_attested: false, webhook_secret: '', verify_command: '' }
-    : { display_name: repository.display_name, path_with_namespace: repository.path_with_namespace, provider: repository.provider, base_url: repository.base_url, token: '', token_scope_attested: false, webhook_secret: '', verify_command: repository.verify_command ?? '' }
+    ? { display_name: '', path_with_namespace: '', provider: 'gitlab', base_url: '', token: '', token_scope_attested: false, webhook_secret: '', verify_command: '', git_author_name: '', git_author_email: '' }
+    : { display_name: repository.display_name, path_with_namespace: repository.path_with_namespace, provider: repository.provider, base_url: repository.base_url, token: '', token_scope_attested: false, webhook_secret: '', verify_command: repository.verify_command ?? '', git_author_name: repository.git_author_name ?? '', git_author_email: repository.git_author_email ?? '' }
 
   // 组织段 codehost 配置作为注册表单默认值:仅创建时注入,运行时不再消费。
   useEffect(() => {
@@ -167,6 +172,8 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
           patch.webhook_secret = values.webhook_secret
         }
         patch.verify_command = values.verify_command
+        patch.git_author_name = values.git_author_name
+        patch.git_author_email = values.git_author_email
         await adminApi.patchRepository(repository.repository_id, patch)
         message.success('仓库已更新')
       }
@@ -224,6 +231,13 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
           <Input className="mono" placeholder="例如 go test ./..." maxLength={512} />
         </Form.Item>
         <p className="form-note">验证命令是自动验证的测试面下限（一条测试或构建命令）；除它之外，验证任务还会复放开发记录里登记的测试命令。</p>
+        <Form.Item name="git_author_name" label="提交作者姓名" tooltip="Developer 交付时 Git commit 的作者与提交者姓名，进入公开提交历史" rules={[{ max: 128, message: '姓名不能超过 128 个字符' }]}>
+          <Input maxLength={128} disabled={!creating && repository.status !== 'disabled'} />
+        </Form.Item>
+        <Form.Item name="git_author_email" label="提交作者邮箱" tooltip="Developer 交付时 Git commit 的作者与提交者邮箱，进入公开提交历史" rules={[{ max: 254, message: '邮箱不能超过 254 个字符' }]}>
+          <Input className="mono" maxLength={254} disabled={!creating && repository.status !== 'disabled'} />
+        </Form.Item>
+        <p className="form-note">提交身份成对生效、会公开出现在 Git 提交历史，请使用经授权的机器人或 no-reply 邮箱；两项留空时使用内置身份 sdlc-coordinator-dev &lt;dev@sdlc-coordinator.local&gt;。修改或清除必须先停用仓库，保存后重新启用即可。</p>
       </Form>
     </Modal>
   )

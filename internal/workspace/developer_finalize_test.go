@@ -14,7 +14,7 @@ import (
 	"sdlc-coordinator/internal/workspace"
 )
 
-func TestDeveloperFinalizerCommitsPushesAndReusesDelivery(t *testing.T) {
+func TestDeveloperDeliveryCommitsPushesAndReplaysIdempotently(t *testing.T) {
 	origin, targetSHA, _ := createReviewOrigin(t)
 	root := t.TempDir()
 	request := workspace.DeveloperRequest{
@@ -29,15 +29,18 @@ func TestDeveloperFinalizerCommitsPushesAndReusesDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	finalizer := workspace.NewDeveloperFinalizer()
-	delivery, err := finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Implement requested fix",
-		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
-		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
-	})
+	commit, err := finalizer.CommitDelivery(context.Background(), commitRequestFor(request, "fix: implement requested fix", targetSHA))
 	if err != nil {
-		t.Fatalf("finalize developer delivery: %v", err)
+		t.Fatalf("commit delivery: %v", err)
 	}
-	if delivery.CommitSHA == "" || len(delivery.ChangedFiles) != 1 || delivery.ChangedFiles[0] != "fix.go" || strings.TrimSpace(delivery.DiffSummary) == "" {
+	if commit.CommitSHA == "" {
+		t.Fatal("commit delivery returned no sha")
+	}
+	delivery, err := finalizer.PushDelivery(context.Background(), pushRequestFor(request, commit.CommitSHA, targetSHA))
+	if err != nil {
+		t.Fatalf("push delivery: %v", err)
+	}
+	if delivery.CommitSHA != commit.CommitSHA || len(delivery.ChangedFiles) != 1 || delivery.ChangedFiles[0] != "fix.go" || strings.TrimSpace(delivery.DiffSummary) == "" {
 		t.Fatalf("unexpected delivery: %#v", delivery)
 	}
 	if got := strings.TrimSpace(runGit(t, repoRoot, "status", "--porcelain")); got != "" {
@@ -54,11 +57,8 @@ func TestDeveloperFinalizerCommitsPushesAndReusesDelivery(t *testing.T) {
 		t.Fatalf("missing run trailer: %s", message)
 	}
 
-	replayed, err := finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Implement requested fix",
-		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
-		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
-	})
+	// 同一检查点重放(重复结果回传):远端已是该 SHA,幂等成功且不多产提交。
+	replayed, err := finalizer.PushDelivery(context.Background(), pushRequestFor(request, commit.CommitSHA, targetSHA))
 	if err != nil || replayed.CommitSHA != delivery.CommitSHA {
 		t.Fatalf("delivery was not idempotent: first=%#v replay=%#v err=%v", delivery, replayed, err)
 	}
@@ -67,7 +67,7 @@ func TestDeveloperFinalizerCommitsPushesAndReusesDelivery(t *testing.T) {
 	}
 }
 
-func TestDeveloperFinalizerFastForwardsReworkBranch(t *testing.T) {
+func TestDeveloperDeliveryFastForwardsReworkBranch(t *testing.T) {
 	origin, _, featureHead := createReviewOrigin(t)
 	root := t.TempDir()
 	request := workspace.DeveloperRequest{
@@ -82,13 +82,14 @@ func TestDeveloperFinalizerFastForwardsReworkBranch(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repoRoot, "rework.txt"), []byte("reworked\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	delivery, err := workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Apply review feedback",
-		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
-		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: featureHead,
-	})
+	finalizer := workspace.NewDeveloperFinalizer()
+	commit, err := finalizer.CommitDelivery(context.Background(), commitRequestFor(request, "fix: apply review feedback", featureHead))
 	if err != nil {
-		t.Fatalf("finalize rework: %v", err)
+		t.Fatalf("commit rework delivery: %v", err)
+	}
+	delivery, err := finalizer.PushDelivery(context.Background(), pushRequestFor(request, commit.CommitSHA, featureHead))
+	if err != nil {
+		t.Fatalf("push rework delivery: %v", err)
 	}
 	if got := strings.TrimSpace(runGit(t, origin, "rev-parse", "refs/heads/feature/review")); got != delivery.CommitSHA {
 		t.Fatalf("rework branch was not updated: %s != %s", got, delivery.CommitSHA)
@@ -98,7 +99,7 @@ func TestDeveloperFinalizerFastForwardsReworkBranch(t *testing.T) {
 	}
 }
 
-func TestDeveloperFinalizerRejectsNoChangesAndRemoteDrift(t *testing.T) {
+func TestDeveloperDeliveryRejectsNoChangesAndRemoteDrift(t *testing.T) {
 	origin, targetSHA, featureHead := createReviewOrigin(t)
 	root := t.TempDir()
 	request := workspace.DeveloperRequest{
@@ -109,12 +110,7 @@ func TestDeveloperFinalizerRejectsNoChangesAndRemoteDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	finalizer := workspace.NewDeveloperFinalizer()
-	_, err := finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "No changes",
-		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
-		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
-	})
-	if !errors.Is(err, workspace.ErrNoDeveloperChanges) {
+	if _, err := finalizer.CommitDelivery(context.Background(), commitRequestFor(request, "fix: no-op attempt", targetSHA)); !errors.Is(err, workspace.ErrNoDeveloperChanges) {
 		t.Fatalf("expected no-change rejection, got %v", err)
 	}
 
@@ -122,12 +118,11 @@ func TestDeveloperFinalizerRejectsNoChangesAndRemoteDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGit(t, origin, "update-ref", "refs/heads/agent/task-conflict", featureHead)
-	_, err = finalizer.Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Conflicting fix",
-		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
-		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
-	})
-	if !errors.Is(err, workspace.ErrDeveloperDeliveryConflict) {
+	commit, err := finalizer.CommitDelivery(context.Background(), commitRequestFor(request, "fix: conflicting attempt", targetSHA))
+	if err != nil {
+		t.Fatalf("commit must succeed before the remote is consulted: %v", err)
+	}
+	if _, err := finalizer.PushDelivery(context.Background(), pushRequestFor(request, commit.CommitSHA, targetSHA)); !errors.Is(err, workspace.ErrDeveloperDeliveryConflict) {
 		t.Fatalf("expected remote drift conflict, got %v", err)
 	}
 	if got := strings.TrimSpace(runGit(t, origin, "rev-parse", "refs/heads/agent/task-conflict")); got != featureHead {
@@ -135,7 +130,7 @@ func TestDeveloperFinalizerRejectsNoChangesAndRemoteDrift(t *testing.T) {
 	}
 }
 
-func TestDeveloperFinalizerRejectsMutatedManifestDeliveryMetadata(t *testing.T) {
+func TestDeveloperDeliveryRejectsMutatedManifestDeliveryMetadata(t *testing.T) {
 	origin, targetSHA, _ := createReviewOrigin(t)
 	attackerOrigin, _, _ := createReviewOrigin(t)
 	root := t.TempDir()
@@ -170,11 +165,7 @@ func TestDeveloperFinalizerRejectsMutatedManifestDeliveryMetadata(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	_, err = workspace.NewDeveloperFinalizer().Finalize(context.Background(), workspace.DeveloperFinalizeRequest{
-		WorkspaceRoot: root, TaskID: request.TaskID, RunID: request.RunID, Summary: "Implement requested fix",
-		TaskType: request.TaskType, RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
-		DeliveryBranch: request.DeliveryBranch, ExpectedInitialHeadSHA: targetSHA,
-	})
+	_, err = workspace.NewDeveloperFinalizer().CommitDelivery(context.Background(), commitRequestFor(request, "fix: implement requested fix", targetSHA))
 	if !errors.Is(err, workspace.ErrWorkspaceConflict) {
 		t.Fatalf("expected mutated manifest to be rejected, got %v", err)
 	}
@@ -182,5 +173,22 @@ func TestDeveloperFinalizerRejectsMutatedManifestDeliveryMetadata(t *testing.T) 
 	command.Dir = attackerOrigin
 	if err := command.Run(); err == nil {
 		t.Fatal("mutated manifest caused Coordinator to push to an untrusted remote branch")
+	}
+}
+
+func commitRequestFor(request workspace.DeveloperRequest, message, baseline string) workspace.DeveloperCommitRequest {
+	return workspace.DeveloperCommitRequest{
+		WorkspaceRoot: request.WorkspaceRoot, TaskID: request.TaskID, RunID: request.RunID, TaskType: request.TaskType,
+		CommitMessage: message, GitAuthorName: request.GitAuthorName, GitAuthorEmail: request.GitAuthorEmail,
+		RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, BaselineSHA: baseline,
+	}
+}
+
+func pushRequestFor(request workspace.DeveloperRequest, commitSHA, baseline string) workspace.DeveloperPushRequest {
+	return workspace.DeveloperPushRequest{
+		WorkspaceRoot: request.WorkspaceRoot, TaskID: request.TaskID, RunID: request.RunID, TaskType: request.TaskType,
+		RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
+		DeliveryBranch: request.DeliveryBranch, CommitSHA: commitSHA, BaselineSHA: baseline,
 	}
 }

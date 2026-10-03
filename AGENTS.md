@@ -53,3 +53,7 @@ It does not own:
   ```
 
   A scope segment is not allowed, e.g. `fix(auth): ...`.
+
+  The body list follows the point count: two or more points use the dash list shown above; a single point is written as one plain line after the summary, with no dash.
+
+  One exception to the shape above: when a coordinator finalizes a developer delivery, it appends a single trusted trailer line `Coordinator-Run-ID: <run id>` at the very end of the message, after a blank line. Commit authors must not write this trailer themselves, and any message content containing it is rejected before the commit is created.

@@ -23,18 +23,20 @@ type DeveloperWorkspacePreparer interface {
 }
 
 type DeveloperGitFinalizer interface {
-	Finalize(context.Context, workspace.DeveloperFinalizeRequest) (*workspace.DeveloperDelivery, error)
+	CommitDelivery(context.Context, workspace.DeveloperCommitRequest) (*workspace.DeveloperCommitResult, error)
+	PushDelivery(context.Context, workspace.DeveloperPushRequest) (*workspace.DeveloperDelivery, error)
 }
 
 type DeveloperRunnerCoordinator struct {
-	tasks     TaskRepository
-	runs      RunRepository
-	preparer  DeveloperWorkspacePreparer
-	finalizer DeveloperGitFinalizer
-	submitter ReviewerResultSubmitter
-	core      *AgentRunnerCoordinator
-	channel   *ResultChannelCoordinator
-	settings  ReviewerRunnerSettings
+	tasks       TaskRepository
+	runs        RunRepository
+	preparer    DeveloperWorkspacePreparer
+	finalizer   DeveloperGitFinalizer
+	checkpoints DeveloperDeliveryCheckpoints
+	submitter   ReviewerResultSubmitter
+	core        *AgentRunnerCoordinator
+	channel     *ResultChannelCoordinator
+	settings    ReviewerRunnerSettings
 	// runnerProviderLookup 是组织段执行选择（CLI 与推理强度）的动态来源
 	// （派发时现取）；nil 或字段为空串 = 沿用系统默认。
 	runnerProviderLookup func(context.Context) RunnerSelection
@@ -84,6 +86,13 @@ func (c *DeveloperRunnerCoordinator) SetRunnerProviderLookup(lookup func(context
 	c.runnerProviderLookup = lookup
 }
 
+// SetDeveloperDeliveryCheckpoints 在装配期接入交付检查点端口(租户库实现),
+// Start 与结果通道共用同一实现;必须在首次派发前完成。
+func (c *DeveloperRunnerCoordinator) SetDeveloperDeliveryCheckpoints(checkpoints DeveloperDeliveryCheckpoints) {
+	c.checkpoints = checkpoints
+	c.channel.SetDeveloperDeliveryCheckpoints(checkpoints)
+}
+
 func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request DeveloperRunnerStartRequest) (*model.AgentExecution, error) {
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
@@ -117,6 +126,16 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 	}
 	if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "DeveloperWorker" {
 		return nil, errors.New("developer workspace manifest is not ready for current task and run")
+	}
+	// 固定基线:prepare 成功后、交给 Agent 之前,把初始 HEAD 与任务/仓/分支
+	// 绑定钉进 Coordinator 私有的租户库检查点。基线失败即中止派发(Agent
+	// 会话尚未开始,零成本);没有基线的 run,后续交付一律 fail-closed。
+	if err := c.checkpoints.RecordBaseline(ctx, &model.DeveloperDeliveryCheckpoint{
+		TaskID: request.Task.TaskID, RunID: request.Run.RunID, TaskType: request.Task.Type,
+		RepositoryURL: workspaceRequest.RepositoryURL, DeliveryBranch: workspaceRequest.DeliveryBranch,
+		BaselineSHA: strings.ToLower(strings.TrimSpace(manifest.Repository.InitialHeadSHA)),
+	}); err != nil {
+		return nil, fmt.Errorf("record developer delivery baseline: %w", err)
 	}
 	bundle, err := workers.BuildDeveloperRunnerTaskBundle(request.Task, request.Run)
 	if err != nil {
@@ -176,7 +195,7 @@ func (c *DeveloperRunnerCoordinator) Reconcile(ctx context.Context, runID string
 }
 
 func (c *DeveloperRunnerCoordinator) validateDependencies() error {
-	if c == nil || c.tasks == nil || c.runs == nil || c.preparer == nil || c.finalizer == nil || c.submitter == nil || c.core == nil {
+	if c == nil || c.tasks == nil || c.runs == nil || c.preparer == nil || c.finalizer == nil || c.checkpoints == nil || c.submitter == nil || c.core == nil {
 		return errors.New("developer runner coordinator dependencies are required")
 	}
 	return nil
@@ -253,6 +272,9 @@ func buildDeveloperWorkspaceRequest(ctx context.Context, task *model.Task, run *
 		Workspace: workspace.DeveloperRequest{
 			WorkspaceRoot: settings.WorkspaceRoot, RepositoryURL: cloneURL, TargetBranch: repo.Branch,
 			DeliveryBranch: model.DeliveryBranch(task), Credential: gitCredentialFrom(repoRow),
+			// 提交身份取注册仓行原值(可为空,prepare 侧降级内置身份),不
+			// 信任 Agent 输出或事件载荷里的任何身份字段。
+			GitAuthorName: repoRow.GitAuthorName, GitAuthorEmail: repoRow.GitAuthorEmail,
 		},
 	}
 	return normalizeDeveloperWorkspaceRequest(request)

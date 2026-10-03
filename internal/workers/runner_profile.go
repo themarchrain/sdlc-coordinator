@@ -59,6 +59,7 @@ func BuildDeveloperRunnerPrompt(pkg agent.TaskPackage) (string, error) {
 		"- Coordinator 已准备当前工作区；当前目录中的 repo 与 workspace-manifest.json 是唯一 Git 事实来源。\n" +
 		"- 禁止 clone、fetch、commit、push 或 force push；不得切换到其他提交，也不要读取或修改 Git 凭据配置。\n" +
 		"- 只能修改当前 repo 中与任务目标直接相关的文件，并运行必要的最小充分验证。\n" +
+		"- commit_message 是 Coordinator 落笔 Git 提交的唯一内容来源：第一行必须是 type: 精炼摘要（type 取 feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert，禁止 type(scope) 形态），标题与正文之间空一行，正文用简短要点或说明交代改动与验证、可省略；不得在 message 中写 Coordinator-Run-ID，追溯尾注由 Coordinator 统一追加。\n" +
 		"- tests 只填写作为交付依据的通过验证（passed=true）；已确认与本次改动无关的既有失败（如环境或平台差异导致）写入 summary 说明，不得作为 tests 条目提交。\n" +
 		resultSubmissionPolicy(results.SubmitDeveloperResultTool) +
 		"\n任务包如下：\n```json\n" + string(raw) + "\n```", nil
@@ -69,7 +70,7 @@ const developerRunnerInstruction = `你是 DeveloperWorker，职责是根据任�
 任务边界：
 - 任务包是唯一业务上下文；只处理授权仓库和明确目标，不通过网络搜索、外部网页或 CodeHost API 补全需求。
 - 需求缺少目标行为、预期效果或可验证标准时，输出 outcome=insufficient_context 和具体 blocker_reason，不进行探索性修改。
-- 修改完成且验证通过时输出 outcome=change_ready、summary、全部通过的 tests 和 merge_request；Git commit、push 和 MR 创建由 Coordinator 完成。
+- 修改完成且验证通过时输出 outcome=change_ready、summary、commit_message、全部通过的 tests 和 merge_request；Git commit、push 和 MR 创建由 Coordinator 完成。
 - tests 至少一条、每条 command 与 summary 必填且 passed=true：代码改动提交相关测试或构建命令；纯文档/配置改动也必须执行并记录一项最小验证（如 "git diff --check"、目标文件内容断言）。tests 为空或"无测试适用"的说明不会被接受，结果会因缺少测试证据被拒绝。
 - 未授权上游缺陷输出 upstream_dependency_defect 和 defect；修复失败、环境阻塞、上下文不足分别输出 fix_failed、environment_blocker、insufficient_context。
 - 不直接创建 Issue、MR、Comment 或 Label，不负责调度、重试、恢复或状态推进。`
@@ -80,7 +81,7 @@ const developerRunnerReworkInstruction = `你是 DeveloperWorker，本轮执行�
 - 必须综合 context.origin_issue、context.merge_request、context.latest_review 和 context.rework_request.context 确定本轮修改范围。
 - 当前工作区已经固定到原 MR source branch 的 expected_head_sha；不得创建新分支、新 Issue 或新 MR，不得修改 target/default branch。
 - 原 Issue、MR、最新审查或当前评论不足以确定目标时，输出 outcome=insufficient_context 和具体 blocker_reason。
-- 修改完成且验证通过时只输出 outcome=rework_ready、summary 和全部通过的 tests；不得输出 merge_request 或 defect。tests 至少一条、command 与 summary 必填且 passed=true；纯文档/配置改动也记录一项最小验证（如 "git diff --check"），空 tests 会被拒绝。
+- 修改完成且验证通过时只输出 outcome=rework_ready、summary、commit_message 和全部通过的 tests；不得输出 merge_request 或 defect。tests 至少一条、command 与 summary 必填且 passed=true；纯文档/配置改动也记录一项最小验证（如 "git diff --check"），空 tests 会被拒绝。
 - Git commit 和向原 source branch 的普通 push 由 Coordinator 完成；不得创建新 MR。
 - 不调用代码托管平台 API（GitLab / Gitea / GitHub），不负责 Comment、IM、审查或全局状态流转。`
 

@@ -48,7 +48,12 @@ type RegisteredRepository struct {
 	ReviewerMentions    string `gorm:"column:reviewer_mentions;type:text"`
 	// VerifyCommand 是仓库级声明的验证命令下限,验证任务派发时并进处方;
 	// 空=仓库未声明下限,验证只复放开发者记录的命令。
-	VerifyCommand          string           `gorm:"column:verify_command;type:text"`
+	VerifyCommand string `gorm:"column:verify_command;type:text"`
+	// GitAuthorName/GitAuthorEmail 是 Developer 交付提交的作者与提交者身份,
+	// 成对配置、仅停用态可改;空=未配置,运行时降级使用内置身份。它们进入
+	// 公开 Git 提交元数据,不是凭据,与 Token 严格分域。
+	GitAuthorName          string           `gorm:"column:git_author_name;type:text"`
+	GitAuthorEmail         string           `gorm:"column:git_author_email;type:text"`
 	Status                 RepositoryStatus `gorm:"column:status;index;not null"`
 	LastConfigurationError string           `gorm:"column:last_configuration_error;type:text"`
 	CreatedAt              time.Time
