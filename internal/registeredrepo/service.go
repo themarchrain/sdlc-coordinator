@@ -178,6 +178,11 @@ func normalizeGitIdentity(name, email string) (string, string, error) {
 }
 
 func validateGitAuthorText(value string, maxRunes int, field string) error {
+	// dash 前缀取值在 git config 的位置参数解析里无法安全携带(连 -- 分隔
+	// 都会被存成字面值),配置面直接拒绝,让写入端只剩无歧义形态。
+	if strings.HasPrefix(value, "-") {
+		return fmt.Errorf("%w: git author %s must not start with '-'", ErrInvalidGitIdentity, field)
+	}
 	if len([]rune(value)) > maxRunes {
 		return fmt.Errorf("%w: git author %s must not exceed %d characters", ErrInvalidGitIdentity, field, maxRunes)
 	}
