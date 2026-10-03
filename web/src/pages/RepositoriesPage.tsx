@@ -40,6 +40,10 @@ export function RepositoriesPage() {
     }
   }
 
+  const confirmDisable = (repo: RegisteredRepository) => {
+    Modal.confirm({ title: '停用该仓库？', content: '活动任务未结束时会拒绝停用。', okText: '停用', cancelText: '取消', onOk: () => disable(repo) })
+  }
+
   return (
     <div>
       <PageHeading eyebrow="仓库配置" title="仓库管理" action={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>新增仓库</Button>} />
@@ -74,9 +78,10 @@ export function RepositoriesPage() {
                         void enable(row)
                         return
                       }
-                      Modal.confirm({ title: '停用该仓库？', content: '活动任务未结束时会拒绝停用。', okText: '停用', cancelText: '取消', onOk: () => disable(row) })
+                      confirmDisable(row)
                     }}
                   />
+                  {row.status === 'configuring' ? <Button onClick={() => confirmDisable(row)}>停用</Button> : null}
                   <Button aria-label="编辑仓库" onClick={() => setEditing(row)}>编辑</Button>
                 </Space>
               } },

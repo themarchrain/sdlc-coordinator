@@ -203,6 +203,18 @@ describe('RepositoriesPage git identity', () => {
     })))
   })
 
+  it('offers disable for a configuring repository so identity becomes editable', async () => {
+    renderPage()
+    const disable = vi.spyOn(adminApi, 'disableRepository').mockResolvedValue(repositories[1])
+
+    const row = await screen.findByText('Legacy').then((node) => node.closest('tr')!)
+    fireEvent.click(within(row).getByRole('button', { name: /停\s*用/ }))
+    const confirmRoot = await screen.findByText('停用该仓库？').then((node) => node.closest('.ant-modal-confirm') as HTMLElement)
+    fireEvent.click(within(confirmRoot).getByRole('button', { name: /停\s*用/ }))
+
+    await waitFor(() => expect(disable).toHaveBeenCalledWith('repo_b'))
+  })
+
   it('keeps git identity read-only while the repository is enabled', async () => {
     renderPage()
 
