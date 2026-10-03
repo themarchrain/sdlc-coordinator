@@ -105,6 +105,43 @@ func TestResultChannelRejectsContractViolationsWithProblems(t *testing.T) {
 	}
 }
 
+// TestResultChannelPushFailureAfterCommitSurfacesError 锁定:提交创建并写入
+// 检查点后推送失败,必须返回结构化错误(此前 err 遮蔽吞掉推送错误、再解引用
+// 空交付对象触发 panic);同一结果重试时走检查点恢复路径直推既有 SHA,不产
+// 生第二笔提交。
+func TestResultChannelPushFailureAfterCommitSurfacesError(t *testing.T) {
+	f := newResultChannelFixture("DeveloperWorker")
+	f.finalizer.pushErr = workspace.ErrDeveloperDeliveryConflict
+	outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("submit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelRejected || outcome.Stage != ChannelStageFinalize {
+		t.Fatalf("push failure after commit must surface as a structured rejection: %#v", outcome)
+	}
+	if len(outcome.Problems) == 0 || !strings.Contains(outcome.Problems[0].Problem, "push developer git delivery") {
+		t.Fatalf("push failure must be reported: %#v", outcome.Problems)
+	}
+	if f.finalizer.commits != 1 || f.finalizer.pushes != 1 {
+		t.Fatalf("commit must run once and push must be attempted once: commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
+	}
+	if f.checkpoints.record == nil || f.checkpoints.record.CommitSHA == "" {
+		t.Fatal("the created commit must be checkpointed before the push attempt")
+	}
+	// 重试:检查点已有 SHA,跳过新建提交,直推恢复。
+	f.finalizer.pushErr = nil
+	outcome, err = f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+	if err != nil {
+		t.Fatalf("resubmit agent result: %v", err)
+	}
+	if outcome.Decision != ChannelAccepted {
+		t.Fatalf("checkpointed retry must recover: %#v", outcome)
+	}
+	if f.finalizer.commits != 1 || f.finalizer.pushes != 2 {
+		t.Fatalf("recovery must not create a second commit: commits=%d pushes=%d", f.finalizer.commits, f.finalizer.pushes)
+	}
+}
+
 // TestResultChannelRecoversWithCheckpointedCommit 锁定恢复路径:检查点已记录
 // 交付 SHA(如推送成功但结果入库前失败后的重复回传)时,跳过新建提交,只
 // 按固定 SHA 重试推送。

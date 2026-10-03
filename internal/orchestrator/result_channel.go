@@ -184,7 +184,10 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				Credential: workspaceRequest.Credential,
 			})
 		} else {
-			commit, err := c.finalizer.CommitDelivery(finalizeCtx, workspace.DeveloperCommitRequest{
+			// commit 与下方 push 共用外层 err:推送错误必须走 217 行的
+			// 结构化错误出口,不能在 else 块内被遮蔽吞掉。
+			var commit *workspace.DeveloperCommitResult
+			commit, err = c.finalizer.CommitDelivery(finalizeCtx, workspace.DeveloperCommitRequest{
 				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
 				CommitMessage: inputValue.CommitMessage, GitAuthorName: workspaceRequest.GitAuthorName,
 				GitAuthorEmail: workspaceRequest.GitAuthorEmail,
