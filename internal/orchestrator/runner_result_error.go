@@ -1,6 +1,10 @@
 package orchestrator
 
-import "errors"
+import (
+	"errors"
+
+	"sdlc-coordinator/internal/runner"
+)
 
 type invalidRunnerResultError struct{ cause error }
 
@@ -30,4 +34,18 @@ func runnerResultNeedsConvergence(err error) bool {
 	var invalid invalidRunnerResultError
 	var delivery deliveryRunnerResultError
 	return errors.As(err, &invalid) || errors.As(err, &delivery)
+}
+
+// errRunnerDeliveryMarkerPending 表示执行面报告了 MCP 已接受的交付标记,但
+// run 尚未终态化:显式失败等待对账,绝不把标记当作业务结果提交。
+var errRunnerDeliveryMarkerPending = errors.New("runner reported an MCP-accepted delivery marker while the run is not terminal; waiting for reconciliation")
+
+// refuseDeliveryMarker 拦截 Provider 生成的交付标记:标记不是业务结果,只能
+// 在 run 已终态时被吸收(该判断在各 Reconcile 的终态分支完成),绝不能送进
+// SubmitAgentResult。
+func refuseDeliveryMarker(result *runner.Result) error {
+	if result != nil && runner.IsDeliveryMarker(result.StructuredOutput) {
+		return errRunnerDeliveryMarkerPending
+	}
+	return nil
 }
