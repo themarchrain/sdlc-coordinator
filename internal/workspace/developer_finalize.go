@@ -16,24 +16,56 @@ var (
 	ErrDeveloperDeliveryConflict = errors.New("developer delivery branch has conflicting remote state")
 )
 
-type DeveloperFinalizeRequest struct {
+// developerDeliveryMetadata 是两阶段交付共用的受信元数据:由编排层从任务与
+// 租户库检查点重建,manifest 必须与之一致才允许操作仓库。
+type developerDeliveryMetadata struct {
+	WorkspaceRoot  string
+	TaskID         string
+	RunID          string
+	TaskType       string
+	RepositoryURL  string
+	TargetBranch   string
+	DeliveryBranch string
+	BaselineSHA    string
+}
+
+type DeveloperCommitRequest struct {
 	WorkspaceRoot string
 	TaskID        string
 	RunID         string
-	// CommitMessage 是 AI 回传并经契约校验的提交正文;finalizer 只在末尾追加
-	// 可信追溯尾注,不再从 summary 派生标题。
+	TaskType      string
+	// CommitMessage 是 AI 回传并经契约校验的提交正文;finalizer 只在末尾
+	// 追加可信追溯尾注,不接受 Agent 自带的尾注。
 	CommitMessage string
-	// GitAuthorName/GitAuthorEmail 是任务绑定的注册仓行受信身份快照。共享工作
-	// 区里 Runner 可改写 .git/config(status 不显示),commit 时以命令行 config
-	// 覆盖本地 config,保证落库身份恒为受信值。
-	GitAuthorName          string
-	GitAuthorEmail         string
-	TaskType               string
-	RepositoryURL          string
-	TargetBranch           string
-	DeliveryBranch         string
-	ExpectedInitialHeadSHA string
-	Credential             *GitCredential
+	// GitAuthorName/GitAuthorEmail 是注册仓行受信身份快照,以命令行 config
+	// 覆盖 Runner 可写的仓库本地 config。
+	GitAuthorName  string
+	GitAuthorEmail string
+	RepositoryURL  string
+	TargetBranch   string
+	DeliveryBranch string
+	// BaselineSHA 是租户库检查点钉住的初始 HEAD:新建交付提交必须是它的
+	// 直接子提交,当前 HEAD 偏离基线时拒绝新建。
+	BaselineSHA string
+}
+
+type DeveloperCommitResult struct {
+	CommitSHA string
+}
+
+type DeveloperPushRequest struct {
+	WorkspaceRoot  string
+	TaskID         string
+	RunID          string
+	TaskType       string
+	RepositoryURL  string
+	TargetBranch   string
+	DeliveryBranch string
+	// CommitSHA 是检查点记录的交付提交:推送固定 SHA,不用可变 HEAD,本地
+	// 后续提交不随行。空值或与本地 HEAD 不符一律拒绝。
+	CommitSHA   string
+	BaselineSHA string
+	Credential  *GitCredential
 }
 
 type DeveloperDelivery struct {
@@ -50,18 +82,16 @@ func NewDeveloperFinalizer() *DeveloperFinalizer {
 	return &DeveloperFinalizer{git: execGitRunner{}}
 }
 
-func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFinalizeRequest) (*DeveloperDelivery, error) {
-	request.WorkspaceRoot = strings.TrimSpace(request.WorkspaceRoot)
-	request.TaskID = strings.TrimSpace(request.TaskID)
-	request.RunID = strings.TrimSpace(request.RunID)
-	request.TaskType = strings.TrimSpace(request.TaskType)
-	request.RepositoryURL = strings.TrimSpace(request.RepositoryURL)
-	request.TargetBranch = strings.TrimSpace(request.TargetBranch)
-	request.DeliveryBranch = strings.TrimSpace(request.DeliveryBranch)
-	request.ExpectedInitialHeadSHA = strings.ToLower(strings.TrimSpace(request.ExpectedInitialHeadSHA))
-	if request.WorkspaceRoot == "" || request.TaskID == "" || request.RunID == "" ||
-		request.TaskType == "" || request.RepositoryURL == "" || request.TargetBranch == "" || request.DeliveryBranch == "" {
-		return nil, errors.New("developer finalization workspace, task, run and trusted delivery metadata are required")
+// CommitDelivery 校验受信基线与 manifest 后暂存并创建本 run 的交付提交:
+// 当前 HEAD 必须等于固定基线,提交必须是基线的直接子提交,消息与身份按约
+// 定落库并读回核验。本方法不推送;返回的 SHA 由编排层写入检查点后才允许
+// 推送。干净工作区上既有的本地提交(如 Agent 提前提交)不在此认领——
+// 归属只能由 Coordinator 私有检查点背书,不凭消息、尾注或身份"长得像"。
+func (f *DeveloperFinalizer) CommitDelivery(ctx context.Context, request DeveloperCommitRequest) (*DeveloperCommitResult, error) {
+	meta, err := deliveryMetadata(request.WorkspaceRoot, request.TaskID, request.RunID, request.TaskType,
+		request.RepositoryURL, request.TargetBranch, request.DeliveryBranch, request.BaselineSHA)
+	if err != nil {
+		return nil, err
 	}
 	// 消息校验先于任何 Git 操作(含 staging):无效消息在触碰仓库前就被拒绝。
 	commitMessage, err := results.NormalizeCommitMessage(request.CommitMessage)
@@ -71,29 +101,11 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 	// 受信身份快照:空值降级内置身份。共享工作区里 Runner 可改写 .git/config
 	// 且 git status 不显示,commit 必须用受信值覆盖,不信任仓库本地 config。
 	authorName, authorEmail := resolveGitIdentity(request.GitAuthorName, request.GitAuthorEmail)
-	runRoot := filepath.Join(request.WorkspaceRoot, "runs", request.RunID)
-	manifest, err := readManifest(filepath.Join(runRoot, ManifestFileName))
+	delivery, err := f.loadDeliveryManifest(meta)
 	if err != nil {
-		return nil, fmt.Errorf("read developer workspace manifest: %w", err)
+		return nil, err
 	}
-	if manifest.Status != ManifestStatusReady || manifest.Role != "DeveloperWorker" || manifest.TaskID != request.TaskID || manifest.RunID != request.RunID {
-		return nil, fmt.Errorf("%w: developer manifest identity mismatch", ErrWorkspaceConflict)
-	}
-	if manifest.TaskType != request.TaskType || manifest.Repository.Path != "repo" ||
-		manifest.Repository.RepositoryURL != request.RepositoryURL || manifest.Repository.TargetBranch != request.TargetBranch ||
-		manifest.Repository.DeliveryBranch != request.DeliveryBranch {
-		return nil, fmt.Errorf("%w: developer manifest delivery metadata differs from trusted task state", ErrWorkspaceConflict)
-	}
-	if strings.TrimSpace(manifest.Repository.InitialHeadSHA) == "" || strings.TrimSpace(manifest.Repository.TargetSHA) == "" {
-		return nil, fmt.Errorf("%w: developer manifest delivery metadata is incomplete", ErrWorkspaceConflict)
-	}
-	if request.ExpectedInitialHeadSHA != "" && !strings.EqualFold(manifest.Repository.InitialHeadSHA, request.ExpectedInitialHeadSHA) {
-		return nil, fmt.Errorf("%w: developer manifest initial head differs from trusted task state", ErrWorkspaceConflict)
-	}
-	if request.TaskType != "rework_merge_request" && !strings.EqualFold(manifest.Repository.InitialHeadSHA, manifest.Repository.TargetSHA) {
-		return nil, fmt.Errorf("%w: initial developer workspace is not based on its prepared target snapshot", ErrWorkspaceConflict)
-	}
-	repoRoot := filepath.Join(runRoot, "repo")
+	repoRoot := filepath.Join(delivery.runRoot, "repo")
 	status, err := f.git.Run(ctx, repoRoot, nil, "status", "--porcelain")
 	if err != nil {
 		return nil, err
@@ -103,110 +115,132 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 		return nil, err
 	}
 	head = strings.ToLower(strings.TrimSpace(head))
-
-	var changedFiles []string
-	var diffSummary string
-	if strings.TrimSpace(status) != "" {
-		if _, err := f.git.Run(ctx, repoRoot, nil, "add", "-A"); err != nil {
-			return nil, err
-		}
-		changedFiles, err = f.changedFiles(ctx, repoRoot, "--cached")
-		if err != nil {
-			return nil, err
-		}
-		if len(changedFiles) == 0 {
-			return nil, ErrNoDeveloperChanges
-		}
-		diffSummary, err = f.git.Run(ctx, repoRoot, nil, "diff", "--cached", "--stat")
-		if err != nil {
-			return nil, err
-		}
-		// 提交正文即 AI 回传内容,追溯尾注由 Coordinator 统一追加。身份以
-		// 命令行 config 覆盖 Runner 可写的本地 config;--cleanup=verbatim
-		// 保证已校验内容原样落库(Git 默认清理会折叠正文连续空行,读回比对
-		// 会误报冲突)。多段消息经临时文件交给 commit -F:Windows 的 git 会
-		// 把 -m 参数在内嵌换行处截断。
-		committed := commitMessage + "\n\n" + results.TrailerMarker + " " + request.RunID
-		messageFile, err := os.CreateTemp("", "developer-commit-message-*.txt")
-		if err != nil {
-			return nil, err
-		}
-		defer os.Remove(messageFile.Name())
-		if _, err := messageFile.WriteString(committed); err != nil {
-			messageFile.Close()
-			return nil, err
-		}
-		if err := messageFile.Close(); err != nil {
-			return nil, err
-		}
-		if _, err := f.git.Run(ctx, repoRoot, nil,
-			"-c", "user.name="+authorName, "-c", "user.email="+authorEmail,
-			"commit", "--cleanup=verbatim", "-F", messageFile.Name(),
-		); err != nil {
-			return nil, err
-		}
-		written, err := f.git.Run(ctx, repoRoot, nil, "log", "-1", "--format=%B")
-		if err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(written) != committed {
-			return nil, fmt.Errorf("%w: committed message differs from requested content", ErrWorkspaceConflict)
-		}
-		if err := f.verifyCommitIdentity(ctx, repoRoot, authorName, authorEmail); err != nil {
-			return nil, err
-		}
-		head, err = f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD")
-		if err != nil {
-			return nil, err
-		}
-		head = strings.ToLower(strings.TrimSpace(head))
-	} else {
-		if strings.EqualFold(head, manifest.Repository.InitialHeadSHA) {
-			return nil, ErrNoDeveloperChanges
-		}
-		if _, err := f.git.Run(ctx, repoRoot, nil, "merge-base", "--is-ancestor", manifest.Repository.InitialHeadSHA, head); err != nil {
-			return nil, fmt.Errorf("%w: local delivery commit is not based on initial head", ErrWorkspaceConflict)
-		}
-		// 恢复路径只接受本 run 内 Coordinator 已落的提交(如 push 失败后的
-		// 重试):消息必须与本次提交将写出的字节完全一致,作者/提交者必须等
-		// 于受信身份。尾注行可被 Agent 自由伪造,仅凭它不构成所有权证明;
-		// 逐字节同质的提交与协调器所写在消息、身份与尾注上无差异。
-		expected := commitMessage + "\n\n" + results.TrailerMarker + " " + request.RunID
-		message, err := f.git.Run(ctx, repoRoot, nil, "log", "-1", "--format=%B")
-		if err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(message) != expected {
-			return nil, fmt.Errorf("%w: local delivery commit does not match the submitted commit message", ErrWorkspaceConflict)
-		}
-		if err := f.verifyCommitIdentity(ctx, repoRoot, authorName, authorEmail); err != nil {
-			return nil, err
-		}
-		changedFiles, err = f.changedFiles(ctx, repoRoot, manifest.Repository.InitialHeadSHA+".."+head)
-		if err != nil {
-			return nil, err
-		}
-		diffSummary, err = f.git.Run(ctx, repoRoot, nil, "diff", "--stat", manifest.Repository.InitialHeadSHA+".."+head)
-		if err != nil {
-			return nil, err
-		}
+	// 干净或脏工作区都一样:HEAD 不在受信基线上,本 run 就没有可新建提交
+	// 的起点;既有本地提交不经检查点不得认领,更不得随交付推送。
+	if !strings.EqualFold(head, meta.BaselineSHA) {
+		return nil, fmt.Errorf("%w: workspace HEAD diverged from the trusted delivery baseline", ErrWorkspaceConflict)
 	}
+	if strings.TrimSpace(status) == "" {
+		return nil, ErrNoDeveloperChanges
+	}
+	if _, err := f.git.Run(ctx, repoRoot, nil, "add", "-A"); err != nil {
+		return nil, err
+	}
+	changedFiles, err := f.changedFiles(ctx, repoRoot, "--cached")
+	if err != nil {
+		return nil, err
+	}
+	if len(changedFiles) == 0 {
+		return nil, ErrNoDeveloperChanges
+	}
+	// 提交正文即 AI 回传内容,追溯尾注由 Coordinator 统一追加。身份以命令
+	// 行 config 覆盖 Runner 可写的本地 config;--cleanup=verbatim 保证已校
+	// 验内容原样落库(Git 默认清理会折叠正文连续空行,读回比对会误报冲突)。
+	// 多段消息经临时文件交给 commit -F:Windows 的 git 会把 -m 参数在内嵌
+	// 换行处截断。
+	committed := commitMessage + "\n\n" + results.TrailerMarker + " " + meta.RunID
+	messageFile, err := os.CreateTemp("", "developer-commit-message-*.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(messageFile.Name())
+	if _, err := messageFile.WriteString(committed); err != nil {
+		messageFile.Close()
+		return nil, err
+	}
+	if err := messageFile.Close(); err != nil {
+		return nil, err
+	}
+	if _, err := f.git.Run(ctx, repoRoot, nil,
+		"-c", "user.name="+authorName, "-c", "user.email="+authorEmail,
+		"commit", "--cleanup=verbatim", "-F", messageFile.Name(),
+	); err != nil {
+		return nil, err
+	}
+	committedSHA, err := f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	committedSHA = strings.ToLower(strings.TrimSpace(committedSHA))
+	written, err := f.git.Run(ctx, repoRoot, nil, "log", "-1", "--format=%B")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(written) != committed {
+		return nil, fmt.Errorf("%w: committed message differs from requested content", ErrWorkspaceConflict)
+	}
+	if err := f.verifyCommitIdentity(ctx, repoRoot, authorName, authorEmail); err != nil {
+		return nil, err
+	}
+	// 直接父提交必须是固定基线:并发同 run 双提交的败者、或踩在未知本地
+	// 提交之上的提交链,都在这里 fail-closed。
+	parent, err := f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD^")
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(parent), meta.BaselineSHA) {
+		return nil, fmt.Errorf("%w: delivery commit parent differs from the trusted baseline", ErrWorkspaceConflict)
+	}
+	return &DeveloperCommitResult{CommitSHA: committedSHA}, nil
+}
 
+// PushDelivery 以检查点记录的固定 SHA 推送:本地 HEAD 必须仍等于该 SHA,
+// 其父提交必须是受信基线;远端已是该 SHA 幂等成功,远端漂移维持冲突语义,
+// 不强推、不改写远端历史。推送绝不使用可变 HEAD,Agent 在交付提交之后的
+// 本地提交不随行。
+func (f *DeveloperFinalizer) PushDelivery(ctx context.Context, request DeveloperPushRequest) (*DeveloperDelivery, error) {
+	meta, err := deliveryMetadata(request.WorkspaceRoot, request.TaskID, request.RunID, request.TaskType,
+		request.RepositoryURL, request.TargetBranch, request.DeliveryBranch, request.BaselineSHA)
+	if err != nil {
+		return nil, err
+	}
+	commitSHA := strings.ToLower(strings.TrimSpace(request.CommitSHA))
+	if commitSHA == "" {
+		return nil, errors.New("developer push requires the checkpointed delivery commit sha")
+	}
+	delivery, err := f.loadDeliveryManifest(meta)
+	if err != nil {
+		return nil, err
+	}
+	repoRoot := filepath.Join(delivery.runRoot, "repo")
+	head, err := f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	head = strings.ToLower(strings.TrimSpace(head))
+	if !strings.EqualFold(head, commitSHA) {
+		return nil, fmt.Errorf("%w: local HEAD diverged from the checkpointed delivery commit", ErrWorkspaceConflict)
+	}
+	parent, err := f.git.Run(ctx, repoRoot, nil, "rev-parse", "HEAD^")
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(parent), meta.BaselineSHA) {
+		return nil, fmt.Errorf("%w: delivery commit parent differs from the trusted baseline", ErrWorkspaceConflict)
+	}
+	changedFiles, err := f.changedFiles(ctx, repoRoot, delivery.manifest.Repository.InitialHeadSHA+".."+commitSHA)
+	if err != nil {
+		return nil, err
+	}
+	diffSummary, err := f.git.Run(ctx, repoRoot, nil, "diff", "--stat", delivery.manifest.Repository.InitialHeadSHA+".."+commitSHA)
+	if err != nil {
+		return nil, err
+	}
 	remoteSHA, err := f.remoteBranchSHA(ctx, repoRoot, request.RepositoryURL, request.DeliveryBranch, request.Credential)
 	if err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(remoteSHA, head) {
-		return &DeveloperDelivery{CommitSHA: head, ChangedFiles: changedFiles, DiffSummary: strings.TrimSpace(diffSummary)}, nil
+	if strings.EqualFold(remoteSHA, commitSHA) {
+		return &DeveloperDelivery{CommitSHA: commitSHA, ChangedFiles: changedFiles, DiffSummary: strings.TrimSpace(diffSummary)}, nil
 	}
-	if remoteSHA != "" && !strings.EqualFold(remoteSHA, manifest.Repository.InitialHeadSHA) {
+	if remoteSHA != "" && !strings.EqualFold(remoteSHA, delivery.manifest.Repository.InitialHeadSHA) {
 		return nil, fmt.Errorf("%w: branch %s points to %s", ErrDeveloperDeliveryConflict, request.DeliveryBranch, remoteSHA)
 	}
 	if request.TaskType == "rework_merge_request" && remoteSHA == "" {
 		return nil, fmt.Errorf("%w: rework branch %s no longer exists", ErrDeveloperDeliveryConflict, request.DeliveryBranch)
 	}
 	pushArgs, environment := credentialFetchArguments(request.Credential, []string{
-		"push", request.RepositoryURL, "HEAD:refs/heads/" + request.DeliveryBranch,
+		"push", request.RepositoryURL, commitSHA + ":refs/heads/" + request.DeliveryBranch,
 	})
 	if _, err := f.git.Run(ctx, repoRoot, environment, pushArgs...); err != nil {
 		return nil, err
@@ -215,10 +249,57 @@ func (f *DeveloperFinalizer) Finalize(ctx context.Context, request DeveloperFina
 	if err != nil {
 		return nil, err
 	}
-	if !strings.EqualFold(verifiedSHA, head) {
-		return nil, fmt.Errorf("%w: pushed branch resolved to %s instead of %s", ErrDeveloperDeliveryConflict, verifiedSHA, head)
+	if !strings.EqualFold(verifiedSHA, commitSHA) {
+		return nil, fmt.Errorf("%w: pushed branch resolved to %s instead of %s", ErrDeveloperDeliveryConflict, verifiedSHA, commitSHA)
 	}
-	return &DeveloperDelivery{CommitSHA: head, ChangedFiles: changedFiles, DiffSummary: strings.TrimSpace(diffSummary)}, nil
+	return &DeveloperDelivery{CommitSHA: commitSHA, ChangedFiles: changedFiles, DiffSummary: strings.TrimSpace(diffSummary)}, nil
+}
+
+func deliveryMetadata(workspaceRoot, taskID, runID, taskType, repositoryURL, targetBranch, deliveryBranch, baselineSHA string) (*developerDeliveryMetadata, error) {
+	meta := &developerDeliveryMetadata{
+		WorkspaceRoot: strings.TrimSpace(workspaceRoot), TaskID: strings.TrimSpace(taskID),
+		RunID: strings.TrimSpace(runID), TaskType: strings.TrimSpace(taskType),
+		RepositoryURL: strings.TrimSpace(repositoryURL), TargetBranch: strings.TrimSpace(targetBranch),
+		DeliveryBranch: strings.TrimSpace(deliveryBranch), BaselineSHA: strings.ToLower(strings.TrimSpace(baselineSHA)),
+	}
+	if meta.WorkspaceRoot == "" || meta.TaskID == "" || meta.RunID == "" || meta.TaskType == "" ||
+		meta.RepositoryURL == "" || meta.TargetBranch == "" || meta.DeliveryBranch == "" || meta.BaselineSHA == "" {
+		return nil, errors.New("developer delivery workspace, task, run, trusted metadata and pinned baseline are required")
+	}
+	return meta, nil
+}
+
+// loadDeliveryManifest 读回工作区 manifest 并与受信元数据逐项核对:防篡改
+// 边界与基线绑定在 commit 与 push 两个阶段都必须成立。
+func (f *DeveloperFinalizer) loadDeliveryManifest(meta *developerDeliveryMetadata) (*developerDeliveryContext, error) {
+	runRoot := filepath.Join(meta.WorkspaceRoot, "runs", meta.RunID)
+	manifest, err := readManifest(filepath.Join(runRoot, ManifestFileName))
+	if err != nil {
+		return nil, fmt.Errorf("read developer workspace manifest: %w", err)
+	}
+	if manifest.Status != ManifestStatusReady || manifest.Role != "DeveloperWorker" || manifest.TaskID != meta.TaskID || manifest.RunID != meta.RunID {
+		return nil, fmt.Errorf("%w: developer manifest identity mismatch", ErrWorkspaceConflict)
+	}
+	if manifest.TaskType != meta.TaskType || manifest.Repository.Path != "repo" ||
+		manifest.Repository.RepositoryURL != meta.RepositoryURL || manifest.Repository.TargetBranch != meta.TargetBranch ||
+		manifest.Repository.DeliveryBranch != meta.DeliveryBranch {
+		return nil, fmt.Errorf("%w: developer manifest delivery metadata differs from trusted task state", ErrWorkspaceConflict)
+	}
+	if strings.TrimSpace(manifest.Repository.InitialHeadSHA) == "" || strings.TrimSpace(manifest.Repository.TargetSHA) == "" {
+		return nil, fmt.Errorf("%w: developer manifest delivery metadata is incomplete", ErrWorkspaceConflict)
+	}
+	if !strings.EqualFold(manifest.Repository.InitialHeadSHA, meta.BaselineSHA) {
+		return nil, fmt.Errorf("%w: developer manifest initial head differs from the trusted delivery baseline", ErrWorkspaceConflict)
+	}
+	if meta.TaskType != "rework_merge_request" && !strings.EqualFold(manifest.Repository.InitialHeadSHA, manifest.Repository.TargetSHA) {
+		return nil, fmt.Errorf("%w: initial developer workspace is not based on its prepared target snapshot", ErrWorkspaceConflict)
+	}
+	return &developerDeliveryContext{runRoot: runRoot, manifest: manifest}, nil
+}
+
+type developerDeliveryContext struct {
+	runRoot  string
+	manifest *Manifest
 }
 
 // verifyCommitIdentity 读回 HEAD 的作者与提交者,必须逐项等于受信身份快照。

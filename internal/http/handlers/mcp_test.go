@@ -67,6 +67,12 @@ func newMCPFixtureWithCodeHost(t *testing.T, withCodeHost bool) mcpFixture {
 	})
 	finalizer := &stubMCPFinalizer{}
 	channel := orchestrator.NewResultChannelCoordinator(finalizer, submitter, orchestrator.ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepositoryForMCP()}, "mcp")
+	// 交付检查点桩:基线字段与 createDeveloperRun 的任务元数据一致。
+	channel.SetDeveloperDeliveryCheckpoints(&stubMCPCheckpoints{record: &model.DeveloperDeliveryCheckpoint{
+		TaskID: mcpTestEndpointTask, TaskType: "develop_from_issue",
+		RepositoryURL: "https://gitlab.example/group/project.git", DeliveryBranch: "agent/" + mcpTestEndpointTask,
+		BaselineSHA: "baseline-mcp",
+	}})
 	secret, err := resulttoken.NewSecret()
 	if err != nil {
 		t.Fatalf("new secret: %v", err)
@@ -79,7 +85,39 @@ func newMCPFixtureWithCodeHost(t *testing.T, withCodeHost bool) mcpFixture {
 	return mcpFixture{handler: handler, router: router, secret: secret, rejections: rejections, submissions: submissions, tasks: tasks, runs: runs, now: time.Now}
 }
 
-type stubMCPFinalizer struct{ calls int }
+type stubMCPFinalizer struct{ commits, pushes int }
+
+func (f *stubMCPFinalizer) CommitDelivery(_ context.Context, _ workspace.DeveloperCommitRequest) (*workspace.DeveloperCommitResult, error) {
+	f.commits++
+	return &workspace.DeveloperCommitResult{CommitSHA: "commit-mcp"}, nil
+}
+
+func (f *stubMCPFinalizer) PushDelivery(_ context.Context, request workspace.DeveloperPushRequest) (*workspace.DeveloperDelivery, error) {
+	f.pushes++
+	return &workspace.DeveloperDelivery{CommitSHA: request.CommitSHA, ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}, nil
+}
+
+type stubMCPCheckpoints struct {
+	record *model.DeveloperDeliveryCheckpoint
+}
+
+func (s *stubMCPCheckpoints) RecordBaseline(_ context.Context, record *model.DeveloperDeliveryCheckpoint) error {
+	if s.record == nil {
+		s.record = record
+	}
+	return nil
+}
+
+func (s *stubMCPCheckpoints) Load(_ context.Context, _ string) (*model.DeveloperDeliveryCheckpoint, error) {
+	return s.record, nil
+}
+
+func (s *stubMCPCheckpoints) RecordCommit(_ context.Context, _ string, commitSHA string) error {
+	if s.record != nil {
+		s.record.CommitSHA = commitSHA
+	}
+	return nil
+}
 
 type mcpCodeHostResolver struct{}
 
@@ -111,11 +149,6 @@ func (mcpCodeHostBackend) SetIssueLabels(context.Context, string, int, codehost.
 
 func (mcpCodeHostBackend) SetMergeRequestLabels(context.Context, string, int, codehost.SetLabelsRequest) (*codehost.MergeRequest, error) {
 	return &codehost.MergeRequest{IID: 1}, nil
-}
-
-func (f *stubMCPFinalizer) Finalize(_ context.Context, _ workspace.DeveloperFinalizeRequest) (*workspace.DeveloperDelivery, error) {
-	f.calls++
-	return &workspace.DeveloperDelivery{CommitSHA: "commit-mcp", ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}, nil
 }
 
 // stubRunnerRepositoryForMCP 返回固定注册仓行的解析闭包,派生的 CloneURL 与

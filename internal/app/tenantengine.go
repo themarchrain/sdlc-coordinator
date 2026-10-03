@@ -142,6 +142,10 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchSubmitter,
 		runnerSettings,
 	)
+	// 交付检查点(租户库):派发时钉基线,commit 与 push 之间写交付 SHA,
+	// 是"提交由 Coordinator 创建"的唯一归属凭据;Agent 不可写租户库。
+	deliveryCheckpoints := repository.NewDeveloperDeliveryCheckpointRepository(db)
+	developerRunnerCoordinator.SetDeveloperDeliveryCheckpoints(deliveryCheckpoints)
 	// 验证任务与 reviewer 共用同一只读工作区 preparer:两者都是按冻结头部
 	// SHA 的只读检出,差别只在角色门禁与回传工具;tester pool 路由随核心
 	// coordinator 注入(装配于 NewReady 前,构造后接入安全)。
@@ -175,6 +179,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchSubmitter,
 		runnerSettings, "mcp",
 	)
+	mcpChannel.SetDeveloperDeliveryCheckpoints(deliveryCheckpoints)
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
 	processor := events.NewProcessor(inboundEventRepo, orch)

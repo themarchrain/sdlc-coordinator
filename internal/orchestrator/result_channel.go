@@ -59,10 +59,11 @@ type ChannelOutcome struct {
 const developerFinalizeTimeout = 3 * time.Minute
 
 type ResultChannelCoordinator struct {
-	finalizer DeveloperGitFinalizer
-	submitter ReviewerResultSubmitter
-	settings  ReviewerRunnerSettings
-	source    string
+	finalizer   DeveloperGitFinalizer
+	checkpoints DeveloperDeliveryCheckpoints
+	submitter   ReviewerResultSubmitter
+	settings    ReviewerRunnerSettings
+	source      string
 }
 
 func NewResultChannelCoordinator(
@@ -75,6 +76,12 @@ func NewResultChannelCoordinator(
 		source = "unknown"
 	}
 	return &ResultChannelCoordinator{finalizer: finalizer, submitter: submitter, settings: settings, source: source}
+}
+
+// SetDeveloperDeliveryCheckpoints 在装配期接入交付检查点端口(租户库实现);
+// 未接入时 Developer ready 结果 fail-closed 拒绝交付。
+func (c *ResultChannelCoordinator) SetDeveloperDeliveryCheckpoints(checkpoints DeveloperDeliveryCheckpoints) {
+	c.checkpoints = checkpoints
 }
 
 // SubmitAgentResult runs raw agent payload through thin normalization, strict
@@ -138,27 +145,82 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 			// fail-closed 而不是 nil panic。
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(errors.New("developer git finalizer is not configured"))), nil
 		}
+		if c.checkpoints == nil {
+			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+				Err: errors.New("developer delivery checkpoints are not configured")}, nil
+		}
 		workspaceRequest, err := buildDeveloperWorkspaceRequest(ctx, task, run, c.settings)
 		if err != nil {
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("rebuild trusted developer workspace metadata: %w", err))), nil
 		}
+		// 交付检查点是提交归属的唯一受信凭据:基线缺失(部署前在途 run)或
+		// 与当前任务/仓/分支不符一律 fail-closed,属基础设施/配置问题,不
+		// 进 AI 可矫正通道。
+		checkpoint, err := c.checkpoints.Load(ctx, run.RunID)
+		if err != nil {
+			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+				Err: fmt.Errorf("load developer delivery checkpoint: %w", err)}, nil
+		}
+		if checkpoint == nil {
+			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+				Err: errors.New("developer delivery baseline is not recorded for the run; redispatch the task")}, nil
+		}
+		if checkpoint.TaskID != task.TaskID || checkpoint.TaskType != task.Type ||
+			checkpoint.RepositoryURL != workspaceRequest.RepositoryURL || checkpoint.DeliveryBranch != workspaceRequest.DeliveryBranch {
+			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+				Err: errors.New("developer delivery baseline does not match the current task and run")}, nil
+		}
 		finalizeCtx, cancel := context.WithTimeout(ctx, developerFinalizeTimeout)
 		defer cancel()
-		delivery, err := c.finalizer.Finalize(finalizeCtx, workspace.DeveloperFinalizeRequest{
-			WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
-			CommitMessage: inputValue.CommitMessage, GitAuthorName: workspaceRequest.GitAuthorName,
-			GitAuthorEmail: workspaceRequest.GitAuthorEmail,
-			TaskType:       task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
-			TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
-			ExpectedInitialHeadSHA: workspaceRequest.ExpectedHeadSHA, Credential: workspaceRequest.Credential,
-		})
+		var delivery *workspace.DeveloperDelivery
+		if checkpoint.CommitSHA != "" {
+			// 重试/恢复路径:只信任检查点记录的固定 SHA,推送前核对本地
+			// HEAD 与父提交仍与其相符。
+			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
+				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
+				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
+				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
+				CommitSHA: checkpoint.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
+				Credential: workspaceRequest.Credential,
+			})
+		} else {
+			commit, err := c.finalizer.CommitDelivery(finalizeCtx, workspace.DeveloperCommitRequest{
+				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
+				CommitMessage: inputValue.CommitMessage, GitAuthorName: workspaceRequest.GitAuthorName,
+				GitAuthorEmail: workspaceRequest.GitAuthorEmail,
+				TaskType:       task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
+				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
+				BaselineSHA: checkpoint.BaselineSHA,
+			})
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					// git 黑洞是基础设施故障而非参数可矫正问题：归传输桶，
+					// 不消耗矫正次数。
+					return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize, Err: fmt.Errorf("create developer git delivery: %w", err)}, nil
+				}
+				return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("create developer git delivery: %w", err))), nil
+			}
+			// 检查点写入必须在 push 之前:写入失败则已创建的提交不推送,
+			// 由重试路径 fail-closed 处理,绝不凭消息/尾注"猜测恢复"。
+			if err := c.checkpoints.RecordCommit(finalizeCtx, run.RunID, commit.CommitSHA); err != nil {
+				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+					Err: fmt.Errorf("record developer delivery checkpoint: %w (the created commit will not be pushed)", err)}, nil
+			}
+			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
+				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
+				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
+				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
+				CommitSHA: commit.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
+				Credential: workspaceRequest.Credential,
+			})
+		}
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				// git 黑洞是基础设施故障而非参数可矫正问题：归传输桶，
 				// 不消耗矫正次数。
-				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize, Err: fmt.Errorf("finalize developer git delivery: %w", err)}, nil
+				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize, Err: fmt.Errorf("push developer git delivery: %w", err)}, nil
 			}
-			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("finalize developer git delivery: %w", err))), nil
+			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("push developer git delivery: %w", err))), nil
 		}
 		developerInput, err = agentContract.WithDelivery(agentInput, results.DeliveryEvidence{
 			CommitSHA: delivery.CommitSHA, ChangedFiles: delivery.ChangedFiles, DiffSummary: delivery.DiffSummary,
