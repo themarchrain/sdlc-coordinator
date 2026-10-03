@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"sdlc-coordinator/internal/results"
 	"sdlc-coordinator/internal/runner"
 )
 
@@ -137,7 +138,13 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	// （unexpected argument '-'），0.150+ 两种顺序都接受。
 	args = append(args, "-")
 
-	parser := eventParser{emit: emit, provider: request.Provider, channel: request.ResultSubmission}
+	parser := eventParser{
+		emit: emit, provider: request.Provider, channel: request.ResultSubmission,
+		taskID: request.TaskID, runID: request.ExecutionID,
+	}
+	if toolName, ok := results.ToolNameForWorkerRole(request.Role); ok {
+		parser.expectedTool = toolName
+	}
 	if err := p.command.Run(ctx, commandSpec{
 		Binary: p.binary, Args: args, Dir: request.WorkspacePath, Env: environment, Stdin: string(prompt),
 	}, parser.consume); err != nil {
@@ -153,12 +160,21 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	result, err := os.ReadFile(finalPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			if marker := parser.deliveryMarker(); marker != nil {
+				// 最终消息缺失但主通道已被接受:按交付标记收尾,执行记录正常终态化。
+				return marker, nil
+			}
 			return nil, errors.New("codex final result is missing")
 		}
+		// 非缺失类读取故障是真实执行异常,不接受回执覆盖。
 		return nil, fmt.Errorf("read codex final result: %w", err)
 	}
 	if normalized, ok := normalizeFinalResult(result); ok {
 		return normalized, nil
+	}
+	if marker := parser.deliveryMarker(); marker != nil {
+		// 最终消息非 JSON 但主通道已被接受:不再落无效结果诊断。
+		return marker, nil
 	}
 	diagnosticsRoot, diagnosticsErr := persistInvalidFinalDiagnostics(request.WorkspacePath, result, adaptedSchema, request.Provider, request.ResultSubmission)
 	if diagnosticsErr != nil {
@@ -236,6 +252,14 @@ type eventParser struct {
 	channel        *runner.ResultSubmissionChannel
 	failureCode    string
 	failureMessage string
+	// 本次执行的业务身份与角色工具名:接受回执必须与之完全对齐才可采信。
+	taskID       string
+	runID        string
+	expectedTool string
+	// acceptedReceipt 表示已观测到本 run 的 MCP 成功回执;turnFailed 表示
+	// 出现了终止失败事件,两者同时存在时回执不得覆盖真实故障。
+	acceptedReceipt bool
+	turnFailed      bool
 }
 
 // knownNonFatal reports provider-side notices that every session emits but
@@ -312,18 +336,61 @@ func (p *eventParser) consume(line []byte) error {
 					payload["error_message"] = redactProviderError(message, p.provider, p.channel)
 				}
 			}
+			if eventType == "item.completed" {
+				p.observeAcceptanceReceipt(item)
+			}
 		}
 		p.emitEvent("codex_progress", payload)
 	case "turn.completed":
 		usage, _ := event["usage"].(map[string]any)
 		p.emitEvent("codex_usage", selectFields(usage, "input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"))
 	case "turn.failed":
+		p.turnFailed = true
 		payload := p.failurePayload(event)
 		p.failureCode, _ = payload["error_code"].(string)
 		p.failureMessage, _ = payload["message"].(string)
 		p.emitEvent("codex_error", payload)
 	}
 	return nil
+}
+
+// observeAcceptanceReceipt 只在结构化的工具完成事件上采信 MCP 成功回执:
+// 工具完成、无错误、服务与角色工具名匹配、回执 JSON 的 status 为 accepted
+// 且 task_id/run_id/run_status 与本次执行对齐才置位。仅配置了通道、仅出现
+// 工具调用、或文本自称成功都不算。
+func (p *eventParser) observeAcceptanceReceipt(item map[string]any) {
+	if p.acceptedReceipt || p.channel == nil || p.expectedTool == "" {
+		return
+	}
+	if stringValue(item, "status") != "completed" {
+		return
+	}
+	if stringValue(item, "server") != mcpServerName || stringValue(item, "tool") != p.expectedTool {
+		return
+	}
+	if errorObject, ok := item["error"].(map[string]any); ok && len(errorObject) > 0 {
+		return
+	}
+	result, ok := item["result"].(map[string]any)
+	if !ok {
+		return
+	}
+	if isError, ok := result["isError"].(bool); ok && isError {
+		return
+	}
+	if _, ok := runner.ParseMCPAcceptedReceipt(mcpResultText(result), p.taskID, p.runID); !ok {
+		return
+	}
+	p.acceptedReceipt = true
+}
+
+// deliveryMarker 只在存在本 run 的 MCP 成功回执且没有终止失败事件时返回
+// 交付标记;CLI 正常退出由调用点保证。
+func (p *eventParser) deliveryMarker() json.RawMessage {
+	if !p.acceptedReceipt || p.turnFailed {
+		return nil
+	}
+	return runner.NewDeliveryMarker(p.taskID, p.runID)
 }
 
 func (p *eventParser) failurePayload(event map[string]any) map[string]any {
