@@ -91,7 +91,10 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 			return result
 		}
 		for _, effect := range effects {
-			if effect.Status != model.EffectStatusSucceeded && effect.Status != model.EffectStatusSkipped {
+			// 投递未核验与 succeeded/skipped 一样放行:它是无人工出路的终态,
+			// 挡着会让 run 产物永久滞留清理候选并占满批次;送达凭据与原因
+			// 元数据都在效果记录中,不依赖产物。
+			if effect.Status != model.EffectStatusSucceeded && effect.Status != model.EffectStatusSkipped && effect.Status != model.EffectStatusDeliveryUnverified {
 				return result
 			}
 		}

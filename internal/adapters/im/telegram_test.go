@@ -225,10 +225,12 @@ func TestTelegramBackendAcceptsReceiptAtExactLimit(t *testing.T) {
 	}
 }
 
-func TestTelegramReceiptLimitCoversWorstLegalReceipt(t *testing.T) {
-	// sendMessage 正文上限 4096 字符,成功回执回显全文且非 ASCII 全量
-	// \uXXXX 转义(每字符 6 字节),再加实体数组与 chat/from 元数据;
-	// 上限必须覆盖该最坏常见编码并留有余量,否则合法长通知会被误记未核验。
+func TestTelegramReceiptLimitCoversFullLengthEscapedBody(t *testing.T) {
+	// 上限按代表性的最坏编码样本验证:sendMessage 正文上限 4096 字符,
+	// 成功回执回显全文且非 ASCII 全量转义(每字符 6 字节),另加一批实体
+	// 数组与 chat/from 元数据。实体数量无官方文档上限,更病态的多实体
+	// 形态不由此测试覆盖;即使真实超出上限,也只是走投递未核验保护,
+	// 不会误报成功或失败。
 	var text strings.Builder
 	for i := 0; i < 4096; i++ {
 		text.WriteString(`\u5ba1`)

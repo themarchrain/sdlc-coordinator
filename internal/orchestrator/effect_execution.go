@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	effectsexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/model"
 )
 
@@ -92,7 +93,7 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 				}
 				break
 			}
-			if errors.Is(err, ErrEffectDeliveryUnverified) {
+			if errors.Is(err, effectsexec.ErrEffectDeliveryUnverified) {
 				// 投递未核验:消息可能已送达,记独立终态避免误导性重发;
 				// 错误文本只含有界元数据(状态码/原因/上限/读取量),
 				// 不携带远端响应正文。
@@ -176,9 +177,3 @@ type conditionalEffectExecutor interface {
 // ExecuteEffect 返回被它包装的错误时,效果退回队列保持 pending,而不是
 // 置 failed 等人工重试。
 var ErrEffectExecutorDisabled = errors.New("effect executor disabled")
-
-// ErrEffectDeliveryUnverified 是已拿到 HTTP 响应但无法核实投递结果的
-// 哨兵错误(回执超限/读取中断/无法解析,由执行器从 im 层结构化错误转译):
-// 效果记独立终态 delivery_unverified,不按普通失败处理——消息可能已送达,
-// 常规重试会重复发送。
-var ErrEffectDeliveryUnverified = errors.New("effect delivery unverified")

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	effectsexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
@@ -85,7 +86,7 @@ func TestExecutePendingEffectsMarksDeliveryUnverified(t *testing.T) {
 	}
 
 	executor := &fakeEffectExecutor{errors: map[string]error{
-		"effect-unverified": fmt.Errorf("%w: receipt exceeds limit 65536 (http 200, read at least 65537)", ErrEffectDeliveryUnverified),
+		"effect-unverified": fmt.Errorf("%w: receipt exceeds limit 65536 (http 200, read at least 65537)", effectsexec.ErrEffectDeliveryUnverified),
 	}}
 	orch := New(nil, nil, WithEffectRepository(effectRepo), WithEffectExecutor(executor))
 

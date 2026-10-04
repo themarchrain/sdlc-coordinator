@@ -96,6 +96,32 @@ func TestTickSkipsAnomalousRunsDuringArtifactCleanup(t *testing.T) {
 	}
 }
 
+func TestTickPurgesRunWithDeliveryUnverifiedEffect(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	fixture := newArtifactCleanupFixture(t, root)
+	completed := fixture.now.Add(-8 * 24 * time.Hour)
+	run := seedFullySucceededRun(t, ctx, fixture, root, "run-unverified-effect", completed)
+	// 投递未核验是终态且无人工出路:不能像 pending/failed 那样把 run 产物
+	// 永久留在清理候选里;送达凭据与原因元数据都在效果记录中,不依赖产物。
+	if err := fixture.effects.Create(ctx, &model.Effect{
+		TaskID: run.TaskID, RunID: run.RunID, DedupeKey: "im-unverified", Kind: "send_im_message",
+		Target:       "team",
+		Status:       model.EffectStatusDeliveryUnverified,
+		ErrorMessage: "effect delivery unverified: receipt exceeds limit 65536 (http 200, read at least 65537)",
+	}); err != nil {
+		t.Fatalf("create unverified effect: %v", err)
+	}
+
+	result, err := fixture.orch.Tick(ctx, TickRequest{})
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if len(result.CleanedArtifacts) != 1 || !result.CleanedArtifacts[0].Purged || result.CleanedArtifacts[0].RunID != "run-unverified-effect" {
+		t.Fatalf("expected purged run with unverified effect, got %#v", result.CleanedArtifacts)
+	}
+}
+
 func TestTickKeepsGoingWhenArtifactDeleteFails(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

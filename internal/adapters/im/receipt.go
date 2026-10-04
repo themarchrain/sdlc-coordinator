@@ -5,14 +5,17 @@ import "fmt"
 // receiptLimit 是 IM 回执读取的字节上限:覆盖合法回执的最坏常见编码
 // (sendMessage 正文上限 4096 字符,回执回显全文且非 ASCII 全量转义,另加
 // 实体与元数据)并留有余量;超出即停止读取,避免中转端异常大响应造成
-// 内存压力。上限与最坏合法回执的关系由
-// TestTelegramReceiptLimitCoversWorstLegalReceipt 钉住。
+// 内存压力。上限与代表性最坏样本的关系由
+// TestTelegramReceiptLimitCoversFullLengthEscapedBody 钉住。
 const receiptLimit = 64 << 10
 
 // 回执无法核验的三种原因。
 const (
+	// ReasonReceiptExceedsLimit 表示回执超过读取上限,已停止继续读取。
 	ReasonReceiptExceedsLimit = "receipt exceeds limit"
-	ReasonReceiptReadFailed   = "receipt read failed"
+	// ReasonReceiptReadFailed 表示回执传输中断,响应体不完整。
+	ReasonReceiptReadFailed = "receipt read failed"
+	// ReasonReceiptDecodeFailed 表示回执在上限内但无法按 JSON 解析。
 	ReasonReceiptDecodeFailed = "receipt decode failed"
 )
 

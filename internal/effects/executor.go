@@ -9,10 +9,15 @@ import (
 
 	"sdlc-coordinator/internal/adapters/im"
 	"sdlc-coordinator/internal/model"
-	"sdlc-coordinator/internal/orchestrator"
 )
 
 const KindSendIMMessage = "send_im_message"
+
+// ErrEffectDeliveryUnverified 是已拿到 HTTP 响应但无法核实投递结果的
+// 哨兵错误:由本执行器从 im 层结构化错误转译,编排层按它记独立终态
+// delivery_unverified,不按普通失败处理——消息可能已送达,常规重试会
+// 重复发送。定义在执行器一侧,编排层引用,保持依赖方向向下。
+var ErrEffectDeliveryUnverified = errors.New("effect delivery unverified")
 
 type Executor struct {
 	im im.Backend
@@ -72,11 +77,11 @@ func (e *Executor) executeSendIMMessage(ctx context.Context, effect *model.Effec
 		Mentions: req.Mentions,
 	})
 	if err != nil {
-		// 投递未核验(im 层结构化错误)转译为编排层哨兵:记账层按哨兵记
+		// 投递未核验(im 层结构化错误)转译为本包哨兵:记账层按哨兵记
 		// 独立终态,不感知 im 细节;其余错误原样透传。
 		var unverified *im.DeliveryUnverifiedError
 		if errors.As(err, &unverified) {
-			return "", fmt.Errorf("%w: %s", orchestrator.ErrEffectDeliveryUnverified, err.Error())
+			return "", fmt.Errorf("%w: %s", ErrEffectDeliveryUnverified, err.Error())
 		}
 		return "", err
 	}

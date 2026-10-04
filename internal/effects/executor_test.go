@@ -9,7 +9,6 @@ import (
 
 	"sdlc-coordinator/internal/adapters/im"
 	"sdlc-coordinator/internal/model"
-	"sdlc-coordinator/internal/orchestrator"
 )
 
 func TestExecutorExecutesSendIMMessageEffect(t *testing.T) {
@@ -135,7 +134,7 @@ func TestExecutorTranslatesUnverifiedReceiptForAccounting(t *testing.T) {
 		Target:      "team-review-group",
 		RequestJSON: `{"body":"MR !12 审查完成"}`,
 	})
-	if !errors.Is(err, orchestrator.ErrEffectDeliveryUnverified) {
+	if !errors.Is(err, ErrEffectDeliveryUnverified) {
 		t.Fatalf("unverified receipt must translate to the orchestrator sentinel, got %v", err)
 	}
 	if text := err.Error(); !strings.HasPrefix(text, "effect delivery unverified: receipt exceeds limit") || len(text) > 300 {
@@ -152,7 +151,7 @@ func TestExecutorPassesThroughRegularErrorsUnwrapped(t *testing.T) {
 		Target:      "team-review-group",
 		RequestJSON: `{"body":"hi"}`,
 	})
-	if err == nil || err.Error() != "boom" || errors.Is(err, orchestrator.ErrEffectDeliveryUnverified) {
+	if err == nil || err.Error() != "boom" || errors.Is(err, ErrEffectDeliveryUnverified) {
 		t.Fatalf("regular errors must pass through unwrapped, got %v", err)
 	}
 }
