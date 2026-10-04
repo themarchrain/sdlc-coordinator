@@ -141,6 +141,9 @@ func (c *TesterRunnerCoordinator) Reconcile(ctx context.Context, runID string) (
 	if observation.Result == nil {
 		return result, nil
 	}
+	if err := refuseDeliveryMarker(observation.Result); err != nil {
+		return result, err
+	}
 	task, err := c.tasks.GetByTaskID(ctx, runRecord.TaskID)
 	if err != nil {
 		return nil, err

@@ -114,3 +114,45 @@ func TestServiceRejectsSubmissionChannelWithoutEndpoint(t *testing.T) {
 		t.Fatal("channel without endpoint url must be rejected")
 	}
 }
+
+type markerProvider struct{}
+
+func (p *markerProvider) Execute(_ context.Context, request runner.ProviderRequest, _ runner.EmitFunc) (json.RawMessage, error) {
+	marker := runner.NewDeliveryMarker(request.TaskID, request.ExecutionID)
+	if marker == nil {
+		return nil, errors.New("build delivery marker")
+	}
+	return marker, nil
+}
+
+// MCP 主通道已接受后,Provider 生成的交付标记必须能按正常成功结果持久化:
+// 执行记录不再因最终文本格式被记成失败,标记本身不被改造。
+func TestServicePersistsProviderDeliveryMarkerAsSucceededResult(t *testing.T) {
+	service, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": &markerProvider{}})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	request := sampleRequest()
+	request.ResultSubmission = submissionChannel()
+	if _, err := service.Create(context.Background(), request); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	execution := waitForStatus(t, service, request.ExecutionID, runner.StatusSucceeded)
+	if execution.Status != runner.StatusSucceeded {
+		t.Fatalf("unexpected status: %#v", execution)
+	}
+	result, err := service.Result(request.ExecutionID)
+	if err != nil {
+		t.Fatalf("load result: %v", err)
+	}
+	if !runner.IsDeliveryMarker(result.StructuredOutput) {
+		t.Fatalf("delivery marker was not persisted as the structured result: %s", result.StructuredOutput)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(result.StructuredOutput, &envelope); err != nil {
+		t.Fatalf("delivery marker is not valid JSON: %v", err)
+	}
+	if _, ok := envelope["delivery_marker"]; !ok {
+		t.Fatalf("delivery marker envelope missing: %s", result.StructuredOutput)
+	}
+}

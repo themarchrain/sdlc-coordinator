@@ -18,6 +18,20 @@ const (
 	SubmitReviewerResultTool  = "submit_reviewer_result"
 )
 
+// ToolNameForWorkerRole 返回 worker 角色对应的 MCP 结果提交工具名。
+func ToolNameForWorkerRole(role string) (string, bool) {
+	switch role {
+	case "DeveloperWorker":
+		return SubmitDeveloperResultTool, true
+	case "ReviewerWorker":
+		return SubmitReviewerResultTool, true
+	case "TesterWorker":
+		return SubmitTesterResultTool, true
+	default:
+		return "", false
+	}
+}
+
 type RoleResultInput interface {
 	Identity() (taskID string, runID string)
 }

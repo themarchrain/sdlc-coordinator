@@ -434,10 +434,11 @@ func TestProviderRedactsGatewaySecretsFromCommandFailure(t *testing.T) {
 }
 
 type fakeCommandRunner struct {
-	spec  commandSpec
-	lines [][]byte
-	final string
-	err   error
+	spec    commandSpec
+	lines   [][]byte
+	final   string
+	noFinal bool
+	err     error
 }
 
 func (f *fakeCommandRunner) Run(_ context.Context, spec commandSpec, onLine func([]byte) error) error {
@@ -451,6 +452,9 @@ func (f *fakeCommandRunner) Run(_ context.Context, spec commandSpec, onLine func
 		return f.err
 	}
 	finalPath := argumentValue(spec.Args, "--output-last-message")
+	if f.noFinal {
+		return nil
+	}
 	if f.final == "" && len(f.lines) > 0 {
 		f.final = `{"verdict":"approved"}`
 	}
