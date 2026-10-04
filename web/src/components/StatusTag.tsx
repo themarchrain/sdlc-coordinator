@@ -12,6 +12,7 @@ const statusColors: Record<string, string> = {
   configuring: 'processing',
   pending: 'default',
   retry_pending: 'warning',
+  delivery_unverified: 'warning',
   paused: 'warning',
   waiting_for_confirmation: 'warning',
   waiting_upstream: 'warning',

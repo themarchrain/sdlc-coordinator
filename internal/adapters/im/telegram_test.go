@@ -3,6 +3,7 @@ package im
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -127,9 +128,9 @@ func TestTelegramBackendReadsFullReceiptBeyond4096(t *testing.T) {
 	}
 }
 
-func TestTelegramBackendReportsResponseReadFailure(t *testing.T) {
-	// 声明 4096 字节却只写半截:回执传输中断必须显式报读错误,
-	// 不允许把半截响应静默递给 JSON 解析。
+func TestTelegramBackendMarksInterruptedReceiptUnverified(t *testing.T) {
+	// 声明 4096 字节却只写半截:2xx 已收到但回执传输中断,消息可能已送达,
+	// 不得把半截响应当普通失败(会误导重发),应记为投递未核验。
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "4096")
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"mess`))
@@ -138,8 +139,133 @@ func TestTelegramBackendReportsResponseReadFailure(t *testing.T) {
 
 	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
 	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
-	if err == nil || !strings.HasPrefix(err.Error(), "read telegram response: ") {
-		t.Fatalf("truncated transport must surface a read error, got %v", err)
+	var unverified *DeliveryUnverifiedError
+	if !errors.As(err, &unverified) {
+		t.Fatalf("interrupted receipt must be delivery unverified, got %v", err)
+	}
+	if unverified.Reason != ReasonReceiptReadFailed {
+		t.Fatalf("reason = %q", unverified.Reason)
+	}
+}
+
+func TestTelegramBackendMarksOversizedReceiptUnverified(t *testing.T) {
+	// 中转端返回异常大内容:读到上限+1 字节即停,记投递未核验;
+	// 错误只含有界元数据,不携带远端响应正文。
+	receipt := `{"ok":true,"result":{"message_id":42,"text":"` + strings.Repeat("回执", 200000) + `"}}`
+	if len(receipt) <= receiptLimit {
+		t.Fatalf("receipt fixture must exceed the limit, got %d bytes", len(receipt))
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(receipt))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	var unverified *DeliveryUnverifiedError
+	if !errors.As(err, &unverified) {
+		t.Fatalf("oversized receipt must be delivery unverified, got %v", err)
+	}
+	if unverified.Reason != ReasonReceiptExceedsLimit {
+		t.Fatalf("reason = %q", unverified.Reason)
+	}
+	if unverified.Read != receiptLimit+1 {
+		t.Fatalf("must stop reading at limit+1, read %d", unverified.Read)
+	}
+	if text := err.Error(); strings.Contains(text, "回执") || len(text) > 200 {
+		t.Fatalf("unverified error must stay bounded and omit the remote body: %q", text)
+	}
+}
+
+func TestTelegramBackendStopsReadingUnboundedReceipt(t *testing.T) {
+	// 无限流响应:读到上限+1 即停并关闭连接;若实现退回全量读取,会一直
+	// 读到客户端超时,错误形态随之不同,本测试即为红灯。
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chunk := []byte(strings.Repeat("a", 4096))
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+			}
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	var unverified *DeliveryUnverifiedError
+	if !errors.As(err, &unverified) || unverified.Reason != ReasonReceiptExceedsLimit {
+		t.Fatalf("unbounded receipt must stop at the limit and be unverified, got %v", err)
+	}
+}
+
+func TestTelegramBackendAcceptsReceiptAtExactLimit(t *testing.T) {
+	base := `{"ok":true,"result":{"message_id":42,"text":"`
+	tail := `"}}`
+	receipt := base + strings.Repeat("a", receiptLimit-len(base)-len(tail)) + tail
+	if len(receipt) != receiptLimit {
+		t.Fatalf("fixture must be exactly the limit, got %d bytes", len(receipt))
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(receipt))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	message, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err != nil || message == nil || message.ID != "42" {
+		t.Fatalf("receipt at the exact limit must succeed, got %v", err)
+	}
+}
+
+func TestTelegramReceiptLimitCoversWorstLegalReceipt(t *testing.T) {
+	// sendMessage 正文上限 4096 字符,成功回执回显全文且非 ASCII 全量
+	// \uXXXX 转义(每字符 6 字节),再加实体数组与 chat/from 元数据;
+	// 上限必须覆盖该最坏常见编码并留有余量,否则合法长通知会被误记未核验。
+	var text strings.Builder
+	for i := 0; i < 4096; i++ {
+		text.WriteString(`\u5ba1`)
+	}
+	entities := strings.TrimRight(strings.Repeat(`{"offset":0,"length":1,"type":"bold"},`, 200), ",")
+	receipt := `{"ok":true,"result":{"message_id":42,"date":1700000000,"text":"` + text.String() +
+		`","entities":[` + entities + `],"chat":{"id":-100123,"title":"review","type":"group"},"from":{"id":7101,"is_bot":true,"first_name":"bot"}}}`
+	if len(receipt) >= receiptLimit {
+		t.Fatalf("limit %d does not cover the worst legal receipt (%d bytes)", receiptLimit, len(receipt))
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(receipt))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	message, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err != nil || message == nil || message.ID != "42" {
+		t.Fatalf("worst legal receipt must parse successfully, got %v", err)
+	}
+}
+
+func TestTelegramBackendNon2xxOversizedBodyStillReportsStatus(t *testing.T) {
+	// 非 2xx 是渠道的明确拒绝:即使错误体超限,结论仍由状态码给出,
+	// 不记投递未核验。
+	receipt := `{"description":"` + strings.Repeat("x", 100000) + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(receipt))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	var unverified *DeliveryUnverifiedError
+	if err == nil || errors.As(err, &unverified) || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("non-2xx must keep reporting the status, got %v", err)
 	}
 }
 

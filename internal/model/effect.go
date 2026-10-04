@@ -14,6 +14,9 @@ const (
 	EffectStatusSucceeded EffectStatus = "succeeded"
 	EffectStatusFailed    EffectStatus = "failed"
 	EffectStatusSkipped   EffectStatus = "skipped"
+	// delivery_unverified:HTTP 2xx 但回执超限/读取中断/无法解析——消息
+	// 可能已送达但无法核实,独立终态,不进入常规重试(避免重复发送)。
+	EffectStatusDeliveryUnverified EffectStatus = "delivery_unverified"
 )
 
 type Effect struct {

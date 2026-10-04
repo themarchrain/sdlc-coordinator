@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
@@ -81,15 +81,43 @@ describe('OperationsPage', () => {
 
   it('retries a failed Effect by effect ID', async () => {
     vi.spyOn(adminApi, 'tickDefaults').mockResolvedValue({})
-    vi.spyOn(adminApi, 'listEntities').mockResolvedValue({
-      items: [{ effect_id: 'effect-1', task_id: 'task-1', kind: 'send_im_message', status: 'failed', error_message: 'IM timeout', created_at: '2026-08-08T08:00:00Z' }],
-      page: 1, page_size: 20, total: 1,
-    })
+    vi.spyOn(adminApi, 'listEntities').mockImplementation(((_entity: string, query: { status?: string }) =>
+      Promise.resolve({
+        items: query?.status === 'failed'
+          ? [{ effect_id: 'effect-1', task_id: 'task-1', kind: 'send_im_message', status: 'failed', error_message: 'IM timeout', created_at: '2026-08-08T08:00:00Z' }]
+          : [],
+        page: 1, page_size: 20, total: 1,
+      })) as never)
     vi.spyOn(adminApi, 'retryEffect').mockResolvedValue({ effect_id: 'effect-1', status: 'pending' })
 
     render(<OperationsPage />)
     fireEvent.click(await screen.findByRole('button', { name: '重新入队' }))
     expect(await screen.findByText('Effect 已恢复为 pending')).toBeInTheDocument()
     expect(adminApi.retryEffect).toHaveBeenCalledWith('effect-1')
+  })
+
+  it('lists delivery-unverified Effects without requeue', async () => {
+    vi.spyOn(adminApi, 'tickDefaults').mockResolvedValue({})
+    vi.spyOn(adminApi, 'retryEffect').mockResolvedValue({})
+    vi.spyOn(adminApi, 'listEntities').mockImplementation(((_entity: string, query: { status?: string }) =>
+      Promise.resolve({
+        items: query?.status === 'failed'
+          ? [{ effect_id: 'effect-f1', task_id: 'task-1', kind: 'send_im_message', status: 'failed', error_message: 'IM timeout', created_at: '2026-08-08T08:00:00Z' }]
+          : [{ effect_id: 'effect-u1', task_id: 'task-2', kind: 'send_im_message', status: 'delivery_unverified', error_message: 'effect delivery unverified: receipt exceeds limit 65536 (http 200, read at least 65537)', created_at: '2026-08-08T09:00:00Z' }],
+        page: 1, page_size: 20, total: 1,
+      })) as never)
+
+    render(<OperationsPage />)
+    expect(await screen.findByText('effect-u1')).toBeInTheDocument()
+    expect(screen.getByText('effect-f1')).toBeInTheDocument()
+
+    const failedRow = screen.getByText('effect-f1').closest('tr') as HTMLElement
+    const unverifiedRow = screen.getByText('effect-u1').closest('tr') as HTMLElement
+    expect(within(failedRow).getByRole('button', { name: '重新入队' })).toBeEnabled()
+    // 未核验的消息可能已送达:重入队只会重复发送,入口必须关死。
+    const unverifiedRetry = within(unverifiedRow).getByRole('button', { name: '重新入队' })
+    expect(unverifiedRetry).toBeDisabled()
+    fireEvent.click(unverifiedRetry)
+    expect(adminApi.retryEffect).not.toHaveBeenCalled()
   })
 })

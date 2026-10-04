@@ -122,13 +122,10 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 	}
 	defer resp.Body.Close()
 
-	// 成功回执会回显整条消息文本,长通知的回执可超过 4096 字节,按字节
-	// 上限截断读取会把已送达的消息误标为失败;请求整体超时由
-	// sendHTTPClient 兜底,回执为 KB 级体量,全量读取无资源风险。
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read telegram response: %w", err)
-	}
+	// 回执有界读取(至多上限+1 字节,读满即知超限并停止):成功回执回显
+	// 整条消息文本,上限覆盖合法回执的最坏常见编码并留有余量;请求整体
+	// 超时由 sendHTTPClient 兜底,但超时不是响应体大小限制。
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, receiptLimit+1))
 	raw := strings.TrimSpace(string(data))
 	// 错误分类先于状态码分支:真实 Bot API 对业务失败(含实体解析错误)
 	// 返回 4xx 状态码 + JSON body,降级判据必须在两个分支都可达。
@@ -147,8 +144,17 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 		}
 		return nil, fmt.Errorf("telegram sendMessage: %s", resp.Status)
 	}
+	// 2xx 之后回执是送达与否的唯一凭据:超限、读取中断或无法解析都只
+	// 说明无法核实,不按普通失败处理(会误导重发),由上层记投递
+	// 未核验终态。错误只带元数据,不携带远端正文。
+	if readErr != nil {
+		return nil, &DeliveryUnverifiedError{Reason: ReasonReceiptReadFailed, HTTPStatus: resp.StatusCode, Limit: receiptLimit, Read: len(data), Detail: readErr.Error()}
+	}
+	if len(data) > receiptLimit {
+		return nil, &DeliveryUnverifiedError{Reason: ReasonReceiptExceedsLimit, HTTPStatus: resp.StatusCode, Limit: receiptLimit, Read: len(data)}
+	}
 	if decodeErr != nil {
-		return nil, fmt.Errorf("decode telegram response: %w", decodeErr)
+		return nil, &DeliveryUnverifiedError{Reason: ReasonReceiptDecodeFailed, HTTPStatus: resp.StatusCode, Limit: receiptLimit, Detail: decodeErr.Error()}
 	}
 	if !parsed.OK {
 		// 业务码失败不抄远端原文:错误消息随效果记录外显,抄录会把任意

@@ -50,6 +50,8 @@ func TestRetryEffectRejectsNonFailedEffect(t *testing.T) {
 	for _, status := range []model.EffectStatus{
 		model.EffectStatusPending,
 		model.EffectStatusSucceeded,
+		// 投递未核验是独立终态:消息可能已送达,重入队会重复发送。
+		model.EffectStatusDeliveryUnverified,
 	} {
 		t.Run(string(status), func(t *testing.T) {
 			effectRepo := newEffectExecutionRepository(t)

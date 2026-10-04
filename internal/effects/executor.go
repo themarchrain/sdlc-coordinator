@@ -9,6 +9,7 @@ import (
 
 	"sdlc-coordinator/internal/adapters/im"
 	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/orchestrator"
 )
 
 const KindSendIMMessage = "send_im_message"
@@ -71,6 +72,12 @@ func (e *Executor) executeSendIMMessage(ctx context.Context, effect *model.Effec
 		Mentions: req.Mentions,
 	})
 	if err != nil {
+		// 投递未核验(im 层结构化错误)转译为编排层哨兵:记账层按哨兵记
+		// 独立终态,不感知 im 细节;其余错误原样透传。
+		var unverified *im.DeliveryUnverifiedError
+		if errors.As(err, &unverified) {
+			return "", fmt.Errorf("%w: %s", orchestrator.ErrEffectDeliveryUnverified, err.Error())
+		}
 		return "", err
 	}
 

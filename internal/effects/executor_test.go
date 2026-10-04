@@ -3,11 +3,13 @@ package effects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/adapters/im"
 	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/orchestrator"
 )
 
 func TestExecutorExecutesSendIMMessageEffect(t *testing.T) {
@@ -114,6 +116,44 @@ func TestExecutorRejectsUnsupportedEffectKind(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `unsupported effect kind "unsupported_external_writeback"`) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExecutorTranslatesUnverifiedReceiptForAccounting(t *testing.T) {
+	// im 层的投递未核验错误转译为编排层哨兵:记账层按哨兵记独立终态,
+	// 不感知 im 细节;转译文本仍是有界元数据。
+	backend := &fakeIMBackend{err: &im.DeliveryUnverifiedError{
+		Reason:     im.ReasonReceiptExceedsLimit,
+		HTTPStatus: 200,
+		Limit:      65536,
+		Read:       65537,
+	}}
+	executor := NewExecutor(backend)
+
+	_, err := executor.ExecuteEffect(context.Background(), &model.Effect{
+		Kind:        "send_im_message",
+		Target:      "team-review-group",
+		RequestJSON: `{"body":"MR !12 审查完成"}`,
+	})
+	if !errors.Is(err, orchestrator.ErrEffectDeliveryUnverified) {
+		t.Fatalf("unverified receipt must translate to the orchestrator sentinel, got %v", err)
+	}
+	if text := err.Error(); !strings.HasPrefix(text, "effect delivery unverified: receipt exceeds limit") || len(text) > 300 {
+		t.Fatalf("translated error must stay bounded metadata, got %q", text)
+	}
+}
+
+func TestExecutorPassesThroughRegularErrorsUnwrapped(t *testing.T) {
+	backend := &fakeIMBackend{err: errors.New("boom")}
+	executor := NewExecutor(backend)
+
+	_, err := executor.ExecuteEffect(context.Background(), &model.Effect{
+		Kind:        "send_im_message",
+		Target:      "team-review-group",
+		RequestJSON: `{"body":"hi"}`,
+	})
+	if err == nil || err.Error() != "boom" || errors.Is(err, orchestrator.ErrEffectDeliveryUnverified) {
+		t.Fatalf("regular errors must pass through unwrapped, got %v", err)
 	}
 }
 
