@@ -214,6 +214,25 @@ describe('AppShell', () => {
     expect(screen.queryByRole('heading', { name: '任务轨迹' })).not.toBeInTheDocument()
   })
 
+  it('offers the shared shell account menu with logout for every role', async () => {
+    mockRepositories()
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <WorkspaceSessionProvider value={memberWorkspace}>
+          <AppShell><div>成员内容</div></AppShell>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '账号菜单，账号' }))
+    expect(await screen.findByRole('menuitem', { name: /退出登录/ })).toBeInTheDocument()
+    // 账号区在折叠按钮上方、侧栏之内，不属于工作区导航链接
+    const sidebar = document.querySelector('.control-sidebar')
+    const account = document.querySelector('.sidebar-account') as HTMLElement | null
+    expect(sidebar).toContainElement(account)
+    expect(account?.nextElementSibling).toHaveClass('collapse-toggle')
+  })
+
   it('opens the appearance drawer from the context bar for members too', async () => {
     // 主题入口迁到外壳顶栏后，没有 /settings 路由的成员也能换本地肤。
     mockRepositories()

@@ -14,12 +14,14 @@ import (
 	"sdlc-coordinator/internal/store"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type portalWorld struct {
 	service    *controlplane.Service
 	router     *gin.Engine
 	superActor *controlplane.Actor
+	db         *gorm.DB
 }
 
 func newPortalWorld(t *testing.T) *portalWorld {
@@ -51,7 +53,7 @@ func newPortalWorld(t *testing.T) *portalWorld {
 	if err != nil {
 		t.Fatalf("seed super admin: %v", err)
 	}
-	world := &portalWorld{service: service, router: router, superActor: &controlplane.Actor{ID: superID, Username: "root"}}
+	world := &portalWorld{service: service, router: router, superActor: &controlplane.Actor{ID: superID, Username: "root"}, db: db}
 	return world
 }
 
@@ -165,9 +167,61 @@ func TestPortalLoginSessionAndLogoutFlow(t *testing.T) {
 	if logout.Code != http.StatusOK {
 		t.Fatalf("logout status = %d", logout.Code)
 	}
+	// 成功退出必须随响应下发清除指令（Max-Age<0），浏览器端才真正失去会话 cookie。
+	cleared := false
+	for _, item := range logout.Result().Cookies() {
+		if item.Name == PortalSessionCookieName && item.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatalf("successful logout should clear the session cookie, got %#v", logout.Result().Cookies())
+	}
+	// 对已撤销会话重复退出：认证中间件按现有语义以 401 拒绝无效 cookie，
+	// 即"已退出"；service.Logout 的 ErrUnauthenticated→nil 幂等仅兜住
+	// 中间件放行后会话又被吊销的竞态窗口。
+	repeat := world.do(t, http.MethodPost, "/api/portal/auth/logout", sessionCookie.Value, nil)
+	if repeat.Code != http.StatusUnauthorized {
+		t.Fatalf("repeat logout on revoked session should be rejected as unauthenticated, got %d", repeat.Code)
+	}
 	afterLogout := world.do(t, http.MethodGet, "/api/portal/auth/session", sessionCookie.Value, nil)
 	if afterLogout.Code != http.StatusUnauthorized {
 		t.Fatalf("session after logout should be unauthorized, got %d", afterLogout.Code)
+	}
+}
+
+// TestPortalLogoutInternalErrorKeepsSessionCookie：service.Logout 意外失败时
+// 必须返回统一错误包络（非 2xx），不得伪报 ok=true，也不得清除会话 cookie
+// （撤销失败保留 cookie 供用户重试）。用 Delete 回调注入失败：会话与用户的
+// SELECT 照常通过（认证中间件放行），仅会话撤销动作失败，精确命中
+// Logout handler 自身的错误分支。
+func TestPortalLogoutInternalErrorKeepsSessionCookie(t *testing.T) {
+	world := newPortalWorld(t)
+	token := world.loginAsSuperAdmin(t)
+
+	if err := world.db.Callback().Delete().Before("gorm:delete").Register("test_fail_delete_session", func(tx *gorm.DB) {
+		_ = tx.AddError(fmt.Errorf("delete session failed"))
+	}); err != nil {
+		t.Fatalf("register delete failure callback: %v", err)
+	}
+
+	recorder := world.do(t, http.MethodPost, "/api/portal/auth/logout", token, nil)
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("logout with failing store should return 500, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	payload := decodeBody(t, recorder)
+	if payload["ok"] == true {
+		t.Fatalf("failed logout must not report ok, got %v", payload)
+	}
+	errEnvelope, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected unified error envelope, got %v", payload)
+	}
+	if errEnvelope["code"] != "internal_error" {
+		t.Fatalf("expected internal_error code, got %v", errEnvelope["code"])
+	}
+	if setCookie := recorder.Header().Get("Set-Cookie"); setCookie != "" {
+		t.Fatalf("failed logout must not clear the session cookie, got %q", setCookie)
 	}
 }
 
