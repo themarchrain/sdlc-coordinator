@@ -87,7 +87,12 @@ func (backend *FeishuBackend) SendMessage(ctx context.Context, req SendMessageRe
 	}
 	defer resp.Body.Close()
 
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// 回执按全量读取,不设字节上限:截断读取会把已送达的消息误标为
+	// 失败;请求整体超时由 sendHTTPClient 兜底。
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read feishu response: %w", err)
+	}
 	raw := strings.TrimSpace(string(data))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。

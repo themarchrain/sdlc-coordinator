@@ -95,6 +95,54 @@ func TestTelegramBackendRejectsMissingChatAndReportsAPIErrors(t *testing.T) {
 	}
 }
 
+func TestTelegramBackendReadsFullReceiptBeyond4096(t *testing.T) {
+	// 真实 Bot API 的成功回执会把整条消息文本回显在 result.text;长中文通知
+	// 的回执超过 4096 字节,按字节上限截断读取会把已送达的消息误标为失败。
+	receiptText := strings.Repeat("审查结果正常,交付通知已送达。", 300) + "END-OF-RECEIPT"
+	receipt, err := json.Marshal(map[string]any{
+		"ok":     true,
+		"result": map[string]any{"message_id": 42, "text": receiptText},
+	})
+	if err != nil {
+		t.Fatalf("build receipt: %v", err)
+	}
+	if len(receipt) <= 4096 {
+		t.Fatalf("receipt fixture must exceed the old 4096 cap, got %d bytes", len(receipt))
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(receipt)
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	message, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err != nil {
+		t.Fatalf("long receipt must not fail the delivery: %v", err)
+	}
+	if message == nil || message.ID != "42" {
+		t.Fatalf("message = %#v", message)
+	}
+	if !strings.Contains(message.RawJSON, "END-OF-RECEIPT") {
+		t.Fatalf("receipt must be read in full, got %d bytes", len(message.RawJSON))
+	}
+}
+
+func TestTelegramBackendReportsResponseReadFailure(t *testing.T) {
+	// 声明 4096 字节却只写半截:回执传输中断必须显式报读错误,
+	// 不允许把半截响应静默递给 JSON 解析。
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "4096")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"mess`))
+	}))
+	defer server.Close()
+
+	backend := NewTelegramBackend(TelegramSettings{BotToken: "t", APIBase: server.URL, DefaultChatID: "1"})
+	_, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err == nil || !strings.HasPrefix(err.Error(), "read telegram response: ") {
+		t.Fatalf("truncated transport must surface a read error, got %v", err)
+	}
+}
+
 func TestTelegramBackendNon2xxErrorOmitsResponseBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

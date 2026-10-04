@@ -122,7 +122,13 @@ func (backend *TelegramBackend) postSendMessage(ctx context.Context, payload map
 	}
 	defer resp.Body.Close()
 
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// 成功回执会回显整条消息文本,长通知的回执可超过 4096 字节,按字节
+	// 上限截断读取会把已送达的消息误标为失败;请求整体超时由
+	// sendHTTPClient 兜底,回执为 KB 级体量,全量读取无资源风险。
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read telegram response: %w", err)
+	}
 	raw := strings.TrimSpace(string(data))
 	// 错误分类先于状态码分支:真实 Bot API 对业务失败(含实体解析错误)
 	// 返回 4xx 状态码 + JSON body,降级判据必须在两个分支都可达。

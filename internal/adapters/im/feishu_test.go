@@ -114,6 +114,28 @@ func TestFeishuBackendNon2xxErrorOmitsResponseBody(t *testing.T) {
 	}
 }
 
+func TestFeishuBackendReadsFullReceiptBeyond4096(t *testing.T) {
+	// 飞书自定义机器人回执体量小,但按字节上限截断读取是同款隐患:
+	// 响应变大会以同样方式把已送达的消息误标为失败。
+	receipt := `{"code":0,"msg":"success","data":{"note":"` + strings.Repeat("回执", 2000) + `END-OF-RECEIPT"}}`
+	if len(receipt) <= 4096 {
+		t.Fatalf("receipt fixture must exceed the old 4096 cap, got %d bytes", len(receipt))
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(receipt))
+	}))
+	defer server.Close()
+
+	backend := NewFeishuBackend(FeishuSettings{WebhookURL: server.URL})
+	message, err := backend.SendMessage(context.Background(), SendMessageRequest{Body: "hi"})
+	if err != nil {
+		t.Fatalf("long receipt must not fail the delivery: %v", err)
+	}
+	if !strings.Contains(message.RawJSON, "END-OF-RECEIPT") {
+		t.Fatalf("receipt must be read in full, got %d bytes", len(message.RawJSON))
+	}
+}
+
 func TestSendHTTPClientHasTimeout(t *testing.T) {
 	if sendHTTPClient == nil || sendHTTPClient.Timeout <= 0 {
 		t.Fatalf("shared send client must carry a timeout, got %+v", sendHTTPClient)
