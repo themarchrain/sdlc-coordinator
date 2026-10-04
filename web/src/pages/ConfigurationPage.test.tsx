@@ -1,13 +1,26 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
 import type { ConfigurationView } from '../api/types'
+import { ConfigurationBoundary } from '../app/ConfigurationBoundary'
+import { WorkspaceSessionProvider } from '../app/workspaceSession'
 import { APP_VERSION } from '../app/version'
 import { ConfigurationPage } from './ConfigurationPage'
 
 afterEach(() => vi.restoreAllMocks())
+
+function RouteProbe({ label }: { label: string }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return (
+    <div>
+      <span data-testid={`location-${label}`}>{location.pathname}</span>
+      {label === 'home' ? <button onClick={() => navigate('/tasks')}>go-tasks</button> : null}
+    </div>
+  )
+}
 
 const configuration: ConfigurationView = {
   config: {
@@ -161,4 +174,44 @@ describe('ConfigurationPage', () => {
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
   })
+
+  it('lands on the workspace after restart and navigates admin routes without bouncing back to setup', async () => {
+    // 02-admin-setup-stale-configuration-boundary 全链回归：
+    // 初始 setup_pending → 保存重启 → 轮询 ready → 访问各管理路由不再弹回 /setup。
+    const status = vi.spyOn(adminApi, 'configurationStatus')
+    status.mockResolvedValueOnce({ mode: 'setup_pending', revision: 0 }) // 边界挂载
+      .mockResolvedValueOnce({ mode: 'setup_pending', revision: 0 }) // 页面初始加载
+      .mockResolvedValue({ mode: 'ready', revision: 1, source: 'ui' }) // 重启轮询
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
+      mode: 'restart_required', revision: 1, source: 'ui', configuration,
+    })
+    vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <WorkspaceSessionProvider value={{ session: null, role: 'super_admin', superAdmin: true }}>
+          <ConfigurationBoundary>
+            <Routes>
+              <Route path="/" element={<RouteProbe label="home" />} />
+              <Route path="/setup" element={<ConfigurationPage />} />
+              <Route path="/tasks" element={<RouteProbe label="tasks" />} />
+            </Routes>
+          </ConfigurationBoundary>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('首次启动')
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    // 轮询首个 tick 在 1.2s 后；读到 ready 即导航首页。
+    await waitFor(() => expect(screen.getByTestId('location-home')).toHaveTextContent('/'), { timeout: 4000 })
+
+    // 不刷新浏览器直接访问其他管理路由，边界按同步后的 ready 放行。
+    fireEvent.click(screen.getByRole('button', { name: 'go-tasks' }))
+    await waitFor(() => expect(screen.getByTestId('location-tasks')).toHaveTextContent('/tasks'))
+  }, 10000)
 })
