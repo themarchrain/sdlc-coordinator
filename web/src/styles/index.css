@@ -241,7 +241,7 @@ a:hover { color: var(--link-hover); }
 .nav-caption { padding: 0 12px 8px; color: var(--mute); font: 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; }
 .nav-group-title { padding: 18px 12px 6px; color: var(--mute); font: 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; }
 .nav-group-title::before { content: ""; display: block; margin: -14px -12px 12px; height: 1px; background: var(--overlay-line); }
-.workspace-nav { display: grid; gap: 5px; }
+.workspace-nav { display: grid; align-content: start; gap: 5px; flex: 1 1 auto; }
 .workspace-nav a { position: relative; display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: var(--radius-lg); color: var(--body); font-size: 14px; transition: background .16s ease, color .16s ease; }
 .workspace-nav .nav-group-title ~ a { padding-left: 28px; }
 .workspace-nav .nav-group-title ~ a .anticon { font-size: 14px; }
@@ -251,6 +251,20 @@ a:hover { color: var(--link-hover); }
 .workspace-nav a[aria-current="page"]::before { height: 24px; }
 .workspace-nav .anticon { color: var(--mute); font-size: 16px; }
 .workspace-nav a[aria-current="page"] .anticon { color: var(--primary); }
+/* 侧栏账号区：折叠按钮上方，导航 flex 撑开后贴底；折叠按钮的
+   margin-top: auto 保持不变（测试钉住该计算值）。 */
+.sidebar-account { flex: 0 0 auto; border-top: 1px solid var(--overlay-line); padding: 12px 0; }
+.sidebar-account__trigger { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; color: var(--body); background: transparent; border: none; border-radius: var(--radius-lg); cursor: pointer; text-align: left; transition: background .16s ease, color .16s ease; }
+.sidebar-account__trigger:hover { color: var(--ink); background: var(--overlay-soft); }
+.sidebar-account__trigger .sidebar-account__avatar { flex: 0 0 auto; }
+.sidebar-account__meta { display: flex; flex-direction: column; min-width: 0; }
+.sidebar-account__meta strong { color: var(--ink); font-size: 13px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-account__meta > span:last-child { color: var(--mute); font-size: 11px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-account__panel { display: flex; flex-direction: column; gap: 2px; min-width: 168px; }
+.sidebar-account__panel strong { color: var(--ink); font-size: 13px; line-height: 1.5; }
+.sidebar-account__panel span { color: var(--mute); font-size: 11px; line-height: 1.5; }
+.control-room--collapsed .sidebar-account__trigger { justify-content: center; padding: 8px 0; }
+.control-room--collapsed .sidebar-account__meta { display: none; }
 .control-stage { grid-column: 2; min-width: 0; }
 .context-bar { position: sticky; top: 0; z-index: 8; min-height: 48px; padding: 6px 30px; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto; grid-template-rows: auto; column-gap: 14px; align-items: center; color: var(--mute-deep); background: var(--surface-bar); border-bottom: 1px solid var(--hairline); backdrop-filter: blur(12px); font-size: 12px; }
 .context-bar > div { display: flex; align-items: center; gap: 8px; }
@@ -587,8 +601,12 @@ a:hover { color: var(--link-hover); }
   .login-page__card { min-height: min(620px, calc(100svh - 40px)); padding: 44px 26px 34px; }
   .control-room { display: block; }
   .collapse-toggle { display: none; }
-  .control-sidebar { position: static; width: 100%; padding: 14px 16px 10px; }
-  .brand-block { padding: 0 0 12px; }
+  /* 窄屏：侧栏转顶部区域，账号区上移到品牌行同一列右端；导航横向滚动时
+     账号区不在导航容器内，不会被裁剪。 */
+  .control-sidebar { position: static; width: 100%; padding: 14px 16px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand account" "nav nav"; align-items: center; }
+  .brand-block { grid-area: brand; padding: 0 0 12px; }
+  .sidebar-account { grid-area: account; justify-self: end; border-top: 0; padding: 0 0 12px; }
+  .sidebar-account__trigger { width: auto; }
   .brand-mark { width: 28px; height: 28px; padding: 5px 4px 4px; gap: 2px; }
   .brand-mark span { width: 5px; }
   .workspace-nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }

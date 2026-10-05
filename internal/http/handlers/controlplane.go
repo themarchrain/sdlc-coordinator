@@ -262,7 +262,11 @@ func (handler *ControlPlaneHandler) ChangePassword(c *gin.Context) {
 }
 
 func (handler *ControlPlaneHandler) Logout(c *gin.Context) {
-	_ = handler.service.Logout(c.Request.Context(), portalCookieToken(c))
+	// 撤销失败不得伪报已登出：保留会话 cookie 供用户重试，错误走统一包络。
+	if err := handler.service.Logout(c.Request.Context(), portalCookieToken(c)); err != nil {
+		writeControlPlaneError(c, err)
+		return
+	}
 	handler.clearPortalSessionCookie(c)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

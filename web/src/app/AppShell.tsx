@@ -20,6 +20,7 @@ import { NavLink, useSearchParams } from 'react-router-dom'
 import { AppearanceDrawerButton } from '../components/AppearanceDrawer'
 import { PageHeadingHostContext } from '../components/PageHeading'
 import { RepositorySwitcher } from '../components/RepositorySwitcher'
+import { SidebarAccountMenu } from './SidebarAccountMenu'
 import { useWorkspaceSession } from './workspaceSession'
 
 const workspaces = [
@@ -126,6 +127,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </>
           ) : null}
         </nav>
+
+        {/* 账号菜单：所有进入外壳的身份共用；置于折叠按钮上方，窄屏随栅格上移到品牌行。 */}
+        <SidebarAccountMenu collapsed={collapsed} />
 
         <button
           type="button"
