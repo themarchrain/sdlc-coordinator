@@ -241,7 +241,7 @@ a:hover { color: var(--link-hover); }
 .nav-caption { padding: 0 12px 8px; color: var(--mute); font: 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; }
 .nav-group-title { padding: 18px 12px 6px; color: var(--mute); font: 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; }
 .nav-group-title::before { content: ""; display: block; margin: -14px -12px 12px; height: 1px; background: var(--overlay-line); }
-.workspace-nav { display: grid; gap: 5px; flex: 1 1 auto; }
+.workspace-nav { display: grid; align-content: start; gap: 5px; flex: 1 1 auto; }
 .workspace-nav a { position: relative; display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: var(--radius-lg); color: var(--body); font-size: 14px; transition: background .16s ease, color .16s ease; }
 .workspace-nav .nav-group-title ~ a { padding-left: 28px; }
 .workspace-nav .nav-group-title ~ a .anticon { font-size: 14px; }

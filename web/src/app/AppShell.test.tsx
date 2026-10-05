@@ -233,6 +233,21 @@ describe('AppShell', () => {
     expect(account?.nextElementSibling).toHaveClass('collapse-toggle')
   })
 
+  it('keeps workspace navigation rows compact while reserving the bottom account area', async () => {
+    mockRepositories()
+    const { container } = render(
+      <MemoryRouter initialEntries={['/']}>
+        <WorkspaceSessionProvider value={memberWorkspace}>
+          <AppShell><div>成员内容</div></AppShell>
+        </WorkspaceSessionProvider>
+      </MemoryRouter>,
+    )
+
+    const nav = container.querySelector('.workspace-nav') as HTMLElement | null
+    expect(nav).not.toBeNull()
+    expect(window.getComputedStyle(nav as HTMLElement).alignContent).toBe('start')
+  })
+
   it('opens the appearance drawer from the context bar for members too', async () => {
     // 主题入口迁到外壳顶栏后，没有 /settings 路由的成员也能换本地肤。
     mockRepositories()

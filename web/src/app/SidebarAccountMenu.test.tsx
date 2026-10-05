@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -107,6 +107,18 @@ describe('SidebarAccountMenu', () => {
     // 菜单挂在 body 上，不被侧栏边界或导航容器裁剪
     expect(menu.closest('.control-sidebar')).toBeNull()
     expect(menu.closest('body')).not.toBeNull()
+  })
+
+  it('opens the logout menu only after clicking the account entry', async () => {
+    const user = userEvent.setup()
+    renderAccountMenu(memberSession)
+    const trigger = screen.getByRole('button', { name: '账号菜单，chen' })
+    await user.hover(trigger)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 250)) })
+    expect(screen.queryByRole('menuitem', { name: /退出登录/ })).not.toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(await screen.findByRole('menuitem', { name: /退出登录/ })).toBeInTheDocument()
   })
 
   it('opens with Enter and closes with Escape returning focus to the trigger', async () => {
