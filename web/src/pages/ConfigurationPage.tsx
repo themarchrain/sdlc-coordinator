@@ -29,6 +29,7 @@ import type {
 } from '../api/types'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
+import { useConfigurationStatus } from '../app/configurationStatus'
 
 type ConfigurationFormValues = Omit<EditableRuntimeConfiguration, 'agent_runner'> & {
   agent_runner: Omit<EditableRuntimeConfiguration['agent_runner'], 'task_timeout'> & {
@@ -47,6 +48,7 @@ const stepItems = [
 export function ConfigurationPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { sync } = useConfigurationStatus()
   const [form] = Form.useForm<ConfigurationFormValues>()
   const [status, setStatus] = useState<ConfigurationStatus>()
   const [view, setView] = useState<ConfigurationView>()
@@ -62,28 +64,37 @@ export function ConfigurationPage() {
     Promise.all([adminApi.configurationStatus(), adminApi.configuration()])
       .then(([nextStatus, nextView]) => {
         setStatus(nextStatus)
+        sync(nextStatus)
         setView(nextView)
         form.setFieldsValue(toFormValues(nextView))
       })
       .catch(setError)
       .finally(() => setLoading(false))
-  }, [form])
+  }, [form, sync])
 
   useEffect(() => {
     if (!restarting) return
     const timer = window.setInterval(() => {
       adminApi.configurationStatus().then((nextStatus) => {
         setStatus(nextStatus)
+        // 每次轮询都回写共享层：否则边界停留在旧模式（首次初始化时是
+        // setup_pending），会把重启完成后的导航弹回 /setup。
         if (nextStatus.mode === 'ready') {
           window.clearInterval(timer)
           setRestarting(false)
           message.success('Coordinator 已按新配置恢复运行')
-          navigate('/', { replace: true })
+          // 向导（/setup）的落地由边界接管（送首页）：navigate 走
+          // transition，会输给边界的紧急重定向。/settings 重新保存时
+          // 边界的 ready 重定向不触发，沿用既有落地首页。
+          sync(nextStatus, { fromRestart: true })
+          if (!isSetup) navigate('/', { replace: true })
+        } else {
+          sync(nextStatus)
         }
       }).catch(() => undefined)
     }, 1200)
     return () => window.clearInterval(timer)
-  }, [navigate, restarting])
+  }, [isSetup, navigate, restarting, sync])
 
   const configuredCount = useMemo(() => view ? Object.values(view.secrets).filter(Boolean).length : 0, [view])
   const secretTotal = useMemo(() => view ? Object.values(view.secrets).length : 0, [view])
@@ -102,6 +113,7 @@ export function ConfigurationPage() {
       }
       const updated = await adminApi.updateConfiguration(request)
       setStatus(updated)
+      sync(updated)
       setView(updated.configuration)
       await adminApi.restartConfiguration()
       setRestarting(true)
