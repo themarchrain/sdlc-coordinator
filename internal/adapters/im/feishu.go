@@ -87,18 +87,29 @@ func (backend *FeishuBackend) SendMessage(ctx context.Context, req SendMessageRe
 	}
 	defer resp.Body.Close()
 
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// 回执有界读取(至多上限+1 字节,读满即知超限并停止),与 Telegram
+	// 同一上限;请求整体超时由 sendHTTPClient 兜底,但超时不是响应体
+	// 大小限制。
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, receiptLimit+1))
 	raw := strings.TrimSpace(string(data))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		// 非 2xx 只报状态码:错误消息会随效果记录外显,不携带远端响应体。
 		return nil, fmt.Errorf("feishu webhook: %s", resp.Status)
+	}
+	// 2xx 之后回执是送达与否的唯一凭据:超限、读取中断或无法解析都只
+	// 说明无法核实,由上层记投递未核验终态,不进入常规重试。
+	if readErr != nil {
+		return nil, &DeliveryUnverifiedError{Reason: ReasonReceiptReadFailed, HTTPStatus: resp.StatusCode, Limit: receiptLimit, Read: len(data), Detail: readErr.Error()}
+	}
+	if len(data) > receiptLimit {
+		return nil, &DeliveryUnverifiedError{Reason: ReasonReceiptExceedsLimit, HTTPStatus: resp.StatusCode, Limit: receiptLimit, Read: len(data)}
 	}
 
 	var parsed struct {
 		Code int `json:"code"`
 	}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("decode feishu response: %w", err)
+		return nil, &DeliveryUnverifiedError{Reason: ReasonReceiptDecodeFailed, HTTPStatus: resp.StatusCode, Limit: receiptLimit, Detail: err.Error()}
 	}
 	if parsed.Code != 0 {
 		// 业务码失败只报码不抄远端原文:错误消息随效果记录外显,抄录会

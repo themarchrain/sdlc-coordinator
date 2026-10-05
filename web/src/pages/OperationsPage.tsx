@@ -31,8 +31,13 @@ export function OperationsPage() {
   const [effects, setEffects] = useState<Array<Record<string, unknown>>>([])
   const [effectsError, setEffectsError] = useState<unknown>()
 
-  const loadEffects = () => adminApi.listEntities('effects', { page: 1, page_size: 20, status: 'failed' })
-    .then((page) => setEffects(page.items)).catch(setEffectsError)
+  const loadEffects = () => Promise.all([
+    adminApi.listEntities('effects', { page: 1, page_size: 20, status: 'failed' }),
+    // 投递未核验:消息可能已送达,只展示供检查,不提供重入队。
+    adminApi.listEntities('effects', { page: 1, page_size: 20, status: 'delivery_unverified' }),
+  ])
+    .then(([failed, unverified]) => setEffects([...failed.items, ...unverified.items]))
+    .catch(setEffectsError)
 
   useEffect(() => {
     Promise.all([adminApi.tickDefaults().then((value) => form.setFieldsValue(value)).catch(setDefaultsError), loadEffects()])
@@ -113,7 +118,7 @@ export function OperationsPage() {
       </section>
 
       <section className="surface-panel">
-        <div className="panel-heading"><div><h2>失败的 Effects</h2></div><Button icon={<RedoOutlined />} onClick={loadEffects}>刷新</Button></div>
+        <div className="panel-heading"><div><h2>失败 / 未核验的 Effects</h2></div><Button icon={<RedoOutlined />} onClick={loadEffects}>刷新</Button></div>
         {effectsError ? <ErrorState error={effectsError} onRetry={loadEffects} /> : <Table
           size="small" rowKey={(row) => String(row.effect_id)} pagination={false} dataSource={effects}
           locale={{ emptyText: '当前没有待人工重试的 Effect' }}
@@ -122,7 +127,12 @@ export function OperationsPage() {
             { title: '类型', dataIndex: 'kind' },
             { title: '状态', dataIndex: 'status', render: (value) => <StatusTag status={String(value)} /> },
             { title: '失败原因', dataIndex: 'error_message', render: (value) => <span className="error-copy">{String(value || '未记录')}</span> },
-            { title: '操作', render: (_, row) => <Button size="small" onClick={() => retry(String(row.effect_id))}>重新入队</Button> },
+            { title: '操作', render: (_, row) => {
+              const retryable = String(row.status) === 'failed'
+              return <Button size="small" disabled={!retryable}
+                title={retryable ? undefined : '消息可能已送达，重新入队会重复发送；仅 failed 状态可重新入队'}
+                onClick={() => retry(String(row.effect_id))}>重新入队</Button>
+            } },
           ]}
         />}
       </section>

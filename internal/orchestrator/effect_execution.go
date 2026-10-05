@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	effectsexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/model"
 )
 
@@ -91,6 +92,21 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 					return nil, fmt.Errorf("requeue effect %s: %w", effect.DedupeKey, updateErr)
 				}
 				break
+			}
+			if errors.Is(err, effectsexec.ErrEffectDeliveryUnverified) {
+				// 投递未核验:消息可能已送达,记独立终态避免误导性重发;
+				// 错误文本只含有界元数据(状态码/原因/上限/读取量),
+				// 不携带远端响应正文。
+				effect.Status = model.EffectStatusDeliveryUnverified
+				effect.ErrorMessage = err.Error()
+				if updateErr := o.effects.Update(ctx, &effect); updateErr != nil {
+					return nil, fmt.Errorf("mark effect %s delivery unverified: %w", effect.DedupeKey, updateErr)
+				}
+				result.Status = effect.Status
+				result.AttemptCount = effect.AttemptCount
+				result.ErrorMessage = effect.ErrorMessage
+				results = append(results, result)
+				continue
 			}
 			effect.Status = model.EffectStatusFailed
 			effect.ErrorMessage = err.Error()

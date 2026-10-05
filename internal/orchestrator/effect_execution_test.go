@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	effectsexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
@@ -64,6 +65,56 @@ func TestExecutePendingEffectsMarksSucceeded(t *testing.T) {
 	}
 	if effect.ErrorMessage != "" {
 		t.Fatalf("expected empty error message, got %s", effect.ErrorMessage)
+	}
+}
+
+func TestExecutePendingEffectsMarksDeliveryUnverified(t *testing.T) {
+	// 2xx 但回执无法核实(超限/中断/坏 JSON):独立终态,不是普通 failed,
+	// 不进入常规重试;错误文本只含有界元数据。
+	ctx := context.Background()
+	effectRepo := newEffectExecutionRepository(t)
+	if err := effectRepo.Create(ctx, &model.Effect{
+		TaskID:      "task-1",
+		RunID:       "run-1",
+		DedupeKey:   "effect-unverified",
+		Kind:        "send_im_message",
+		Target:      "team-review-group",
+		Status:      model.EffectStatusPending,
+		RequestJSON: `{"body":"done"}`,
+	}); err != nil {
+		t.Fatalf("create effect: %v", err)
+	}
+
+	executor := &fakeEffectExecutor{errors: map[string]error{
+		"effect-unverified": fmt.Errorf("%w: receipt exceeds limit 65536 (http 200, read at least 65537)", effectsexec.ErrEffectDeliveryUnverified),
+	}}
+	orch := New(nil, nil, WithEffectRepository(effectRepo), WithEffectExecutor(executor))
+
+	results, err := orch.ExecutePendingEffects(ctx, 10)
+	if err != nil {
+		t.Fatalf("execute pending effects: %v", err)
+	}
+	if len(results) != 1 || results[0].Status != model.EffectStatusDeliveryUnverified {
+		t.Fatalf("expected delivery_unverified result, got %#v", results)
+	}
+
+	effect, err := effectRepo.GetByDedupeKey(ctx, "effect-unverified")
+	if err != nil {
+		t.Fatalf("get effect: %v", err)
+	}
+	if effect.Status != model.EffectStatusDeliveryUnverified {
+		t.Fatalf("expected delivery_unverified effect, got %s", effect.Status)
+	}
+	if effect.AttemptCount != 1 {
+		t.Fatalf("expected attempt count 1, got %d", effect.AttemptCount)
+	}
+	if !strings.HasPrefix(effect.ErrorMessage, "effect delivery unverified: receipt exceeds limit") || len(effect.ErrorMessage) > 300 {
+		t.Fatalf("error message must stay bounded metadata, got %q", effect.ErrorMessage)
+	}
+
+	// 终态不可常规重试。
+	if _, err := orch.RetryEffect(ctx, "effect-unverified"); !errors.Is(err, ErrEffectNotRetryable) {
+		t.Fatalf("unverified effect must not be retryable, got %v", err)
 	}
 }
 
