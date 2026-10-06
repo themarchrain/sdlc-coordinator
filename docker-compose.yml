@@ -2,6 +2,9 @@ services:
   coordinator:
     image: sdlc-coordinator:${TAG:-latest}
     restart: unless-stopped
+    # 容器内执行 git 等子进程，孤儿进程会 reparent 到 1 号进程；Go 程序不回收
+    # 非亲生子进程，缺 init 时僵尸累积到 cgroup pids 上限会令 fork/exec 全失败。
+    init: true
     environment:
       TZ: Asia/Shanghai
       COORDINATOR_HTTP_ADDR: ":8080"
@@ -30,6 +33,10 @@ services:
       args:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     restart: unless-stopped
+    # CLI 进程树（codex/go test/git）会把孤儿进程 reparent 到 1 号进程；
+    # agent 二进制不回收非亲生子进程，必须由 init 收尸，否则僵尸累积到
+    # cgroup pids 上限后 fork/exec 失败。
+    init: true
     environment:
       TZ: Asia/Shanghai
       AGENT_RUNNER_HTTP_ADDR: ":8081"
