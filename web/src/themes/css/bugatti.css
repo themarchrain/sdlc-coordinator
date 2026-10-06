@@ -233,14 +233,14 @@
 /* ── 主 CTA 签名：透明底 + 1px 白描边（规格「transparent pill IS the button」）；
      hover/按压反相为白底黑字（primary/on-primary 令牌对的合法翻转，规格只记
      Default 与 Active 两态） ── */
-[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous) {
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost) {
   background: transparent;
   border-color: #ffffff;
   color: #ffffff;
 }
-[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):hover,
-[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):active,
-[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):focus-visible {
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):hover,
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):active,
+[data-theme="bugatti"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):focus-visible {
   background: #ffffff;
   border-color: #ffffff;
   color: #000000;

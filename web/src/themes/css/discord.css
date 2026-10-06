@@ -278,6 +278,6 @@
 
 /* ── 登录 CTA：blurple→magenta 品牌渐变（antd 层给字面 blurple，渐进渐变在此表达；
       hover 提亮保持渐变 —— 需 !important 压过骨架的 --login-primary-active 规则） ── */
-[data-theme="discord"] .login-page__card .ant-btn-primary { background: var(--grad-brand); border: none; }
-[data-theme="discord"] .login-page__card .ant-btn-primary:hover { background: var(--grad-brand) !important; filter: brightness(1.1); }
-[data-theme="discord"] .login-page__card .ant-btn-primary:active { background: var(--grad-brand) !important; filter: brightness(.94); }
+[data-theme="discord"] .login-page__card .ant-btn-primary:not(.ant-btn-background-ghost) { background: var(--grad-brand); border: none; }
+[data-theme="discord"] .login-page__card .ant-btn-primary:not(.ant-btn-background-ghost):hover { background: var(--grad-brand) !important; filter: brightness(1.1); }
+[data-theme="discord"] .login-page__card .ant-btn-primary:not(.ant-btn-background-ghost):active { background: var(--grad-brand) !important; filter: brightness(.94); }
