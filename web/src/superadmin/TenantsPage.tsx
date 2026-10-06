@@ -106,7 +106,9 @@ export function TenantsPage() {
                 ) : (
                   <Button size="small" onClick={() => void toggleStatus(record)}>恢复</Button>
                 )}
-                <Button size="small" type="primary" ghost onClick={() => setSupportTenant(record)}>支持访问</Button>
+                {/* 不用 ghost：antd 幽灵按钮文字/描边取 colorPrimary，在浅色主色的
+                    亮底主题和深色主色的暗底主题下都会低于可读对比度；默认按钮全主题可读 */}
+                <Button size="small" onClick={() => setSupportTenant(record)}>支持访问</Button>
               </Space>
             ),
           },
