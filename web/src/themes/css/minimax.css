@@ -238,9 +238,10 @@
 [data-theme="minimax"] .ant-pagination-item.ant-pagination-item-active a { color: var(--on-primary); }
 [data-theme="minimax"] .ant-pagination-options .ant-select-selector { border-radius: var(--radius-md) !important; }
 
-/* 分段选择器 = pill-tab 语言：激活项为黑药丸 */
-[data-theme="minimax"] .ant-segmented .ant-segmented-thumb { background: var(--primary); box-shadow: none; }
-[data-theme="minimax"] .ant-segmented .ant-segmented-item-selected { color: var(--on-primary); }
+/* 分段选择器 = pill-tab 语言：黑药丸选中底与白字由组件 token itemSelectedBg/
+   itemSelectedColor 承担（浮动 thumb 与静止选中项共用该 token，只改 CSS 一面
+   会出现白底白字）；此处仅压平底影、保留非选中项 hover 墨色。 */
+[data-theme="minimax"] .ant-segmented .ant-segmented-thumb { box-shadow: none; }
 [data-theme="minimax"] .ant-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover { color: var(--ink); }
 
 /* 通用标签 → MiniMax 徽章语言（rounded.full + 灰阶/状态色） */

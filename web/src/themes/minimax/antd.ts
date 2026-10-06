@@ -44,6 +44,11 @@ export const minimaxAntdTheme: ThemeConfig = {
     fontFamily: '"DM Sans", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Segmented: {
+      // 浮动 thumb 与静止选中项共用 itemSelectedBg/Color，必须成对定义防止其中一面回落白色默认值
+      itemSelectedBg: '#0a0a0a',
+      itemSelectedColor: '#ffffff',
+    },
     Select: { optionSelectedBg: 'rgba(34, 34, 34, 0.08)' },
     Table: {
       headerBg: '#f7f8fa',
