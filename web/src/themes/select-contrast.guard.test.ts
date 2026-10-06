@@ -40,8 +40,8 @@ describe('select dropdown selected-option contrast guard', () => {
     const failures: string[] = []
     for (const themeDef of THEME_LIST) {
       const override = themeDef.antd.components?.Select?.optionSelectedBg
-      const derived = theme.getDesignToken({ token: themeDef.antd.token })
-      const elevated = themeDef.antd.token.colorBgElevated ?? derived.colorBgElevated
+      const derived = theme.getDesignToken({ token: themeDef.antd.token ?? {} })
+      const elevated = themeDef.antd.token?.colorBgElevated ?? derived.colorBgElevated
       const selectedBg = compositeOver(String(override ?? derived.colorPrimaryBg), elevated)
       const optionText = compositeOver(String(derived.colorText), elevated)
       const ratio = contrastRatio(selectedBg, optionText)

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { describe, expect, it } from 'vitest'
 
 import { THEME_LIST } from './registry'
