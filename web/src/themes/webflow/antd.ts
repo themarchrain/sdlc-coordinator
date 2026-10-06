@@ -90,6 +90,7 @@ export const webflowAntdTheme: ThemeConfig = {
       'Inter, system-ui, -apple-system, "Segoe UI", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(8, 8, 8, 0.08)' },
     Button: {
       // 按钮字重 500（规格 button-md 16px/500）；黑 CTA 扁平无阴影
       fontWeight: 500,

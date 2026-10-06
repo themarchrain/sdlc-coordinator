@@ -84,6 +84,7 @@ export const figmaAntdTheme: ThemeConfig = {
       'Inter, "SF Pro Display", system-ui, Helvetica, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(0, 0, 0, 0.08)' },
     Button: {
       // 按钮字重 480（规格 typography.button 20px/480）；药丸无投影
       fontWeight: 480,

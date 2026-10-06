@@ -80,6 +80,7 @@ export const clayAntdTheme: ThemeConfig = {
       'Inter, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(10, 10, 10, 0.08)' },
     Button: {
       // 按钮字重 600（规格 typography.button 14px/600）； Clay 按钮无投影
       fontWeight: 600,

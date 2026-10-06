@@ -75,6 +75,7 @@ export const calAntdTheme: ThemeConfig = {
       'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(17, 17, 17, 0.08)' },
     Button: {
       // 按钮字重 600（规格 typography.button 14px/600）；扁平无阴影（投影留给卡）
       fontWeight: 600,

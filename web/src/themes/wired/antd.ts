@@ -69,6 +69,7 @@ export const wiredAntdTheme: ThemeConfig = {
       '"Apercu", "Helvetica Neue", Helvetica, Arial, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(0, 0, 0, 0.08)' },
     Button: {
       // 方角黑 CTA；标签 700 + .3px tracking（规格 button-md 16/700/0.3px）
       fontWeight: 700,

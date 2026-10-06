@@ -74,6 +74,7 @@ export const intercomAntdTheme: ThemeConfig = {
       "'Saans', 'Saans Fallback', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(17, 17, 17, 0.08)' },
     Button: {
       // 按钮标签 15px/500（规格 typography.button）；零阴影
       fontWeight: 500,

@@ -74,6 +74,7 @@ export const cohereAntdTheme: ThemeConfig = {
       'Inter, Arial, ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(33, 33, 33, 0.08)' },
     Button: {
       // 按钮字重 500（规格 button 14px/500）；药丸形态（pill 32px）由 CSS 片段统一
       fontWeight: 500,

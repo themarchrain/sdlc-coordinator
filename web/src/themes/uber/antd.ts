@@ -87,6 +87,7 @@ export const uberAntdTheme: ThemeConfig = {
     fontFamilyCode: '"Cascadia Code", Consolas, monospace',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(0, 0, 0, 0.08)' },
     Button: {
       // 药丸 999px 是品牌几何签名（规格「The pill IS the brand」）；大钮 16 走全局 LG
       borderRadius: 999,

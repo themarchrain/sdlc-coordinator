@@ -44,6 +44,7 @@ export const minimaxAntdTheme: ThemeConfig = {
     fontFamily: '"DM Sans", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(34, 34, 34, 0.08)' },
     Table: {
       headerBg: '#f7f8fa',
       headerColor: '#5f5f5f',

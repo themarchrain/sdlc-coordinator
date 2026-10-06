@@ -77,6 +77,7 @@ export const runwayAntdTheme: ThemeConfig = {
       'Inter, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(3, 3, 3, 0.08)' },
     Button: {
       // 药丸是按钮唯一形态（「rounded.full 9999px — every primary button」）
       borderRadius: 9999,

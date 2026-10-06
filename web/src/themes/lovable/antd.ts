@@ -81,6 +81,7 @@ export const lovableAntdTheme: ThemeConfig = {
       '"Camera Plain Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(67, 67, 66, 0.08)' },
     Button: {
       // 按钮标签 400（Button 16px/400）；暗钮签名内阴影字面誊抄
       // （Primary Dark「rgba(255,255,255,.2) 0px 0.5px inset, rgba(0,0,0,.2) 0px 0px 0px 0.5px inset, rgba(0,0,0,.05) 0px 1px 2px」）
