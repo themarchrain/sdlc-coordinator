@@ -73,6 +73,7 @@ export const expoAntdTheme: ThemeConfig = {
       'Inter, -apple-system, system-ui, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(23, 23, 23, 0.08)' },
     Button: {
       // 按钮字重 500（规格 button 14px/500）；黑 CTA 平面无光晕
       fontWeight: 500,

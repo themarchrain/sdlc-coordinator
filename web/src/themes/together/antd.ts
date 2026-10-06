@@ -77,6 +77,7 @@ export const togetherAntdTheme: ThemeConfig = {
       '"The Future", Inter, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(0, 0, 0, 0.08)' },
     Button: {
       // 按钮 = 大写 mono 标签（mono-caps-button 16px/500；字族/大写见 css 片段）
       fontWeight: 500,

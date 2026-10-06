@@ -224,12 +224,13 @@
   box-shadow: 0 0 0 2px rgba(29, 78, 216, .10) !important;
 }
 
-/* 黑药丸按钮：品牌签名（rounded.full），hover 压至 charcoal、active 纯黑 */
+/* 黑药丸按钮：品牌签名（rounded.full），hover 压至 charcoal、active 纯黑。
+   ghost 幽灵按钮是透明底+主色描边语言，必须排除，否则近黑主色下=全黑不可读 */
 [data-theme="minimax"] .ant-btn.ant-btn { border-radius: var(--radius-full); font-weight: 600; }
-[data-theme="minimax"] .ant-btn-primary.ant-btn-primary { background: var(--primary); box-shadow: none; }
-[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(:disabled):hover { background: var(--primary-active) !important; }
-[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(:disabled):active { background: #000000 !important; }
-[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:disabled { background: var(--hairline); color: var(--faint-empty); }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(.ant-btn-background-ghost) { background: var(--primary); box-shadow: none; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(.ant-btn-background-ghost):not(:disabled):hover { background: var(--primary-active) !important; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(.ant-btn-background-ghost):not(:disabled):active { background: #000000 !important; }
+[data-theme="minimax"] .ant-btn-primary.ant-btn-primary:not(.ant-btn-background-ghost):disabled { background: var(--hairline); color: var(--faint-empty); }
 [data-theme="minimax"] .ant-btn-default.ant-btn-default { color: var(--ink); border-color: var(--hairline); }
 [data-theme="minimax"] .ant-btn-default.ant-btn-default:not(:disabled):hover { color: var(--ink); border-color: var(--body-soft); background: var(--canvas-soft); }
 
@@ -238,9 +239,10 @@
 [data-theme="minimax"] .ant-pagination-item.ant-pagination-item-active a { color: var(--on-primary); }
 [data-theme="minimax"] .ant-pagination-options .ant-select-selector { border-radius: var(--radius-md) !important; }
 
-/* 分段选择器 = pill-tab 语言：激活项为黑药丸 */
-[data-theme="minimax"] .ant-segmented .ant-segmented-thumb { background: var(--primary); box-shadow: none; }
-[data-theme="minimax"] .ant-segmented .ant-segmented-item-selected { color: var(--on-primary); }
+/* 分段选择器 = pill-tab 语言：黑药丸选中底与白字由组件 token itemSelectedBg/
+   itemSelectedColor 承担（浮动 thumb 与静止选中项共用该 token，只改 CSS 一面
+   会出现白底白字）；此处仅压平底影、保留非选中项 hover 墨色。 */
+[data-theme="minimax"] .ant-segmented .ant-segmented-thumb { box-shadow: none; }
 [data-theme="minimax"] .ant-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover { color: var(--ink); }
 
 /* 通用标签 → MiniMax 徽章语言（rounded.full + 灰阶/状态色） */

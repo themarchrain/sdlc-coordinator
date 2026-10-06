@@ -85,6 +85,7 @@ export const mintlifyAntdTheme: ThemeConfig = {
       'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(10, 10, 10, 0.08)' },
     Button: {
       // 全药丸（rounded.full）：规格 Do「Use rounded.full to every button and pill」
       borderRadius: 9999,

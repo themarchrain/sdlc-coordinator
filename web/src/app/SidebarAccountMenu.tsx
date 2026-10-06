@@ -114,7 +114,12 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
           aria-expanded={open}
           onClick={() => setOpen(true)}
         >
-          <Avatar size={collapsed ? 24 : 28} className="sidebar-account__avatar">
+          {/* 头像底/字走 primary/on-primary 配对：antd 默认灰底白字在多数浅色主题下不可读 */}
+          <Avatar
+            size={collapsed ? 24 : 28}
+            className="sidebar-account__avatar"
+            style={{ backgroundColor: 'var(--primary)', color: 'var(--on-primary)' }}
+          >
             {username.trim().charAt(0).toUpperCase()}
           </Avatar>
           <span className="sidebar-account__meta">

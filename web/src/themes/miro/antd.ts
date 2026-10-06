@@ -89,6 +89,7 @@ export const miroAntdTheme: ThemeConfig = {
       '"Roobert PRO", "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(28, 28, 30, 0.08)' },
     Button: {
       // 药丸是品牌签名（规格 Don't：「Don't soften corners on buttons」）
       borderRadius: 9999,

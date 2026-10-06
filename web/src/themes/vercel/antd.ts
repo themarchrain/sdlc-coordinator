@@ -48,6 +48,7 @@ export const vercelAntdTheme: ThemeConfig = {
     fontFamilyCode: '"Geist Mono", "JetBrains Mono", Consolas, monospace',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(23, 23, 23, 0.08)' },
     Button: {
       // 黑白体系：按钮无阴影，字重 500（源 main.tsx 原样）
       fontWeight: 500,

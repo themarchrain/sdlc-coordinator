@@ -75,6 +75,7 @@ export const opencodeAntdTheme: ThemeConfig = {
       '"Berkeley Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "PingFang SC", "Microsoft YaHei", monospace',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(32, 29, 29, 0.08)' },
     Button: {
       // button-md 16px/500/行高 2；三态阴影全关；线钮 1px hairline-strong 边由 CSS 片段承担
       fontWeight: 500,

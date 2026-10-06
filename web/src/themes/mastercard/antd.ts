@@ -78,6 +78,7 @@ export const mastercardAntdTheme: ThemeConfig = {
       '"MarkForMC", "MarkOffcForMC", SofiaSans, Arial, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(20, 20, 19, 0.08)' },
     Button: {
       // 按钮标签 500 + 紧字距（「Nav link / Button label: 16px weight 500 -3%」）
       fontWeight: 500,

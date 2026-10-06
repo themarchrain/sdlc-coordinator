@@ -82,6 +82,7 @@ export const airtableAntdTheme: ThemeConfig = {
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(24, 29, 38, 0.08)' },
     Button: {
       // 主 CTA = 12px 圆角（规格 rounded.lg「Primary CTA buttons」）；小按钮回落 6
       borderRadius: 12,

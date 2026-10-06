@@ -238,6 +238,10 @@
 [data-theme="apple"] .collapse-toggle { color: #cccccc; }
 [data-theme="apple"] .nav-caption, [data-theme="apple"] .nav-group-title { font: 400 11px/1.2 var(--font-sans); letter-spacing: .12em; }
 [data-theme="apple"] .workspace-nav a:hover { color: #ffffff; background: rgba(255, 255, 255, .08); text-decoration: none; }
+[data-theme="apple"] .sidebar-account__trigger { color: #cccccc; }
+[data-theme="apple"] .sidebar-account__trigger:hover { color: #ffffff; background: rgba(255, 255, 255, .08); }
+[data-theme="apple"] .sidebar-account__meta strong { color: #ffffff; }
+[data-theme="apple"] .sidebar-account__meta > span:last-child { color: #cccccc; }
 [data-theme="apple"] .workspace-nav a[aria-current="page"] { color: #ffffff; background: rgba(255, 255, 255, .13); }
 [data-theme="apple"] .workspace-nav a[aria-current="page"] .anticon { color: var(--color-primary-on-dark); }
 [data-theme="apple"] .workspace-nav a[aria-current="page"]::before { display: none; }

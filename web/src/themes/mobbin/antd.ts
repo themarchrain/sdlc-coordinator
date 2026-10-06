@@ -72,6 +72,7 @@ export const mobbinAntdTheme: ThemeConfig = {
       'Saans, Inter, -apple-system, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
   },
   components: {
+    Select: { optionSelectedBg: 'rgba(20, 20, 20, 0.08)' },
     Button: {
       // 按钮标签 = link 语汇（16px/600）；三态阴影全关（药丸圆角由 CSS 片段钉 9999px）
       fontWeight: 600,
