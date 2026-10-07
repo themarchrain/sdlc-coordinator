@@ -133,17 +133,17 @@ func TestRecordReviewerRunnerFailureNotifiesWhenTesterBudgetExhausted(t *testing
 	}
 }
 
-// failingLastErrorTaskRepository 只在 LastError 回写（整行带非空 LastError）
-// 时失败,模拟 AdvanceTask 落库后的瞬态写故障。
+// failingLastErrorTaskRepository 只在 LastError 条件回写时失败,模拟
+// AdvanceTask 落库后的瞬态写故障。
 type failingLastErrorTaskRepository struct {
 	TaskRepository
 }
 
-func (r *failingLastErrorTaskRepository) Update(ctx context.Context, task *model.Task) error {
-	if strings.TrimSpace(task.LastError) != "" {
-		return errors.New("transient write failure")
+func (r *failingLastErrorTaskRepository) UpdateLastErrorIfStatus(ctx context.Context, taskID string, status model.TaskStatus, lastError string) (bool, error) {
+	if strings.TrimSpace(lastError) != "" {
+		return false, errors.New("transient write failure")
 	}
-	return r.TaskRepository.Update(ctx, task)
+	return r.TaskRepository.UpdateLastErrorIfStatus(ctx, taskID, status, lastError)
 }
 
 // 通知物化先于 LastError 回写:回写失败提前返回时停靠状态已落库且 run 已

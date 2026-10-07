@@ -19,6 +19,10 @@ import (
 	"sdlc-coordinator/internal/workspace"
 )
 
+// ErrConcurrentTaskAdvance 表示任务状态在推进过程中被并发方改变且目标状态
+// 不一致：调用方不得用旧快照续写，应重新读取并按当前状态裁决。
+var ErrConcurrentTaskAdvance = errors.New("task advanced concurrently")
+
 type TaskRepository interface {
 	Create(context.Context, *model.Task) error
 	Update(context.Context, *model.Task) error
@@ -36,6 +40,8 @@ type TaskRepository interface {
 	MarkHumanRequiredIfDispatchable(context.Context, string, string) error
 	BlockRunAndRequireHuman(context.Context, string, string, time.Time) error
 	ParkUnbound(context.Context, string) error
+	AdvanceGuarded(context.Context, *model.Task, model.TaskStatus) (bool, error)
+	UpdateLastErrorIfStatus(context.Context, string, model.TaskStatus, string) (bool, error)
 }
 
 type RunRepository interface {
@@ -44,6 +50,7 @@ type RunRepository interface {
 	UpdateProviderIfEmpty(context.Context, string, string) error
 	UpdateEffortIfEmpty(context.Context, string, string) error
 	UpdateTaskTimeoutIfEmpty(context.Context, string, int64) error
+	UpdateDispatchProjection(context.Context, string, string, string, string) error
 	UpdateFailedIfInFlight(context.Context, string, string, time.Time) (bool, error)
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
@@ -564,7 +571,9 @@ func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Ta
 	advanced, err := o.AdvanceTask(ctx, task.TaskID, nextTaskStatus)
 	if err == nil {
 		advanced.LastError = cause.Error()
-		_ = o.tasks.Update(ctx, advanced)
+		if _, updateErr := o.tasks.UpdateLastErrorIfStatus(ctx, advanced.TaskID, advanced.Status, cause.Error()); updateErr != nil {
+			log.Printf("orchestrator: record dispatch failure for task %s: last error update failed: %v", advanced.TaskID, updateErr)
+		}
 		o.materializeTesterStopIMEffect(ctx, advanced, cause.Error())
 	}
 }
@@ -582,8 +591,22 @@ func (o *Orchestrator) AdvanceTask(ctx context.Context, taskID string, next mode
 
 	o.policy.Apply(task, previous, next, o.now())
 
-	if err := o.tasks.Update(ctx, task); err != nil {
+	applied, err := o.tasks.AdvanceGuarded(ctx, task, previous)
+	if err != nil {
 		return nil, fmt.Errorf("advance task %s: %w", taskID, err)
+	}
+	if !applied {
+		// 并发推进（另一实例或人工操作先改了状态）：按库内当前状态裁决。
+		// 目标状态已达 → 幂等成功；否则显式失败，调用方不得用旧快照续写。
+		current, reloadErr := o.tasks.GetByTaskID(ctx, taskID)
+		if reloadErr != nil {
+			return nil, fmt.Errorf("advance task %s: reload after concurrent advance: %w", taskID, reloadErr)
+		}
+		if current.Status == next {
+			return current, nil
+		}
+		return nil, fmt.Errorf("%w: task %s moved %s -> %s while advancing to %s",
+			ErrConcurrentTaskAdvance, taskID, previous, current.Status, next)
 	}
 
 	return task, nil

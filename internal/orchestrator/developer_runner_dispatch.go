@@ -44,7 +44,7 @@ func (o *Orchestrator) DispatchDeveloperTask(ctx context.Context, taskID string)
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.Update(ctx, run); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	workspaceRequest, err := buildDeveloperWorkspaceRequest(ctx, task, run, o.developerRunnerSettings)

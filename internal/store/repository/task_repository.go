@@ -159,6 +159,37 @@ func (r *TaskRepository) ParkUnbound(ctx context.Context, taskID string) error {
 	return nil
 }
 
+func (r *TaskRepository) AdvanceGuarded(ctx context.Context, task *model.Task, expected model.TaskStatus) (bool, error) {
+	if task == nil {
+		return false, fmt.Errorf("task is required")
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.Task{}).
+		Where("task_id = ? AND status = ?", task.TaskID, expected).
+		Updates(map[string]any{
+			"status":        task.Status,
+			"attempt_count": task.AttemptCount,
+			"lease_until":   task.LeaseUntil,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("advance task guarded: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// UpdateLastErrorIfStatus 仅在任务仍处于期望状态时写入 last_error：任务已被
+// 并发推进（状态已变）时放弃写入，不把错误信息挂到更新的状态上。
+func (r *TaskRepository) UpdateLastErrorIfStatus(ctx context.Context, taskID string, status model.TaskStatus, lastError string) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&model.Task{}).
+		Where("task_id = ? AND status = ?", taskID, status).
+		Update("last_error", lastError)
+	if result.Error != nil {
+		return false, fmt.Errorf("update task last error guarded: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func (r *TaskRepository) ResumeHumanRequired(ctx context.Context, dedupeKey, contextJSON string) error {
 	updates := map[string]any{
 		"status":         model.TaskStatusPending,

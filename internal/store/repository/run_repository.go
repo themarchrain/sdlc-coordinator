@@ -68,6 +68,21 @@ func (r *RunRepository) UpdateTaskTimeoutIfEmpty(ctx context.Context, runID stri
 	return nil
 }
 
+// UpdateDispatchProjection 只写派发投影列（external_system/external_id/
+// input_json）：不整行覆盖，避免把并发推进的状态字段回滚成旧快照。
+func (r *RunRepository) UpdateDispatchProjection(ctx context.Context, runID, externalSystem, externalID, inputJSON string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ?", runID).
+		Updates(map[string]any{
+			"external_system": externalSystem,
+			"external_id":     externalID,
+			"input_json":      inputJSON,
+		}).Error; err != nil {
+		return fmt.Errorf("update run dispatch projection: %w", err)
+	}
+	return nil
+}
+
 // UpdateFailedIfInFlight 仅在 run 仍处于在途状态时把状态置为 failed 并写
 // error_message、completed_at，返回是否实际生效。在途集合取 pending、
 // running、finalizing，是既有终态写路径界定终态集合（succeeded、failed、

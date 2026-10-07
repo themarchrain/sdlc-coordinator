@@ -55,7 +55,7 @@ func (o *Orchestrator) DispatchTesterTask(ctx context.Context, taskID string) (*
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.Update(ctx, run); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		// InputJSON 已组好但落库失败:任务回退重试路径,不留孤儿 run。
 		o.recordDispatchFailure(ctx, task, run, err)
 		return nil, err

@@ -82,7 +82,7 @@ func (o *Orchestrator) DispatchReviewerTask(ctx context.Context, taskID string) 
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.Update(ctx, run); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	workspaceRequest, err := buildReviewerWorkspaceRequest(ctx, task, run, o.reviewerRunnerSettings)
@@ -185,12 +185,15 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 	if message == "" {
 		message = "agent runner execution failed"
 	}
-	run.Status = model.RunStatusFailed
-	run.ErrorMessage = message
 	completedAt := o.now()
-	run.CompletedAt = &completedAt
-	if err := o.runs.Update(ctx, run); err != nil {
+	applied, err := o.runs.UpdateFailedIfInFlight(ctx, run.RunID, message, completedAt)
+	if err != nil {
 		return err
+	}
+	if !applied {
+		// 并发方已把 run 终态化（结果回传通道先到）：失败回写到此为止，
+		// 不推进任务，防止把已推进的任务回拉。
+		return nil
 	}
 	next := o.policy.NextFailureStatus(task)
 	advanced, err := o.AdvanceTask(ctx, task.TaskID, next)
@@ -202,7 +205,10 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 	// (与 recordDispatchFailure 的吞错照发对齐)。
 	o.materializeTesterStopIMEffect(ctx, advanced, message)
 	advanced.LastError = message
-	return o.tasks.Update(ctx, advanced)
+	if _, err := o.tasks.UpdateLastErrorIfStatus(ctx, advanced.TaskID, advanced.Status, message); err != nil {
+		return err
+	}
+	return nil
 }
 
 // buildReviewerWorkspaceRequest 组装 reviewer 工作区请求并按任务解析注册仓行
