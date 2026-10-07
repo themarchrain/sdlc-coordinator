@@ -38,6 +38,7 @@ type AgentRunnerSettings struct {
 	TaskTimeout            time.Duration
 	ProviderConfigRevision uint64
 	InternalToken          string
+	RemoteWorkspace        bool
 }
 
 // ErrControlPlaneNotConfigured 表示装配控制面时缺少 DSN 或种子超管（
@@ -102,6 +103,7 @@ func Load() Config {
 			Effort:          providerEnv("AGENT_PROVIDER_EFFORT", "CLAUDE_PROVIDER_EFFORT", "high"),
 			TaskTimeout:     getEnvDurationBetween("AGENT_RUNNER_TASK_TIMEOUT", defaultAgentRunnerTaskTimeout, minimumAgentRunnerTaskTimeout, maximumAgentRunnerTaskTimeout),
 			InternalToken:   strings.TrimSpace(getEnv("AGENT_RUNNER_INTERNAL_TOKEN", "")),
+			RemoteWorkspace: getEnvBool("AGENT_RUNNER_REMOTE_WORKSPACE", false),
 		},
 		HTTPAddr:    bootstrap.HTTPAddr,
 		DatabaseDSN: bootstrap.DatabaseDSN,

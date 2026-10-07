@@ -23,6 +23,20 @@ import (
 // 不一致：调用方不得用旧快照续写，应重新读取并按当前状态裁决。
 var ErrConcurrentTaskAdvance = errors.New("task advanced concurrently")
 
+// RunWorkspaceCleaner 是 run 工作区清理的窄端口：本地形态在协调器文件系统
+// 上删除；远端形态（计划 A）经受控操作在 Runner 本机删除。
+type RunWorkspaceCleaner interface {
+	RemoveRunWorkspace(ctx context.Context, runID string) error
+}
+
+// WorkItemLeasePort 是跨实例执行权租约的窄端口（租户库实现）：抢占是原子
+// 单语句，Verify/Release 带 owner+generation 条件。
+type WorkItemLeasePort interface {
+	Acquire(ctx context.Context, scope, owner, operationID string, ttl time.Duration) (model.WorkItemLease, bool, error)
+	Verify(ctx context.Context, scope, owner string, generation uint64) (bool, error)
+	Release(ctx context.Context, scope, owner string, generation uint64) (bool, error)
+}
+
 type TaskRepository interface {
 	Create(context.Context, *model.Task) error
 	Update(context.Context, *model.Task) error
@@ -148,6 +162,7 @@ type Orchestrator struct {
 	mergeGateClients               func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)
 	agentExecutions                AgentExecutionLookup
 	runnerArtifacts                RunnerArtifactStore
+	runWorkspaceCleaner            RunWorkspaceCleaner
 	stateMachine                   *StateMachine
 	policy                         Policy
 	now                            func() time.Time
@@ -321,6 +336,12 @@ func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
 			testerCoordinator.core.setResultIngress(issuer, endpointURL)
 		}
 	}
+}
+
+// WithRunWorkspaceCleaner 接入 run 工作区清理端口（远端工作区形态注入
+// Runner 受控清理；缺省保留本机文件系统删除）。
+func WithRunWorkspaceCleaner(cleaner RunWorkspaceCleaner) Option {
+	return func(o *Orchestrator) { o.runWorkspaceCleaner = cleaner }
 }
 
 func WithRunnerArtifactStore(store RunnerArtifactStore) Option {

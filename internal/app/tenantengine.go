@@ -133,12 +133,28 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
 		return orch.SubmitResult(ctx, request)
 	})
+	// 工作区形态：远端（计划 A，Runner 本机执行受控 Git）或本机（单机开发
+	// 与测试）。三个角色的准备与交付必须同形态，不得混用。
+	var (
+		reviewerPreparer  orchestrator.ReviewerWorkspacePreparer  = workspace.NewReviewerPreparer()
+		developerPreparer orchestrator.DeveloperWorkspacePreparer = workspace.NewDeveloperPreparer()
+		deliveryFinalizer orchestrator.DeveloperGitFinalizer      = workspace.NewDeveloperFinalizer()
+	)
+	if shared.cfg.AgentRunner.RemoteWorkspace {
+		remoteWorkspace := agentrunner.NewRemoteWorkspace(
+			shared.cfg.AgentRunner.ServiceURL, shared.cfg.AgentRunner.InternalToken, tenantID, nil,
+		)
+		reviewerPreparer = agentrunner.NewRemoteReadOnlyPreparer(remoteWorkspace)
+		developerPreparer = agentrunner.NewRemoteDeveloperPreparer(remoteWorkspace)
+		deliveryFinalizer = remoteWorkspace
+		opts = append(opts, orchestrator.WithRunWorkspaceCleaner(remoteWorkspace))
+	}
 	reviewerRunnerCoordinator := orchestrator.NewReviewerRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), shared.defaultRunner,
+		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
 	)
 	developerRunnerCoordinator := orchestrator.NewDeveloperRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewDeveloperPreparer(), workspace.NewDeveloperFinalizer(), shared.defaultRunner,
+		taskRepo, runRepo, agentExecutionRepo, developerPreparer, deliveryFinalizer, shared.defaultRunner,
 		orchSubmitter,
 		runnerSettings,
 	)
@@ -146,11 +162,12 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	// 是"提交由 Coordinator 创建"的唯一归属凭据;Agent 不可写租户库。
 	deliveryCheckpoints := repository.NewDeveloperDeliveryCheckpointRepository(db)
 	developerRunnerCoordinator.SetDeveloperDeliveryCheckpoints(deliveryCheckpoints)
+	developerRunnerCoordinator.SetDeliveryExecutionRight(repository.NewWorkItemLeaseRepository(db))
 	// 验证任务与 reviewer 共用同一只读工作区 preparer:两者都是按冻结头部
 	// SHA 的只读检出,差别只在角色门禁与回传工具;tester pool 路由随核心
 	// coordinator 注入(装配于 NewReady 前,构造后接入安全)。
 	testerRunnerCoordinator := orchestrator.NewTesterRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), shared.defaultRunner,
+		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
 	)
 	opts = append(opts,
@@ -175,11 +192,14 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		}, time.Now())
 	})
 	mcpChannel := orchestrator.NewResultChannelCoordinator(
-		workspace.NewDeveloperFinalizer(),
+		deliveryFinalizer,
 		orchSubmitter,
 		runnerSettings, "mcp",
 	)
 	mcpChannel.SetDeveloperDeliveryCheckpoints(deliveryCheckpoints)
+	// 交付执行权（run 级租约）：MCP 与文本两个通道的 commit/push 前都经它
+	// 竞争同一处理权，保证跨实例只有一次可信交付。
+	mcpChannel.SetDeliveryExecutionRight(repository.NewWorkItemLeaseRepository(db))
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
 	processor := events.NewProcessor(inboundEventRepo, orch)

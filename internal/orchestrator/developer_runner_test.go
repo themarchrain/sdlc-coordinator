@@ -255,8 +255,10 @@ func (f *fakeDeveloperWorkspacePreparer) Prepare(_ context.Context, request work
 }
 
 type fakeDeveloperFinalizer struct {
-	commits       int
-	pushes        int
+	commits  int
+	pushes   int
+	// onCreate 在 CommitDelivery 计数后、返回前调用（故障注入用）。
+	onCreate func()
 	commitRequest workspace.DeveloperCommitRequest
 	pushRequest   workspace.DeveloperPushRequest
 	commitErr     error
@@ -268,6 +270,9 @@ type fakeDeveloperFinalizer struct {
 func (f *fakeDeveloperFinalizer) CommitDelivery(_ context.Context, request workspace.DeveloperCommitRequest) (*workspace.DeveloperCommitResult, error) {
 	f.commits++
 	f.commitRequest = request
+	if f.onCreate != nil {
+		f.onCreate()
+	}
 	if f.commitErr != nil {
 		return nil, f.commitErr
 	}

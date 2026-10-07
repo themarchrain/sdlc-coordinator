@@ -93,6 +93,12 @@ func (c *DeveloperRunnerCoordinator) SetDeveloperDeliveryCheckpoints(checkpoints
 	c.channel.SetDeveloperDeliveryCheckpoints(checkpoints)
 }
 
+// SetDeliveryExecutionRight 在装配期接入交付执行权端口：文本通道的交付
+// （reconcile → 通道内 commit/push）与 MCP 通道共用同一 run 级执行权。
+func (c *DeveloperRunnerCoordinator) SetDeliveryExecutionRight(leases WorkItemLeasePort) {
+	c.channel.SetDeliveryExecutionRight(leases)
+}
+
 func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request DeveloperRunnerStartRequest) (*model.AgentExecution, error) {
 	if err := c.validateDependencies(); err != nil {
 		return nil, err

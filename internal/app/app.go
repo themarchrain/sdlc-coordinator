@@ -81,6 +81,11 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		}
 	}()
 
+	// 远端工作区形态要求内部通道令牌齐备：缺令牌时全部受控操作会被
+	// fail-closed 拒绝，属配置错误，启动即失败而不是运行期才暴露。
+	if cfg.AgentRunner.RemoteWorkspace && strings.TrimSpace(cfg.AgentRunner.InternalToken) == "" {
+		return nil, fmt.Errorf("remote workspace mode requires AGENT_RUNNER_INTERNAL_TOKEN")
+	}
 	// MCP 结果回传通道签名密钥仅存内存（重启即失效，在途 agent 落入文本
 	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
 	// 缺省未配置时通道保持关闭（纯文本模式）。

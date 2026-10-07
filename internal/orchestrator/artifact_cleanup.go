@@ -31,7 +31,7 @@ func (o *Orchestrator) cleanupExpiredArtifacts(ctx context.Context) []ArtifactCl
 	if workspaceRoot == "" {
 		workspaceRoot = strings.TrimSpace(o.developerRunnerSettings.WorkspaceRoot)
 	}
-	if workspaceRoot == "" {
+	if workspaceRoot == "" && o.runWorkspaceCleaner == nil {
 		return nil
 	}
 	cutoff := o.now().UTC().Add(-artifactRetention)
@@ -99,7 +99,12 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 			}
 		}
 	}
-	if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
+	if o.runWorkspaceCleaner != nil {
+		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.RunID); err != nil {
+			result.Error = err.Error()
+			return result
+		}
+	} else if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
 		result.Error = err.Error()
 		return result
 	}

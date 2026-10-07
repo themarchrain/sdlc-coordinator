@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/results"
 	"sdlc-coordinator/internal/workspace"
@@ -59,11 +60,12 @@ type ChannelOutcome struct {
 const developerFinalizeTimeout = 3 * time.Minute
 
 type ResultChannelCoordinator struct {
-	finalizer   DeveloperGitFinalizer
-	checkpoints DeveloperDeliveryCheckpoints
-	submitter   ReviewerResultSubmitter
-	settings    ReviewerRunnerSettings
-	source      string
+	finalizer     DeveloperGitFinalizer
+	checkpoints   DeveloperDeliveryCheckpoints
+	submitter     ReviewerResultSubmitter
+	settings      ReviewerRunnerSettings
+	source        string
+	deliveryRight WorkItemLeasePort
 }
 
 func NewResultChannelCoordinator(
@@ -82,6 +84,51 @@ func NewResultChannelCoordinator(
 // 未接入时 Developer ready 结果 fail-closed 拒绝交付。
 func (c *ResultChannelCoordinator) SetDeveloperDeliveryCheckpoints(checkpoints DeveloperDeliveryCheckpoints) {
 	c.checkpoints = checkpoints
+}
+
+// SetDeliveryExecutionRight 在装配期接入交付执行权端口（租户库租约实现）：
+// 任何 Git 副作用（commit/push）之前必须持有该权利。
+func (c *ResultChannelCoordinator) SetDeliveryExecutionRight(leases WorkItemLeasePort) {
+	c.deliveryRight = leases
+}
+
+// developerDeliveryLeaseScope / TTL：交付执行权按 run 粒度，租期覆盖单次
+// 交付预算（finalize 上限）并留出对账余量。
+const developerDeliveryLeaseScope = "developer-delivery:"
+
+const developerDeliveryLeaseTTL = 5 * time.Minute
+
+func (c *ResultChannelCoordinator) deliveryOwner() string {
+	return instance.ID() + ":" + c.source
+}
+
+func (c *ResultChannelCoordinator) acquireDeliveryRight(ctx context.Context, runID string) (model.WorkItemLease, bool, error) {
+	if c.deliveryRight == nil {
+		return model.WorkItemLease{}, true, nil
+	}
+	return c.deliveryRight.Acquire(ctx, developerDeliveryLeaseScope+runID, c.deliveryOwner(), "developer-delivery", developerDeliveryLeaseTTL)
+}
+
+// verifyDeliveryRight 在 push 前核验权利仍在自己手上（被接管则不得推送）。
+func (c *ResultChannelCoordinator) verifyDeliveryRight(ctx context.Context, lease model.WorkItemLease) bool {
+	if c.deliveryRight == nil || lease.Scope == "" {
+		return true
+	}
+	ok, err := c.deliveryRight.Verify(ctx, lease.Scope, lease.Owner, lease.Generation)
+	if err != nil {
+		return false
+	}
+	return ok
+}
+
+// releaseDeliveryRight 尽力释放（失败留待租期到期自然回收）。
+func (c *ResultChannelCoordinator) releaseDeliveryRight(lease model.WorkItemLease) {
+	if c.deliveryRight == nil || lease.Scope == "" {
+		return
+	}
+	releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = c.deliveryRight.Release(releaseCtx, lease.Scope, lease.Owner, lease.Generation)
 }
 
 // SubmitAgentResult runs raw agent payload through thin normalization, strict
@@ -153,13 +200,28 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 		if err != nil {
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("rebuild trusted developer workspace metadata: %w", err))), nil
 		}
+		finalizeCtx, cancel := context.WithTimeout(ctx, developerFinalizeTimeout)
+		defer cancel()
+		// 处理权必须在 commit/push 之前生效：两通道（MCP 与文本）可能同时
+		// 到达不同实例，这里是 Git 副作用前的唯一线性化边界。
+		deliveryLease, won, leaseErr := c.acquireDeliveryRight(finalizeCtx, run.RunID)
+		if leaseErr != nil {
+			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+				Err: fmt.Errorf("acquire developer delivery right: %w", leaseErr)}, nil
+		}
+		if !won {
+			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+				Err: errors.New("developer delivery is currently owned by another coordinator instance")}, nil
+		}
+		defer c.releaseDeliveryRight(deliveryLease)
 		// 交付检查点是提交归属的唯一受信凭据:基线缺失(部署前在途 run)或
 		// 与当前任务/仓/分支不符一律 fail-closed,属基础设施/配置问题,不
-		// 进 AI 可矫正通道。
-		checkpoint, err := c.checkpoints.Load(ctx, run.RunID)
-		if err != nil {
+		// 进 AI 可矫正通道。必须在取得执行权之后读取：并发胜者可能刚写入
+		// 交付 SHA，按旧视图再提交会破坏只有一次可信提交。
+		checkpoint, checkpointErr := c.checkpoints.Load(finalizeCtx, run.RunID)
+		if checkpointErr != nil {
 			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
-				Err: fmt.Errorf("load developer delivery checkpoint: %w", err)}, nil
+				Err: fmt.Errorf("load developer delivery checkpoint: %w", checkpointErr)}, nil
 		}
 		if checkpoint == nil {
 			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
@@ -170,12 +232,14 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 			return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
 				Err: errors.New("developer delivery baseline does not match the current task and run")}, nil
 		}
-		finalizeCtx, cancel := context.WithTimeout(ctx, developerFinalizeTimeout)
-		defer cancel()
 		var delivery *workspace.DeveloperDelivery
 		if checkpoint.CommitSHA != "" {
 			// 重试/恢复路径:只信任检查点记录的固定 SHA,推送前核对本地
 			// HEAD 与父提交仍与其相符。
+			if !c.verifyDeliveryRight(finalizeCtx, deliveryLease) {
+				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+					Err: errors.New("developer delivery right was lost before push")}, nil
+			}
 			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
 				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
@@ -208,6 +272,10 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 			if err := c.checkpoints.RecordCommit(finalizeCtx, run.RunID, commit.CommitSHA); err != nil {
 				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
 					Err: fmt.Errorf("record developer delivery checkpoint: %w (the created commit will not be pushed)", err)}, nil
+			}
+			if !c.verifyDeliveryRight(finalizeCtx, deliveryLease) {
+				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
+					Err: errors.New("developer delivery right was lost before push")}, nil
 			}
 			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
 				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
