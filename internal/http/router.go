@@ -43,6 +43,9 @@ type RouterOptions struct {
 	// 写路径租户化端口（均可空：空时行为与单库形态一致）。
 	EngineViewFactory     handlers.EngineViewFactory
 	AdminOperationEngines handlers.AdminOperationEngines
+	// RunnerAuthorization 是受控工作区操作的当前授权确认入口（可空：未挂载
+	// 时路由不存在，Runner 侧按未确认 fail-closed）。
+	RunnerAuthorization *handlers.RunnerAuthorizationHandler
 }
 
 // WithRouteIndexSync 注入控制面路由索引写穿端口。
@@ -166,6 +169,13 @@ func WithAdminOperationEngines(engines handlers.AdminOperationEngines) RouterOpt
 	}
 }
 
+// WithRunnerAuthorization 挂载 Runner 当前授权确认入口（受控工作区操作）。
+func WithRunnerAuthorization(handler *handlers.RunnerAuthorizationHandler) RouterOption {
+	return func(options *RouterOptions) {
+		options.RunnerAuthorization = handler
+	}
+}
+
 func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	var eventProcessor *events.Processor
 	options := RouterOptions{RuntimeMode: configuration.ModeReady}
@@ -199,6 +209,9 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 		router.POST("/mcp", options.MCPHandler.Handle)
 		router.DELETE("/mcp", options.MCPHandler.CloseSession)
 		router.GET("/mcp", options.MCPHandler.Handle)
+	}
+	if options.RunnerAuthorization != nil {
+		router.POST("/internal/runner-authorization", options.RunnerAuthorization.Handle)
 	}
 	adminWebHandler := options.AdminWebHandler
 	if adminWebHandler == nil {

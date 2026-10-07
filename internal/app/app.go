@@ -178,6 +178,12 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
 	}
+	// Runner 受控工作区操作的当前授权确认入口：任一副本基于共享库裁决
+	//（run 是否仍是任务当前 run、任务是否可交付、清理是否指向在途工作区）。
+	routerOptions = append(routerOptions, api.WithRunnerAuthorization(handlers.NewRunnerAuthorizationHandler(
+		&tenantRunnerAuthorizer{control: controlPlaneService, resolver: tenantStores},
+		cfg.AgentRunner.InternalToken,
+	)))
 	// webhook 默认处理器只是路由注册载体：生产恒注入 EngineViewFactory，
 	// 每个请求按 (provider, path) 路由到所属租户引擎视图（factory 优先且
 	// 绝不回落构造期默认——空壳 processor 永不被调用）。

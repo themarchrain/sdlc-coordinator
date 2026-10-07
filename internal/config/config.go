@@ -37,6 +37,7 @@ type AgentRunnerSettings struct {
 	Effort                 string
 	TaskTimeout            time.Duration
 	ProviderConfigRevision uint64
+	InternalToken          string
 }
 
 // ErrControlPlaneNotConfigured 表示装配控制面时缺少 DSN 或种子超管（
@@ -100,6 +101,7 @@ func Load() Config {
 			Model:           providerEnv("AGENT_PROVIDER_MODEL", "CLAUDE_PROVIDER_MODEL", ""),
 			Effort:          providerEnv("AGENT_PROVIDER_EFFORT", "CLAUDE_PROVIDER_EFFORT", "high"),
 			TaskTimeout:     getEnvDurationBetween("AGENT_RUNNER_TASK_TIMEOUT", defaultAgentRunnerTaskTimeout, minimumAgentRunnerTaskTimeout, maximumAgentRunnerTaskTimeout),
+			InternalToken:   strings.TrimSpace(getEnv("AGENT_RUNNER_INTERNAL_TOKEN", "")),
 		},
 		HTTPAddr:    bootstrap.HTTPAddr,
 		DatabaseDSN: bootstrap.DatabaseDSN,
