@@ -35,7 +35,7 @@ func main() {
 	}
 
 	configurationRepository := configuration.NewRepository(db)
-	if err := configurationRepository.Migrate(); err != nil {
+	if err := store.MigrateGuarded(context.Background(), db, "configuration", configurationRepository.Migrate); err != nil {
 		logger.Fatal("migrate runtime configuration failed", zap.Error(err))
 	}
 	resolution := configuration.NewResolver(configurationRepository).Resolve(context.Background(), bootstrap, legacy)

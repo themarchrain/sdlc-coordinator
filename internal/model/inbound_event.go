@@ -19,14 +19,14 @@ const (
 
 type InboundEvent struct {
 	ID             uint               `gorm:"primaryKey"`
-	EventID        string             `gorm:"uniqueIndex;not null"`
-	DedupeKey      string             `gorm:"uniqueIndex;not null"`
-	Source         string             `gorm:"index;not null"`
-	EventType      string             `gorm:"index;not null"`
-	EventAction    string             `gorm:"index"`
-	ExternalID     string             `gorm:"index"`
-	RepositoryID   *string            `gorm:"column:repository_id;index"`
-	Status         InboundEventStatus `gorm:"index;not null"`
+	EventID        string             `gorm:"uniqueIndex;not null;size:128"`
+	DedupeKey      string             `gorm:"uniqueIndex;not null;size:255"`
+	Source         string             `gorm:"index;not null;size:32"`
+	EventType      string             `gorm:"index;not null;size:64"`
+	EventAction    string             `gorm:"index;size:64"`
+	ExternalID     string             `gorm:"index;size:128"`
+	RepositoryID   *string            `gorm:"column:repository_id;index;size:128"`
+	Status         InboundEventStatus `gorm:"index;not null;size:32"`
 	PayloadJSON    string             `gorm:"type:text"`
 	NormalizedJSON string             `gorm:"type:text"`
 	ErrorMessage   string             `gorm:"type:text"`

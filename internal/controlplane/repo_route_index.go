@@ -14,9 +14,9 @@ import (
 // 索引只路由不鉴权：secret 留租户库仓行。
 type RepoRouteIndex struct {
 	ID                uint   `gorm:"primaryKey"`
-	Provider          string `gorm:"not null;uniqueIndex:idx_repo_route_identity"`
-	BaseURL           string `gorm:"not null;uniqueIndex:idx_repo_route_identity;type:text"`
-	PathWithNamespace string `gorm:"not null;uniqueIndex:idx_repo_route_identity;type:text"`
+	Provider          string `gorm:"not null;uniqueIndex:idx_repo_route_identity;size:64"`
+	BaseURL           string `gorm:"not null;uniqueIndex:idx_repo_route_identity;size:255"`
+	PathWithNamespace string `gorm:"not null;uniqueIndex:idx_repo_route_identity;size:255"`
 	TenantID          uint   `gorm:"not null;index"`
 	RepoFingerprint   string `gorm:"not null;default:''"`
 	CreatedAt         time.Time

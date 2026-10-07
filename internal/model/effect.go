@@ -21,14 +21,14 @@ const (
 
 type Effect struct {
 	ID           uint         `gorm:"primaryKey"`
-	EffectID     string       `gorm:"uniqueIndex;not null"`
-	TaskID       string       `gorm:"index;not null"`
-	RunID        string       `gorm:"index;not null"`
-	DedupeKey    string       `gorm:"uniqueIndex;not null"`
-	Kind         string       `gorm:"index;not null"`
-	Target       string       `gorm:"index;not null"`
+	EffectID     string       `gorm:"uniqueIndex;not null;size:128"`
+	TaskID       string       `gorm:"index;not null;size:128"`
+	RunID        string       `gorm:"index;not null;size:128"`
+	DedupeKey    string       `gorm:"uniqueIndex;not null;size:255"`
+	Kind         string       `gorm:"index;not null;size:64"`
+	Target       string       `gorm:"index;not null;size:255"`
 	Critical     bool         `gorm:"not null;default:false"`
-	Status       EffectStatus `gorm:"index;not null"`
+	Status       EffectStatus `gorm:"index;not null;size:32"`
 	AttemptCount int          `gorm:"not null;default:0"`
 	RequestJSON  string       `gorm:"type:text"`
 	ResponseJSON string       `gorm:"type:text"`

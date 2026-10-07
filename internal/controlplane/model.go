@@ -36,7 +36,7 @@ const (
 // （people 三元组）正交，禁止合并。Role 区分全局超管与普通账号。
 type User struct {
 	ID                 uint   `gorm:"primaryKey"`
-	Username           string `gorm:"not null;uniqueIndex"`
+	Username           string `gorm:"not null;uniqueIndex;size:128"`
 	PasswordHash       string `gorm:"not null"`
 	Role               string `gorm:"not null;default:user"`
 	MustChangePassword bool   `gorm:"not null;default:false"`
@@ -50,9 +50,9 @@ func (User) TableName() string { return "users" }
 // TenantStoreResolver 消费，本阶段仅落串不建文件）。
 type Tenant struct {
 	ID          uint   `gorm:"primaryKey"`
-	Slug        string `gorm:"not null;uniqueIndex"`
+	Slug        string `gorm:"not null;uniqueIndex;size:128"`
 	DisplayName string `gorm:"not null"`
-	Status      string `gorm:"not null;default:active;index"`
+	Status      string `gorm:"not null;default:active;index;size:32"`
 	DMLocator   string `gorm:"column:db_locator"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -76,7 +76,7 @@ func (Membership) TableName() string { return "memberships" }
 type InviteCode struct {
 	ID        uint      `gorm:"primaryKey"`
 	TenantID  uint      `gorm:"not null;index"`
-	CodeHash  string    `gorm:"not null;uniqueIndex"`
+	CodeHash  string    `gorm:"not null;uniqueIndex;size:128"`
 	Role      string    `gorm:"not null;default:member"`
 	ExpiresAt time.Time `gorm:"not null;index"`
 	MaxUses   int       `gorm:"not null"`
@@ -93,7 +93,7 @@ func (InviteCode) TableName() string { return "invite_codes" }
 type RunnerAssignment struct {
 	ID          uint   `gorm:"primaryKey"`
 	TenantID    uint   `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint"`
-	EndpointURL string `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint"`
+	EndpointURL string `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint;size:512"`
 	CreatedAt   time.Time
 }
 
@@ -105,7 +105,7 @@ type AuditLog struct {
 	ActorUserID   *uint
 	ActorUsername string    `gorm:"not null;default:''"`
 	TenantID      *uint     `gorm:"index"`
-	Action        string    `gorm:"not null;index"`
+	Action        string    `gorm:"not null;index;size:64"`
 	Detail        string    `gorm:"not null;default:''"`
 	SourceIP      string    `gorm:"not null;default:''"`
 	CreatedAt     time.Time `gorm:"index"`
@@ -117,7 +117,7 @@ func (AuditLog) TableName() string { return "audit_log" }
 // active_tenant，进入组织上下文走支持访问（SupportTenantID + 理由，进退均写审计）。
 type Session struct {
 	ID               uint   `gorm:"primaryKey"`
-	TokenHash        string `gorm:"not null;uniqueIndex"`
+	TokenHash        string `gorm:"not null;uniqueIndex;size:128"`
 	UserID           uint   `gorm:"not null;index"`
 	ActiveTenantID   *uint
 	Role             string `gorm:"not null"`

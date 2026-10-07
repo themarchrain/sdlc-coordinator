@@ -9,8 +9,8 @@ import "time"
 // 形态都不构成证明。仅存交付元数据,不存 token/密钥。
 type DeveloperDeliveryCheckpoint struct {
 	ID       uint   `gorm:"primaryKey"`
-	TaskID   string `gorm:"index;not null"`
-	RunID    string `gorm:"uniqueIndex;not null"`
+	TaskID   string `gorm:"index;not null;size:128"`
+	RunID    string `gorm:"uniqueIndex;not null;size:128"`
 	TaskType string `gorm:"column:task_type;not null"`
 	// RepositoryURL/DeliveryBranch 与受信任务元数据绑定,防止检查点被复用
 	// 到其他仓或分支。
@@ -21,7 +21,7 @@ type DeveloperDeliveryCheckpoint struct {
 	BaselineSHA string `gorm:"column:baseline_sha;not null"`
 	// CommitSHA 为空=基线已钉、交付提交未创建;只允许从空翻转一次,翻转后
 	// 本 run 至多一笔由流程认可的交付提交。
-	CommitSHA string `gorm:"column:commit_sha;index"`
+	CommitSHA string `gorm:"column:commit_sha;index;size:64"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

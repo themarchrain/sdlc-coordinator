@@ -51,6 +51,9 @@ func Run(ctx context.Context, deps Deps) (bool, error) {
 	if deps.MainDB == nil || deps.ControlPlane == nil || strings.TrimSpace(deps.TenantsRoot) == "" {
 		return false, errors.New("tenant migration dependencies are required")
 	}
+	if deps.MainDB.Dialector.Name() != store.DriverSQLite {
+		return false, nil
+	}
 	if !hasMigratableBusinessData(ctx, deps.MainDB) {
 		return false, nil
 	}

@@ -8,11 +8,11 @@ import (
 
 type Artifact struct {
 	ID           uint   `gorm:"primaryKey"`
-	ArtifactID   string `gorm:"uniqueIndex;not null"`
-	TaskID       string `gorm:"index;not null;uniqueIndex:idx_artifact_identity"`
-	RunID        string `gorm:"index;uniqueIndex:idx_artifact_identity"`
-	Kind         string `gorm:"index;not null;uniqueIndex:idx_artifact_identity"`
-	Name         string `gorm:"not null;uniqueIndex:idx_artifact_identity"`
+	ArtifactID   string `gorm:"uniqueIndex;not null;size:128"`
+	TaskID       string `gorm:"index;not null;uniqueIndex:idx_artifact_identity;size:128"`
+	RunID        string `gorm:"index;uniqueIndex:idx_artifact_identity;size:128"`
+	Kind         string `gorm:"index;not null;uniqueIndex:idx_artifact_identity;size:64"`
+	Name         string `gorm:"not null;uniqueIndex:idx_artifact_identity;size:255"`
 	URL          string `gorm:"type:text"`
 	MetadataJSON string `gorm:"type:text"`
 	CreatedAt    time.Time

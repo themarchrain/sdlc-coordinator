@@ -11,10 +11,10 @@ import (
 
 type Person struct {
 	ID          uint               `gorm:"primaryKey"`
-	PersonID    string             `gorm:"uniqueIndex;not null"`
+	PersonID    string             `gorm:"uniqueIndex;not null;size:128"`
 	DisplayName string             `gorm:"not null"`
-	Email       string             `gorm:"not null;collate:nocase;uniqueIndex:uidx_people_email,where:deleted_at IS NULL"`
-	Enabled     bool               `gorm:"not null"`
+	Email     string             `gorm:"not null;collate:nocase;size:191"`
+	Enabled   bool               `gorm:"not null"`
 	Identities  []CodeHostIdentity `gorm:"foreignKey:PersonID;references:PersonID"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -31,13 +31,14 @@ func (person *Person) BeforeCreate(_ *gorm.DB) error {
 }
 
 type CodeHostIdentity struct {
-	ID              uint   `gorm:"primaryKey"`
-	IdentityID      string `gorm:"not null;uniqueIndex:uidx_identity_id,where:deleted_at IS NULL"`
-	PersonID        string `gorm:"not null;index"`
-	Provider        string `gorm:"not null"`
-	CodeHostBaseURL string `gorm:"not null"`
-	ExternalUserID  string `gorm:"not null"`
-	Username        string `gorm:"not null;collate:nocase"`
+	ID uint `gorm:"primaryKey"`
+	// IdentityID 唯一性同样由 Migrate 的方言化部分唯一索引承担（理由同 Email）。
+	IdentityID      string         `gorm:"not null;size:128"`
+	PersonID        string         `gorm:"not null;index;size:128"`
+	Provider        string         `gorm:"not null;size:64"`
+	CodeHostBaseURL string         `gorm:"not null;size:255"`
+	ExternalUserID  string         `gorm:"not null;size:128"`
+	Username        string         `gorm:"not null;collate:nocase;size:191"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DeletedAt       gorm.DeletedAt `gorm:"index"`

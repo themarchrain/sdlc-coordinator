@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"sdlc-coordinator/internal/store"
+
 	"gorm.io/gorm"
 )
 
@@ -208,8 +210,10 @@ func translateConflict(err error) error {
 }
 
 func isUniqueViolation(err error) bool {
+	// 驱动错误码分类（MySQL 1062 / SQLite 2067+1555），不依赖错误文本；
+	// gorm.ErrDuplicatedKey 只在开启 TranslateError 时出现，兼容保留。
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return true
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
+	return store.IsDuplicateKey(err)
 }

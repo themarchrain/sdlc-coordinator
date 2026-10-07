@@ -61,14 +61,19 @@ func (repository *Repository) Migrate() error {
 			return fmt.Errorf("drop legacy identity id index: %w", err)
 		}
 	}
+	if repository.db.Dialector.Name() == "mysql" {
+		return repository.ensurePartialIndexesMySQL()
+	}
 	for _, indexName := range []string{"uidx_identity_external", "uidx_identity_username"} {
 		if err := repository.db.Exec("DROP INDEX IF EXISTS " + indexName).Error; err != nil {
 			return fmt.Errorf("drop legacy %s index: %w", indexName, err)
 		}
 	}
 	identityIndexes := []string{
-		"CREATE UNIQUE INDEX uidx_identity_external ON codehost_identities(provider, code_host_base_url, external_user_id) WHERE deleted_at IS NULL AND external_user_id <> ''",
-		"CREATE UNIQUE INDEX uidx_identity_username ON codehost_identities(provider, code_host_base_url, username) WHERE deleted_at IS NULL AND username <> ''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uidx_people_email ON people(email) WHERE deleted_at IS NULL",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uidx_identity_id ON codehost_identities(identity_id) WHERE deleted_at IS NULL",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uidx_identity_external ON codehost_identities(provider, code_host_base_url, external_user_id) WHERE deleted_at IS NULL AND external_user_id <> ''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uidx_identity_username ON codehost_identities(provider, code_host_base_url, username) WHERE deleted_at IS NULL AND username <> ''",
 	}
 	for _, statement := range identityIndexes {
 		if err := repository.db.Exec(statement).Error; err != nil {
@@ -76,6 +81,86 @@ func (repository *Repository) Migrate() error {
 		}
 	}
 	return nil
+}
+
+func (repository *Repository) ensurePartialIndexesMySQL() error {
+	type indexSpec struct {
+		table     string
+		keyColumn string
+		keyDDL    string
+		indexName string
+		indexDDL  string
+	}
+	specs := []indexSpec{
+		{
+			table:     "people",
+			keyColumn: "email_active_key",
+			keyDDL:    "ALTER TABLE people ADD COLUMN email_active_key varchar(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_as_ci GENERATED ALWAYS AS (IF(deleted_at IS NULL, email, NULL)) STORED",
+			indexName: "uidx_people_email",
+			indexDDL:  "CREATE UNIQUE INDEX uidx_people_email ON people(email_active_key)",
+		},
+		{
+			table:     "codehost_identities",
+			keyColumn: "identity_active_key",
+			keyDDL:    "ALTER TABLE codehost_identities ADD COLUMN identity_active_key varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(deleted_at IS NULL, identity_id, NULL)) STORED",
+			indexName: "uidx_identity_id",
+			indexDDL:  "CREATE UNIQUE INDEX uidx_identity_id ON codehost_identities(identity_active_key)",
+		},
+		{
+			table:     "codehost_identities",
+			keyColumn: "identity_external_key",
+			keyDDL:    "ALTER TABLE codehost_identities ADD COLUMN identity_external_key varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(deleted_at IS NULL AND external_user_id <> '', CONCAT(provider, CHAR(10), code_host_base_url, CHAR(10), external_user_id), NULL)) STORED",
+			indexName: "uidx_identity_external",
+			indexDDL:  "CREATE UNIQUE INDEX uidx_identity_external ON codehost_identities(identity_external_key)",
+		},
+		{
+			table:     "codehost_identities",
+			keyColumn: "identity_username_key",
+			keyDDL:    "ALTER TABLE codehost_identities ADD COLUMN identity_username_key varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_as_ci GENERATED ALWAYS AS (IF(deleted_at IS NULL AND username <> '', CONCAT(provider, CHAR(10), code_host_base_url, CHAR(10), username), NULL)) STORED",
+			indexName: "uidx_identity_username",
+			indexDDL:  "CREATE UNIQUE INDEX uidx_identity_username ON codehost_identities(identity_username_key)",
+		},
+	}
+	for _, spec := range specs {
+		if !repository.db.Migrator().HasColumn(spec.table, spec.keyColumn) {
+			if err := repository.db.Exec(spec.keyDDL).Error; err != nil {
+				return fmt.Errorf("create %s.%s: %w", spec.table, spec.keyColumn, err)
+			}
+		}
+		columns, err := repository.mysqlIndexColumns(spec.table, spec.indexName)
+		if err != nil {
+			return err
+		}
+		if len(columns) == 0 {
+			if err := repository.db.Exec(spec.indexDDL).Error; err != nil {
+				return fmt.Errorf("create draft-aware identity index %s: %w", spec.indexName, err)
+			}
+			continue
+		}
+		if len(columns) == 1 && columns[0] == spec.keyColumn {
+			continue
+		}
+		// AutoMigrate 按 tag 建出的整表索引（不含 WHERE 语义）列不对：替换。
+		if err := repository.db.Exec("DROP INDEX " + spec.indexName + " ON " + spec.table).Error; err != nil {
+			return fmt.Errorf("replace draft-aware index %s: drop: %w", spec.indexName, err)
+		}
+		if err := repository.db.Exec(spec.indexDDL).Error; err != nil {
+			return fmt.Errorf("replace draft-aware index %s: create: %w", spec.indexName, err)
+		}
+	}
+	return nil
+}
+
+// mysqlIndexColumns 返回指定表上索引的列清单（按序）；索引不存在返回空。
+func (repository *Repository) mysqlIndexColumns(table, indexName string) ([]string, error) {
+	var columns []string
+	if err := repository.db.Raw(
+		"SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? ORDER BY SEQ_IN_INDEX",
+		table, indexName,
+	).Scan(&columns).Error; err != nil {
+		return nil, fmt.Errorf("inspect index %s.%s: %w", table, indexName, err)
+	}
+	return columns, nil
 }
 
 func (repository *Repository) Create(ctx context.Context, person *Person, identities []CodeHostIdentity) error {

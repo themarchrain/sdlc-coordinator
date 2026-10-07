@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"sdlc-coordinator/internal/configuration"
+	"sdlc-coordinator/internal/store"
 
 	"gorm.io/gorm"
 )
@@ -125,8 +126,9 @@ func (s *Store) Save(ctx context.Context, config Config, expectedRevision int64)
 			if err := tx.Create(&record).Error; err != nil {
 				// 并发首次保存双双落 Create 时,输家收到主键唯一约束冲突:
 				// 语义是「行已被别人抢先建好」的保存冲突,映射为同一哨兵,
-				// 调用方统一 409 提示刷新重试(SQLite 文本稳定,方言固定)。
-				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+				// 调用方统一 409 提示刷新重试。按驱动错误码判定(MySQL 1062/
+				// SQLite 2067),不依赖错误文本。
+				if store.IsDuplicateKey(err) {
 					return ErrConfigConflict
 				}
 				return fmt.Errorf("create tenant runtime config: %w", err)

@@ -17,11 +17,11 @@ const (
 
 type Dependency struct {
 	ID           uint             `gorm:"primaryKey"`
-	DependencyID string           `gorm:"uniqueIndex;not null"`
-	ParentTaskID string           `gorm:"index;not null;uniqueIndex:idx_dependency_identity"`
-	ChildTaskID  string           `gorm:"index;not null;uniqueIndex:idx_dependency_identity"`
-	Relation     string           `gorm:"index;not null;uniqueIndex:idx_dependency_identity"`
-	Status       DependencyStatus `gorm:"index;not null"`
+	DependencyID string           `gorm:"uniqueIndex;not null;size:128"`
+	ParentTaskID string           `gorm:"index;not null;uniqueIndex:idx_dependency_identity;size:128"`
+	ChildTaskID  string           `gorm:"index;not null;uniqueIndex:idx_dependency_identity;size:128"`
+	Relation     string           `gorm:"index;not null;uniqueIndex:idx_dependency_identity;size:32"`
+	Status       DependencyStatus `gorm:"index;not null;size:32"`
 	MetadataJSON       string           `gorm:"type:text"`
 	ParentRepositoryID *string          `gorm:"-"`
 	ChildRepositoryID  *string          `gorm:"-"`

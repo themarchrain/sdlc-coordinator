@@ -247,27 +247,30 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 }
 
 // migrateBusinessStore 对一个业务库执行全部业务域迁移（平台库与租户库同一
-// 清单；AutoMigrate 幂等）。
+// 清单；AutoMigrate 幂等）。整个迁移在跨实例迁移锁内执行并记录 schema 版本
+// （MySQL；SQLite 单写者直落），多副本同时启动/冷建引擎不会并发执行 DDL。
 func migrateBusinessStore(db *gorm.DB) error {
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}, &model.MergeGateAudit{}, &model.DeveloperDeliveryCheckpoint{}); err != nil {
-		return err
-	}
-	repoStore := registeredrepo.NewStore(db)
-	if err := repoStore.Migrate(); err != nil {
-		return err
-	}
-	// 防串仓唯一索引随建表一并建立：平台库调用点拆除后，这里是索引唯一的
-	// 生产建立点，漏掉则新装租户库只剩路由索引预检一层防线。
-	if err := repoStore.EnsureIdentityIndexes(); err != nil {
-		return err
-	}
-	if err := requirements.NewStore(db).Migrate(); err != nil {
-		return err
-	}
-	if err := people.NewRepository(db).Migrate(); err != nil {
-		return err
-	}
-	return orgconfig.NewStore(db).Migrate()
+	return store.MigrateGuarded(context.Background(), db, "business", func() error {
+		if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}, &model.MergeGateAudit{}, &model.DeveloperDeliveryCheckpoint{}); err != nil {
+			return err
+		}
+		repoStore := registeredrepo.NewStore(db)
+		if err := repoStore.Migrate(); err != nil {
+			return err
+		}
+		// 防串仓唯一索引随建表一并建立：平台库调用点拆除后，这里是索引唯一的
+		// 生产建立点，漏掉则新装租户库只剩路由索引预检一层防线。
+		if err := repoStore.EnsureIdentityIndexes(); err != nil {
+			return err
+		}
+		if err := requirements.NewStore(db).Migrate(); err != nil {
+			return err
+		}
+		if err := people.NewRepository(db).Migrate(); err != nil {
+			return err
+		}
+		return orgconfig.NewStore(db).Migrate()
+	})
 }
 
 // migrateTenantStores 启动时遍历控制面租户，逐库打开并迁移。
@@ -368,9 +371,10 @@ func runnerRepositoryResolver(store *registeredrepo.Store) func(context.Context,
 
 // newPeopleDirectory 构造人员目录与三平台全量的身份 lookup:查询目标由请求
 // 自带的作用域(provider/base_url,按仓行解析)决定,装配层不再单选平台。
+// 迁移走受控入口:冷建引擎会在请求路径重复触发本函数,MySQL 上需跨实例串行。
 func newPeopleDirectory(db *gorm.DB) (*people.Service, people.IdentityLookup, error) {
 	repository := people.NewRepository(db)
-	if err := repository.Migrate(); err != nil {
+	if err := store.MigrateGuarded(context.Background(), db, "people", repository.Migrate); err != nil {
 		return nil, nil, err
 	}
 	return people.NewService(repository), people.NewMultiProviderLookupClient(nil), nil
@@ -405,7 +409,8 @@ func (d peopleMentionDirectory) ResolveMentionNames(ctx context.Context, reposit
 }
 
 // newControlPlane 打开控制面库、迁移并种子超管。DSN 或种子缺失时返回
-// config.ErrControlPlaneNotConfigured，不再退内存库。
+// config.ErrControlPlaneNotConfigured，不再退内存库。迁移走跨实例受控入口
+// （多副本同时启动串行执行 DDL 并记录 schema 版本）。
 func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (*controlplane.Service, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
@@ -415,7 +420,7 @@ func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (
 		return nil, fmt.Errorf("open control plane database: %w", err)
 	}
 	repository := controlplane.NewRepository(db)
-	if err := repository.Migrate(); err != nil {
+	if err := store.MigrateGuarded(context.Background(), db, "controlplane", repository.Migrate); err != nil {
 		return nil, err
 	}
 	service := controlplane.NewService(repository)

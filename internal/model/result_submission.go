@@ -17,19 +17,19 @@ const (
 
 type ResultSubmission struct {
 	ID             uint   `gorm:"primaryKey"`
-	SubmissionID   string `gorm:"uniqueIndex;not null"`
-	TaskID         string `gorm:"index;not null"`
-	RunID          string `gorm:"uniqueIndex;not null"`
-	Source         string `gorm:"index;not null"`
-	ToolName       string `gorm:"index"`
-	Role           string `gorm:"index;not null"`
-	PayloadHash    string `gorm:"index;not null"`
+	SubmissionID   string `gorm:"uniqueIndex;not null;size:128"`
+	TaskID         string `gorm:"index;not null;size:128"`
+	RunID          string `gorm:"uniqueIndex;not null;size:128"`
+	Source         string `gorm:"index;not null;size:32"`
+	ToolName       string `gorm:"index;size:64"`
+	Role           string `gorm:"index;not null;size:32"`
+	PayloadHash    string `gorm:"index;not null;size:64"`
 	RawPayloadJSON string `gorm:"type:text;not null"`
 	CanonicalJSON  string `gorm:"type:text;not null"`
 	// NormalizationJSON records the thin-normalizer repair trail; empty means
 	// the payload passed through byte identical (status clean).
 	NormalizationJSON string                 `gorm:"type:text"`
-	Status            ResultSubmissionStatus `gorm:"index;not null"`
+	Status            ResultSubmissionStatus `gorm:"index;not null;size:32"`
 	AttemptCount      int                    `gorm:"not null;default:0"`
 	LeaseUntil        *time.Time             `gorm:"index"`
 	ErrorMessage      string                 `gorm:"type:text"`

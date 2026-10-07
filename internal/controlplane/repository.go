@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repository 封装控制面库全部 gorm 访问；控制面库是独立 sqlite 单文件。
@@ -110,6 +111,31 @@ func (repository *Repository) CreateUser(ctx context.Context, user *User) error 
 		return fmt.Errorf("create user: %w", err)
 	}
 	return nil
+}
+
+// CreateUserIfAbsent 建号但不与并发赢家冲突：唯一键命中时静默让位并返回
+// created=false（多实例同时首启种子场景）。
+func (repository *Repository) CreateUserIfAbsent(ctx context.Context, user *User) (bool, error) {
+	result := repository.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(user)
+	if result.Error != nil {
+		return false, fmt.Errorf("create user if absent: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (repository *Repository) GetUserByUsernameForUpdate(ctx context.Context, username string) (*User, error) {
+	var user User
+	query := repository.db.WithContext(ctx)
+	if repository.db.Dialector.Name() == "mysql" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Where("username = ?", username).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get user by username for update: %w", err)
+	}
+	return &user, nil
 }
 
 // DeleteUser 硬删刚创建的孤儿账号（注册补偿专用）。
