@@ -20,6 +20,9 @@ const defaultHTTPTimeout = 30 * time.Second
 type Client struct {
 	baseURL string
 	http    *http.Client
+	// internalToken 是受控工作区操作面的部署级令牌（协调器专属）；空值表示
+	// 未配置，服务端会以 503 fail-closed。
+	internalToken string
 }
 
 func NewClient(baseURL string, httpClient *http.Client) *Client {
@@ -104,6 +107,9 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	}
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	if c.internalToken != "" {
+		request.Header.Set("Authorization", "Bearer "+c.internalToken)
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
