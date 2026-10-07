@@ -228,7 +228,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 type enginePool struct {
 	mu       sync.Mutex
 	engines  map[uint]*tenantEngine
-	resolver *tenantdb.SqliteFileResolver
+	resolver tenantdb.UnmanagedResolver
 	control  *controlplane.Service
 	index    *controlplane.Repository
 	shared   engineShared
@@ -236,7 +236,7 @@ type enginePool struct {
 }
 
 // newEnginePool 准备租户引擎的惰性构造；引擎随首次访问逐个建立。
-func newEnginePool(resolver *tenantdb.SqliteFileResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
+func newEnginePool(resolver tenantdb.UnmanagedResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
 	return &enginePool{
 		engines:  map[uint]*tenantEngine{},
 		resolver: resolver,

@@ -105,6 +105,49 @@ func databaseDSN(adminDSN, name string) (string, error) {
 	return parsed.String(), nil
 }
 
+// DropDatabasesWithPrefix 清理前缀匹配的残留数据库（租户库按测试前缀隔离时
+// 使用；只触碰调用方自证的前缀，逐名白名单校验后 DROP）。
+func DropDatabasesWithPrefix(t *testing.T, adminDSN, prefix string) {
+	t.Helper()
+	if strings.TrimSpace(prefix) == "" {
+		t.Fatalf("refusing to drop databases with an empty prefix")
+	}
+	admin, err := store.Open(adminDSN)
+	if err != nil {
+		t.Logf("cleanup: open admin connection: %v", err)
+		return
+	}
+	sqlDB, _ := admin.DB()
+	defer func() {
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	}()
+	var names []string
+	if err := admin.Raw("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE ?", prefix+"%").Scan(&names).Error; err != nil {
+		t.Logf("cleanup: list databases: %v", err)
+		return
+	}
+	for _, name := range names {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		if err := store.ValidateDatabaseName(name); err != nil {
+			t.Logf("cleanup: skip %q: %v", name, err)
+			continue
+		}
+		if err := admin.Exec("DROP DATABASE IF EXISTS `" + name + "`").Error; err != nil {
+			t.Logf("cleanup: drop %s: %v", name, err)
+		}
+	}
+}
+
+// IdentifierPrefix 由测试名派生可用的库名前缀（与临时库命名同规则）。
+func IdentifierPrefix(t *testing.T, base string) string {
+	t.Helper()
+	return base + sanitizeIdentifier(t.Name()) + "_"
+}
+
 func sanitizeIdentifier(raw string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(raw) {

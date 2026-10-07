@@ -159,11 +159,13 @@ func TestMigrateGuardedRecordsVersionAndRefusesNewer(t *testing.T) {
 	if v, err := store.CurrentSchemaVersion(ctx, db, "biz"); err != nil || v != store.SchemaVersion {
 		t.Fatalf("recorded version = %d (%v), want %d", v, err, store.SchemaVersion)
 	}
+	// 版本一致即当前 schema：MySQL 快速路径跳过迁移函数（受控迁移是发布
+	// 步骤，变更须递增 SchemaVersion）；SQLite 开发形态保持每次重放幂等。
 	if err := store.MigrateGuarded(ctx, db, "biz", fn); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if runs != 2 {
-		t.Fatalf("migration fn ran %d times, want 2 (idempotent re-apply)", runs)
+	if runs != 1 {
+		t.Fatalf("migration fn ran %d times, want 1 (skip when recorded version matches)", runs)
 	}
 
 	if err := db.Exec("UPDATE schema_migrations SET version = ? WHERE component = 'biz'", store.SchemaVersion+1).Error; err != nil {
@@ -173,7 +175,7 @@ func TestMigrateGuardedRecordsVersionAndRefusesNewer(t *testing.T) {
 	if !errors.Is(err, store.ErrSchemaNewerThanBinary) {
 		t.Fatalf("newer-schema migrate err = %v, want ErrSchemaNewerThanBinary", err)
 	}
-	if runs != 2 {
+	if runs != 1 {
 		t.Fatalf("migration fn must not run against newer schema (ran %d times)", runs)
 	}
 }
@@ -288,6 +290,8 @@ func TestMigrateGuardedChildProcess(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
+	// Force 重放：版本一致时默认跳过迁移函数，两个进程都要真实进入临界区
+	// 才能见证互斥；受控迁移锁本身与是否重放无关。
 	err = store.MigrateGuarded(context.Background(), db, "itest_race", func() error {
 		if err := db.Exec("INSERT INTO migrate_witness(holder, started_at) VALUES (?, NOW(6))", holder).Error; err != nil {
 			return fmt.Errorf("witness start: %w", err)
@@ -295,7 +299,7 @@ func TestMigrateGuardedChildProcess(t *testing.T) {
 		// 临界区保持窗口：无锁实现下两进程必然重叠（汇合后同时进入）。
 		time.Sleep(300 * time.Millisecond)
 		return db.Exec("UPDATE migrate_witness SET finished_at = NOW(6) WHERE holder = ?", holder).Error
-	})
+	}, store.Force())
 	if err != nil {
 		t.Fatalf("child %s migrate: %v", holder, err)
 	}

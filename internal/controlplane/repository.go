@@ -272,7 +272,7 @@ func (repository *Repository) ListTenantSummaries(ctx context.Context) ([]Tenant
 	var summaries []TenantSummary
 	if err := repository.db.WithContext(ctx).
 		Table("tenants").
-		Select("tenants.id AS id, tenants.slug AS slug, tenants.display_name AS display_name, tenants.status AS status, tenants.created_at AS created_at, COUNT(memberships.id) AS member_count").
+		Select("tenants.id AS id, tenants.slug AS slug, tenants.display_name AS display_name, tenants.status AS status, tenants.db_locator AS dm_locator, tenants.created_at AS created_at, COUNT(memberships.id) AS member_count").
 		Joins("LEFT JOIN memberships ON memberships.tenant_id = tenants.id").
 		Group("tenants.id").
 		Order("tenants.id ASC").
@@ -280,6 +280,17 @@ func (repository *Repository) ListTenantSummaries(ctx context.Context) ([]Tenant
 		return nil, fmt.Errorf("list tenant summaries: %w", err)
 	}
 	return summaries, nil
+}
+
+// SetTenantDMLocator 回写数据面定位串（开通/自愈完成标记）：条件更新按
+// 主键，仅此列；不做整行覆盖。
+func (repository *Repository) SetTenantDMLocator(ctx context.Context, tenantID uint, locator string) error {
+	if err := repository.db.WithContext(ctx).Model(&Tenant{}).
+		Where("id = ?", tenantID).
+		UpdateColumn("db_locator", locator).Error; err != nil {
+		return fmt.Errorf("set tenant db locator: %w", err)
+	}
+	return nil
 }
 
 // ListAuditLogs 按过滤条件分页返回审计（id 倒序），并给出总数。

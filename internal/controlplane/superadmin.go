@@ -18,6 +18,7 @@ type TenantSummary struct {
 	Slug        string
 	DisplayName string
 	Status      string
+	DMLocator   string
 	MemberCount int64
 	CreatedAt   time.Time
 }
@@ -42,6 +43,11 @@ const (
 	defaultAuditPageSize   = 20
 	maxAuditPageSize       = 100
 )
+
+// SetTenantDMLocator 回写数据面定位串（数据面开通/自愈完成标记）。
+func (service *Service) SetTenantDMLocator(ctx context.Context, tenantID uint, locator string) error {
+	return service.repo(ctx).SetTenantDMLocator(ctx, tenantID, locator)
+}
 
 // ListTenants 返回全部组织与成员计数（超管后台列表）。
 func (service *Service) ListTenants(ctx context.Context) ([]TenantSummary, error) {

@@ -3,9 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -66,16 +63,17 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	// 平台库只承载控制面与运行配置，不建业务表：业务引擎只存在于租户库
 	//（存量部署的平台库旧业务表原地保留，legacy 迁移按需读取）。
 
-	// 真分库装配：接口不变，Handle 解析到
-	// <TENANT_DATA_DIR>/<tenantID>/db.sqlite；Main() 保持平台库句柄。
 	tenantDataDir := cfg.TenantDataDir
 	if strings.TrimSpace(tenantDataDir) == "" {
 		tenantDataDir = config.DefaultTenantDataDir
 	}
 	platformStore := &tenantdb.Store{DB: db}
-	tenantStores := tenantdb.NewSqliteFileResolver(platformStore, tenantDataDir, 0)
-	// 启动中途失败时释放已打开的租户句柄（未关闭的 sqlite 文件句柄会阻塞
-	// 外层对数据目录的清理）；成功装配后句柄归 App 所有，不再回收。
+	tenantStores, err := newTenantResolver(db, cfg, platformStore, tenantDataDir)
+	if err != nil {
+		return nil, err
+	}
+	// 启动中途失败时释放已打开的租户句柄（未关闭的句柄会阻塞外层清理）；
+	// 成功装配后句柄归 App 所有，不再回收。
 	closeTenantStores := true
 	defer func() {
 		if closeTenantStores {
@@ -108,7 +106,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if legacyMigrated && logger != nil {
 		logger.Info("legacy platform database copied into the default tenant (slug=tenant-one)")
 	}
-	controlPlaneService.SetTenantProvisioner(&tenantStoreProvisioner{resolver: tenantStores, root: tenantDataDir})
+	controlPlaneService.SetTenantProvisioner(&tenantStoreProvisioner{resolver: tenantStores})
 	if err := migrateTenantStores(context.Background(), controlPlaneService, tenantStores); err != nil {
 		return nil, err
 	}
@@ -219,7 +217,10 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 	if err != nil {
 		return nil, err
 	}
-	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
+	tenantStores, err := newTenantResolver(db, config.Config{DatabaseDSN: bootstrap.DatabaseDSN}, &tenantdb.Store{DB: db}, config.DefaultTenantDataDir)
+	if err != nil {
+		return nil, err
+	}
 	bootstrapRouterOptions := []any{
 		api.WithConfigurationService(configurationService, shutdown),
 		api.WithRuntimeMode(mode),
@@ -273,21 +274,48 @@ func migrateBusinessStore(db *gorm.DB) error {
 	})
 }
 
-// migrateTenantStores 启动时遍历控制面租户，逐库打开并迁移。
-// 任一租户失败 → 中止启动并列出失败租户。
-func migrateTenantStores(ctx context.Context, service *controlplane.Service, resolver tenantdb.Resolver) error {
+// newTenantResolver 按平台库方言选择租户数据面形态：MySQL → 每租户独立库
+//（平台 DSN 派生，库名由租户 ID 确定性生成）；SQLite → 本地文件（单机开发）。
+func newTenantResolver(db *gorm.DB, cfg config.Config, main *tenantdb.Store, tenantDataDir string) (tenantdb.UnmanagedResolver, error) {
+	if db.Dialector.Name() != store.DriverMySQL {
+		return tenantdb.NewSqliteFileResolver(main, tenantDataDir, 0), nil
+	}
+	spec, err := store.ParseDSN(cfg.DatabaseDSN)
+	if err != nil {
+		return nil, fmt.Errorf("parse platform dsn for tenant resolution: %w", err)
+	}
+	resolver, err := tenantdb.NewMySQLDatabaseResolver(main, spec, 0)
+	if err != nil {
+		return nil, err
+	}
+	return resolver, nil
+}
+
+// migrateTenantStores 启动时遍历控制面租户：先补开通未就绪的数据面（开通
+// 中断的补偿路径），再逐库迁移。任一租户失败 → 中止启动并列出失败租户。
+func migrateTenantStores(ctx context.Context, service *controlplane.Service, resolver tenantdb.UnmanagedResolver) error {
 	tenants, err := service.ListTenants(ctx)
 	if err != nil {
 		return fmt.Errorf("load tenants for migration: %w", err)
 	}
 	var failures []string
 	for _, tenant := range tenants {
-		store, err := resolver.Handle(ctx, tenant.ID)
-		if err != nil {
+		if err := ensureTenantDataPlane(ctx, service, resolver, tenant); err != nil {
 			failures = append(failures, tenant.Slug+": "+err.Error())
 			continue
 		}
-		if err := migrateBusinessStore(store.DB); err != nil {
+		handle, err := resolver.Handle(ctx, tenant.ID)
+		if err != nil {
+			if store.IsUnknownDatabase(err) {
+				// 已标记开通但库不存在：不静默重建（可能是运维删除），
+				// 交人工处置。
+				failures = append(failures, tenant.Slug+": tenant database is missing although the tenant is marked provisioned")
+			} else {
+				failures = append(failures, tenant.Slug+": "+err.Error())
+			}
+			continue
+		}
+		if err := migrateBusinessStore(handle.DB); err != nil {
 			resolver.Invalidate(tenant.ID)
 			failures = append(failures, tenant.Slug+": "+err.Error())
 		}
@@ -298,27 +326,61 @@ func migrateTenantStores(ctx context.Context, service *controlplane.Service, res
 	return nil
 }
 
-// tenantStoreProvisioner 把控制面建组织同事务地开通到租户数据面：建目录建库
-// → 迁移 → 回写实际 db_locator；失败清理半成品目录（登记行由事务回滚兜底）。
+func ensureTenantDataPlane(ctx context.Context, service *controlplane.Service, resolver tenantdb.UnmanagedResolver, tenant controlplane.TenantSummary) error {
+	if resolver.IsProvisioned(tenant.DMLocator) {
+		return nil
+	}
+	locator, err := resolver.EnsureDatabase(ctx, tenant.ID)
+	if err != nil {
+		return fmt.Errorf("ensure tenant database: %w", err)
+	}
+	handle, err := resolver.OpenUnmanaged(tenant.ID)
+	if err != nil {
+		resolver.DiscardFailedProvision(tenant.ID)
+		return fmt.Errorf("open tenant database: %w", err)
+	}
+	defer closeTenantHandle(handle)
+	if err := migrateBusinessStore(handle.DB); err != nil {
+		resolver.DiscardFailedProvision(tenant.ID)
+		return fmt.Errorf("migrate tenant database: %w", err)
+	}
+	if err := service.SetTenantDMLocator(ctx, tenant.ID, locator); err != nil {
+		resolver.DiscardFailedProvision(tenant.ID)
+		return fmt.Errorf("record tenant db locator: %w", err)
+	}
+	return nil
+}
+
 type tenantStoreProvisioner struct {
-	resolver *tenantdb.SqliteFileResolver
-	root     string
+	resolver tenantdb.UnmanagedResolver
 }
 
 func (p *tenantStoreProvisioner) ProvisionTenant(ctx context.Context, tenant *controlplane.Tenant) error {
-	tenantDir := filepath.Join(p.root, strconv.FormatUint(uint64(tenant.ID), 10))
-	store, err := p.resolver.Handle(ctx, tenant.ID)
+	locator, err := p.resolver.EnsureDatabase(ctx, tenant.ID)
 	if err != nil {
-		_ = os.RemoveAll(tenantDir)
+		return fmt.Errorf("ensure tenant store: %w", err)
+	}
+	handle, err := p.resolver.OpenUnmanaged(tenant.ID)
+	if err != nil {
+		p.resolver.DiscardFailedProvision(tenant.ID)
 		return fmt.Errorf("open tenant store: %w", err)
 	}
-	if err := migrateBusinessStore(store.DB); err != nil {
-		p.resolver.Invalidate(tenant.ID)
-		_ = os.RemoveAll(tenantDir)
+	defer closeTenantHandle(handle)
+	if err := migrateBusinessStore(handle.DB); err != nil {
+		p.resolver.DiscardFailedProvision(tenant.ID)
 		return fmt.Errorf("migrate tenant store: %w", err)
 	}
-	tenant.DMLocator = "file:" + filepath.ToSlash(filepath.Join(tenantDir, "db.sqlite"))
+	tenant.DMLocator = locator
 	return nil
+}
+
+func closeTenantHandle(handle *tenantdb.Store) {
+	if handle == nil || handle.DB == nil {
+		return
+	}
+	if sqlDB, err := handle.DB.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
 }
 
 // validateRunnerAssignments 在启动时校验控制面 runner 指派形态：同端点跨

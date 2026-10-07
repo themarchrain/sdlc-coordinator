@@ -61,6 +61,13 @@ func (s Spec) WithDatabase(name string) Spec {
 	return next
 }
 
+// WithPool 返回连接池预算被替换后的 Spec（租户库按总量预算收敛单库连接数）。
+func (s Spec) WithPool(pool PoolSettings) Spec {
+	next := s
+	next.Pool = pool
+	return next
+}
+
 var databaseNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
 // ValidateDatabaseName 是租户库名进入 DDL/DSN 前的标识符白名单。
