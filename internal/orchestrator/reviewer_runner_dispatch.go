@@ -104,7 +104,9 @@ func (o *Orchestrator) ReconcileReviewerRunner(ctx context.Context, runID string
 		return nil, errors.New("reviewer runner is required")
 	}
 	result, err := o.reviewerRunner.Reconcile(ctx, runID)
-	if errors.Is(err, repository.ErrNotFound) {
+	if errors.Is(err, repository.ErrNotFound) || errors.Is(err, ErrExecutionNotAccepted) {
+		// 投影缺失或派发意图确定未接纳：重建/收敛投影——意图存在时按原
+		// 目标端点重发同一请求（不换 Runner、不产生第二个执行）。
 		if _, repairErr := o.rebuildReviewerRunnerProjection(ctx, runID); repairErr != nil {
 			return nil, fmt.Errorf("rebuild reviewer runner projection: %w", repairErr)
 		}

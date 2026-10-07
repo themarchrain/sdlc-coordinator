@@ -186,9 +186,17 @@ func TestAgentRunnerCoordinatorRefusesRotationOnAmbiguousFailure(t *testing.T) {
 	}
 	world.router.attempt = attemptA
 
-	_, err := world.coordinator.Start(context.Background(), world.task, world.run, world.request)
-	if err == nil || !strings.Contains(err.Error(), "create runner execution") {
-		t.Fatalf("expected dispatch failure preserving create error, got %v", err)
+	// 结果不确定：不轮换、不判失败——意图保持 dispatching 待对账，本函数按
+	// 已受理返回（轮询按原端点收敛，确定未接纳前不产生第二个执行）。
+	projection, err := world.coordinator.Start(context.Background(), world.task, world.run, world.request)
+	if err != nil {
+		t.Fatalf("ambiguous outcome must not fail the dispatch: %v", err)
+	}
+	if projection.Status != model.AgentExecutionStatusDispatching || projection.RunnerEndpoint != "http://runner-a" {
+		t.Fatalf("intent must stay dispatching on endpoint-a: %+v", projection)
+	}
+	if clientA.createCalls != 1 || clientA.getCalls != 1 {
+		t.Fatalf("runner-a should see one create and one read-back: create=%d get=%d", clientA.createCalls, clientA.getCalls)
 	}
 	if clientB.createCalls != 0 {
 		t.Fatalf("runner-b must not receive dispatch on ambiguous failure, calls=%d", clientB.createCalls)

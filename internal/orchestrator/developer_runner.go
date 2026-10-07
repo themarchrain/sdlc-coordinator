@@ -115,34 +115,37 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 		WorkspacePath: runRoot, PromptFile: agent.PromptFileName, SchemaFile: agent.ResultSchemaFileName,
 		TimeoutSeconds: int64(taskTimeout / time.Second), Provider: providerConfig,
 	}
-	if existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest); err != nil {
+	existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest)
+	if err != nil {
 		return nil, err
-	} else if found {
+	}
+	if found && existing.Status != model.AgentExecutionStatusDispatching {
 		return existing, nil
 	}
-	manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
-	if err != nil {
-		return nil, fmt.Errorf("prepare developer workspace: %w", err)
-	}
-	if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "DeveloperWorker" {
-		return nil, errors.New("developer workspace manifest is not ready for current task and run")
-	}
-	// 固定基线:prepare 成功后、交给 Agent 之前,把初始 HEAD 与任务/仓/分支
-	// 绑定钉进 Coordinator 私有的租户库检查点。基线失败即中止派发(Agent
-	// 会话尚未开始,零成本);没有基线的 run,后续交付一律 fail-closed。
-	if err := c.checkpoints.RecordBaseline(ctx, &model.DeveloperDeliveryCheckpoint{
-		TaskID: request.Task.TaskID, RunID: request.Run.RunID, TaskType: request.Task.Type,
-		RepositoryURL: workspaceRequest.RepositoryURL, DeliveryBranch: workspaceRequest.DeliveryBranch,
-		BaselineSHA: strings.ToLower(strings.TrimSpace(manifest.Repository.InitialHeadSHA)),
-	}); err != nil {
-		return nil, fmt.Errorf("record developer delivery baseline: %w", err)
-	}
-	bundle, err := workers.BuildDeveloperRunnerTaskBundle(request.Task, request.Run)
-	if err != nil {
-		return nil, fmt.Errorf("build developer task bundle: %w", err)
-	}
-	if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
-		return nil, fmt.Errorf("write developer task bundle: %w", err)
+	// 派发意图尚未收敛（dispatching）：工作区与任务包在上一次派发时已就绪，
+	// 跳过重准备直接进 Start 按原端点对账，避免覆盖在途 Agent 的工作区。
+	if !found {
+		manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
+		if err != nil {
+			return nil, fmt.Errorf("prepare developer workspace: %w", err)
+		}
+		if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "DeveloperWorker" {
+			return nil, errors.New("developer workspace manifest is not ready for current task and run")
+		}
+		if err := c.checkpoints.RecordBaseline(ctx, &model.DeveloperDeliveryCheckpoint{
+			TaskID: request.Task.TaskID, RunID: request.Run.RunID, TaskType: request.Task.Type,
+			RepositoryURL: workspaceRequest.RepositoryURL, DeliveryBranch: workspaceRequest.DeliveryBranch,
+			BaselineSHA: strings.ToLower(strings.TrimSpace(manifest.Repository.InitialHeadSHA)),
+		}); err != nil {
+			return nil, fmt.Errorf("record developer delivery baseline: %w", err)
+		}
+		bundle, err := workers.BuildDeveloperRunnerTaskBundle(request.Task, request.Run)
+		if err != nil {
+			return nil, fmt.Errorf("build developer task bundle: %w", err)
+		}
+		if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
+			return nil, fmt.Errorf("write developer task bundle: %w", err)
+		}
 	}
 	pinRunnerSelectionOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort, taskTimeout)
 	return c.core.Start(ctx, request.Task, request.Run, executionRequest)

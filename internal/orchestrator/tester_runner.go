@@ -95,24 +95,30 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 		TimeoutSeconds: int64(taskTimeout / time.Second),
 		Provider:       providerConfig,
 	}
-	if existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest); err != nil {
+	existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest)
+	if err != nil {
 		return nil, err
-	} else if found {
+	}
+	if found && existing.Status != model.AgentExecutionStatusDispatching {
 		return existing, nil
 	}
-	manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
-	if err != nil {
-		return nil, fmt.Errorf("prepare tester workspace: %w", err)
-	}
-	if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "TesterWorker" {
-		return nil, errors.New("tester workspace manifest is not ready for current task and run")
-	}
-	bundle, err := workers.BuildTesterRunnerTaskBundle(request.Task, request.Run)
-	if err != nil {
-		return nil, fmt.Errorf("build tester task bundle: %w", err)
-	}
-	if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
-		return nil, fmt.Errorf("write tester task bundle: %w", err)
+	// 派发意图尚未收敛（dispatching）：工作区与任务包在上一次派发时已就绪，
+	// 跳过重准备直接进 Start 按原端点对账，避免覆盖在途 Agent 的工作区。
+	if !found {
+		manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tester workspace: %w", err)
+		}
+		if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "TesterWorker" {
+			return nil, errors.New("tester workspace manifest is not ready for current task and run")
+		}
+		bundle, err := workers.BuildTesterRunnerTaskBundle(request.Task, request.Run)
+		if err != nil {
+			return nil, fmt.Errorf("build tester task bundle: %w", err)
+		}
+		if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
+			return nil, fmt.Errorf("write tester task bundle: %w", err)
+		}
 	}
 
 	pinRunnerSelectionOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort, taskTimeout)

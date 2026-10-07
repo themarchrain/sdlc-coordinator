@@ -12,6 +12,7 @@ const (
 	AgentExecutionStatusFailed      AgentExecutionStatus = "failed"
 	AgentExecutionStatusCancelled   AgentExecutionStatus = "cancelled"
 	AgentExecutionStatusInterrupted AgentExecutionStatus = "interrupted"
+	AgentExecutionStatusDispatching AgentExecutionStatus = "dispatching"
 )
 
 type AgentExecution struct {

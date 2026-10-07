@@ -67,7 +67,9 @@ func (o *Orchestrator) ReconcileDeveloperRunner(ctx context.Context, runID strin
 		return nil, errors.New("developer runner is required")
 	}
 	result, err := o.developerRunner.Reconcile(ctx, runID)
-	if errors.Is(err, repository.ErrNotFound) {
+	if errors.Is(err, repository.ErrNotFound) || errors.Is(err, ErrExecutionNotAccepted) {
+		// 投影缺失或派发意图确定未接纳：重建/收敛投影——意图存在时按原
+		// 目标端点重发同一请求（不换 Runner、不产生第二个执行）。
 		if _, repairErr := o.rebuildDeveloperRunnerProjection(ctx, runID); repairErr != nil {
 			return nil, fmt.Errorf("rebuild developer runner projection: %w", repairErr)
 		}
