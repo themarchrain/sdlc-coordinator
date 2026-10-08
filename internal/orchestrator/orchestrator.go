@@ -96,6 +96,15 @@ type EffectRepository interface {
 	ListStaleRunning(context.Context, interface{}, int) ([]model.Effect, error)
 	ListByRunID(context.Context, string) ([]model.Effect, error)
 	UpsertByDedupeKey(context.Context, *model.Effect) error
+	// Claim 原子抢占执行权：pending 恒可抢，running 超 staleWindow 可接管；
+	// won=false 表示执行权在别处。Complete/RequeueIfRunning 带 attempt 代次
+	// 栅栏，被接管的旧持有方回写 0 行。FailStaleRunning/SkipIfPending 是恢复
+	// 与作废路径的条件终态回写（不改 attempt 计数）。
+	Claim(ctx context.Context, dedupeKey string, staleWindow time.Duration) (*model.Effect, bool, error)
+	Complete(ctx context.Context, dedupeKey string, attempt int, status model.EffectStatus, responseJSON, errorMessage string) (bool, error)
+	RequeueIfRunning(ctx context.Context, dedupeKey string, attempt int) (bool, error)
+	FailStaleRunning(ctx context.Context, dedupeKey string, staleWindow time.Duration, errorMessage string) (bool, error)
+	SkipIfPending(ctx context.Context, dedupeKey string, errorMessage string) (bool, error)
 }
 
 type EffectExecutor interface {
