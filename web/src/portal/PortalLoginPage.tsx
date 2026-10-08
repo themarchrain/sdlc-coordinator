@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { workspaceLandingPath } from '../app/workspaceSession'
 import { portalApi } from '../api/portal'
+import { saveCurrentAccount } from '../app/accountRegistry'
 
 interface LoginValues {
   username: string
@@ -27,6 +28,9 @@ export function PortalLoginPage() {
     setSubmitting(true)
     try {
       const session = await portalApi.login(values.username, values.password)
+      if (session.session_token) {
+        saveCurrentAccount(session.user.id, session.user.username)
+      }
       navigate(navigatePathForScope(session.scope, session.user.must_change_password), { replace: true })
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : '登录失败，请稍后重试')

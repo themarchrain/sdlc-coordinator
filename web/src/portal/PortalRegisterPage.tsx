@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 
 import { portalApi } from '../api/portal'
+import { saveCurrentAccount } from '../app/accountRegistry'
 import { navigatePathForScope } from './PortalLoginPage'
 
 interface RegisterValues {
@@ -19,6 +20,9 @@ export function PortalRegisterPage() {
     setSubmitting(true)
     try {
       const session = await portalApi.register(values.username, values.password, values.inviteCode)
+      if (session.session_token) {
+        saveCurrentAccount(session.user.id, session.user.username)
+      }
       navigate(navigatePathForScope(session.scope, session.user.must_change_password), { replace: true })
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : '注册失败，请稍后重试')

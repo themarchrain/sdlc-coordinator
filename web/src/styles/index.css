@@ -263,6 +263,12 @@ a:hover { color: var(--link-hover); }
 .sidebar-account__panel { display: flex; flex-direction: column; gap: 2px; min-width: 168px; }
 .sidebar-account__panel strong { color: var(--ink); font-size: 13px; line-height: 1.5; }
 .sidebar-account__panel span { color: var(--mute); font-size: 11px; line-height: 1.5; }
+.sidebar-account__logout-option { display: block; width: 100%; padding: 10px 14px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface-raised, transparent); text-align: left; cursor: pointer; font-size: 13px; color: var(--ink); }
+.sidebar-account__logout-option:hover:not(:disabled) { background: var(--overlay-soft); }
+.sidebar-account__logout-option:disabled { opacity: .55; cursor: not-allowed; }
+.sidebar-account__switch-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: transparent; text-align: left; cursor: pointer; font-size: 13px; color: var(--ink); }
+.sidebar-account__switch-option:hover:not(:disabled) { background: var(--overlay-soft); }
+.sidebar-account__switch-option:disabled { opacity: .6; cursor: wait; }
 .control-room--collapsed .sidebar-account__trigger { justify-content: center; padding: 8px 0; }
 .control-room--collapsed .sidebar-account__meta { display: none; }
 .control-stage { grid-column: 2; min-width: 0; }
