@@ -215,24 +215,22 @@ describe('SidebarAccountMenu', () => {
     expect(labels).toEqual(['修改密码', '切换账号', '退出登录'])
   })
 
-  it('hides the switch entry when no other account is saved', async () => {
+  it('always shows the switch entry even with no other account', async () => {
     openAccountMenu(tenantAdminSession)
     await screen.findByRole('menu')
-    expect(screen.queryByRole('menuitem', { name: /切换账号/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /切换账号/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /修改密码/ })).toBeInTheDocument()
   })
 
-  it('offers a login-another entry inside the switch dialog that keeps the current session', async () => {
-    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
-      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
-    ]))
+  it('offers an inline login form inside the switch dialog without leaving the page', async () => {
     openAccountMenu(tenantAdminSession)
     fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
 
-    const entry = await screen.findByTestId('switch-login-another')
-    expect(entry).toBeInTheDocument()
-    fireEvent.click(entry)
-    expect(await screen.findByTestId('login-landing')).toBeInTheDocument()
+    expect(await screen.findByTestId('switch-login-submit')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('用户名')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('密码')).toBeInTheDocument()
+    // 不跳转登录页
+    expect(screen.queryByTestId('login-landing')).not.toBeInTheDocument()
   })
 
   it('shows the exact saved-account count including the current one', async () => {
@@ -245,16 +243,6 @@ describe('SidebarAccountMenu', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
 
     expect(await screen.findByTestId('logout-all')).toHaveTextContent('退出所有已保存的账号（2 个）')
-  })
-
-  it('hides the switch entry when the registry only holds the current account', async () => {
-    // 只有自己一人：无其他账号可切换，入口不得出现
-    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
-      { token: 'token-self', userId: 2, username: 'ops-admin', savedAt: '2026-10-08T00:00:00.000Z' },
-    ]))
-    openAccountMenu(tenantAdminSession)
-    await screen.findByRole('menu')
-    expect(screen.queryByRole('menuitem', { name: /切换账号/ })).not.toBeInTheDocument()
   })
 
   it('revokes all saved sessions through the logout-all option', async () => {
@@ -301,6 +289,44 @@ describe('SidebarAccountMenu', () => {
 
     fireEvent.click(await screen.findByTestId('switch-target-alice'))
     await waitFor(() => expect(listSavedAccounts()).toHaveLength(0))
+    expect(assign).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('logs another account in through the inline form and reloads', async () => {
+    const login = vi.spyOn(portalApi, 'login').mockResolvedValue({
+      user: { id: 42, username: 'bob', role: 'member', must_change_password: false },
+      scope: { kind: 'tenant', role: 'member', tenant: acmeTenant },
+      session_token: 'token-bob',
+    })
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    fireEvent.change(screen.getByPlaceholderText('用户名'), { target: { value: 'bob' } })
+    fireEvent.change(screen.getByPlaceholderText('密码'), { target: { value: 'bob-password-1' } })
+    fireEvent.click(await screen.findByTestId('switch-login-submit'))
+
+    await waitFor(() => expect(login).toHaveBeenCalledWith('bob', 'bob-password-1'))
+    await waitFor(() => expect(assign).toHaveBeenCalled())
+    // 新账号已登记进注册表（与既有账号并存）
+    expect(listSavedAccounts().map((item) => item.username)).toContain('bob')
+    vi.unstubAllGlobals()
+  })
+
+  it('shows credential errors inside the inline form on 401', async () => {
+    vi.spyOn(portalApi, 'login').mockRejectedValue(new PortalApiError(401, 'invalid_credentials', '用户名或密码错误'))
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    fireEvent.change(screen.getByPlaceholderText('用户名'), { target: { value: 'bob' } })
+    fireEvent.change(screen.getByPlaceholderText('密码'), { target: { value: 'wrong-pass' } })
+    fireEvent.click(await screen.findByTestId('switch-login-submit'))
+
+    expect(await screen.findByText('用户名或密码错误')).toBeInTheDocument()
     expect(assign).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })

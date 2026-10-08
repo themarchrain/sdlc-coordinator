@@ -1,5 +1,5 @@
 import { KeyOutlined, LogoutOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons'
-import { Avatar, Dropdown, Form, Input, message, Modal, Spin } from 'antd'
+import { Avatar, Button, Dropdown, Form, Input, message, Modal, Spin } from 'antd'
 import type { MenuProps } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -10,6 +10,7 @@ import {
   listSavedAccounts,
   otherSavedAccounts,
   removeSavedAccount,
+  saveCurrentAccount,
   type SavedAccount,
 } from './accountRegistry'
 import { useWorkspaceSession } from './workspaceSession'
@@ -30,6 +31,7 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
   const [dialog, setDialog] = useState<AccountDialog>('none')
   const [switchingTo, setSwitchingTo] = useState<number | null>(null)
   const [changeForm] = Form.useForm<{ current: string; next: string; confirm: string }>()
+  const [loginForm] = Form.useForm<{ username: string; password: string }>()
   const loggingOutRef = useRef(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
@@ -164,12 +166,39 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
     }
   }
 
+  // handleLoginAnother 在弹窗内直接登录另一个账号：当前会话的 token 已登记在
+  // 注册表里（登录即登记），登录成功后 cookie 换写为新账号、整页重载，原账号
+  // 留在列表中可随时切回。401 = 用户名或密码错误，在表单内呈现。
+  const handleLoginAnother = async (rawUsername: string, password: string) => {
+    if (switchingTo !== null) return
+    setSwitchingTo(-2)
+    try {
+      const result = await portalApi.login(rawUsername.trim(), password)
+      if (result.session_token) {
+        saveCurrentAccount(result.user.id, result.user.username, result.session_token)
+      }
+      window.location.assign('/admin/')
+    } catch (reason) {
+      setSwitchingTo(null)
+      if (reason instanceof PortalApiError) {
+        if (reason.status === 401) {
+          loginForm.setFields([{ name: 'password', errors: ['用户名或密码错误'] }])
+          return
+        }
+        message.error(reason.message || '登录失败，请稍后重试')
+        return
+      }
+      message.error('登录失败，请稍后重试')
+    }
+  }
+
   const closeDialog = () => {
     // 切换/退出请求进行中不关弹窗：防中途取消造成状态悬空。
     if (switchingTo !== null && switchingTo !== -1) return
     if (loggingOutRef.current) return
     setDialog('none')
     changeForm.resetFields()
+    loginForm.resetFields()
   }
 
   const savedCount = listSavedAccounts().length
@@ -194,16 +223,11 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
       icon: <KeyOutlined />,
       label: '修改密码',
     },
-    // 只有注册表里确实存在其他账号时才出现切换入口。
-    ...(hasOtherAccounts
-      ? [
-          {
-            key: 'switch',
-            icon: <SwapOutlined />,
-            label: '切换账号',
-          },
-        ]
-      : []),
+    {
+      key: 'switch',
+      icon: <SwapOutlined />,
+      label: '切换账号',
+    },
     {
       key: 'logout',
       danger: true,
@@ -227,6 +251,7 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
             if (key === 'logout') {
               setDialog('logout')
             } else if (key === 'switch') {
+              loginForm.resetFields()
               setDialog('switch')
             } else if (key === 'password') {
               changeForm.resetFields()
@@ -317,21 +342,26 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
               </button>
             ))
           )}
-          {/* 不登出当前会话，去登录第二个账号；登录后回来即可互相切换 */}
-          <button
-            type="button"
-            data-testid="switch-login-another"
-            className="sidebar-account__switch-option"
-            disabled={switchingTo !== null && switchingTo !== -1}
-            onClick={() => {
-              setDialog('none')
-              navigate('/portal/login')
-            }}
-          >
-            <Avatar size={24} icon={<PlusOutlined />} />
-            <span style={{ fontWeight: 600 }}>登录其他账号</span>
-            <span style={{ color: 'var(--mute)', fontSize: 11 }}>当前登录状态保持不变</span>
-          </button>
+          <div className="sidebar-account__login-inline">
+            <span style={{ color: 'var(--mute)', fontSize: 12 }}>登录其他账号（当前登录状态保持不变）</span>
+            <Form form={loginForm} layout="vertical" requiredMark={false} onFinish={(values) => void handleLoginAnother(values.username, values.password)}>
+              <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
+                <Input placeholder="用户名" autoComplete="username" />
+              </Form.Item>
+              <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+                <Input.Password placeholder="密码" autoComplete="current-password" />
+              </Form.Item>
+              <Button
+                type="primary"
+                block
+                data-testid="switch-login-submit"
+                htmlType="submit"
+                loading={switchingTo === -2}
+              >
+                登录并加入列表
+              </Button>
+            </Form>
+          </div>
         </div>
       </Modal>
 
