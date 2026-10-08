@@ -3,14 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MAX_SAVED_ACCOUNTS,
   clearSavedAccounts,
-  currentSessionToken,
+  SESSION_COOKIE_NAME,
   listSavedAccounts,
   otherSavedAccounts,
   removeSavedAccount,
   saveCurrentAccount,
 } from './accountRegistry'
 
-const COOKIE_NAME = 'coordinator_portal_session'
+const COOKIE_NAME = SESSION_COOKIE_NAME
 
 function setCookieToken(value: string) {
   // jsdom 允许写非 HttpOnly cookie；过期删除用 Max-Age=0。
@@ -27,24 +27,24 @@ describe('accountRegistry', () => {
     clearCookieToken()
   })
 
-  it('saves the current cookie session as an account entry', () => {
+  it('saves the given session token as an account entry', () => {
     setCookieToken('token-a')
-    saveCurrentAccount(11, 'alice')
+    saveCurrentAccount(11, 'alice', 'token-a')
     const list = listSavedAccounts()
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ token: 'token-a', userId: 11, username: 'alice' })
   })
 
-  it('does nothing when there is no session cookie', () => {
-    saveCurrentAccount(11, 'alice')
+  it('does nothing when there is no session token', () => {
+    saveCurrentAccount(11, 'alice', '')
     expect(listSavedAccounts()).toHaveLength(0)
   })
 
   it('deduplicates by user id, overwriting the older token', () => {
     setCookieToken('token-a-1')
-    saveCurrentAccount(11, 'alice')
+    saveCurrentAccount(11, 'alice', 'token-a-1')
     setCookieToken('token-a-2')
-    saveCurrentAccount(11, 'alice')
+    saveCurrentAccount(11, 'alice', 'token-a-2')
     const list = listSavedAccounts()
     expect(list).toHaveLength(1)
     expect(list[0].token).toBe('token-a-2')
@@ -53,7 +53,7 @@ describe('accountRegistry', () => {
   it('keeps distinct accounts and evicts the oldest beyond capacity', () => {
     for (let i = 0; i < MAX_SAVED_ACCOUNTS + 1; i += 1) {
       setCookieToken(`token-${i}`)
-      saveCurrentAccount(100 + i, `user-${i}`)
+      saveCurrentAccount(100 + i, `user-${i}`, `token-${i}`)
     }
     const list = listSavedAccounts()
     expect(list).toHaveLength(MAX_SAVED_ACCOUNTS)
@@ -64,31 +64,25 @@ describe('accountRegistry', () => {
 
   it('removes a single account by user id', () => {
     setCookieToken('token-a')
-    saveCurrentAccount(11, 'alice')
+    saveCurrentAccount(11, 'alice', 'token-a')
     setCookieToken('token-b')
-    saveCurrentAccount(22, 'bob')
+    saveCurrentAccount(22, 'bob', 'token-b')
     removeSavedAccount(11)
     expect(listSavedAccounts().map((item) => item.username)).toEqual(['bob'])
   })
 
   it('clears the whole registry', () => {
     setCookieToken('token-a')
-    saveCurrentAccount(11, 'alice')
+    saveCurrentAccount(11, 'alice', 'token-a')
     clearSavedAccounts()
     expect(listSavedAccounts()).toHaveLength(0)
   })
 
-  it('reads the current session token from the cookie', () => {
-    expect(currentSessionToken()).toBeNull()
-    setCookieToken('token-live')
-    expect(currentSessionToken()).toBe('token-live')
-  })
-
   it('lists other accounts relative to the current user', () => {
     setCookieToken('token-a')
-    saveCurrentAccount(11, 'alice')
+    saveCurrentAccount(11, 'alice', 'token-a')
     setCookieToken('token-b')
-    saveCurrentAccount(22, 'bob')
+    saveCurrentAccount(22, 'bob', 'token-b')
     expect(otherSavedAccounts(22).map((item) => item.username)).toEqual(['alice'])
     expect(otherSavedAccounts(null)).toHaveLength(2)
   })
@@ -105,7 +99,7 @@ describe('accountRegistry', () => {
       throw new Error('quota exceeded')
     })
     setCookieToken('token-a')
-    expect(() => saveCurrentAccount(11, 'alice')).not.toThrow()
+    expect(() => saveCurrentAccount(11, 'alice', 'token-a')).not.toThrow()
     spy.mockRestore()
   })
 })

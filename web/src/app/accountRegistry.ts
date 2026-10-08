@@ -4,7 +4,6 @@
 // 同源自托管，风险可接受；浏览器单 cookie 约束下这是唯一可行形态。
 
 const ACCOUNT_REGISTRY_KEY = 'coordinator_portal_accounts'
-const SESSION_COOKIE_NAME = 'coordinator_portal_session'
 export const MAX_SAVED_ACCOUNTS = 5
 
 export interface SavedAccount {
@@ -47,28 +46,19 @@ export function listSavedAccounts(): SavedAccount[] {
   return readRaw()
 }
 
-// currentSessionToken 从 cookie 读当前会话 token；读不到（已登出）返回 null。
-export function currentSessionToken(): string | null {
-  const prefix = `${SESSION_COOKIE_NAME}=`
-  for (const piece of document.cookie.split(';')) {
-    const trimmed = piece.trim()
-    if (trimmed.startsWith(prefix)) {
-      const value = decodeURIComponent(trimmed.slice(prefix.length))
-      return value || null
-    }
-  }
-  return null
-}
+// 会话 cookie 是 HttpOnly，脚本侧不可读；token 一律来自登录/注册/选择组织
+// 响应体里的 session_token 字段（颁发时刻下发）。此常量仅供测试对齐。
+export const SESSION_COOKIE_NAME = 'coordinator_portal_session'
 
-// saveCurrentAccount 把当前会话登记进注册表：按 userId 去重（同人重登覆盖
-// 旧 token），容量封顶 MAX_SAVED_ACCOUNTS（先淘汰最早保存的）。
-// 无当前 cookie 会话（已登出）时不做任何事。
-export function saveCurrentAccount(userId: number, username: string): void {
-  const token = currentSessionToken()
-  if (!token) return
+// saveCurrentAccount 把颁发时刻的会话 token 登记进注册表：按 userId 去重
+// （同人重登覆盖旧 token），容量封顶 MAX_SAVED_ACCOUNTS（先淘汰最早保存的）。
+// token 为空（后端未回 session_token）时不做任何事。
+export function saveCurrentAccount(userId: number, username: string, token: string): void {
+  const trimmed = token.trim()
+  if (!trimmed) return
   const rest = readRaw().filter((item) => item.userId !== userId)
   const next = [
-    { token, userId, username, savedAt: new Date().toISOString() },
+    { token: trimmed, userId, username, savedAt: new Date().toISOString() },
     ...rest,
   ].slice(0, MAX_SAVED_ACCOUNTS)
   writeRaw(next)

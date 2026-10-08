@@ -222,6 +222,19 @@ describe('SidebarAccountMenu', () => {
     expect(screen.getByRole('menuitem', { name: /修改密码/ })).toBeInTheDocument()
   })
 
+  it('offers a login-another entry inside the switch dialog that keeps the current session', async () => {
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    const entry = await screen.findByTestId('switch-login-another')
+    expect(entry).toBeInTheDocument()
+    fireEvent.click(entry)
+    expect(await screen.findByTestId('login-landing')).toBeInTheDocument()
+  })
+
   it('revokes all saved sessions through the logout-all option', async () => {
     window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
       { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },

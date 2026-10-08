@@ -21,7 +21,7 @@ export function PortalRegisterPage() {
     try {
       const session = await portalApi.register(values.username, values.password, values.inviteCode)
       if (session.session_token) {
-        saveCurrentAccount(session.user.id, session.user.username)
+        saveCurrentAccount(session.user.id, session.user.username, session.session_token)
       }
       navigate(navigatePathForScope(session.scope, session.user.must_change_password), { replace: true })
     } catch (reason) {

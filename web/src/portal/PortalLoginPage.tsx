@@ -29,7 +29,7 @@ export function PortalLoginPage() {
     try {
       const session = await portalApi.login(values.username, values.password)
       if (session.session_token) {
-        saveCurrentAccount(session.user.id, session.user.username)
+        saveCurrentAccount(session.user.id, session.user.username, session.session_token)
       }
       navigate(navigatePathForScope(session.scope, session.user.must_change_password), { replace: true })
     } catch (reason) {

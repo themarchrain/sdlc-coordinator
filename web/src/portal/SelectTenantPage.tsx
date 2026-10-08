@@ -33,7 +33,7 @@ export function SelectTenantPage() {
     try {
       const session = await portalApi.selectTenant(option.id)
       if (session.session_token) {
-        saveCurrentAccount(session.user.id, session.user.username)
+        saveCurrentAccount(session.user.id, session.user.username, session.session_token)
       }
       navigate('/', { replace: true })
     } catch (reason) {

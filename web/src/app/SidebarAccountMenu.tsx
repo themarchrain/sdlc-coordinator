@@ -1,4 +1,4 @@
-import { KeyOutlined, LogoutOutlined, SwapOutlined } from '@ant-design/icons'
+import { KeyOutlined, LogoutOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons'
 import { Avatar, Dropdown, Form, Input, message, Modal, Spin } from 'antd'
 import type { MenuProps } from 'antd'
 import { useEffect, useRef, useState } from 'react'
@@ -297,11 +297,11 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
         width={420}
         destroyOnClose
       >
-        {others.length === 0 ? (
-          <span>没有其他已保存的登录账号，请先登录其他账号。</span>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {others.map((account) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {others.length === 0 ? (
+            <span style={{ color: 'var(--mute)', fontSize: 12 }}>还没有其他已保存的登录账号。</span>
+          ) : (
+            others.map((account) => (
               <button
                 key={account.userId}
                 type="button"
@@ -314,9 +314,24 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
                 <span style={{ fontWeight: 600 }}>{account.username}</span>
                 <span style={{ color: 'var(--mute)', fontSize: 11 }}>切换后需重新加载页面</span>
               </button>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+          {/* 不登出当前会话，去登录第二个账号；登录后回来即可互相切换 */}
+          <button
+            type="button"
+            data-testid="switch-login-another"
+            className="sidebar-account__switch-option"
+            disabled={switchingTo !== null && switchingTo !== -1}
+            onClick={() => {
+              setDialog('none')
+              navigate('/portal/login')
+            }}
+          >
+            <Avatar size={24} icon={<PlusOutlined />} />
+            <span style={{ fontWeight: 600 }}>登录其他账号</span>
+            <span style={{ color: 'var(--mute)', fontSize: 11 }}>当前登录状态保持不变</span>
+          </button>
+        </div>
       </Modal>
 
       <Modal
