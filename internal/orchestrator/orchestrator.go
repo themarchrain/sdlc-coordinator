@@ -57,6 +57,12 @@ type TaskRepository interface {
 	ParkUnbound(context.Context, string) error
 	AdvanceGuarded(context.Context, *model.Task, model.TaskStatus) (bool, error)
 	UpdateLastErrorIfStatus(context.Context, string, model.TaskStatus, string) (bool, error)
+	// RecoverExpiredGuarded 原子回收租约过期的任务：双实例同时回收同一
+	// 过期任务时恰好一个赢家，attempt_count 在数据库侧原子 +1。
+	RecoverExpiredGuarded(ctx context.Context, taskID string, next model.TaskStatus, lastError string, now time.Time) (bool, error)
+	// RestoreWaitingParentGuarded 把仍在 waiting_upstream 的父任务原子恢复
+	// 为 pending：双实例同时解除同一父任务的依赖链时恰好一个赢家。
+	RestoreWaitingParentGuarded(ctx context.Context, taskID string) (bool, error)
 }
 
 type RunRepository interface {
@@ -67,6 +73,10 @@ type RunRepository interface {
 	UpdateTaskTimeoutIfEmpty(context.Context, string, int64) error
 	UpdateDispatchProjection(context.Context, string, string, string, string) error
 	UpdateFailedIfInFlight(context.Context, string, string, time.Time) (bool, error)
+	// MarkArtifactsPurgingIfUnclean 抢占 run 的清理归属（跨实例栅栏），
+	// ClearArtifactsPurging 是清理失败的回滚通道。
+	MarkArtifactsPurgingIfUnclean(ctx context.Context, runID string, now time.Time) (bool, error)
+	ClearArtifactsPurging(ctx context.Context, runID string) error
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
@@ -863,20 +873,30 @@ func (o *Orchestrator) RecoverTask(ctx context.Context, taskID string) (*model.T
 		return task, nil
 	}
 
-	previous := task.Status
-	if err := o.stateMachine.Transition(task, next); err != nil {
-		return nil, err
-	}
-	o.policy.Apply(task, previous, next, o.now())
-	task.LastError = "lease expired; task recovered by coordinator"
+	// 恢复通知绑定刚失败的这次尝试（恢复前的 attempt 值与过期 run），与
+	// 既有 dedupe key 语义一致；先留恢复前快照再原子回收。
+	notify := *task
+	notify.Status = next
 
-	if err := o.tasks.Update(ctx, task); err != nil {
+	// 原子回收:条件 UPDATE 带"仍在 claimed/running 且租约已过期"栅栏,
+	// attempt_count 在数据库侧 +1。双实例同时回收同一过期任务时恰好一个
+	// 赢家;败者按库内最新状态返回,不重复物化恢复通知,不回滚胜者写入。
+	applied, err := o.tasks.RecoverExpiredGuarded(ctx, taskID, next, "lease expired; task recovered by coordinator", o.now())
+	if err != nil {
 		return nil, fmt.Errorf("recover task %s: %w", taskID, err)
 	}
-	if task.Status == model.TaskStatusRetryPending {
-		o.materializeLeaseRecoveryIMEffect(ctx, task)
-	} else if task.Status == model.TaskStatusHumanRequired {
-		o.materializeLeaseHumanRequiredIMEffect(ctx, task)
+	if !applied {
+		return o.tasks.GetByTaskID(ctx, taskID)
+	}
+
+	task, err = o.tasks.GetByTaskID(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("recover task %s: reload after guarded update: %w", taskID, err)
+	}
+	if notify.Status == model.TaskStatusRetryPending {
+		o.materializeLeaseRecoveryIMEffect(ctx, &notify)
+	} else if notify.Status == model.TaskStatusHumanRequired {
+		o.materializeLeaseHumanRequiredIMEffect(ctx, &notify)
 	}
 
 	return task, nil

@@ -100,8 +100,20 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 		}
 	}
 	if o.runWorkspaceCleaner != nil {
+		// 跨实例清理归属栅栏:先原子抢占(哨兵写入 artifacts_purged_at),
+		// 双实例同时进入清理批次时恰好一个赢家执行远端删除;败者静默跳过。
+		// 远端删除失败把哨兵清回 NULL,下一轮批次重新竞争。
+		applied, err := o.runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, o.now().UTC())
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		if !applied {
+			return result
+		}
 		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.RunID); err != nil {
 			result.Error = err.Error()
+			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID)
 			return result
 		}
 	} else if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
@@ -110,6 +122,9 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 	}
 	if err := o.runnerArtifacts.Delete(ctx, execution.ExecutionID); err != nil {
 		result.Error = err.Error()
+		if o.runWorkspaceCleaner != nil {
+			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID)
+		}
 		return result
 	}
 	now := o.now().UTC()

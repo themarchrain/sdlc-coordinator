@@ -177,6 +177,33 @@ func (r *TaskRepository) AdvanceGuarded(ctx context.Context, task *model.Task, e
 	return result.RowsAffected == 1, nil
 }
 
+// RecoverExpiredGuarded 原子回收一条租约过期的任务（跨实例过期恢复的执行权
+// 栅栏）：仅当任务仍在 claimed/running 且租约已过窗口时生效，attempt_count
+// 在数据库侧原子 +1（MySQL 用 NOW(6) 判到期，SQLite 用参数时间）。目标状态
+// 由调用方按预算给出；updated=false 表示另一实例已抢先回收，调用方不得用
+// 旧快照续写任何状态或通知。
+func (r *TaskRepository) RecoverExpiredGuarded(ctx context.Context, taskID string, next model.TaskStatus, lastError string, now time.Time) (bool, error) {
+	updates := map[string]any{
+		"status":        next,
+		"last_error":    lastError,
+		"lease_until":   nil,
+		"attempt_count": gorm.Expr("attempt_count + 1"),
+	}
+	query := r.db.WithContext(ctx).
+		Model(&model.Task{}).
+		Where("task_id = ? AND status IN ?", taskID, []model.TaskStatus{model.TaskStatusClaimed, model.TaskStatusRunning})
+	if r.db.Dialector.Name() == "mysql" {
+		query = query.Where("lease_until IS NOT NULL AND lease_until <= NOW(6)")
+	} else {
+		query = query.Where("lease_until IS NOT NULL AND lease_until <= ?", now)
+	}
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return false, fmt.Errorf("recover expired task: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // UpdateLastErrorIfStatus 仅在任务仍处于期望状态时写入 last_error：任务已被
 // 并发推进（状态已变）时放弃写入，不把错误信息挂到更新的状态上。
 func (r *TaskRepository) UpdateLastErrorIfStatus(ctx context.Context, taskID string, status model.TaskStatus, lastError string) (bool, error) {
@@ -186,6 +213,23 @@ func (r *TaskRepository) UpdateLastErrorIfStatus(ctx context.Context, taskID str
 		Update("last_error", lastError)
 	if result.Error != nil {
 		return false, fmt.Errorf("update task last error guarded: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// RestoreWaitingParentGuarded 把仍处于 waiting_upstream 的父任务原子恢复为
+// pending（依赖链解除的执行权栅栏）：双实例同时 resolve 同一父任务的不同
+// 子依赖时恰好一个赢家推进，败者 0 行退出且不覆盖胜者写入。
+func (r *TaskRepository) RestoreWaitingParentGuarded(ctx context.Context, taskID string) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&model.Task{}).
+		Where("task_id = ? AND status = ?", taskID, model.TaskStatusWaitingUpstream).
+		Updates(map[string]any{
+			"status":      model.TaskStatusPending,
+			"lease_until": nil,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("restore waiting parent: %w", result.Error)
 	}
 	return result.RowsAffected == 1, nil
 }

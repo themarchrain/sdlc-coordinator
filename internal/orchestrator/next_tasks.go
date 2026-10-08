@@ -177,12 +177,10 @@ func (o *Orchestrator) resolveSuccessfulChildDependencies(ctx context.Context, d
 			continue
 		}
 
-		previous := parent.Status
-		if err := o.stateMachine.Transition(parent, model.TaskStatusPending); err != nil {
-			return err
-		}
-		o.policy.Apply(parent, previous, model.TaskStatusPending, o.now())
-		if err := o.tasks.Update(ctx, parent); err != nil {
+		// 条件写栅栏:仅当父任务仍在 waiting_upstream 时恢复为 pending。
+		// 双实例同时 resolve 同一父任务的不同子依赖时,后判 allResolved 的
+		// 实例可能读到已恢复的父任务快照——0 行退出,不覆盖胜者写入。
+		if _, err := o.tasks.RestoreWaitingParentGuarded(ctx, parent.TaskID); err != nil {
 			return fmt.Errorf("restore dependency parent task %s: %w", parent.TaskID, err)
 		}
 	}
