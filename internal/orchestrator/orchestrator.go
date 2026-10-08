@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"sdlc-coordinator/internal/adapters/codehost"
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/results"
@@ -143,6 +144,8 @@ type Orchestrator struct {
 	tickMu                         sync.Mutex
 	mergeGateMu                    sync.Mutex
 	mergeGateCursor                uint
+	workItemLeases                 WorkItemLeasePort
+	workItemLeaseOwner             string
 	tasks                          TaskRepository
 	runs                           RunRepository
 	artifacts                      ArtifactRepository
@@ -357,6 +360,52 @@ func WithRunnerArtifactStore(store RunnerArtifactStore) Option {
 	return func(o *Orchestrator) {
 		o.runnerArtifacts = store
 	}
+}
+
+// WithWorkItemLeases 装配跨实例工作项租约端口（租户库 work_item_leases 实现）。
+// 未装配时 writeback/merge gate 保持单实例语义；多实例部署必须装配，否则
+// 两台协调器会对同一写回/同一验证任务各自执行远端副作用。同一进程内装配
+// 多个编排器（单机多租户引擎）时用 WithWorkItemLeaseOwner 区分租约身份。
+func WithWorkItemLeases(leases WorkItemLeasePort) Option {
+	return func(o *Orchestrator) {
+		o.workItemLeases = leases
+	}
+}
+
+// WithWorkItemLeaseOwner 覆盖租约 owner：默认 instance.ID()（进程身份）。
+// 同一进程并发多个引擎/编排器实例时,各实例必须持不同 owner,否则同 owner
+// 的第二次 Acquire 会被当作重入续期直接获胜,失去互斥。
+func WithWorkItemLeaseOwner(owner string) Option {
+	return func(o *Orchestrator) {
+		o.workItemLeaseOwner = owner
+	}
+}
+
+// workItemLeaseIdentity 返回本编排器的租约 owner 身份。
+func (o *Orchestrator) workItemLeaseIdentity() string {
+	if o.workItemLeaseOwner != "" {
+		return o.workItemLeaseOwner
+	}
+	return instance.ID()
+}
+
+// acquireWorkItemLease 按工作项抢跨实例执行权；端口未装配时恒获胜（单实例
+// 部署语义不变）。owner 绑定实例身份+链路，失败留待租期到期自然回收。
+func (o *Orchestrator) acquireWorkItemLease(ctx context.Context, scope, operation string, ttl time.Duration) (model.WorkItemLease, bool, error) {
+	if o.workItemLeases == nil {
+		return model.WorkItemLease{}, true, nil
+	}
+	return o.workItemLeases.Acquire(ctx, scope, o.workItemLeaseIdentity()+":"+operation, operation, ttl)
+}
+
+// releaseWorkItemLease 尽力释放执行权（失败留待租期到期自然回收）。
+func (o *Orchestrator) releaseWorkItemLease(lease model.WorkItemLease) {
+	if o.workItemLeases == nil || lease.Scope == "" {
+		return
+	}
+	releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = o.workItemLeases.Release(releaseCtx, lease.Scope, lease.Owner, lease.Generation)
 }
 
 func WithArtifactRepository(artifacts ArtifactRepository) Option {

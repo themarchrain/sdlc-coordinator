@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -30,6 +31,10 @@ const (
 const (
 	mergeGateActorKind        = "auto_merge_gate"
 	mergeGateFallbackIMPrefix = "merge-gate-fallback-im:"
+	// mergeGateLeaseScope/TTL 是门禁评估+合并的跨实例执行权范围:证据合取
+	// 评估无副作用可重做,但合并调用不可双发,故租约覆盖整个评估+合并。
+	mergeGateLeaseScope = "merge-gate:"
+	mergeGateLeaseTTL   = 5 * time.Minute
 )
 
 const defaultMergeGateLimit = 5
@@ -77,7 +82,30 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 	for i := range candidates {
 		task := &candidates[i]
 		o.mergeGateCursor = task.ID
+		// 跨实例执行权:双实例同评同任务时只有赢家走到合并调用;败者
+		// skipped 退出,审计唯一约束仍是最终防重防线。
+		lease, won, leaseErr := o.acquireWorkItemLease(ctx, mergeGateLeaseScope+task.TaskID, "merge-gate", mergeGateLeaseTTL)
+		if leaseErr != nil {
+			decisions = append(decisions, MergeGateTickResult{
+				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: leaseErr.Error(),
+			})
+			continue
+		}
+		if !won {
+			decisions = append(decisions, MergeGateTickResult{
+				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: "merge gate evaluation is held by another instance",
+			})
+			continue
+		}
+		// 租约获胜后再查一次审计:上一赢家可能在本次 List 与抢租约之间完成
+		// 全链(评估+合并+审计+释放),审计唯一约束是最终防重,这里补一个
+		// 廉价读避免对其重复执行合并调用。
+		if _, auditErr := o.mergeAudits.GetByTaskID(ctx, task.TaskID); auditErr == nil {
+			o.releaseWorkItemLease(lease)
+			continue
+		}
 		result := o.evaluateAutoMergeGate(ctx, task)
+		o.releaseWorkItemLease(lease)
 		if result.Transient != nil {
 			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped 并留
 			// 日志——持续瞬态失败时每轮可见,不静默。

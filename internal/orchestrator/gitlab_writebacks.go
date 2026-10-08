@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
@@ -281,7 +282,24 @@ func (o *Orchestrator) applyCodeHostWritebacks(ctx context.Context, payload resu
 	return nil
 }
 
+// codeHostWritebackLeaseScope/TTL 是写回远端副作用的跨实例执行权范围:租期
+// 覆盖单次远端调用预算并留对账余量,超时未还由下一轮 reconcile 收敛。
+const (
+	codeHostWritebackLeaseScope = "codehost-writeback:"
+	codeHostWritebackLeaseTTL   = 5 * time.Minute
+)
+
 func (o *Orchestrator) applyOneCodeHostWriteback(ctx context.Context, desired *model.Writeback) error {
+	lease, won, err := o.acquireWorkItemLease(ctx, codeHostWritebackLeaseScope+desired.DedupeKey, "codehost-writeback", codeHostWritebackLeaseTTL)
+	if err != nil {
+		return fmt.Errorf("acquire writeback lease %s: %w", desired.DedupeKey, err)
+	}
+	if !won {
+		// 另一实例正持有该写回的执行权:本次静默放弃,远端结果由对方落库;
+		// 结果丢失时行停留 running/pending 由对账收敛,不双执行。
+		return nil
+	}
+	defer o.releaseWorkItemLease(lease)
 	writeback := desired
 	existing, err := o.writebacks.GetByDedupeKey(ctx, desired.DedupeKey)
 	if err == nil {

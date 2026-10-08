@@ -13,6 +13,7 @@ import (
 	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/events"
 	handlers "sdlc-coordinator/internal/http/handlers"
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/orgconfig"
@@ -180,6 +181,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithMergeGateClients(orchestrator.DefaultMergeGateClientFactory),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
 		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
+		// 写回/合并门禁的跨实例执行权:双协调器对同一写回、同一验证任务的
+		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
+		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎
 	// 租户，回传端按声明路由回同一引擎（无租户声明的 token 一律拒绝）。
@@ -209,6 +213,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		requirements.NewStore(db), repoStore,
 		requirements.NewProviderClientFactory(nil),
 	)
+	// 需求发布的跨实例执行权:双协调器的 syncer 不得为同一需求各建一个
+	// 远端 issue(与写回执行权同库同语义)。
+	requirementsService.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db), instance.ID())
 	// 租户 runner 池路由：本引擎任务恒解析为本引擎租户；未指派端点的租户
 	// 由池路由回退共享默认池。
 	tenantRunnerRouter := runnerpool.NewRouter(

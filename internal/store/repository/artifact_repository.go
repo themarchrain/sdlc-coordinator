@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/store"
 
 	"gorm.io/gorm"
 )
@@ -46,7 +47,36 @@ func (r *ArtifactRepository) ListByRunID(ctx context.Context, runID string) ([]m
 	return artifacts, nil
 }
 
+// UpsertByIdentity 按 (task, run, kind, name) 身份写入或更新 artifact。
+// 先读后插在两实例并发首写同一身份时会双双插入,败者撞唯一索引:这里在
+// 插入失败时回读既有行改为更新,使并发首写收敛为一行(胜负与内容无损,
+// 两侧 metadata 一致)。
 func (r *ArtifactRepository) UpsertByIdentity(ctx context.Context, artifact *model.Artifact) error {
+	if err := r.upsertByIdentityOnce(ctx, artifact); err != nil {
+		if !store.IsDuplicateKey(err) {
+			return err
+		}
+		// 并发首写败者:按身份回读后改为更新既有行。
+		var existing model.Artifact
+		err := r.db.WithContext(ctx).
+			Where("task_id = ? AND run_id = ? AND kind = ? AND name = ?", artifact.TaskID, artifact.RunID, artifact.Kind, artifact.Name).
+			First(&existing).Error
+		if err != nil {
+			return fmt.Errorf("reload artifact by identity after duplicate key: %w", err)
+		}
+		existing.URL = artifact.URL
+		existing.MetadataJSON = artifact.MetadataJSON
+		if err := r.db.WithContext(ctx).Save(&existing).Error; err != nil {
+			return fmt.Errorf("update artifact by identity after duplicate key: %w", err)
+		}
+		artifact.ID = existing.ID
+		artifact.ArtifactID = existing.ArtifactID
+		return nil
+	}
+	return nil
+}
+
+func (r *ArtifactRepository) upsertByIdentityOnce(ctx context.Context, artifact *model.Artifact) error {
 	var existing model.Artifact
 	err := r.db.WithContext(ctx).
 		Where("task_id = ? AND run_id = ? AND kind = ? AND name = ?", artifact.TaskID, artifact.RunID, artifact.Kind, artifact.Name).

@@ -3,6 +3,7 @@ package requirements
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -80,7 +81,30 @@ const (
 	publishSkipped
 )
 
+// requirementsPublishLeaseScope/TTL 是需求发布的跨实例执行权范围:远端建
+// issue 不可双发,租期覆盖单轮发布预算,超时未还由恢复轮的签名回查收敛。
+const (
+	requirementsPublishLeaseScope = "requirements-publish:"
+	requirementsPublishLeaseTTL   = 5 * time.Minute
+)
+
 func (s *Service) publishRequirement(ctx context.Context, item *Requirement) (publishOutcome, error) {
+	if s.leases != nil {
+		lease, won, err := s.leases.Acquire(ctx, requirementsPublishLeaseScope+item.RequirementID, s.instanceID+":requirements", "requirements-publish", requirementsPublishLeaseTTL)
+		if err != nil {
+			return publishFailed, fmt.Errorf("acquire requirement lease %s: %w", item.RequirementID, err)
+		}
+		if !won {
+			// 另一实例正发布该需求:本轮跳过,其结果落库后自然可见;
+			// 中断遗留由签名回查恢复,不双建。
+			return publishSkipped, nil
+		}
+		defer func() {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _ = s.leases.Release(releaseCtx, lease.Scope, lease.Owner, lease.Generation)
+		}()
+	}
 	repo, err := s.repositories.Get(ctx, item.RepositoryID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

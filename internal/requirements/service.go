@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
 
 	"gorm.io/gorm"
@@ -36,11 +37,21 @@ type PatchRequest struct {
 	Priority    *string
 }
 
+// WorkItemLeasePort 是跨实例发布执行权的窄端口（租户库 work_item_leases 实现），
+// 与编排器的同名端口同形：避免本包 import 编排器。未装配时保持单实例语义。
+// 租约值直接复用 model.WorkItemLease,仓储实现零适配。
+type WorkItemLeasePort interface {
+	Acquire(ctx context.Context, scope, owner, operationID string, ttl time.Duration) (model.WorkItemLease, bool, error)
+	Release(ctx context.Context, scope, owner string, generation uint64) (bool, error)
+}
+
 type Service struct {
 	store        *Store
 	repositories *registeredrepo.Store
 	clients      ClientFactoryFunc
 	syncMu       sync.Mutex
+	leases       WorkItemLeasePort
+	instanceID   string
 }
 
 func NewService(store *Store, repositories *registeredrepo.Store, clients ClientFactoryFunc) *Service {
@@ -49,6 +60,14 @@ func NewService(store *Store, repositories *registeredrepo.Store, clients Client
 		repositories: repositories,
 		clients:      clients,
 	}
+}
+
+// WithWorkItemLeases 装配跨实例发布执行权端口与实例身份：多实例部署必须
+// 装配，否则两台协调器的 syncer 会同时为同一需求创建远端 issue。
+func (s *Service) WithWorkItemLeases(leases WorkItemLeasePort, instanceID string) *Service {
+	s.leases = leases
+	s.instanceID = instanceID
+	return s
 }
 
 func (service *Service) WithDB(db *gorm.DB) *Service {
