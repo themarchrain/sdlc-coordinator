@@ -1,112 +1,64 @@
 package controlplane
 
 import (
-	"sync"
+	"context"
 	"time"
 )
 
 const (
 	defaultRateLimitWindow      = 15 * time.Minute
 	defaultRateLimitMaxFailures = 10
-	// defaultRateLimitMaxKeys 限制失败表条目数：键为「用户名+IP」，
-	// 无上限时可被伪造请求撑爆内存；超限先清过期，仍满则整体重置。
-	defaultRateLimitMaxKeys = 4096
 )
 
-// loginRateLimiter 按「用户名+IP」组合做滑动窗口失败计数：
-// 窗口内失败达到上限即拒绝（含正确密码），成功登录清零。进程内实现，单实例
-// 形态下与部署形态一致；多实例部署时以控制面库承载是后续演进。
-type loginRateLimiter struct {
-	mu          sync.Mutex
-	window      time.Duration
-	maxFailures int
-	maxKeys     int
-	failures    map[string][]time.Time
-	now         func() time.Time
+// LoginFailure 是登录限流的共享存储行：键为用户名+IP 或纯用户名,
+// 每次失败一行。行存控制面库，双实例共享同一失败配额（轮流访问不能
+// 扩大原配额）；窗口判定用库内时钟（MySQL NOW(6)），跨实例时钟偏移免疫。
+type LoginFailure struct {
+	ID       uint      `gorm:"primaryKey"`
+	Key      string    `gorm:"index:idx_login_failures_key_time,priority:1;not null;size:255"`
+	FailedAt time.Time `gorm:"index:idx_login_failures_key_time,priority:2;not null"`
 }
 
-func newLoginRateLimiter(window time.Duration, maxFailures, maxKeys int) *loginRateLimiter {
-	if maxKeys < 1 {
-		maxKeys = defaultRateLimitMaxKeys
-	}
+// loginRateLimiter 按用户名+IP 组合做滑动窗口失败计数:窗口内失败达到
+// 上限即拒绝（含正确密码），成功登录清零。计数落控制面库，多实例部署共享
+// 同一配额；窗口外旧行在记账时顺带清理（登录低频，代价可忽略）。
+type loginRateLimiter struct {
+	repository  *Repository
+	window      time.Duration
+	maxFailures int
+}
+
+func newLoginRateLimiter(repository *Repository, window time.Duration, maxFailures int) *loginRateLimiter {
 	return &loginRateLimiter{
+		repository:  repository,
 		window:      window,
 		maxFailures: maxFailures,
-		maxKeys:     maxKeys,
-		failures:    map[string][]time.Time{},
-		now:         time.Now,
 	}
 }
 
 func (limiter *loginRateLimiter) blocked(key string) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	limiter.pruneLocked(key)
-	return len(limiter.failures[key]) >= limiter.maxFailures
+	count, err := limiter.repository.CountRecentLoginFailures(context.Background(), key, limiter.window)
+	if err != nil {
+		// 读失败 fail-closed：锁死比放行安全（放行=爆破窗口）。
+		return true
+	}
+	return count >= int64(limiter.maxFailures)
 }
 
 func (limiter *loginRateLimiter) record(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	if _, exists := limiter.failures[key]; !exists && len(limiter.failures) >= limiter.maxKeys {
-		// 容量淘汰：按「最新失败时间最旧」的键逐个驱逐，避免
-		// 全表重置把受害者正在累积的锁定计数一并冲刷掉。
-		for len(limiter.failures) >= limiter.maxKeys {
-			if !limiter.evictOldestLocked() {
-				break
-			}
-		}
+	now := time.Now()
+	if err := limiter.repository.RecordLoginFailure(context.Background(), key, now); err != nil {
+		// 记账失败不阻断登录错误路径:下一轮失败重试记账,最坏情况是
+		// 攻击者少计一次;不因限流器故障把凭据错误误报成 500。
+		return
 	}
-	limiter.failures[key] = append(limiter.failures[key], limiter.now())
+	_ = limiter.repository.DeleteLoginFailuresBefore(context.Background(), now.Add(-limiter.window))
 }
 
 func (limiter *loginRateLimiter) reset(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	delete(limiter.failures, key)
+	_ = limiter.repository.DeleteLoginFailures(context.Background(), key)
 }
 
 func (limiter *loginRateLimiter) prune(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	limiter.pruneLocked(key)
-}
-
-// evictOldestLocked 删除「最新失败时间最旧」的一个键；调用方须已持锁。
-// 返回是否发生了驱逐（表为空时返回 false 防死循环）。
-func (limiter *loginRateLimiter) evictOldestLocked() bool {
-	oldestKey := ""
-	var oldestAt time.Time
-	for key, stamps := range limiter.failures {
-		if len(stamps) == 0 {
-			oldestKey = key
-			break
-		}
-		latest := stamps[len(stamps)-1]
-		if oldestKey == "" || latest.Before(oldestAt) {
-			oldestKey = key
-			oldestAt = latest
-		}
-	}
-	if oldestKey == "" {
-		return false
-	}
-	delete(limiter.failures, oldestKey)
-	return true
-}
-
-// pruneLocked 清理单键的过期窗口记录；调用方须已持锁。
-func (limiter *loginRateLimiter) pruneLocked(key string) {
-	cutoff := limiter.now().Add(-limiter.window)
-	kept := limiter.failures[key][:0]
-	for _, at := range limiter.failures[key] {
-		if at.After(cutoff) {
-			kept = append(kept, at)
-		}
-	}
-	if len(kept) == 0 {
-		delete(limiter.failures, key)
-		return
-	}
-	limiter.failures[key] = kept
+	// DB 后端的窗口过期在读取时按库内时间过滤,无需显式清理。
 }

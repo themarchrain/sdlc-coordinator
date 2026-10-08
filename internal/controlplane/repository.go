@@ -20,6 +20,7 @@ func (repository *Repository) Migrate() error {
 	if err := repository.db.AutoMigrate(
 		&User{}, &Tenant{}, &Membership{}, &InviteCode{},
 		&RunnerAssignment{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
+		&LoginFailure{},
 	); err != nil {
 		return fmt.Errorf("migrate control plane: %w", err)
 	}
@@ -467,4 +468,44 @@ func (repository *Repository) DeleteExpiredSessions(ctx context.Context, now tim
 		return 0, fmt.Errorf("delete expired sessions: %w", result.Error)
 	}
 	return result.RowsAffected, nil
+}
+
+// CountRecentLoginFailures 统计键在窗口内的失败行数；MySQL 上窗口边界按
+// 数据库时钟（NOW(6)）判定，跨实例时钟偏移免疫；SQLite 按参数时间判定。
+func (repository *Repository) CountRecentLoginFailures(ctx context.Context, key string, window time.Duration) (int64, error) {
+	var count int64
+	query := repository.db.WithContext(ctx).Model(&LoginFailure{}).Where("`key` = ?", key)
+	if repository.db.Dialector.Name() == "mysql" {
+		query = query.Where("failed_at > DATE_SUB(NOW(6), INTERVAL ? MICROSECOND)", window.Microseconds())
+	} else {
+		query = query.Where("failed_at > ?", time.Now().Add(-window))
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count recent login failures: %w", err)
+	}
+	return count, nil
+}
+
+// RecordLoginFailure 追加一条失败记录。
+func (repository *Repository) RecordLoginFailure(ctx context.Context, key string, failedAt time.Time) error {
+	if err := repository.db.WithContext(ctx).Create(&LoginFailure{Key: key, FailedAt: failedAt}).Error; err != nil {
+		return fmt.Errorf("record login failure: %w", err)
+	}
+	return nil
+}
+
+// DeleteLoginFailures 清空键的全部失败记录（成功登录重置）。
+func (repository *Repository) DeleteLoginFailures(ctx context.Context, key string) error {
+	if err := repository.db.WithContext(ctx).Where("`key` = ?", key).Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("delete login failures: %w", err)
+	}
+	return nil
+}
+
+// DeleteLoginFailuresBefore 删除窗口外的旧行（记账时顺带的容量治理）。
+func (repository *Repository) DeleteLoginFailuresBefore(ctx context.Context, cutoff time.Time) error {
+	if err := repository.db.WithContext(ctx).Where("failed_at <= ?", cutoff).Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("delete login failures before: %w", err)
+	}
+	return nil
 }

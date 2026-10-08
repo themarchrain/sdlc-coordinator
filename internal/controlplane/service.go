@@ -91,12 +91,13 @@ func WithClock(clock func() time.Time) Option {
 	}
 }
 
-// WithRateLimit 覆盖登录限速参数（默认 15 分钟窗口 10 次失败）。
+// WithRateLimit 覆盖登录限速参数（默认 15 分钟窗口 10 次失败）。计数落
+// 控制面库,多实例部署共享同一配额。
 func WithRateLimit(window time.Duration, maxFailures int) Option {
 	return func(service *Service) {
 		if window > 0 && maxFailures > 0 {
-			service.rateLimiter = newLoginRateLimiter(window, maxFailures, defaultRateLimitMaxKeys)
-			service.usernameLimiter = newLoginRateLimiter(window, maxFailures*3, defaultRateLimitMaxKeys)
+			service.rateLimiter = newLoginRateLimiter(service.repository, window, maxFailures)
+			service.usernameLimiter = newLoginRateLimiter(service.repository, window, maxFailures*3)
 		}
 	}
 }
@@ -105,8 +106,8 @@ func NewService(repository *Repository, options ...Option) *Service {
 	service := &Service{
 		repository:       repository,
 		now:              time.Now,
-		rateLimiter:      newLoginRateLimiter(defaultRateLimitWindow, defaultRateLimitMaxFailures, defaultRateLimitMaxKeys),
-		usernameLimiter:  newLoginRateLimiter(defaultRateLimitWindow, defaultRateLimitMaxFailures*3, defaultRateLimitMaxKeys),
+		rateLimiter:      newLoginRateLimiter(repository, defaultRateLimitWindow, defaultRateLimitMaxFailures),
+		usernameLimiter:  newLoginRateLimiter(repository, defaultRateLimitWindow, defaultRateLimitMaxFailures*3),
 		comparePasswords: bcrypt.CompareHashAndPassword,
 	}
 	for _, option := range options {

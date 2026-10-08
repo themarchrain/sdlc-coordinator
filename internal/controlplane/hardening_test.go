@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 )
 
 // F1（审查发现）：used_count 读-查-写非原子，并发兑换同一次数上限的邀请码
@@ -128,21 +127,6 @@ func TestIssueInviteCodeRejectsNegativeParameters(t *testing.T) {
 	}
 	if _, err := service.IssueInviteCode(ctx, admin, tenantID, InviteCodeInput{ExpiresInHours: 24, MaxUses: -1}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("negative max_uses: expected ErrInvalidInput, got %v", err)
-	}
-}
-
-// F6（审查发现）：限速失败表按用户名+IP 组合无上限增长，可被伪造请求撑爆内存。
-// 修复后表容量有上限，超限时淘汰最旧条目且限速语义不变。
-func TestLoginRateLimiterCapsTrackedKeys(t *testing.T) {
-	limiter := newLoginRateLimiter(time.Hour, 3, 4)
-	for i := 0; i < 16; i++ {
-		limiter.record("key-" + string(rune('a'+i%26)) + string(rune('0'+i)))
-	}
-	limiter.mu.Lock()
-	size := len(limiter.failures)
-	limiter.mu.Unlock()
-	if size > 4 {
-		t.Fatalf("rate limiter tracked %d keys, want capped at 4", size)
 	}
 }
 

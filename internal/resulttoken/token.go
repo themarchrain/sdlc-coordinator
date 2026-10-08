@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,21 @@ func NewSecret() ([]byte, error) {
 		return nil, fmt.Errorf("generate run token secret: %w", err)
 	}
 	return secret, nil
+}
+
+// SecretFromHex parses the deployment-level signing secret (hex encoded,
+// 64 characters = 32 bytes). A multi-instance deployment shares one value:
+// tokens issued by instance A verify on instance B and survive rolling
+// restarts. Invalid hex or length fails fast via the startup path.
+func SecretFromHex(encoded string) ([]byte, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("decode RESULT_CHANNEL_SECRET: %w", err)
+	}
+	if len(raw) != 32 {
+		return nil, fmt.Errorf("RESULT_CHANNEL_SECRET must be 32 bytes of hex (64 characters), got %d bytes", len(raw))
+	}
+	return raw, nil
 }
 
 // Issue signs the claims with the default TTL anchored at now.

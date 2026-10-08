@@ -80,6 +80,10 @@ type Config struct {
 	LogDir        string
 	Environment   string
 	Scheduler     SchedulerSettings
+	// ResultChannelSecret 是 MCP 结果回传通道的部署级签名密钥（hex 64=
+	// 32 字节）：多实例部署共用同一值，A 实例签发的 token B 实例可验，
+	// 滚动重启不失效；未配置时进程内存随机（单机开发，重启即失效）。
+	ResultChannelSecret string
 }
 
 // DefaultTenantDataDir 是租户数据根的默认值（相对进程工作目录）。
@@ -111,6 +115,8 @@ func Load() Config {
 		LogDir:      bootstrap.LogDir,
 		Environment: bootstrap.Environment,
 		Scheduler:   scheduler,
+
+		ResultChannelSecret: strings.TrimSpace(getEnv("RESULT_CHANNEL_SECRET", "")),
 	}
 	return cfg
 }

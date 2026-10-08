@@ -86,12 +86,17 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if cfg.AgentRunner.RemoteWorkspace && strings.TrimSpace(cfg.AgentRunner.InternalToken) == "" {
 		return nil, fmt.Errorf("remote workspace mode requires AGENT_RUNNER_INTERNAL_TOKEN")
 	}
-	// MCP 结果回传通道签名密钥仅存内存（重启即失效，在途 agent 落入文本
-	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
-	// 缺省未配置时通道保持关闭（纯文本模式）。
-	resultTokenSecret, err := resulttoken.NewSecret()
+	// MCP 结果回传通道签名密钥：部署级 RESULT_CHANNEL_SECRET（hex 64）配置
+	// 时跨实例跨重启共用（A 实例签发 B 实例可验）；未配置时进程内存随机
+	// （单机开发形态，重启即失效，在途 agent 落入文本降级通道）。远端工作
+	// 区形态（多实例部署的前提）缺部署级密钥启动即失败：随机密钥下双实例
+	// 的回传通道互相不可验，属配置错误而非运行期回退。
+	if cfg.AgentRunner.RemoteWorkspace && strings.TrimSpace(cfg.ResultChannelSecret) == "" {
+		return nil, fmt.Errorf("remote workspace mode requires RESULT_CHANNEL_SECRET (32 bytes of hex)")
+	}
+	resultTokenSecret, err := resolveResultChannelSecret(cfg.ResultChannelSecret)
 	if err != nil {
-		return nil, fmt.Errorf("generate result channel secret: %w", err)
+		return nil, err
 	}
 	// 控制面与 ready/bootstrap 共用装配：DSN 与种子超管缺失时显式失败。
 	controlPlaneService, err := newControlPlane(cfg.ControlPlane, logger)
@@ -484,6 +489,23 @@ func (d peopleMentionDirectory) ResolveMentionNames(ctx context.Context, reposit
 // newControlPlane 打开控制面库、迁移并种子超管。DSN 或种子缺失时返回
 // config.ErrControlPlaneNotConfigured，不再退内存库。迁移走跨实例受控入口
 // （多副本同时启动串行执行 DDL 并记录 schema 版本）。
+// resolveResultChannelSecret 解析结果通道签名密钥：部署级 hex 密钥配置时
+// 使用之（跨实例跨重启稳定），否则进程内存随机。
+func resolveResultChannelSecret(deploymentSecret string) ([]byte, error) {
+	if strings.TrimSpace(deploymentSecret) != "" {
+		secret, err := resulttoken.SecretFromHex(deploymentSecret)
+		if err != nil {
+			return nil, err
+		}
+		return secret, nil
+	}
+	secret, err := resulttoken.NewSecret()
+	if err != nil {
+		return nil, fmt.Errorf("generate result channel secret: %w", err)
+	}
+	return secret, nil
+}
+
 func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (*controlplane.Service, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
