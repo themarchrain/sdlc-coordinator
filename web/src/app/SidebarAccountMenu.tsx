@@ -203,7 +203,6 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
 
   const savedCount = listSavedAccounts().length
   const others: SavedAccount[] = dialog === 'switch' ? otherSavedAccounts(session?.user.id ?? null) : []
-  const hasOtherAccounts = otherSavedAccounts(session?.user.id ?? null).length > 0
 
   const items: MenuProps['items'] = [
     {
@@ -306,7 +305,7 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
           <button
             type="button"
             data-testid="logout-all"
-            disabled={loggingOut || savedCount === 0 || !hasOtherAccounts}
+            disabled={loggingOut || savedCount === 0}
             className="sidebar-account__logout-option"
             onClick={() => void handleRevokeAll()}
           >
