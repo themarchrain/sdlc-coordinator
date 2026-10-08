@@ -209,6 +209,49 @@ func (service *Service) Logout(ctx context.Context, token string) error {
 	return service.repo(ctx).DeleteSession(ctx, session)
 }
 
+// SwitchAccount 校验给定 token 指向一个有效会话（未过期、未吊销）；cookie
+// 的写回由 HTTP 层完成。多账号切换不新建也不吊销会话：cookie 与注册表里的
+// 会话都原样保留，切换只是改写浏览器携带的 token。
+func (service *Service) SwitchAccount(ctx context.Context, token string) error {
+	_, err := service.activeSession(ctx, token)
+	return err
+}
+
+// RevokeSavedSessions 批量撤销会话（退出所有已保存账号）：逐个按哈希定位，
+// 不存在或已过期的 token 静默跳过（幂等，与 Logout 同语义）。上限
+// maxRevokeTokens 防御超长载荷；空切片直接成功。
+func (service *Service) RevokeSavedSessions(ctx context.Context, tokens []string) error {
+	if len(tokens) > maxRevokeTokens {
+		return ErrInvalidInput
+	}
+	seen := make(map[string]struct{}, len(tokens))
+	for _, token := range tokens {
+		trimmed := strings.TrimSpace(token)
+		if trimmed == "" {
+			continue
+		}
+		if _, dup := seen[trimmed]; dup {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		session, err := service.activeSession(ctx, trimmed)
+		if err != nil {
+			if errors.Is(err, ErrUnauthenticated) {
+				continue
+			}
+			return err
+		}
+		if err := service.repo(ctx).DeleteSession(ctx, session); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// maxRevokeTokens 是退出所有已保存账号接口一次接受的 token 数上限，与
+// 前端账号注册表容量一致。
+const maxRevokeTokens = 5
+
 // ChangePassword 校验当前密码后改密并清除强制改密标记；改密后吊销该用户全部
 // 会话（同源安全语义：与密码重置一致）。
 func (service *Service) ChangePassword(ctx context.Context, userID uint, currentPassword, newPassword string) error {

@@ -270,6 +270,8 @@ var portalAuthRows = []MatrixRow{
 	mr("GET", "/api/portal/auth/session", ClassPortal, allow, allow, allow, deny, ChannelNone, false, mwPortalAuth, mwPortalAuth, "现状不变"),
 	mr("POST", "/api/portal/auth/select-tenant", ClassPortal, allow, allow, allow, deny, ChannelNone, false, mwPortalAuth, mwPortalAuth, "现状不变"),
 	mr("POST", "/api/portal/auth/change-password", ClassPortal, allow, allow, allow, deny, ChannelNone, false, mwPortalAuth, mwPortalAuth, "现状不变"),
+	mr("POST", "/api/portal/auth/switch-account", ClassPortal, allow, allow, allow, deny, ChannelNone, false, mwPortalAuth, mwPortalAuth, "多账号切换：把会话 cookie 改写为注册表内另一有效会话"),
+	mr("POST", "/api/portal/auth/revoke-saved", ClassPortal, allow, allow, allow, deny, ChannelNone, false, mwPortalAuth, mwPortalAuth, "批量撤销已保存账号会话并清除本端 cookie"),
 }
 
 var portalTenantRows = []MatrixRow{
