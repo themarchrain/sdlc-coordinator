@@ -235,6 +235,28 @@ describe('SidebarAccountMenu', () => {
     expect(await screen.findByTestId('login-landing')).toBeInTheDocument()
   })
 
+  it('shows the exact saved-account count including the current one', async () => {
+    // 注册表含当前账号（登录即登记）：两人就显示 2，不得再 +1
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-self', userId: 2, username: 'ops-admin', savedAt: '2026-10-08T00:00:00.000Z' },
+      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+
+    expect(await screen.findByTestId('logout-all')).toHaveTextContent('退出所有已保存的账号（2 个）')
+  })
+
+  it('hides the switch entry when the registry only holds the current account', async () => {
+    // 只有自己一人：无其他账号可切换，入口不得出现
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-self', userId: 2, username: 'ops-admin', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    openAccountMenu(tenantAdminSession)
+    await screen.findByRole('menu')
+    expect(screen.queryByRole('menuitem', { name: /切换账号/ })).not.toBeInTheDocument()
+  })
+
   it('revokes all saved sessions through the logout-all option', async () => {
     window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
       { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },

@@ -174,6 +174,7 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
 
   const savedCount = listSavedAccounts().length
   const others: SavedAccount[] = dialog === 'switch' ? otherSavedAccounts(session?.user.id ?? null) : []
+  const hasOtherAccounts = otherSavedAccounts(session?.user.id ?? null).length > 0
 
   const items: MenuProps['items'] = [
     {
@@ -194,7 +195,7 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
       label: '修改密码',
     },
     // 只有注册表里确实存在其他账号时才出现切换入口。
-    ...(savedCount > 0
+    ...(hasOtherAccounts
       ? [
           {
             key: 'switch',
@@ -280,11 +281,11 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
           <button
             type="button"
             data-testid="logout-all"
-            disabled={loggingOut || savedCount === 0}
+            disabled={loggingOut || savedCount === 0 || !hasOtherAccounts}
             className="sidebar-account__logout-option"
             onClick={() => void handleRevokeAll()}
           >
-            {savedCount > 0 ? `退出所有已保存的账号（${savedCount + 1} 个）` : '没有其他已保存账号'}
+            {savedCount > 0 ? `退出所有已保存的账号（${savedCount} 个）` : '没有其他已保存账号'}
           </button>
         </div>
       </Modal>
