@@ -171,7 +171,7 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 	// 日志而非上抛——门禁是可选阶段,不得拖住同轮的恢复/派发/效果执行。
 	gateDecisions, gateErr := o.RunAutoMergeGate(ctx, req.GateLimit)
 	if gateErr != nil {
-		logGateScanFailure(gateErr)
+		o.logGateScanFailure(gateErr)
 	} else {
 		result.GateDecisions = gateDecisions
 	}

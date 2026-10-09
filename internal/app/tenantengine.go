@@ -163,6 +163,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithMergeGateClients(orchestrator.DefaultMergeGateClientFactory),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
 		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
+		orchestrator.WithLogger(shared.logger),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎
 	// 租户，回传端按声明路由回同一引擎（无租户声明的 token 一律拒绝）。

@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
@@ -144,6 +145,7 @@ type Orchestrator struct {
 	stateMachine                   *StateMachine
 	policy                         Policy
 	now                            func() time.Time
+	logger                         *zap.Logger
 }
 
 type ReviewerRunnerExecutionCoordinator interface {
@@ -214,6 +216,14 @@ func WithPolicy(policy Policy) Option {
 func WithClock(clock func() time.Time) Option {
 	return func(o *Orchestrator) {
 		o.now = clock
+	}
+}
+
+// WithLogger 注入结构化日志(zap)。生产装配点必须显式传入;未传时构造器
+// 回退 zap.NewNop(),包内不落任何日志。
+func WithLogger(logger *zap.Logger) Option {
+	return func(o *Orchestrator) {
+		o.logger = logger
 	}
 }
 
@@ -427,6 +437,11 @@ func New(tasks TaskRepository, runs RunRepository, opts ...Option) *Orchestrator
 	if orch.developerIMTarget == "" {
 		orch.developerIMTarget = "default"
 	}
+	if orch.logger == nil {
+		// 回退仅存在于测试/最小装配:生产装配点(tenantengine)一律显式传
+		// logger。Nop 意味着漏传时丢的是日志不是行为。
+		orch.logger = zap.NewNop()
+	}
 	return orch
 }
 
@@ -551,13 +566,23 @@ func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Ta
 	completedAt := o.now()
 	applied, err := o.runs.UpdateFailedIfInFlight(ctx, run.RunID, cause.Error(), completedAt)
 	if err != nil {
-		log.Printf("orchestrator: record dispatch failure for run %s (task %s): update failed: %v; dispatch cause: %v", run.RunID, task.TaskID, err, cause)
+		// 失败写回本身也失败:这条 run 的失败原因既没进库也没进终态,
+		// 只剩日志可查,Error 级别+堆栈是最后一道可观测防线。
+		o.logger.Error("record dispatch failure: update run failed",
+			zap.String("run_id", run.RunID),
+			zap.String("task_id", task.TaskID),
+			zap.NamedError("update_error", err),
+			zap.NamedError("dispatch_cause", cause),
+		)
 		return
 	}
 	if !applied {
 		// 未生效说明并发方已把 run 终态化且任务已随结果推进：失败回写到此
 		// 为止，不推进任务也不回写 LastError，防止把已推进的任务回拉。
-		log.Printf("orchestrator: skip dispatch failure writeback for run %s: run already finalized concurrently", run.RunID)
+		// 设计内的并发仲裁结果(结果通道赢了竞速),非故障。
+		o.logger.Info("skip dispatch failure writeback: run already finalized concurrently",
+			zap.String("run_id", run.RunID),
+		)
 		return
 	}
 
@@ -592,9 +617,14 @@ func (o *Orchestrator) AdvanceTask(ctx context.Context, taskID string, next mode
 // applyOptionalFollowup 合并"只追加告知性 writeback/effect"的 followup 结果。
 // 这类步骤失败只记日志并退回调用前的 payload:通知拼不出来既不该否掉一次已经
 // 成功的交付,也不该阻断结果落账与终态迁移。依赖方向在此翻转。
-func applyOptionalFollowup(name string, task *model.Task, runID string, payload, enriched results.CanonicalResult, err error) results.CanonicalResult {
+func (o *Orchestrator) applyOptionalFollowup(name string, task *model.Task, runID string, payload, enriched results.CanonicalResult, err error) results.CanonicalResult {
 	if err != nil {
-		log.Printf("orchestrator: skip %s followup for task %s run %s: %v", name, task.TaskID, runID, err)
+		o.logger.Warn("skip optional followup",
+			zap.String("followup", name),
+			zap.String("task_id", task.TaskID),
+			zap.String("run_id", runID),
+			zap.NamedError("reason", err),
+		)
 		return payload
 	}
 	return enriched
@@ -620,9 +650,9 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		return o.applyStaleRunResult(ctx, task, run, payload)
 	}
 	enriched, followupErr := o.withDeveloperReworkFollowups(ctx, task, payload)
-	payload = applyOptionalFollowup("developer rework", task, run.RunID, payload, enriched, followupErr)
+	payload = o.applyOptionalFollowup("developer rework", task, run.RunID, payload, enriched, followupErr)
 	enriched, followupErr = o.withDeveloperClarificationFollowups(task, payload)
-	payload = applyOptionalFollowup("developer clarification", task, run.RunID, payload, enriched, followupErr)
+	payload = o.applyOptionalFollowup("developer clarification", task, run.RunID, payload, enriched, followupErr)
 	if err := validateCodeHostWritebacksForTask(task, payload); err != nil {
 		return nil, nil, err
 	}
@@ -634,9 +664,9 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 			return nil, nil, err
 		}
 		enriched, followupErr = o.withDeveloperDeliveryFollowups(ctx, task, payload)
-		payload = applyOptionalFollowup("developer delivery", task, run.RunID, payload, enriched, followupErr)
+		payload = o.applyOptionalFollowup("developer delivery", task, run.RunID, payload, enriched, followupErr)
 		enriched, followupErr = o.withReviewerFollowups(ctx, task, payload)
-		payload = applyOptionalFollowup("reviewer", task, run.RunID, payload, enriched, followupErr)
+		payload = o.applyOptionalFollowup("reviewer", task, run.RunID, payload, enriched, followupErr)
 		if err := o.materializeResultEffects(ctx, payload); err != nil {
 			return nil, nil, err
 		}
@@ -655,9 +685,9 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		return nil, nil, err
 	}
 	enriched, followupErr = o.withDeveloperDeliveryFollowups(ctx, task, payload)
-	payload = applyOptionalFollowup("developer delivery", task, run.RunID, payload, enriched, followupErr)
+	payload = o.applyOptionalFollowup("developer delivery", task, run.RunID, payload, enriched, followupErr)
 	enriched, followupErr = o.withReviewerFollowups(ctx, task, payload)
-	payload = applyOptionalFollowup("reviewer", task, run.RunID, payload, enriched, followupErr)
+	payload = o.applyOptionalFollowup("reviewer", task, run.RunID, payload, enriched, followupErr)
 	if err := o.materializeResultEffects(ctx, payload); err != nil {
 		return nil, nil, err
 	}
