@@ -2,7 +2,9 @@ package runner
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -61,5 +63,45 @@ func TestQuarantineDurableEntryLogsRenameFailure(t *testing.T) {
 	}
 	if message, _ := context["error"].(string); strings.TrimSpace(message) == "" {
 		t.Fatalf("rename error must be recorded: %#v", context)
+	}
+}
+
+func TestReadDurableEventsLogsOpenFailureFields(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows 把中间路径是文件的形态映射为 fs.ErrNotExist,而 os.Open 对目录
+		// 会成功(Go 带 backup semantics),两种触发都会落进别的分支;该分支在
+		// Windows 上无法经文件系统稳定触发,生产目标是 Linux,由 CI 覆盖。
+		t.Skip("open-failure branch needs a non-ErrNotExist open error, unavailable on Windows")
+	}
+	dataRoot := t.TempDir()
+	core, logs := observer.New(zapcore.DebugLevel)
+	service, err := NewService(dataRoot, nil, WithLogger(zap.New(core)))
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	// 普通文件占据中间路径:POSIX 下打开其子路径得到 ENOTDIR(非文件缺失),
+	// 触发告警;打开失败仍按空前缀继续。
+	blocker := filepath.Join(dataRoot, "blocker")
+	if err := os.WriteFile(blocker, []byte("occupied"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventsPath := filepath.Join(blocker, "events.jsonl")
+
+	if events := service.readDurableEvents(eventsPath, "run-open"); events != nil {
+		t.Fatalf("open failure must degrade to an empty prefix, got %#v", events)
+	}
+	entries := logs.FilterLevelExact(zapcore.WarnLevel).FilterMessage("open durable events file failed").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected one open failure entry, got %#v", logs.All())
+	}
+	context := entries[0].ContextMap()
+	if context["execution_id"] != "run-open" {
+		t.Fatalf("unexpected execution_id field: %#v", context)
+	}
+	if context["path"] != eventsPath {
+		t.Fatalf("unexpected path field: %#v", context)
+	}
+	if message, _ := context["error"].(string); strings.TrimSpace(message) == "" {
+		t.Fatalf("open error must be recorded: %#v", context)
 	}
 }

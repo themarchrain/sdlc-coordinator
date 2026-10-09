@@ -120,6 +120,42 @@ func TestNewRunnerRejectsUnavailableLogDirectory(t *testing.T) {
 	}
 }
 
+func TestNewRunnerRejectsDirectoryThatCannotOpenDailyFile(t *testing.T) {
+	dir := t.TempDir()
+	// 当日文件路径被目录占据:目录本身可写,但文件通道不可用,构造期必须失败,
+	// 不能带着失效的文件通道继续服务。
+	occupied := filepath.Join(dir, runnerLogFilePrefix+time.Now().Format("2006-01-02")+logFileSuffix)
+	if err := os.MkdirAll(occupied, 0o755); err != nil {
+		t.Fatalf("occupy daily log path: %v", err)
+	}
+
+	if _, err := NewRunner("info", dir); err == nil {
+		t.Fatal("expected an unusable daily log path to fail runner logger initialization")
+	}
+}
+
+func TestNewRunnerFallsBackToDefaultDirectory(t *testing.T) {
+	workingDir := t.TempDir()
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("enter working directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+
+	logger, err := NewRunner("info", "  ")
+	if err != nil {
+		t.Fatalf("new runner logger with blank directory: %v", err)
+	}
+	logger.Info("default directory message")
+	_ = logger.Sync()
+
+	defaultDir := filepath.Join(workingDir, filepath.FromSlash(DefaultRunnerLogDir))
+	assertFileContains(t, singleFile(t, defaultDir, "agent-runner-*.log"), "default directory message")
+}
+
 func TestDailyWriterRotatesWhenDateChanges(t *testing.T) {
 	for _, prefix := range []string{logFilePrefix, runnerLogFilePrefix} {
 		t.Run(prefix, func(t *testing.T) {
@@ -199,6 +235,11 @@ func TestDailyWriterCleanupNeverCrossesArchivePrefixes(t *testing.T) {
 		}
 	}
 
+	// runner 侧同样不得删除协调器的过期归档:重新放一份过期文件,再让 runner 清理。
+	coordinatorExpired := filepath.Join(dir, "coordinator-2026-06-27.log")
+	if err := os.WriteFile(coordinatorExpired, []byte("existing"), 0o600); err != nil {
+		t.Fatalf("prepare %s: %v", coordinatorExpired, err)
+	}
 	runnerWriter := newDailyWriter(dir, runnerLogFilePrefix, 30, func() time.Time { return now })
 	if _, err := runnerWriter.Write([]byte("runner today\n")); err != nil {
 		t.Fatalf("write runner log: %v", err)
@@ -206,7 +247,7 @@ func TestDailyWriterCleanupNeverCrossesArchivePrefixes(t *testing.T) {
 	if _, err := os.Stat(runnerOld); !os.IsNotExist(err) {
 		t.Fatalf("runner writer must delete its own expired archive, stat error=%v", err)
 	}
-	for _, path := range []string{runnerBoundary, filepath.Join(dir, "coordinator-2026-07-28.log")} {
+	for _, path := range []string{runnerBoundary, coordinatorExpired, filepath.Join(dir, "coordinator-2026-07-28.log")} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("runner cleanup must keep %s: %v", path, err)
 		}

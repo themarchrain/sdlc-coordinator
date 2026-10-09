@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultRunnerLogLevel = "info"
-	defaultRunnerLogDir   = "logs/agent-runner"
+	shutdownBudget        = 5 * time.Second
 )
 
 type config struct {
@@ -49,7 +49,7 @@ func loadConfig(getenv func(string) string) config {
 	}
 	logDir := strings.TrimSpace(getenv("AGENT_RUNNER_LOG_DIR"))
 	if logDir == "" {
-		logDir = defaultRunnerLogDir
+		logDir = logging.DefaultRunnerLogDir
 	}
 	return config{
 		HTTPAddr:     httpAddr,
@@ -63,14 +63,15 @@ func loadConfig(getenv func(string) string) config {
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx)
+	code := run(ctx, stop)
 	stop()
 	os.Exit(code)
 }
 
-// run 运行 runner 直到 ctx 取消或服务失败,返回进程退出码。logger 的同步挂在
-// 返回前的 defer:先停接客、再取消执行,最后刷日志,不让 os.Exit 跳过清理。
-func run(ctx context.Context) int {
+// run 运行 runner 直到 ctx 取消或服务失败,返回进程退出码。stop 用于在收到关闭
+// 信号后恢复默认信号处置(再按一次可以强退)。logger 的同步挂在返回前的 defer:
+// 先停接客、再取消执行,最后刷日志,不让 os.Exit 跳过清理。
+func run(ctx context.Context, stop func()) int {
 	config := loadConfig(os.Getenv)
 	logger, err := logging.NewRunner(config.LogLevel, config.LogDir)
 	if err != nil {
@@ -85,12 +86,7 @@ func run(ctx context.Context) int {
 		logger.Error("initialize agent runner failed", zap.Error(err))
 		return 1
 	}
-	server := &http.Server{
-		Addr:              config.HTTPAddr,
-		Handler:           runner.NewHTTPHandler(service),
-		ReadHeaderTimeout: 10 * time.Second,
-		ErrorLog:          log.New(httpErrorLogWriter{logger: logger}, "", 0),
-	}
+	server := newServer(config, logger, runner.NewHTTPHandler(service))
 
 	// CLI 子进程在独立进程组中（便于取消时整树终止），不会随本进程的 SIGTERM
 	// 退出；因此退出前必须主动 Shutdown：先停接客，再取消全部未终态执行并等待
@@ -106,14 +102,27 @@ func run(ctx context.Context) int {
 		}
 	case <-ctx.Done():
 	}
+	// 关闭窗口内恢复默认信号处置:此时再收到 SIGTERM/SIGINT 直接终止进程。
+	stop()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownBudget)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("drain agent runner http server failed", zap.Error(err))
 	}
 	service.Shutdown(shutdownCtx)
 	return 0
+}
+
+// newServer 组装 HTTP 服务:ErrorLog 固定接入实例 logger 的局部适配,不重定向
+// 标准库全局配置。
+func newServer(config config, logger *zap.Logger, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              config.HTTPAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          log.New(httpErrorLogWriter{logger: logger}, "", 0),
+	}
 }
 
 // httpErrorLogWriter 把 http.Server 内部错误(默认走标准库 log)按 Error 级别

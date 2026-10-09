@@ -34,10 +34,10 @@ The first super admin is seeded from `CONTROL_PLANE_SUPERADMIN_USERNAME` / `CONT
 
 ## Logging
 
-Both binaries write structured logs to stderr and to a daily JSON file (`<prefix>-<YYYY-MM-DD>.log`), keeping 30 days of archives. The coordinator uses `COORDINATOR_LOG_LEVEL` / `COORDINATOR_LOG_DIR`; the Agent Runner has its own settings and never inherits the coordinator ones:
+Both binaries write structured logs to stderr and to a daily JSON file (`<prefix>-<YYYY-MM-DD>.log`), keeping 30 days of archives. The coordinator uses `COORDINATOR_LOG_LEVEL` / `COORDINATOR_LOG_DIR` and its daily file follows the same level. The Agent Runner has its own settings, never inherits the coordinator ones, and keeps its daily file at `debug` and above regardless of the terminal level:
 
-- `AGENT_RUNNER_LOG_LEVEL` — minimum level for the terminal stream (default `info`). The daily file always keeps `debug` and above, so a quieter terminal loses nothing on disk.
-- `AGENT_RUNNER_LOG_DIR` — directory for the daily files (default `logs/agent-runner`, relative to the working directory). The image sets `/app/logs/agent-runner`, backed by the `./runner-logs` host mount in `docker-compose.yml`.
+- `AGENT_RUNNER_LOG_LEVEL` — minimum level for the terminal stream (default `info`); a quieter terminal loses nothing on disk.
+- `AGENT_RUNNER_LOG_DIR` — directory for the daily files (default `logs/agent-runner`, relative to the working directory). The image sets `/app/logs/agent-runner`, backed by the `./runner-logs` host mount in `docker-compose.yml`. Startup fails with a non-zero exit when the log directory cannot be created or written.
 
 Watch the live stream and the persisted file:
 

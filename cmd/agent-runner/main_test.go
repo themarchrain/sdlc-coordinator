@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	stdlog "log"
 	"net"
@@ -99,7 +100,7 @@ func TestRunReportsLoggerInitializationFailure(t *testing.T) {
 	t.Setenv("AGENT_RUNNER_DATA_ROOT", t.TempDir())
 	stderr := captureStderr(t)
 
-	if code := run(context.Background()); code != 1 {
+	if code := run(context.Background(), func() {}); code != 1 {
 		t.Fatalf("logger initialization failure must exit non-zero, got %d", code)
 	}
 	if output := stderr(); !strings.Contains(output, "initialize agent runner logger") {
@@ -115,7 +116,7 @@ func TestRunReportsServeFailureOnBothChannels(t *testing.T) {
 	t.Setenv("AGENT_RUNNER_LOG_LEVEL", "info")
 	stderr := captureStderr(t)
 
-	if code := run(context.Background()); code != 1 {
+	if code := run(context.Background(), func() {}); code != 1 {
 		t.Fatalf("serve failure must exit non-zero, got %d", code)
 	}
 	output := stderr()
@@ -126,6 +127,7 @@ func TestRunReportsServeFailureOnBothChannels(t *testing.T) {
 	if !strings.Contains(fileLog, "serve agent runner failed") || !strings.Contains(fileLog, "127.0.0.1:-1") {
 		t.Fatalf("expected serve failure in runner daily log, got %q", fileLog)
 	}
+	requireLogLevel(t, logDir, "serve agent runner failed", "error")
 }
 
 func TestRunServesHealthAndWarnsWhenDrainTimesOut(t *testing.T) {
@@ -148,7 +150,7 @@ func TestRunServesHealthAndWarnsWhenDrainTimesOut(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	code := make(chan int, 1)
-	go func() { code <- run(ctx) }()
+	go func() { code <- run(ctx, func() {}) }()
 
 	response := getWithRetry(t, "http://"+addr+"/healthz")
 	if response.StatusCode != http.StatusOK {
@@ -192,6 +194,8 @@ func TestRunServesHealthAndWarnsWhenDrainTimesOut(t *testing.T) {
 			t.Fatalf("expected %q in runner daily log, got %q", expected, fileLog)
 		}
 	}
+	requireLogLevel(t, logDir, "agent runner listening", "info")
+	requireLogLevel(t, logDir, "drain agent runner http server failed", "warn")
 }
 
 func TestHTTPErrorLogAdapterRecordsSourceAndMessage(t *testing.T) {
@@ -212,6 +216,23 @@ func TestHTTPErrorLogAdapterRecordsSourceAndMessage(t *testing.T) {
 	}
 }
 
+func TestNewServerWiresHTTPErrorLogIntoLogger(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	server := newServer(config{HTTPAddr: "127.0.0.1:0"}, zap.New(core), http.NewServeMux())
+	if server.ErrorLog == nil {
+		t.Fatal("http server must route internal errors through the runner logger")
+	}
+	server.ErrorLog.Print("http: panic serving 10.0.0.1:70000")
+
+	entries := logs.FilterLevelExact(zapcore.ErrorLevel).All()
+	if len(entries) != 1 || entries[0].Message != "http server error" {
+		t.Fatalf("expected one http server error entry, got %#v", logs.All())
+	}
+	if entries[0].ContextMap()["source"] != "http_server" {
+		t.Fatalf("unexpected source field: %#v", entries[0].ContextMap())
+	}
+}
+
 func TestAgentRunnerProcessHelper(t *testing.T) {
 	if os.Getenv("AGENT_RUNNER_TEST_HELPER") != "1" {
 		t.Skip("subprocess helper; driven by TestRunnerProcessExitCodes")
@@ -220,36 +241,64 @@ func TestAgentRunnerProcessHelper(t *testing.T) {
 }
 
 func TestRunnerProcessExitCodes(t *testing.T) {
-	occupied := filepath.Join(t.TempDir(), "occupied.log")
-	if err := os.WriteFile(occupied, []byte("occupied"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	cases := []struct {
-		name       string
-		env        map[string]string
+		name string
+		// setup 返回本次用例的环境变量与期望写入的日志目录(无日志文件时为空)。
+		setup      func(t *testing.T) (map[string]string, string)
 		wantStderr string
+		wantLog    string
+		wantLevel  string
 	}{
 		{
-			name:       "logger initialization failure",
-			env:        map[string]string{"AGENT_RUNNER_LOG_DIR": occupied},
+			name: "logger initialization failure",
+			setup: func(t *testing.T) (map[string]string, string) {
+				occupied := filepath.Join(t.TempDir(), "occupied.log")
+				if err := os.WriteFile(occupied, []byte("occupied"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return map[string]string{"AGENT_RUNNER_LOG_DIR": occupied}, ""
+			},
 			wantStderr: "initialize agent runner logger",
 		},
 		{
+			name: "service initialization failure",
+			setup: func(t *testing.T) (map[string]string, string) {
+				blockedRoot := filepath.Join(t.TempDir(), "blocked-root")
+				if err := os.WriteFile(blockedRoot, []byte("occupied"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				logDir := filepath.Join(t.TempDir(), "logs")
+				return map[string]string{
+					"AGENT_RUNNER_LOG_DIR":   logDir,
+					"AGENT_RUNNER_DATA_ROOT": blockedRoot,
+				}, logDir
+			},
+			wantStderr: "initialize agent runner failed",
+			wantLog:    "initialize agent runner failed",
+			wantLevel:  "error",
+		},
+		{
 			name: "serve failure",
-			env: map[string]string{
-				"AGENT_RUNNER_LOG_DIR":   filepath.Join(t.TempDir(), "logs"),
-				"AGENT_RUNNER_HTTP_ADDR": "127.0.0.1:-1",
+			setup: func(t *testing.T) (map[string]string, string) {
+				logDir := filepath.Join(t.TempDir(), "logs")
+				return map[string]string{
+					"AGENT_RUNNER_LOG_DIR":   logDir,
+					"AGENT_RUNNER_HTTP_ADDR": "127.0.0.1:-1",
+				}, logDir
 			},
 			wantStderr: "serve agent runner failed",
+			wantLog:    "serve agent runner failed",
+			wantLevel:  "error",
 		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			caseEnv, logDir := testCase.setup(t)
 			overrides := map[string]string{
 				"AGENT_RUNNER_TEST_HELPER": "1",
 				"AGENT_RUNNER_DATA_ROOT":   t.TempDir(),
 			}
-			for name, value := range testCase.env {
+			for name, value := range caseEnv {
 				overrides[name] = value
 			}
 			command := exec.Command(os.Args[0], "-test.run=TestAgentRunnerProcessHelper$")
@@ -261,6 +310,9 @@ func TestRunnerProcessExitCodes(t *testing.T) {
 			}
 			if !strings.Contains(string(output), testCase.wantStderr) {
 				t.Fatalf("expected %q in process output, got %s", testCase.wantStderr, output)
+			}
+			if testCase.wantLog != "" {
+				requireLogLevel(t, logDir, testCase.wantLog, testCase.wantLevel)
 			}
 		})
 	}
@@ -311,6 +363,40 @@ func readSingleRunnerLog(t *testing.T, dir string) string {
 		t.Fatalf("read runner daily log: %v", err)
 	}
 	return string(data)
+}
+
+type runnerLogEntry struct {
+	Level string `json:"level"`
+	Msg   string `json:"msg"`
+}
+
+func parseRunnerLog(t *testing.T, dir string) []runnerLogEntry {
+	t.Helper()
+	entries := make([]runnerLogEntry, 0)
+	for _, line := range strings.Split(strings.TrimSpace(readSingleRunnerLog(t, dir)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var entry runnerLogEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("decode runner log line %q: %v", line, err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func requireLogLevel(t *testing.T, dir, message, level string) {
+	t.Helper()
+	for _, entry := range parseRunnerLog(t, dir) {
+		if entry.Msg == message {
+			if entry.Level != level {
+				t.Fatalf("expected %q at level %s, got %s", message, level, entry.Level)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing %q in runner daily log under %s", message, dir)
 }
 
 func getWithRetry(t *testing.T, url string) *http.Response {
