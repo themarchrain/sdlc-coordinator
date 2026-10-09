@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,15 +11,18 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestNewWritesConfiguredLevelToDailyFile(t *testing.T) {
+// 文件与终端分级筛选:文件恒 Debug 起(各级别应用日志都持久化),终端按
+// 配置级别筛选。终端 Info 时 Debug/Info 都必须落文件。
+func TestNewPersistsDebugAndAboveInDailyFile(t *testing.T) {
 	dir := t.TempDir()
 	logger, err := New("info", dir)
 	if err != nil {
 		t.Fatalf("new logger: %v", err)
 	}
 
-	logger.Debug("hidden debug message")
+	logger.Debug("persisted debug message")
 	logger.Info("persisted info message")
+	logger.Warn("persisted warn message")
 	// stderr 在 Linux 上是字符设备,fsync 返回 EINVAL;与生产一致,Sync 错误不作为
 	// 失败条件(main.go 退出清理同样忽略该错误),文件写入本身即写即关、无需刷盘保证。
 	_ = logger.Sync()
@@ -35,11 +39,13 @@ func TestNewWritesConfiguredLevelToDailyFile(t *testing.T) {
 		t.Fatalf("read daily log: %v", err)
 	}
 	contents := string(data)
-	if !strings.Contains(contents, "persisted info message") {
-		t.Fatalf("expected info message in daily log, got %q", contents)
+	for _, expected := range []string{"persisted debug message", "persisted info message", "persisted warn message"} {
+		if !strings.Contains(contents, expected) {
+			t.Fatalf("expected daily log to contain %q even with terminal level info, got %q", expected, contents)
+		}
 	}
-	if strings.Contains(contents, "hidden debug message") {
-		t.Fatalf("debug message must be filtered at info level, got %q", contents)
+	if !strings.Contains(contents, `"level":"debug"`) || !strings.Contains(contents, `"level":"info"`) {
+		t.Fatalf("expected JSON-encoded levels in daily log, got %q", contents)
 	}
 }
 
@@ -300,4 +306,93 @@ func assertFileContains(t *testing.T, path, expected string) {
 	if !strings.Contains(string(data), expected) {
 		t.Fatalf("expected %s to contain %q, got %q", path, expected, string(data))
 	}
+}
+
+// 终端阈值 Warn 时:Debug/Info 只进文件不出终端,Warn/Error 两路都出。
+// 终端输出用 os.Pipe 捕获进程 stderr——生产 core 直接锁 os.Stderr,
+// 捕获后恢复,避免污染测试输出。
+func TestNewSplitsTerminalAndFileLevels(t *testing.T) {
+	dir := t.TempDir()
+
+	// zapcore.Lock 在 New() 构造时快照 os.Stderr,必须先替换再构造,
+	// 否则 core 锁住的是原始 stderr,捕获不到输出。
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = writer
+	defer func() {
+		os.Stderr = origStderr
+	}()
+
+	logger, err := New("warn", dir)
+	if err != nil {
+		os.Stderr = origStderr
+		writer.Close()
+		t.Fatalf("new logger: %v", err)
+	}
+
+	logger.Debug("file-only debug")
+	logger.Info("file-only info")
+	logger.Warn("both-paths warn")
+	logger.Error("both-paths error")
+	// 不调 Sync:两个 core 均无缓冲直写,而 Sync 会对替换后的 stderr 管道
+	// 做 Fsync,Windows 上永久阻塞(Linux 字符设备则返回 EINVAL,均无意义)。
+	writer.Close()
+	os.Stderr = origStderr
+
+	captured, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read captured stderr: %v", err)
+	}
+	reader.Close()
+	terminal := string(captured)
+
+	files, err := filepath.Glob(filepath.Join(dir, "coordinator-*.log"))
+	if err != nil {
+		t.Fatalf("glob log files: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected one daily log file, got %v", files)
+	}
+	fileData, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatalf("read daily log: %v", err)
+	}
+	fileContents := string(fileData)
+
+	// 文件:Debug 及以上全部在。
+	for _, expected := range []string{"file-only debug", "file-only info", "both-paths warn", "both-paths error"} {
+		if !strings.Contains(fileContents, expected) {
+			t.Fatalf("expected file to contain %q at terminal level warn, got %q", expected, fileContents)
+		}
+	}
+	// 终端:Warn/Error 在,Debug/Info 不在。
+	for _, expected := range []string{"both-paths warn", "both-paths error"} {
+		if !strings.Contains(terminal, expected) {
+			t.Fatalf("expected terminal output to contain %q, got %q", expected, terminal)
+		}
+	}
+	for _, unexpected := range []string{"file-only debug", "file-only info"} {
+		if strings.Contains(terminal, unexpected) {
+			t.Fatalf("terminal output must not contain %q at terminal level warn, got %q", unexpected, terminal)
+		}
+	}
+}
+
+// 无效终端级别回落 Info:行为与原实现一致,且 Info 在该回落级别下仍落文件。
+func TestNewFallsBackToInfoOnInvalidLevel(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := New("not-a-level", dir)
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	logger.Debug("debug at fallback")
+	logger.Info("info at fallback")
+	_ = logger.Sync()
+
+	assertFileContains(t, filepath.Join(dir, "coordinator-"+time.Now().Format("2006-01-02")+".log"), "info at fallback")
+	assertFileContains(t, filepath.Join(dir, "coordinator-"+time.Now().Format("2006-01-02")+".log"), "debug at fallback")
 }

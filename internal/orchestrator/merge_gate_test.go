@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -143,6 +145,10 @@ func (r *failingGateEffectRepository) UpsertByDedupeKey(context.Context, *model.
 
 // newGateOrch 组装被测编排器:开关恒开、客户端由 fakeGateClient 承载。
 func newGateOrch(t *testing.T, client *fakeGateClient) (*Orchestrator, *storerepo.TaskRepository, *storerepo.ArtifactRepository, *storerepo.MergeGateAuditRepository) {
+	return newGateOrchWithLogger(t, client, zap.NewNop())
+}
+
+func newGateOrchWithLogger(t *testing.T, client *fakeGateClient, logger *zap.Logger) (*Orchestrator, *storerepo.TaskRepository, *storerepo.ArtifactRepository, *storerepo.MergeGateAuditRepository) {
 	t.Helper()
 	tasks, runs, artifacts, audits := newMergeGateRepositories(t)
 	lookup := &gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{
@@ -158,6 +164,7 @@ func newGateOrch(t *testing.T, client *fakeGateClient) (*Orchestrator, *storerep
 		WithMergeGateClients(func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
 			return client, client, nil
 		}),
+		WithLogger(logger),
 	)
 	return orch, tasks, artifacts, audits
 }

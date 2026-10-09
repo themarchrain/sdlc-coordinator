@@ -24,14 +24,14 @@ const (
 // 入口配置与库内默认都引用它,避免两处常量各自漂移。
 const DefaultRunnerLogDir = "logs/agent-runner"
 
-// New 构造协调器进程的应用 logger:终端与每日 JSON 文件使用同一配置级别。
+// New 构造协调器进程的应用 logger:终端按配置级别筛选(解析失败回落 Info,
+// 行为不变);文件恒 Debug 起,各级别应用日志都持久化,供事后排查按级别过滤。
 func New(level, directory string) (*zap.Logger, error) {
-	lvl := parseLevel(level)
-	return newLogger(lvl, lvl, directory, defaultLogDir, logFilePrefix)
+	return newLogger(parseLevel(level), zapcore.DebugLevel, directory, defaultLogDir, logFilePrefix)
 }
 
 // NewRunner 构造 agent-runner 进程的应用 logger:与协调器共用编码、每日轮转与
-// 保留实现,但终端按参数级别筛选、文件固定 Debug 及以上全量留存,文件名使用
+// 保留实现,终端按参数级别筛选、文件固定 Debug 及以上全量留存,文件名使用
 // 独立前缀,使两个进程即使共用目录也不会互相清理对方的归档。
 func NewRunner(level, directory string) (*zap.Logger, error) {
 	return newLogger(parseLevel(level), zapcore.DebugLevel, directory, DefaultRunnerLogDir, runnerLogFilePrefix)
@@ -51,6 +51,7 @@ func newLogger(consoleLevel, fileLevel zapcore.Level, directory, defaultDirector
 	}
 
 	cfg := zap.NewProductionConfig()
+	cfg.Level = zap.NewAtomicLevelAt(fileLevel)
 
 	consoleEncoderConfig := cfg.EncoderConfig
 	consoleEncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
