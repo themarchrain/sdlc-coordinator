@@ -94,13 +94,16 @@ func (o *Orchestrator) withDeveloperReworkFollowups(ctx context.Context, task *m
 	return payload, nil
 }
 
+// decodeDeveloperReworkContext 解析 rework 任务上下文。origin_issue 只对 coordinator
+// 自建 MR 存在:非自建 MR 的任务包有意省略它(见 mergeRequestReworkContext),因此这里
+// 只强制要求 merge_request 三要素,origin_issue 缺失按 "无起源 Issue" 降级。
 func decodeDeveloperReworkContext(raw string) (developerReworkContext, error) {
 	var contextValue developerReworkContext
 	if err := json.Unmarshal([]byte(raw), &contextValue); err != nil {
 		return developerReworkContext{}, fmt.Errorf("decode developer rework task context: %w", err)
 	}
-	if contextValue.OriginIssue.IID <= 0 || contextValue.MergeRequest.IID <= 0 || strings.TrimSpace(contextValue.MergeRequest.URL) == "" || strings.TrimSpace(contextValue.MergeRequest.SourceBranch) == "" {
-		return developerReworkContext{}, errors.New("developer rework origin issue and merge request context are required")
+	if contextValue.MergeRequest.IID <= 0 || strings.TrimSpace(contextValue.MergeRequest.URL) == "" || strings.TrimSpace(contextValue.MergeRequest.SourceBranch) == "" {
+		return developerReworkContext{}, errors.New("developer rework merge request context is required")
 	}
 	return contextValue, nil
 }
@@ -194,12 +197,18 @@ func developerReworkClarificationIMBody(contextValue developerReworkContext, bod
 	if mrURL := strings.TrimSpace(contextValue.MergeRequest.URL); mrURL != "" {
 		mrReference = fmt.Sprintf("[!%d](%s)", contextValue.MergeRequest.IID, mrURL)
 	}
-	issueReference := fmt.Sprintf("#%d", contextValue.OriginIssue.IID)
-	if issueURL := strings.TrimSpace(contextValue.OriginIssue.URL); issueURL != "" {
-		issueReference = fmt.Sprintf("[#%d](%s)", contextValue.OriginIssue.IID, issueURL)
+	links := []string{"> - MR: " + mrReference}
+	// 非自建 MR 没有 origin_issue(见 decodeDeveloperReworkContext),此时省略该行,
+	// 不退化成 "#0" 这种指向不存在 Issue 的假引用。
+	if contextValue.OriginIssue.IID > 0 {
+		issueReference := fmt.Sprintf("#%d", contextValue.OriginIssue.IID)
+		if issueURL := strings.TrimSpace(contextValue.OriginIssue.URL); issueURL != "" {
+			issueReference = fmt.Sprintf("[#%d](%s)", contextValue.OriginIssue.IID, issueURL)
+		}
+		links = append(links, "> - Issue: "+issueReference)
 	}
 	parts := strings.SplitN(strings.TrimSpace(body), "\n\n", 2)
-	imBody := parts[0] + "\n\n> - MR: " + mrReference + "\n> - Issue: " + issueReference
+	imBody := parts[0] + "\n\n" + strings.Join(links, "\n")
 	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
 		imBody += "\n\n" + strings.TrimSpace(parts[1])
 	}
