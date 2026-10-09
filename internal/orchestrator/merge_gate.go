@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"sdlc-coordinator/internal/adapters/codehost"
@@ -81,7 +81,10 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 		if result.Transient != nil {
 			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped 并留
 			// 日志——持续瞬态失败时每轮可见,不静默。
-			log.Printf("orchestrator: auto merge gate deferred task %s to next tick: %v", task.TaskID, result.Transient)
+			o.logger.Warn("auto merge gate deferred task to next tick",
+				zap.String("task_id", task.TaskID),
+				zap.NamedError("transient", result.Transient),
+			)
 			decisions = append(decisions, MergeGateTickResult{
 				TaskID: task.TaskID, Decision: MergeGateDecisionSkipped, Error: result.Transient.Error(),
 			})
@@ -430,6 +433,6 @@ func isLookupNotFound(err error) bool {
 
 // logGateScanFailure 把门禁扫描失败降级为日志:门禁是插在必经主链路之前的
 // 可选阶段,查询失败不得拖住同轮的恢复/派发/效果执行(下一轮自然重试)。
-func logGateScanFailure(err error) {
-	log.Printf("orchestrator: auto merge gate scan deferred to next tick: %v", err)
+func (o *Orchestrator) logGateScanFailure(err error) {
+	o.logger.Warn("auto merge gate scan deferred to next tick", zap.Error(err))
 }
