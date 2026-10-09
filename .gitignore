@@ -17,6 +17,7 @@ __pycache__/
 *.pyc
 /data/
 /logs/
+/runner-logs/
 *.bak
 /web/node_modules/
 /web/dist/*
