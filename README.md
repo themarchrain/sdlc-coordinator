@@ -32,20 +32,6 @@ Admin UI: `http://<host>:<port>/admin`
 
 The first super admin is seeded from `CONTROL_PLANE_SUPERADMIN_USERNAME` / `CONTROL_PLANE_SUPERADMIN_PASSWORD` environment variables at startup; startup refuses to run without `CONTROL_PLANE_DSN` and these credentials. Do not expose this service to the public internet.
 
-## Logging
-
-Both binaries write structured logs to stderr and to a daily JSON file (`<prefix>-<YYYY-MM-DD>.log`), keeping 30 days of archives. The coordinator uses `COORDINATOR_LOG_LEVEL` / `COORDINATOR_LOG_DIR` and its daily file follows the same level. The Agent Runner has its own settings, never inherits the coordinator ones, and keeps its daily file at `debug` and above regardless of the terminal level:
-
-- `AGENT_RUNNER_LOG_LEVEL` — minimum level for the terminal stream (default `info`); a quieter terminal loses nothing on disk.
-- `AGENT_RUNNER_LOG_DIR` — directory for the daily files (default `logs/agent-runner`, relative to the working directory). The image sets `/app/logs/agent-runner`, backed by the `./runner-logs` host mount in `docker-compose.yml`. Startup fails with a non-zero exit when the log directory cannot be created or written.
-
-Watch the live stream and the persisted file:
-
-```bash
-docker compose logs -f agent-runner
-tail -f runner-logs/agent-runner-$(date +%F).log
-```
-
 ## Tests
 
 ```bash
