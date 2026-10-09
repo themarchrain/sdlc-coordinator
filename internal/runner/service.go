@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 var executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
@@ -26,6 +27,20 @@ type Service struct {
 	providers map[string]Provider
 	runtime   map[string]*executionRuntime
 	now       func() time.Time
+	logger    *zap.Logger
+}
+
+// Option 在构造期调整 Service 装配,只在 NewService 内应用一次。
+type Option func(*Service)
+
+// WithLogger 注入服务实例的应用日志器,覆盖构造期恢复与异步执行期的诊断。
+// 未注入或注入 nil 时回退 zap.NewNop():回退只服务测试与最小装配,生产入口
+// cmd/agent-runner 必须显式传入已创建的 runner logger。Service 只使用注入的
+// logger,不关闭也不替换它。
+func WithLogger(logger *zap.Logger) Option {
+	return func(service *Service) {
+		service.logger = logger
+	}
 }
 
 type executionRuntime struct {
@@ -37,7 +52,7 @@ type executionRuntime struct {
 	cancel       context.CancelFunc
 }
 
-func NewService(dataRoot string, providers map[string]Provider) (*Service, error) {
+func NewService(dataRoot string, providers map[string]Provider, options ...Option) (*Service, error) {
 	dataRoot = strings.TrimSpace(dataRoot)
 	if dataRoot == "" {
 		return nil, errors.New("runner data root is required")
@@ -52,6 +67,16 @@ func NewService(dataRoot string, providers map[string]Provider) (*Service, error
 		}
 	}
 	service := &Service{dataRoot: dataRoot, providers: registry, runtime: map[string]*executionRuntime{}, now: time.Now}
+	// options 必须在 loadDurableExecutions 前应用:构造期恢复(隔离、坏行、
+	// 序号异常)的诊断要进入注入的 logger,而不是丢进回退 Nop。
+	for _, option := range options {
+		option(service)
+	}
+	if service.logger == nil {
+		// 回退只存在于测试/最小装配:生产入口一律显式注入 logger。
+		// Nop 意味着漏传时丢的是日志不是行为。
+		service.logger = zap.NewNop()
+	}
 	if err := service.loadDurableExecutions(); err != nil {
 		return nil, err
 	}
@@ -123,7 +148,10 @@ func (s *Service) run(ctx context.Context, provider Provider, runtime *execution
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if err := s.appendEventLocked(runtime, eventType, payload); err != nil {
-			log.Printf("runner: append provider event %s for execution %s: %v", eventType, runtime.execution.ExecutionID, err)
+			s.logger.Error("append provider event failed",
+				zap.String("execution_id", runtime.execution.ExecutionID),
+				zap.String("event_type", eventType),
+				zap.Error(err))
 		}
 	}
 	request := runtime.request
@@ -189,10 +217,15 @@ func (s *Service) finishFailure(runtime *executionRuntime, status Status, code, 
 // 异步执行路径上，失败不再阻断执行，但必须记录日志以便诊断事件流断裂。
 func (s *Service) persistAndEmitLocked(runtime *executionRuntime, eventType string, payload map[string]any) {
 	if err := s.persistExecutionLocked(runtime); err != nil {
-		log.Printf("runner: persist execution %s: %v", runtime.execution.ExecutionID, err)
+		s.logger.Error("persist execution snapshot failed",
+			zap.String("execution_id", runtime.execution.ExecutionID),
+			zap.Error(err))
 	}
 	if err := s.appendEventLocked(runtime, eventType, payload); err != nil {
-		log.Printf("runner: append event %s for execution %s: %v", eventType, runtime.execution.ExecutionID, err)
+		s.logger.Error("append execution event failed",
+			zap.String("execution_id", runtime.execution.ExecutionID),
+			zap.String("event_type", eventType),
+			zap.Error(err))
 	}
 }
 
