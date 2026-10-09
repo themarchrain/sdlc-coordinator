@@ -18,6 +18,7 @@ import (
 	adminweb "sdlc-coordinator/web"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type RouterOptions struct {
@@ -40,6 +41,7 @@ type RouterOptions struct {
 	PortalCookieSecure   *bool
 	TenantStores         tenantdb.Resolver
 	RouteIndexSync       registeredrepo.RouteIndexSync
+	Logger               *zap.Logger
 	// 写路径租户化端口（均可空：空时行为与单库形态一致）。
 	EngineViewFactory     handlers.EngineViewFactory
 	AdminOperationEngines handlers.AdminOperationEngines
@@ -166,6 +168,13 @@ func WithAdminOperationEngines(engines handlers.AdminOperationEngines) RouterOpt
 	}
 }
 
+// WithRuntimeLogger 注入协调器日志，用于记录 HTTP 框架的运行诊断。
+func WithRuntimeLogger(logger *zap.Logger) RouterOption {
+	return func(options *RouterOptions) {
+		options.Logger = logger
+	}
+}
+
 func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	var eventProcessor *events.Processor
 	options := RouterOptions{RuntimeMode: configuration.ModeReady}
@@ -181,7 +190,7 @@ func NewRouter(orch *orchestrator.Orchestrator, args ...any) *gin.Engine {
 	}
 
 	router := gin.New()
-	router.Use(gin.Recovery())
+	router.Use(gin.RecoveryWithWriter(newZapLogWriter(options.Logger, "gin_recovery")))
 	// 不信任任何代理：gin 默认信任一切代理，直连形态下
 	// ClientIP() 会取攻击者自设的 X-Forwarded-For，登录限速键可被逐请求
 	// 轮换 XFF 整体绕过。收身后 ClientIP=直连对端地址；反代部署的授信清单

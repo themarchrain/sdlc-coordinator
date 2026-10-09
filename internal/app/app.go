@@ -186,9 +186,10 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	// 每个请求按 (provider, path) 路由到所属租户引擎视图（factory 优先且
 	// 绝不回落构造期默认——空壳 processor 永不被调用）。
 	routerArgs := []any{&events.Processor{}}
+	routerArgs = append(routerArgs, api.WithRuntimeLogger(logger))
 	routerArgs = append(routerArgs, routerOptions...)
 	router := api.NewRouter(nil, routerArgs...)
-	server := api.NewServer(cfg.HTTPAddr, router)
+	server := api.NewServer(cfg.HTTPAddr, router, logger)
 	var schedulerRunner *scheduler.Runner
 	if cfg.Scheduler.Enabled {
 		schedulerRunner = scheduler.New(cfg.Scheduler.Interval, cfg.Scheduler.TickRequest, pool.tickAll, logger)
@@ -224,6 +225,7 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 	}
 	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
 	bootstrapRouterOptions := []any{
+		api.WithRuntimeLogger(logger),
 		api.WithConfigurationService(configurationService, shutdown),
 		api.WithRuntimeMode(mode),
 		api.WithControlPlaneService(controlPlaneService),
@@ -242,7 +244,7 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 		Logger:       logger,
 		DB:           db,
 		Router:       router,
-		Server:       api.NewServer(bootstrap.HTTPAddr, router),
+		Server:       api.NewServer(bootstrap.HTTPAddr, router, logger),
 		ControlPlane: controlPlaneService,
 		TenantStores: tenantStores,
 		Mode:         mode,
