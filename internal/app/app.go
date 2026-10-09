@@ -51,6 +51,7 @@ type App struct {
 	Router           *gin.Engine
 	Server           *api.Server
 	pool             *enginePool
+	mcpHandler       *handlers.MCPHandler
 	Scheduler        *scheduler.Runner
 	RequirementsSync *requirements.Runner
 	ControlPlane     *controlplane.Service
@@ -148,6 +149,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		nil, resultTokenSecret, nil, nil, nil,
 		resultSubmissionMaxRejections,
 		handlers.WithMCPEngineSource(pool),
+		handlers.WithMCPLogger(logger),
 	)
 	routerOptions := []any{
 		// webhook 验签租户路由：索引命中 → 租户库仓行 secret；
@@ -200,6 +202,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		Router:           router,
 		Server:           server,
 		pool:             pool,
+		mcpHandler:       mcpHandler,
 		Scheduler:        schedulerRunner,
 		RequirementsSync: requirementsSyncRunner,
 		ControlPlane:     controlPlaneService,

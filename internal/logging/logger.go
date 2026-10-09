@@ -20,16 +20,19 @@ const (
 )
 
 func New(level, directory string) (*zap.Logger, error) {
-	lvl, err := zapcore.ParseLevel(strings.ToLower(level))
+	// 终端与文件分级筛选:终端按配置级别(env 解析失败回落 Info,行为不变);
+	// 文件恒 Debug 起,各级别应用日志都持久化,供事后排查按级别过滤。
+	consoleLvl, err := zapcore.ParseLevel(strings.ToLower(level))
 	if err != nil {
-		lvl = zapcore.InfoLevel
+		consoleLvl = zapcore.InfoLevel
 	}
+	fileLvl := zapcore.DebugLevel
 	if strings.TrimSpace(directory) == "" {
 		directory = defaultLogDir
 	}
 
 	cfg := zap.NewProductionConfig()
-	cfg.Level = zap.NewAtomicLevelAt(lvl)
+	cfg.Level = zap.NewAtomicLevelAt(fileLvl)
 
 	consoleEncoderConfig := cfg.EncoderConfig
 	consoleEncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -40,8 +43,8 @@ func New(level, directory string) (*zap.Logger, error) {
 		return nil, fmt.Errorf("initialize daily log writer: %w", err)
 	}
 	core := zapcore.NewTee(
-		zapcore.NewCore(zapcore.NewConsoleEncoder(consoleEncoderConfig), zapcore.Lock(os.Stderr), lvl),
-		zapcore.NewCore(zapcore.NewJSONEncoder(cfg.EncoderConfig), fileWriter, lvl),
+		zapcore.NewCore(zapcore.NewConsoleEncoder(consoleEncoderConfig), zapcore.Lock(os.Stderr), consoleLvl),
+		zapcore.NewCore(zapcore.NewJSONEncoder(cfg.EncoderConfig), fileWriter, fileLvl),
 	)
 	return zap.New(
 		core,

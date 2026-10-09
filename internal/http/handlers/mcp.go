@@ -3,10 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
@@ -47,10 +48,24 @@ type MCPHandler struct {
 	engines     MCPEngineSource
 	maxAttempts int
 	now         func() time.Time
+	logger      *zap.Logger
 }
 
 // MCPHandlerOption 定制 MCPHandler 装配。
 type MCPHandlerOption func(*MCPHandler)
+
+// WithMCPLogger 注入结构化日志(zap)。生产装配点必须显式传入;未传时构造器
+// 回退 zap.NewNop(),内部错误详情不再外泄也不落盘。
+func WithMCPLogger(logger *zap.Logger) MCPHandlerOption {
+	return func(h *MCPHandler) {
+		h.logger = logger
+	}
+}
+
+// GetLogger 返回装配期注入的 logger,供装配路径验证(指针相等断言)。
+func (h *MCPHandler) GetLogger() *zap.Logger {
+	return h.logger
+}
 
 // WithMCPEngineSource 注入按租户引擎选择器；每个请求在 token 验证后按
 // claims 里的租户取依赖，未注入时恒用构造期默认视图（单库形态/测试）。
@@ -78,6 +93,10 @@ func NewMCPHandler(
 	}
 	for _, option := range options {
 		option(handler)
+	}
+	if handler.logger == nil {
+		// 回退仅存在于测试/最小装配:生产装配点(app.go)一律显式传 logger。
+		handler.logger = zap.NewNop()
 	}
 	return handler
 }
@@ -407,8 +426,12 @@ func encodeProblems(problems []orchestrator.ValidationProblem) string {
 
 // internalError 折叠基础设施故障：响应只带通用文案，原文进服务端日志，
 // 不向 agent 端回显驱动/GORM 错误细节。返回 (nil, errResp)。
+// 每次基础设施故障只在此记录一次;id 是 JSON-RPC 请求 id,按原样留档。
 func (h *MCPHandler) internalError(c *gin.Context, id json.RawMessage, err error) gin.H {
-	log.Printf("mcp: internal error for request %s: %v", string(id), err)
+	h.logger.Error("mcp: internal error",
+		zap.String("request_id", string(id)),
+		zap.Error(err),
+	)
 	return mcpErrorResponse(id, jsonrpcInternalErr, "Internal error", "submission channel is temporarily unavailable")
 }
 
