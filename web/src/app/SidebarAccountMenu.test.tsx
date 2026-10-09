@@ -4,11 +4,15 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'rea
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { PortalApiError, portalApi, type PortalSessionPayload } from '../api/portal'
+import { listSavedAccounts } from './accountRegistry'
 import { SidebarAccountMenu } from './SidebarAccountMenu'
 import { WorkspaceSessionProvider, workspaceRoleFromSession, type WorkspaceSessionValue } from './workspaceSession'
 import '../styles/index.css'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  window.localStorage.clear()
+})
 
 const superUser = { id: 1, username: 'root', role: 'super_admin', must_change_password: false }
 const acmeTenant = { id: 7, slug: 'acme', display_name: 'Acme 组织', status: 'active' }
@@ -145,11 +149,16 @@ describe('SidebarAccountMenu', () => {
     expect(await screen.findByRole('menuitem', { name: /退出登录/ })).toBeInTheDocument()
   })
 
-  it('logs out once through the portal api and replaces onto the login route', async () => {
+  it('logs out through a confirm dialog and replaces onto the login route', async () => {
     const logout = vi.spyOn(portalApi, 'logout').mockResolvedValue({ ok: true })
     openAccountMenu(tenantAdminSession)
     fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
 
+    // 必须先经确认弹窗：点当前账号选项前不得调用登出 API
+    expect(await screen.findByTestId('logout-current')).toBeInTheDocument()
+    expect(logout).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('logout-current'))
     expect(await screen.findByTestId('login-landing')).toHaveTextContent('/portal/login|REPLACE')
     expect(logout).toHaveBeenCalledTimes(1)
   })
@@ -158,6 +167,7 @@ describe('SidebarAccountMenu', () => {
     vi.spyOn(portalApi, 'logout').mockRejectedValue(new PortalApiError(401, 'unauthenticated', '请先登录'))
     openAccountMenu(memberSession)
     fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+    fireEvent.click(await screen.findByTestId('logout-current'))
 
     expect(await screen.findByTestId('login-landing')).toHaveTextContent('/portal/login')
   })
@@ -169,12 +179,13 @@ describe('SidebarAccountMenu', () => {
       .mockResolvedValueOnce({ ok: true })
     openAccountMenu(memberSession)
     fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+    fireEvent.click(await screen.findByTestId('logout-current'))
 
-    // 静态文案，不回显 token/堆栈等细节
+    // 静态文案，不回显 token/堆栈等细节；弹窗保持打开供原位重试
     expect(await screen.findByText('退出登录失败，请稍后重试')).toBeInTheDocument()
     expect(screen.queryByTestId('login-landing')).not.toBeInTheDocument()
 
-    fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+    fireEvent.click(screen.getByTestId('logout-current'))
     expect(await screen.findByTestId('login-landing')).toHaveTextContent('/portal/login')
     expect(logout).toHaveBeenCalledTimes(2)
   })
@@ -183,13 +194,171 @@ describe('SidebarAccountMenu', () => {
     const logout = vi.spyOn(portalApi, 'logout').mockImplementation(() => new Promise(() => {}))
     openAccountMenu(superSession)
     fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+    fireEvent.click(await screen.findByTestId('logout-current'))
 
-    // 触发后进入进行中状态：菜单不收起，退出项转为禁用
-    const item = await screen.findByRole('menuitem', { name: /退出中/ })
-    expect(item).toHaveAttribute('aria-disabled', 'true')
-
-    fireEvent.click(item)
+    // 请求进行中：当前账号选项禁用，重复点击不追加请求
+    await waitFor(() => expect(screen.getByTestId('logout-current')).toBeDisabled())
+    fireEvent.click(screen.getByTestId('logout-current'))
     expect(logout).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('menuitem', { name: /退出中/ })).toBeInTheDocument()
+  })
+
+  it('shows all three account entries with logout last', async () => {
+    // 预置一个其他账号，让切换入口出现
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    openAccountMenu(tenantAdminSession)
+    await screen.findByRole('menu')
+    const labels = Array.from(document.querySelectorAll('[role="menuitem"]'))
+      .filter((el) => el.getAttribute('aria-disabled') !== 'true')
+      .map((el) => el.textContent)
+    expect(labels).toEqual(['修改密码', '切换账号', '退出登录'])
+  })
+
+  it('always shows the switch entry even with no other account', async () => {
+    openAccountMenu(tenantAdminSession)
+    await screen.findByRole('menu')
+    expect(screen.getByRole('menuitem', { name: /切换账号/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /修改密码/ })).toBeInTheDocument()
+  })
+
+  it('offers an inline login form inside the switch dialog without leaving the page', async () => {
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    expect(await screen.findByTestId('switch-login-submit')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('用户名')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('密码')).toBeInTheDocument()
+    // 不跳转登录页
+    expect(screen.queryByTestId('login-landing')).not.toBeInTheDocument()
+  })
+
+  it('shows the exact saved-account count including the current one', async () => {
+    // 注册表含当前账号（登录即登记）：两人就显示 2，不得再 +1
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-self', userId: 2, username: 'ops-admin', savedAt: '2026-10-08T00:00:00.000Z' },
+      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+
+    expect(await screen.findByTestId('logout-all')).toHaveTextContent('退出所有已保存的账号（2 个）')
+  })
+
+  it('revokes all saved sessions through the logout-all option', async () => {
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    const logout = vi.spyOn(portalApi, 'logout').mockResolvedValue({ ok: true })
+    const revoke = vi.spyOn(portalApi, 'revokeSavedSessions').mockResolvedValue({ ok: true })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /退出登录/ }))
+
+    fireEvent.click(await screen.findByTestId('logout-all'))
+    expect(await screen.findByTestId('login-landing')).toBeInTheDocument()
+    expect(revoke).toHaveBeenCalledWith(['token-other'])
+    expect(logout).not.toHaveBeenCalled()
+    expect(listSavedAccounts()).toHaveLength(0)
+  })
+
+  it('switches to a saved account via the switch dialog', async () => {
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-other', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    const switchAccount = vi.spyOn(portalApi, 'switchAccount').mockResolvedValue({ ok: true })
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    fireEvent.click(await screen.findByTestId('switch-target-alice'))
+    await waitFor(() => expect(switchAccount).toHaveBeenCalledWith('token-other'))
+    await waitFor(() => expect(assign).toHaveBeenCalled())
+    vi.unstubAllGlobals()
+  })
+
+  it('removes a stale saved account when its switch is rejected as expired', async () => {
+    window.localStorage.setItem('coordinator_portal_accounts', JSON.stringify([
+      { token: 'token-stale', userId: 99, username: 'alice', savedAt: '2026-10-08T00:00:00.000Z' },
+    ]))
+    vi.spyOn(portalApi, 'switchAccount').mockRejectedValue(new PortalApiError(401, 'invalid_token', '会话无效'))
+    const assign = vi.fn()
+    vi.stubGlobal('location', { href: '', assign })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    fireEvent.click(await screen.findByTestId('switch-target-alice'))
+    await waitFor(() => expect(listSavedAccounts()).toHaveLength(0))
+    expect(assign).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('logs another account in through the inline form and reloads', async () => {
+    const login = vi.spyOn(portalApi, 'login').mockResolvedValue({
+      user: { id: 42, username: 'bob', role: 'member', must_change_password: false },
+      scope: { kind: 'tenant', role: 'member', tenant: acmeTenant },
+      session_token: 'token-bob',
+    })
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    fireEvent.change(screen.getByPlaceholderText('用户名'), { target: { value: 'bob' } })
+    fireEvent.change(screen.getByPlaceholderText('密码'), { target: { value: 'bob-password-1' } })
+    fireEvent.click(await screen.findByTestId('switch-login-submit'))
+
+    await waitFor(() => expect(login).toHaveBeenCalledWith('bob', 'bob-password-1'))
+    await waitFor(() => expect(assign).toHaveBeenCalled())
+    // 新账号已登记进注册表（与既有账号并存）
+    expect(listSavedAccounts().map((item) => item.username)).toContain('bob')
+    vi.unstubAllGlobals()
+  })
+
+  it('shows credential errors inside the inline form on 401', async () => {
+    vi.spyOn(portalApi, 'login').mockRejectedValue(new PortalApiError(401, 'invalid_credentials', '用户名或密码错误'))
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /切换账号/ }))
+
+    fireEvent.change(screen.getByPlaceholderText('用户名'), { target: { value: 'bob' } })
+    fireEvent.change(screen.getByPlaceholderText('密码'), { target: { value: 'wrong-pass' } })
+    fireEvent.click(await screen.findByTestId('switch-login-submit'))
+
+    expect(await screen.findByText('用户名或密码错误')).toBeInTheDocument()
+    expect(assign).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('opens the change-password dialog and submits a valid new password', async () => {
+    const change = vi.spyOn(portalApi, 'changePassword').mockResolvedValue({ ok: true })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /修改密码/ }))
+
+    await screen.findByText('当前密码')
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'old-password-1' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'new-password-1' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
+
+    await waitFor(() => expect(change).toHaveBeenCalledWith('old-password-1', 'new-password-1'))
+    expect(await screen.findByTestId('login-landing')).toBeInTheDocument()
+    expect(listSavedAccounts()).toHaveLength(0)
+  })
+
+  it('rejects mismatched password confirmation inside the dialog', async () => {
+    const change = vi.spyOn(portalApi, 'changePassword').mockResolvedValue({ ok: true })
+    openAccountMenu(tenantAdminSession)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /修改密码/ }))
+
+    await screen.findByText('当前密码')
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'old-password-1' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'new-password-1' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'different-pass' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
+
+    expect(await screen.findByText('两次输入的新密码不一致')).toBeInTheDocument()
+    expect(change).not.toHaveBeenCalled()
   })
 })

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { portalApi, type PortalSessionPayload, type PortalTenantOption } from '../api/portal'
+import { saveCurrentAccount } from '../app/accountRegistry'
 
 // SelectTenantPage 是一人多组织登录后的组织选择页；选择即
 // 换发会话作用域。
@@ -30,7 +31,10 @@ export function SelectTenantPage() {
   const choose = async (option: PortalTenantOption) => {
     setSelecting(option.id)
     try {
-      await portalApi.selectTenant(option.id)
+      const session = await portalApi.selectTenant(option.id)
+      if (session.session_token) {
+        saveCurrentAccount(session.user.id, session.user.username, session.session_token)
+      }
       navigate('/', { replace: true })
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : '选择组织失败')

@@ -41,6 +41,9 @@ export interface PortalSessionPayload {
   scope: PortalScope
   tenants?: PortalTenantOption[]
   support?: PortalSupportState
+  // session_token 只在登录/注册/选择组织的颁发时刻下发（多账号注册表登记用）；
+  // session 查询端点不回显。
+  session_token?: string
 }
 
 export interface PortalMember {
@@ -142,6 +145,12 @@ export const portalApi = {
   },
   selectTenant(tenantId: number): Promise<PortalSessionPayload> {
     return portalRequest('POST', '/api/portal/auth/select-tenant', { tenant_id: tenantId })
+  },
+  switchAccount(token: string): Promise<{ ok: boolean }> {
+    return portalRequest('POST', '/api/portal/auth/switch-account', { token })
+  },
+  revokeSavedSessions(tokens: string[]): Promise<{ ok: boolean }> {
+    return portalRequest('POST', '/api/portal/auth/revoke-saved', { tokens })
   },
   changePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean }> {
     return portalRequest('POST', '/api/portal/auth/change-password', {
