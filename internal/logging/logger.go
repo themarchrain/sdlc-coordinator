@@ -14,34 +14,52 @@ import (
 
 const (
 	defaultLogDir        = "logs"
+	defaultRunnerLogDir  = "logs/agent-runner"
 	defaultRetentionDays = 30
 	logFilePrefix        = "coordinator-"
+	runnerLogFilePrefix  = "agent-runner-"
 	logFileSuffix        = ".log"
 )
 
+// New 构造协调器进程的应用 logger:终端与每日 JSON 文件使用同一配置级别。
 func New(level, directory string) (*zap.Logger, error) {
+	lvl := parseLevel(level)
+	return newLogger(lvl, lvl, directory, defaultLogDir, logFilePrefix)
+}
+
+// NewRunner 构造 agent-runner 进程的应用 logger:与协调器共用编码、每日轮转与
+// 保留实现,但终端按参数级别筛选、文件固定 Debug 及以上全量留存,文件名使用
+// 独立前缀,使两个进程即使共用目录也不会互相清理对方的归档。
+func NewRunner(level, directory string) (*zap.Logger, error) {
+	return newLogger(parseLevel(level), zapcore.DebugLevel, directory, defaultRunnerLogDir, runnerLogFilePrefix)
+}
+
+func parseLevel(level string) zapcore.Level {
 	lvl, err := zapcore.ParseLevel(strings.ToLower(level))
 	if err != nil {
 		lvl = zapcore.InfoLevel
 	}
+	return lvl
+}
+
+func newLogger(consoleLevel, fileLevel zapcore.Level, directory, defaultDirectory, filePrefix string) (*zap.Logger, error) {
 	if strings.TrimSpace(directory) == "" {
-		directory = defaultLogDir
+		directory = defaultDirectory
 	}
 
 	cfg := zap.NewProductionConfig()
-	cfg.Level = zap.NewAtomicLevelAt(lvl)
 
 	consoleEncoderConfig := cfg.EncoderConfig
 	consoleEncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	consoleEncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 
-	fileWriter := newDailyWriter(directory, defaultRetentionDays, time.Now)
+	fileWriter := newDailyWriter(directory, filePrefix, defaultRetentionDays, time.Now)
 	if err := fileWriter.prepare(time.Now()); err != nil {
 		return nil, fmt.Errorf("initialize daily log writer: %w", err)
 	}
 	core := zapcore.NewTee(
-		zapcore.NewCore(zapcore.NewConsoleEncoder(consoleEncoderConfig), zapcore.Lock(os.Stderr), lvl),
-		zapcore.NewCore(zapcore.NewJSONEncoder(cfg.EncoderConfig), fileWriter, lvl),
+		zapcore.NewCore(zapcore.NewConsoleEncoder(consoleEncoderConfig), zapcore.Lock(os.Stderr), consoleLevel),
+		zapcore.NewCore(zapcore.NewJSONEncoder(cfg.EncoderConfig), fileWriter, fileLevel),
 	)
 	return zap.New(
 		core,
@@ -54,14 +72,16 @@ func New(level, directory string) (*zap.Logger, error) {
 type dailyWriter struct {
 	mu            sync.Mutex
 	directory     string
+	filePrefix    string
 	retentionDays int
 	now           func() time.Time
 	cleanedDate   string
 }
 
-func newDailyWriter(directory string, retentionDays int, now func() time.Time) *dailyWriter {
+func newDailyWriter(directory, filePrefix string, retentionDays int, now func() time.Time) *dailyWriter {
 	return &dailyWriter{
 		directory:     directory,
+		filePrefix:    filePrefix,
 		retentionDays: retentionDays,
 		now:           now,
 	}
@@ -79,7 +99,7 @@ func (w *dailyWriter) Write(data []byte) (int, error) {
 		}
 	}
 
-	path := filepath.Join(w.directory, logFilePrefix+date+logFileSuffix)
+	path := filepath.Join(w.directory, w.filePrefix+date+logFileSuffix)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return 0, fmt.Errorf("open daily log: %w", err)
@@ -120,7 +140,7 @@ func (w *dailyWriter) removeExpired(now time.Time) error {
 		if entry.IsDir() {
 			continue
 		}
-		archiveDate, ok := parseArchiveDate(entry.Name(), now.Location())
+		archiveDate, ok := parseArchiveDate(entry.Name(), w.filePrefix, now.Location())
 		if !ok || !archiveDate.Before(cutoff) {
 			continue
 		}
@@ -131,11 +151,11 @@ func (w *dailyWriter) removeExpired(now time.Time) error {
 	return nil
 }
 
-func parseArchiveDate(name string, location *time.Location) (time.Time, bool) {
-	if !strings.HasPrefix(name, logFilePrefix) || !strings.HasSuffix(name, logFileSuffix) {
+func parseArchiveDate(name, filePrefix string, location *time.Location) (time.Time, bool) {
+	if !strings.HasPrefix(name, filePrefix) || !strings.HasSuffix(name, logFileSuffix) {
 		return time.Time{}, false
 	}
-	rawDate := strings.TrimSuffix(strings.TrimPrefix(name, logFilePrefix), logFileSuffix)
+	rawDate := strings.TrimSuffix(strings.TrimPrefix(name, filePrefix), logFileSuffix)
 	parsed, err := time.ParseInLocation("2006-01-02", rawDate, location)
 	return parsed, err == nil
 }
