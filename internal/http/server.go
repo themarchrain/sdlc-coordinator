@@ -15,9 +15,6 @@ type Server struct {
 }
 
 func NewServer(addr string, handler http.Handler, logger *zap.Logger) *Server {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
 	return &Server{
 		server: &http.Server{
 			Addr:              addr,

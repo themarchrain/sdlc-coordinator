@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -15,16 +17,20 @@ type zapLogWriter struct {
 }
 
 func newZapLogWriter(logger *zap.Logger, component string) zapLogWriter {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
+	// logger 缺席时保留 nil:Write 回退 stderr 直写——框架诊断(gin panic
+	// 现场、http.Server 连接错误)迁移前恒写 stderr,漏注入不得静默消失。
 	return zapLogWriter{logger: logger, component: component}
 }
 
 func (w zapLogWriter) Write(p []byte) (int, error) {
 	message := strings.TrimSpace(ansiEscapePattern.ReplaceAllString(string(p), ""))
-	if message != "" {
-		w.logger.Error(message, zap.String("component", w.component))
+	if message == "" {
+		return len(p), nil
 	}
+	if w.logger == nil {
+		_, _ = fmt.Fprintln(os.Stderr, message)
+		return len(p), nil
+	}
+	w.logger.Error(message, zap.String("component", w.component))
 	return len(p), nil
 }
