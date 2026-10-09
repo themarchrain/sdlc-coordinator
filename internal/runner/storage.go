@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const maxDurableEventLineBytes = 16 << 20
@@ -48,14 +49,16 @@ func (s *Service) quarantineDurableEntry(root, name string, cause error) {
 	quarantineRoot := filepath.Join(root, quarantineDirName)
 	target := filepath.Join(quarantineRoot, fmt.Sprintf("%s-%d", name, time.Now().UnixNano()))
 	if err := os.MkdirAll(quarantineRoot, 0o755); err != nil {
-		log.Printf("runner: create quarantine directory failed, entry %s left in place: %v (cause: %v)", name, err, cause)
+		s.logger.Error("create quarantine directory failed",
+			zap.String("entry", name), zap.Error(err), zap.NamedError("cause", cause))
 		return
 	}
 	if err := os.Rename(filepath.Join(root, name), target); err != nil {
-		log.Printf("runner: quarantine entry %s failed: %v (cause: %v)", name, err, cause)
+		s.logger.Error("quarantine entry failed",
+			zap.String("entry", name), zap.Error(err), zap.NamedError("cause", cause))
 		return
 	}
-	log.Printf("runner: quarantined corrupted durable entry %s: %v", name, cause)
+	s.logger.Warn("quarantined corrupted durable entry", zap.String("entry", name), zap.NamedError("cause", cause))
 }
 
 func (s *Service) loadDurableExecution(directoryID string) (*executionRuntime, error) {
@@ -67,7 +70,7 @@ func (s *Service) loadDurableExecution(directoryID string) (*executionRuntime, e
 	if err := validateDurableExecution(directoryID, &execution); err != nil {
 		return nil, err
 	}
-	events := readDurableEvents(filepath.Join(root, "events.jsonl"), directoryID)
+	events := s.readDurableEvents(filepath.Join(root, "events.jsonl"), directoryID)
 	result, err := readDurableResult(filepath.Join(root, "structured-result.json"), directoryID)
 	if err != nil {
 		return nil, err
@@ -139,13 +142,14 @@ func validateDurableExecution(directoryID string, execution *Execution) error {
 	return nil
 }
 
-func readDurableEvents(path, executionID string) []Event {
+func (s *Service) readDurableEvents(path, executionID string) []Event {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
-		log.Printf("runner: read durable events %s: %v", path, err)
+		s.logger.Warn("open durable events file failed",
+			zap.String("execution_id", executionID), zap.String("path", path), zap.Error(err))
 		return nil
 	}
 	defer file.Close()
@@ -158,22 +162,23 @@ func readDurableEvents(path, executionID string) []Event {
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			// 常见形态是进程崩溃留下的尾部半行：保留已解析前缀即可，
 			// 追加事件从最大 seq 续接，不因坏行拒载整个执行。
-			log.Printf("runner: durable events %s stop at undecodable line after seq %d: %v", executionID, lastSeq, err)
+			s.logger.Warn("stop reading durable events at undecodable line",
+				zap.String("execution_id", executionID), zap.Int64("last_seq", lastSeq), zap.Error(err))
 			break
 		}
 		if event.ExecutionID != executionID {
-			log.Printf("runner: durable events %s skip foreign event seq %d", executionID, event.Seq)
+			s.logger.Warn("skip foreign durable event", zap.String("execution_id", executionID), zap.Int64("seq", event.Seq))
 			continue
 		}
 		if event.Seq <= lastSeq {
-			log.Printf("runner: durable events %s skip duplicate or out-of-order seq %d", executionID, event.Seq)
+			s.logger.Warn("skip duplicate or out-of-order durable event", zap.String("execution_id", executionID), zap.Int64("seq", event.Seq))
 			continue
 		}
 		lastSeq = event.Seq
 		events = append(events, event)
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("runner: durable events %s scan stopped: %v", executionID, err)
+		s.logger.Warn("scan durable events file failed", zap.String("execution_id", executionID), zap.Error(err))
 	}
 	return events
 }

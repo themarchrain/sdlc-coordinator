@@ -41,6 +41,7 @@ ENV TZ=Asia/Shanghai \
     AGENT_RUNNER_HTTP_ADDR=:8081 \
     AGENT_RUNNER_DATA_ROOT=/app/runner-data \
     AGENT_RUNNER_CODEX_BINARY=/opt/codex/bin/codex \
+    AGENT_RUNNER_LOG_DIR=/app/logs/agent-runner \
     GOPROXY=${GOPROXY} \
     DISABLE_AUTOUPDATER=1 \
     DISABLE_TELEMETRY=1
@@ -49,8 +50,8 @@ ENV TZ=Asia/Shanghai \
 RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/vendor/materialize.sh \
     && /opt/vendor/materialize.sh /opt/vendor \
     && rm -rf /opt/vendor \
-    && mkdir -p /app/runner-data /app/workspaces \
-    && chown runner:runner /app/runner-data /app/workspaces \
+    && mkdir -p /app/runner-data /app/workspaces /app/logs/agent-runner \
+    && chown runner:runner /app/runner-data /app/workspaces /app/logs/agent-runner \
     && test -x /opt/codex/bin/codex \
     && command -v su-exec \
     && /opt/codex/bin/codex --version \
