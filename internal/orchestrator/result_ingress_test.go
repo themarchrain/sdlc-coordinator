@@ -590,3 +590,43 @@ func newResultIngressFixture(t *testing.T) (*Orchestrator, *repository.ResultSub
 	orch := New(tasks, runs, WithArtifactRepository(repository.NewArtifactRepository(db)), WithResultSubmissionRepository(submissions))
 	return orch, submissions, tasks, runs
 }
+
+// TestDeveloperReworkFollowupFailureDoesNotBlockResultApplication 锁定"告知性
+// followup"与"结果落账"的依赖方向:任务包缺 merge_request 时通知组装必然报错,
+// 但交付结果仍必须落账到终态,而不是被整条否掉。
+func TestDeveloperReworkFollowupFailureDoesNotBlockResultApplication(t *testing.T) {
+	orch, _, tasks, runs := newResultIngressFixture(t)
+	ctx := context.Background()
+	runID := "run-rework-followup-failure"
+	task := &model.Task{
+		TaskID: "task-rework-followup-failure", DedupeKey: "github:mr-rework:1352631679:21",
+		Type: model.TaskTypeReworkMergeRequest, Role: "DeveloperWorker",
+		SourceRepo: "themarchrain/sdlc-coordinator", TargetRepo: "themarchrain/sdlc-coordinator",
+		Status: model.TaskStatusRunning, CurrentRunID: &runID, DeliveryBranch: "feat/account-center",
+		ContextJSON: `{"repos":[{"name":"sdlc-coordinator","url":"https://github.com/themarchrain/sdlc-coordinator.git","branch":"main","access":"writable"}]}`,
+	}
+	run := &model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusRunning}
+	if err := tasks.Create(ctx, task); err != nil {
+		t.Fatalf("create rework task: %v", err)
+	}
+	if err := runs.Create(ctx, run); err != nil {
+		t.Fatalf("create rework run: %v", err)
+	}
+
+	contract := results.NewDeveloperContract()
+	raw := json.RawMessage(`{"task_id":"task-rework-followup-failure","run_id":"run-rework-followup-failure","outcome":"rework_ready","summary":"updated the original MR branch","delivery":{"commit_sha":"a78d201361f203f19a94d0c9f1f7588ace8782c7","changed_files":["web/src/app/SidebarAccountMenu.tsx"],"diff_summary":"1 file changed"},"tests":[{"command":"git diff --check","passed":true,"summary":"clean"}]}`)
+	canonical, err := orch.NormalizeRoleResult(ctx, contract, raw)
+	if err != nil {
+		t.Fatalf("normalize rework result: %v", err)
+	}
+	response, err := orch.SubmitResult(ctx, SubmitResultRequest{Source: "mcp_developer", ToolName: contract.ToolName(), RawPayload: raw, Canonical: canonical})
+	if err != nil {
+		t.Fatalf("followup failure must not fail result application: %v", err)
+	}
+	if response.Task.Status != model.TaskStatusWaitingMerge || response.Run.Status != model.RunStatusSucceeded {
+		t.Fatalf("expected waiting_merge task and succeeded run, got %s/%s", response.Task.Status, response.Run.Status)
+	}
+	if response.Submission.Status != model.ResultSubmissionStatusSucceeded {
+		t.Fatalf("expected succeeded submission, got %s", response.Submission.Status)
+	}
+}

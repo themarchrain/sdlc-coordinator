@@ -589,6 +589,17 @@ func (o *Orchestrator) AdvanceTask(ctx context.Context, taskID string, next mode
 	return task, nil
 }
 
+// applyOptionalFollowup 合并"只追加告知性 writeback/effect"的 followup 结果。
+// 这类步骤失败只记日志并退回调用前的 payload:通知拼不出来既不该否掉一次已经
+// 成功的交付,也不该阻断结果落账与终态迁移。依赖方向在此翻转。
+func applyOptionalFollowup(name string, task *model.Task, runID string, payload, enriched results.CanonicalResult, err error) results.CanonicalResult {
+	if err != nil {
+		log.Printf("orchestrator: skip %s followup for task %s run %s: %v", name, task.TaskID, runID, err)
+		return payload
+	}
+	return enriched
+}
+
 func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results.CanonicalResult) (*model.Task, *model.Run, error) {
 	if payload.TaskID == "" {
 		return nil, nil, errors.New("result task_id is required")
@@ -608,14 +619,10 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	if isStaleRunForTask(task, run.RunID) {
 		return o.applyStaleRunResult(ctx, task, run, payload)
 	}
-	payload, err = o.withDeveloperReworkFollowups(ctx, task, payload)
-	if err != nil {
-		return nil, nil, err
-	}
-	payload, err = o.withDeveloperClarificationFollowups(task, payload)
-	if err != nil {
-		return nil, nil, err
-	}
+	enriched, followupErr := o.withDeveloperReworkFollowups(ctx, task, payload)
+	payload = applyOptionalFollowup("developer rework", task, run.RunID, payload, enriched, followupErr)
+	enriched, followupErr = o.withDeveloperClarificationFollowups(task, payload)
+	payload = applyOptionalFollowup("developer clarification", task, run.RunID, payload, enriched, followupErr)
 	if err := validateCodeHostWritebacksForTask(task, payload); err != nil {
 		return nil, nil, err
 	}
@@ -626,14 +633,10 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		if err := o.applyCodeHostWritebacks(ctx, payload); err != nil {
 			return nil, nil, err
 		}
-		payload, err = o.withDeveloperDeliveryFollowups(ctx, task, payload)
-		if err != nil {
-			return nil, nil, err
-		}
-		payload, err = o.withReviewerFollowups(ctx, task, payload)
-		if err != nil {
-			return nil, nil, err
-		}
+		enriched, followupErr = o.withDeveloperDeliveryFollowups(ctx, task, payload)
+		payload = applyOptionalFollowup("developer delivery", task, run.RunID, payload, enriched, followupErr)
+		enriched, followupErr = o.withReviewerFollowups(ctx, task, payload)
+		payload = applyOptionalFollowup("reviewer", task, run.RunID, payload, enriched, followupErr)
 		if err := o.materializeResultEffects(ctx, payload); err != nil {
 			return nil, nil, err
 		}
@@ -651,14 +654,10 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	if err := o.applyCodeHostWritebacks(ctx, payload); err != nil {
 		return nil, nil, err
 	}
-	payload, err = o.withDeveloperDeliveryFollowups(ctx, task, payload)
-	if err != nil {
-		return nil, nil, err
-	}
-	payload, err = o.withReviewerFollowups(ctx, task, payload)
-	if err != nil {
-		return nil, nil, err
-	}
+	enriched, followupErr = o.withDeveloperDeliveryFollowups(ctx, task, payload)
+	payload = applyOptionalFollowup("developer delivery", task, run.RunID, payload, enriched, followupErr)
+	enriched, followupErr = o.withReviewerFollowups(ctx, task, payload)
+	payload = applyOptionalFollowup("reviewer", task, run.RunID, payload, enriched, followupErr)
 	if err := o.materializeResultEffects(ctx, payload); err != nil {
 		return nil, nil, err
 	}
