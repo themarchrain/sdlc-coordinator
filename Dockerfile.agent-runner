@@ -46,10 +46,8 @@ ENV TZ=Asia/Shanghai \
     DISABLE_AUTOUPDATER=1 \
     DISABLE_TELEMETRY=1
 
-RUN printf '%s\n' \
-      'export PATH=/usr/local/go/bin:/opt/codex/bin:/opt/claude/bin:/opt/node/bin:/opt/jdk/bin:/opt/maven/bin:$PATH' \
-      > /etc/profile.d/00-toolchain-path.sh \
-    && chmod 0644 /etc/profile.d/00-toolchain-path.sh \
+RUN sed -i '1i agent_runner_original_path=$PATH' /etc/profile \
+    && printf '\n%s\n' 'export PATH="$agent_runner_original_path"' 'unset agent_runner_original_path' >> /etc/profile \
     && ln -s /usr/local/go/bin/go /usr/local/bin/go \
     && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 
@@ -68,6 +66,7 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/ven
          for mode in -c -lc; do \
            su-exec runner "$shell" "$mode" 'command -v go && command -v gofmt && command -v codex && go version && test "$(go env GOROOT)" = /usr/local/go' || exit 1; \
          done; \
+         su-exec runner env PATH="/agent-runner-path-check:$PATH" AGENT_RUNNER_EXPECTED_PATH="/agent-runner-path-check:$PATH" "$shell" -lc 'test "$PATH" = "$AGENT_RUNNER_EXPECTED_PATH"' || exit 1; \
        done \
     && su-exec runner env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/sh -c 'go version && gofmt -h && test "$(go env GOROOT)" = /usr/local/go' \
     && python3 --version | grep -q 'Python 3\.1[2-9]' \
