@@ -418,6 +418,48 @@ func TestTaskRepositoryListDispatchable(t *testing.T) {
 	}
 }
 
+func TestTaskRepositoryListDispatchableAfterClaimedCursor(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(db, &model.Task{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewTaskRepository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	keys := []string{"later-timestamp", "cursor", "same-timestamp", "running"}
+	for i, updatedAt := range []time.Time{now.Add(time.Minute), now, now, now.Add(2 * time.Minute)} {
+		task := &model.Task{TaskID: keys[i], DedupeKey: keys[i], Role: "DeveloperWorker", Type: "bugfix", Status: model.TaskStatusPending, UpdatedAt: updatedAt}
+		if i == 3 {
+			task.Status = model.TaskStatusRunning
+		}
+		if err := repo.Create(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := repo.ListDispatchable(ctx, 1)
+	if err != nil || len(first) != 1 || first[0].TaskID != "cursor" {
+		t.Fatalf("unexpected first page: tasks=%#v err=%v", first, err)
+	}
+	if err := repo.Claim(ctx, first[0].TaskID, "cursor-run", now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	throughID, err := repo.MaxTaskID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := repo.ListDispatchableAfter(ctx, &first[0], 1, throughID)
+	if err != nil || len(second) != 1 || second[0].TaskID != "same-timestamp" {
+		t.Fatalf("claimed cursor must not skip equal-timestamp successor: tasks=%#v err=%v", second, err)
+	}
+	last, err := repo.ListDispatchableAfter(ctx, &second[0], 10, throughID)
+	if err != nil || len(last) != 1 || last[0].TaskID != "later-timestamp" {
+		t.Fatalf("later timestamp must take priority over ID, excluding running tasks: tasks=%#v err=%v", last, err)
+	}
+}
+
 func TestTaskRepositoryBlockRunAndRequireHumanRollsBackOnTaskFailure(t *testing.T) {
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {

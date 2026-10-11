@@ -186,7 +186,35 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 	if err != nil {
 		return nil, fmt.Errorf("list dispatchable tasks: %w", err)
 	}
-	for _, task := range dispatchableTasks {
+	remaining := len(dispatchableTasks)
+	seen := make(map[uint]struct{})
+	var dispatchCursor *model.Task
+	var throughID uint
+	if remaining > 0 {
+		dispatchCursor = &dispatchableTasks[remaining-1]
+		throughID, err = o.tasks.MaxTaskID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("bound dispatchable task scan: %w", err)
+		}
+	}
+	for index := 0; remaining > 0; index++ {
+		if index == len(dispatchableTasks) {
+			dispatchableTasks, err = o.tasks.ListDispatchableAfter(ctx, dispatchCursor, remaining, throughID)
+			if err != nil {
+				return nil, fmt.Errorf("list further dispatchable tasks: %w", err)
+			}
+			if len(dispatchableTasks) == 0 {
+				break
+			}
+			dispatchCursor = &dispatchableTasks[len(dispatchableTasks)-1]
+			index = 0
+		}
+		task := dispatchableTasks[index]
+		if _, ok := seen[task.ID]; ok {
+			continue
+		}
+		seen[task.ID] = struct{}{}
+		remaining--
 		var dispatchResult *DispatchResult
 		// 仓库注册门禁（registeredrepo）：未绑定/未启用的任务不得派发。
 		if err := o.assertRepositoryDispatchable(ctx, &task); err != nil {
@@ -231,6 +259,7 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 			// 同 MR 有更早的活跃审查时派发被有意延后，等前序 settle 后下个
 			// Tick 自然重试；这是预期等待，不是失败。
 			if errors.Is(err, ErrReviewerDispatchDeferred) {
+				remaining++
 				continue
 			}
 			failed := DispatchTickResult{TaskID: task.TaskID, Error: err.Error()}

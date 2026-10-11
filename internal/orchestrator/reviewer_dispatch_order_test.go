@@ -134,7 +134,7 @@ func TestTickOrdersPendingReviewerHeads(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	result, err := orch.Tick(ctx, TickRequest{DispatchLimit: 10})
+	result, err := orch.Tick(ctx, TickRequest{DispatchLimit: 1})
 	if err != nil || len(result.DispatchFailures) != 0 || len(result.DispatchedTasks) != 1 || runner.startCalls != 1 {
 		t.Fatalf("only the oldest pending head must start: result=%#v starts=%d err=%v", result, runner.startCalls, err)
 	}
@@ -169,5 +169,153 @@ func TestReviewerDispatchDoesNotBlockOtherIdentities(t *testing.T) {
 				t.Fatalf("unrelated identity must start: starts=%d err=%v", runner.startCalls, err)
 			}
 		})
+	}
+}
+
+func TestTickRetriesReviewerPredecessorBeyondDispatchWindow(t *testing.T) {
+	for _, limit := range []int{1, 5} {
+		for _, failStart := range []bool{false, true} {
+			t.Run(fmt.Sprintf("limit_%d/fail_start_%t", limit, failStart), func(t *testing.T) {
+				ctx := context.Background()
+				tasks, runs := newTickRepositories(t)
+				runner := &fakeReviewerRunnerCoordinator{reconcileResult: &ReviewerRunnerReconcileResult{
+					Execution: &model.AgentExecution{Status: model.AgentExecutionStatusRunning},
+				}}
+				if failStart {
+					runner.startErrors = []error{errors.New("runner temporarily unavailable"), nil}
+				}
+				orch := New(tasks, runs, WithReviewerRunner(runner, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
+				a := reviewerRunnerTickTask("head-a", model.TaskStatusRunning)
+				a.DedupeKey = "github:mr-review:42:21:head-a"
+				if err := tasks.Create(ctx, a); err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < limit+2; i++ {
+					b := reviewerRunnerTickTask(fmt.Sprintf("head-b-%d", i), model.TaskStatusPending)
+					b.DedupeKey = "github:mr-review:42:21:" + b.TaskID
+					b.UpdatedAt = time.Unix(2, 0)
+					if err := tasks.Create(ctx, b); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := orch.AdvanceTask(ctx, a.TaskID, model.TaskStatusRetryPending); err != nil {
+					t.Fatal(err)
+				}
+				for tick := 0; tick < 3; tick++ {
+					result, err := orch.Tick(ctx, TickRequest{DispatchLimit: limit})
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantDispatched, wantFailures := 0, 0
+					if tick == 0 && failStart {
+						wantFailures = 1
+					} else if tick == 0 || tick == 1 && failStart {
+						wantDispatched = 1
+					}
+					if len(result.DispatchedTasks) != wantDispatched || len(result.DispatchFailures) != wantFailures {
+						t.Fatalf("tick %d: retry predecessor must be reachable without same-tick retry: %#v", tick+1, result)
+					}
+				}
+				wantStarts := 1
+				if failStart {
+					wantStarts = 2
+				}
+				if runner.startCalls != wantStarts || runner.startRequest.Task.TaskID != a.TaskID {
+					t.Fatalf("only predecessor must start: calls=%d task=%s", runner.startCalls, runner.startRequest.Task.TaskID)
+				}
+				for i := 0; i < limit+2; i++ {
+					b, err := tasks.GetByTaskID(ctx, fmt.Sprintf("head-b-%d", i))
+					if err != nil || b.Status != model.TaskStatusPending || b.CurrentRunID != nil || b.AttemptCount != 0 {
+						t.Fatalf("waiting head must remain unclaimed: task=%#v err=%v", b, err)
+					}
+				}
+				if _, err := orch.AdvanceTask(ctx, a.TaskID, model.TaskStatusSucceeded); err != nil {
+					t.Fatal(err)
+				}
+				result, err := orch.Tick(ctx, TickRequest{DispatchLimit: limit})
+				if err != nil || len(result.DispatchedTasks) != 1 || len(result.DispatchFailures) != 0 || runner.startRequest.Task.TaskID != "head-b-0" {
+					t.Fatalf("oldest waiting head must start after predecessor settles: result=%#v err=%v", result, err)
+				}
+				if _, err := orch.Tick(ctx, TickRequest{DispatchLimit: limit}); err != nil {
+					t.Fatal(err)
+				}
+				if runner.startCalls != wantStarts+1 {
+					t.Fatalf("waiting heads must not start concurrently or repeatedly: %d starts", runner.startCalls)
+				}
+			})
+		}
+	}
+}
+
+func TestTickDispatchesOtherMRBeyondDeferredReviewerWindow(t *testing.T) {
+	for _, limit := range []int{1, 5} {
+		t.Run(fmt.Sprintf("limit_%d", limit), func(t *testing.T) {
+			ctx := context.Background()
+			tasks, runs := newTickRepositories(t)
+			runner := &fakeReviewerRunnerCoordinator{}
+			orch := New(tasks, runs, WithReviewerRunner(runner, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
+			for i := 0; i < 2*limit+4; i++ {
+				status := model.TaskStatusPending
+				if i == 0 {
+					status = model.TaskStatusRunning
+				}
+				task := reviewerRunnerTickTask(fmt.Sprintf("head-%d", i), status)
+				task.DedupeKey = "gitlab:mr-review:42:21:" + task.TaskID
+				task.UpdatedAt = time.Unix(2, 0)
+				if i >= limit+3 {
+					iid := i + 22
+					task.DedupeKey = fmt.Sprintf("gitlab:mr-review:42:%d:%s", iid, task.TaskID)
+					task.ContextJSON = strings.Replace(task.ContextJSON, `"iid":21`, fmt.Sprintf(`"iid":%d`, iid), 1)
+				}
+				if err := tasks.Create(ctx, task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := orch.Tick(ctx, TickRequest{DispatchLimit: limit})
+			if err != nil || len(result.DispatchedTasks) != limit || len(result.DispatchFailures) != 0 || runner.startCalls != limit {
+				t.Fatalf("unrelated MRs must fill but not exceed the dispatch budget: result=%#v starts=%d err=%v", result, runner.startCalls, err)
+			}
+			for i, dispatched := range result.DispatchedTasks {
+				if dispatched.TaskID != fmt.Sprintf("head-%d", limit+3+i) {
+					t.Fatalf("wrong task dispatched: %#v", dispatched)
+				}
+			}
+		})
+	}
+}
+
+type arrivingReviewerTaskRepository struct {
+	TaskRepository
+	arrivals int
+}
+
+func (r *arrivingReviewerTaskRepository) HasActiveReviewerTaskForDedupePrefix(ctx context.Context, prefix, excludeTaskID string) (bool, error) {
+	r.arrivals++
+	if r.arrivals > 10 {
+		return false, errors.New("tick kept absorbing newly arriving heads")
+	}
+	task := reviewerRunnerTickTask(fmt.Sprintf("arrival-%d", r.arrivals), model.TaskStatusPending)
+	task.DedupeKey = prefix + task.TaskID
+	if err := r.Create(ctx, task); err != nil {
+		return false, err
+	}
+	return r.TaskRepository.HasActiveReviewerTaskForDedupePrefix(ctx, prefix, excludeTaskID)
+}
+
+func TestTickLeavesNewReviewerArrivalsForNextTick(t *testing.T) {
+	ctx := context.Background()
+	tasks, runs := newTickRepositories(t)
+	for i, status := range []model.TaskStatus{model.TaskStatusRunning, model.TaskStatusPending} {
+		task := reviewerRunnerTickTask(fmt.Sprintf("head-%d", i), status)
+		task.DedupeKey = "github:mr-review:42:21:" + task.TaskID
+		if err := tasks.Create(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := &arrivingReviewerTaskRepository{TaskRepository: tasks}
+	orch := New(repo, runs, WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
+	result, err := orch.Tick(ctx, TickRequest{DispatchLimit: 1})
+	if err != nil || len(result.DispatchFailures) != 0 || len(result.DispatchedTasks) != 0 || repo.arrivals != 1 {
+		t.Fatalf("tick must stop at its initial candidate boundary: result=%#v arrivals=%d err=%v", result, repo.arrivals, err)
 	}
 }
