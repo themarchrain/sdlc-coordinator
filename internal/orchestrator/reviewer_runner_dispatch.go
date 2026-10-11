@@ -23,21 +23,21 @@ const agentRunnerExternalSystem = "agent-runner"
 // Tick 层把它视为预期等待而非失败。
 var ErrReviewerDispatchDeferred = errors.New("reviewer dispatch deferred: an earlier review for this merge request is still active")
 
-// reviewerDedupePrefix 由任务归属构造同 MR 审查任务的 DedupeKey 前缀
-// （gitlab:mr-review:<project>:<iid>:）。上下文缺失时返回错误，由调用方放行派发。
 func reviewerDedupePrefix(task *model.Task) (string, error) {
-	var taskContext struct {
-		MergeRequest struct {
-			IID int `json:"iid"`
-		} `json:"merge_request"`
+	parts := strings.Split(task.DedupeKey, ":")
+	if len(parts) != 5 || parts[1] != "mr-review" || parts[2] == "" || parts[4] == "" {
+		return "", errors.New("reviewer dispatch requires a review dedupe key")
 	}
-	if err := json.Unmarshal([]byte(task.ContextJSON), &taskContext); err != nil {
-		return "", fmt.Errorf("decode reviewer dispatch context: %w", err)
+	switch parts[0] {
+	case "github", "gitlab", "gitea":
+	default:
+		return "", errors.New("unsupported reviewer dedupe key platform")
 	}
-	if strings.TrimSpace(task.TargetRepo) == "" || taskContext.MergeRequest.IID <= 0 {
-		return "", errors.New("reviewer dispatch requires target repository and merge request iid")
+	iid, err := strconv.Atoi(parts[3])
+	if err != nil || iid <= 0 {
+		return "", errors.New("reviewer dispatch requires merge request iid")
 	}
-	return "gitlab:mr-review:" + strings.TrimSpace(task.TargetRepo) + ":" + strconv.Itoa(taskContext.MergeRequest.IID) + ":", nil
+	return strings.Join(parts[:4], ":") + ":", nil
 }
 
 func (o *Orchestrator) DispatchReviewerTask(ctx context.Context, taskID string) (*DispatchResult, error) {

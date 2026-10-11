@@ -68,6 +68,9 @@ func (r *TaskRepository) HasActiveReviewerTaskForDedupePrefix(ctx context.Contex
 			model.TaskStatusFinalizing, model.TaskStatusRetryPending,
 		}).
 		Where("task_id <> ?", excludeTaskID).
+		Where("(id < (?) OR status IN ?)",
+			r.db.Model(&model.Task{}).Select("id").Where("task_id = ?", excludeTaskID),
+			[]model.TaskStatus{model.TaskStatusClaimed, model.TaskStatusRunning, model.TaskStatusFinalizing}).
 		Where("substr(dedupe_key, 1, ?) = ?", len(prefix), prefix).
 		Count(&count).Error
 	if err != nil {

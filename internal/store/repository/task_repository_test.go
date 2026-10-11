@@ -523,3 +523,40 @@ func TestTaskRepositoryFindsActiveReviewerByDedupePrefix(t *testing.T) {
 		t.Fatalf("own prefix with only self pending must not self-defer: active=%v err=%v", active, err)
 	}
 }
+
+func TestReviewerDedupePrefixWaitsForPredecessorsAndExecutingSuccessors(t *testing.T) {
+	for _, status := range []model.TaskStatus{
+		model.TaskStatusPending, model.TaskStatusRetryPending, model.TaskStatusClaimed,
+		model.TaskStatusRunning, model.TaskStatusFinalizing, model.TaskStatusSucceeded,
+		model.TaskStatusBlocked, model.TaskStatusHumanRequired, model.TaskStatusWaitingMerge,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			db, err := store.Open("file:" + model.NewID("review_order") + "?mode=memory&cache=shared")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Migrate(db, &model.Task{}); err != nil {
+				t.Fatal(err)
+			}
+			repo := NewTaskRepository(db)
+			ctx := context.Background()
+			prefix := "github:mr-review:42:21:"
+			a := &model.Task{TaskID: "head-a", DedupeKey: prefix + "a", Type: "review_mr", Role: "ReviewerWorker", Status: model.TaskStatusRetryPending}
+			b := &model.Task{TaskID: "head-b", DedupeKey: prefix + "b", Type: "review_mr", Role: "ReviewerWorker", Status: status}
+			for _, task := range []*model.Task{a, b} {
+				if err := repo.Create(ctx, task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			active, err := repo.HasActiveReviewerTaskForDedupePrefix(ctx, prefix, a.TaskID)
+			want := status == model.TaskStatusClaimed || status == model.TaskStatusRunning || status == model.TaskStatusFinalizing
+			if err != nil || active != want {
+				t.Fatalf("successor %s: active=%v want=%v err=%v", status, active, want, err)
+			}
+			active, err = repo.HasActiveReviewerTaskForDedupePrefix(ctx, prefix, b.TaskID)
+			if err != nil || !active {
+				t.Fatalf("retry-pending predecessor must block: active=%v err=%v", active, err)
+			}
+		})
+	}
+}
