@@ -34,6 +34,14 @@ var (
 	ErrNotAuthorized = errors.New("workspace operation is not currently authorized")
 )
 
+// ExecutionRight 是状态改变类操作随请求携带的执行权身份（交付租约
+// owner+generation）；授权确认据此拒绝接管后旧持有者的新请求。零值表示
+// 请求未携带执行权身份（非交付类操作）。
+type ExecutionRight struct {
+	Owner      string
+	Generation uint64
+}
+
 const (
 	workspaceOpStatusInFlight  = "in_flight"
 	workspaceOpStatusCompleted = "completed"
@@ -288,7 +296,7 @@ func (o *WorkspaceOps) CommitWorkspace(ctx context.Context, request workspacepro
 				return workspaceproto.CommitResult{}, err
 			}
 			return workspaceproto.CommitResult{OperationID: request.OperationID, CommitSHA: commitResult.CommitSHA}, nil
-		})
+		}, ExecutionRight{Owner: request.Owner, Generation: request.Generation})
 	return result, err
 }
 
@@ -313,8 +321,96 @@ func (o *WorkspaceOps) PushWorkspace(ctx context.Context, request workspaceproto
 				OperationID: request.OperationID, CommitSHA: delivery.CommitSHA,
 				RemoteHeadSHA: delivery.CommitSHA, ChangedFiles: delivery.ChangedFiles, DiffSummary: delivery.DiffSummary,
 			}, nil
+		}, ExecutionRight{Owner: request.Owner, Generation: request.Generation})
+	return result, err
+}
+
+// taskBundleFileNames 是任务包允许落盘的文件名白名单（与协调器共享渲染器
+// internal/agent.RenderTaskBundle 的三个常量对应）：绝不允许请求方指定
+// 任意路径组件，防目录穿越。
+var taskBundleFileNames = []string{"task-context.json", "result-schema.json", "prompt.md"}
+
+// PublishTaskBundle 把任务包投递到本 Runner 的 run 工作区：协调器与 Runner
+// 各自独占文件系统时，任务包不走协调器本地路径而是经受控通道落盘。内容
+// 由协调器以共享渲染器生成、逐字节投递（不做二次编码）；run 工作区必须先
+// 经 prepare 建立，未准备即拒绝（fail-closed，不隐式创建目录）。
+func (o *WorkspaceOps) PublishTaskBundle(ctx context.Context, request workspaceproto.TaskBundleRequest) (workspaceproto.TaskBundleResult, error) {
+	if missing := missingTaskBundleFiles(request.Files); len(missing) > 0 {
+		return workspaceproto.TaskBundleResult{}, fmt.Errorf("task bundle is missing required files: %s", strings.Join(missing, ", "))
+	}
+	for name := range request.Files {
+		if !taskBundleFileAllowed(name) {
+			return workspaceproto.TaskBundleResult{}, fmt.Errorf("task bundle file %q is not allowed", name)
+		}
+	}
+	hash, err := workspaceproto.PayloadHash(request)
+	if err != nil {
+		return workspaceproto.TaskBundleResult{}, err
+	}
+	runRoot := filepath.Join(o.workspaceRoot, "runs", strings.TrimSpace(request.RunID))
+	result, _, err := runWorkspaceOp(ctx, o, workspaceproto.KindTaskBundle, request.OperationID, request.TenantID, request.TaskID, request.RunID, hash, nil,
+		func(ctx context.Context) (workspaceproto.TaskBundleResult, error) {
+			info, statErr := os.Stat(runRoot)
+			if statErr != nil || !info.IsDir() {
+				return workspaceproto.TaskBundleResult{}, fmt.Errorf("run workspace %s is not prepared on this runner", request.RunID)
+			}
+			// 白名单顺序落盘（map 迭代序不定，固定顺序便于复现与诊断）。
+			for _, name := range taskBundleFileNames {
+				content, ok := request.Files[name]
+				if !ok {
+					continue
+				}
+				if err := writeTaskBundleFileAtomic(filepath.Join(runRoot, name), []byte(content)); err != nil {
+					return workspaceproto.TaskBundleResult{}, err
+				}
+			}
+			return workspaceproto.TaskBundleResult{OperationID: request.OperationID, WorkspacePath: runRoot}, nil
 		})
 	return result, err
+}
+
+func missingTaskBundleFiles(files map[string]string) []string {
+	var missing []string
+	for _, name := range taskBundleFileNames {
+		if _, ok := files[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+func taskBundleFileAllowed(name string) bool {
+	for _, allowed := range taskBundleFileNames {
+		if name == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// writeTaskBundleFileAtomic 与协调器本机形态同规：临时文件 0600 落盘后显式
+// 放宽到 0666 再发布——CLI 以非特权用户运行，文件必须可读。
+func writeTaskBundleFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary %s: %w", filepath.Base(path), err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temporary %s: %w", filepath.Base(path), err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary %s: %w", filepath.Base(path), err)
+	}
+	if err := os.Chmod(tmpPath, 0o666); err != nil {
+		return fmt.Errorf("share temporary %s: %w", filepath.Base(path), err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("publish %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // CleanupWorkspace 清理 run 工作区（仅协调器在 run 终态后发起）。
@@ -367,7 +463,7 @@ func gatedWorkspaceKind(kind string) bool {
 	}
 }
 
-func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operationID string, tenantID uint, taskID, runID, payloadHash string, secrets []string, exec func(context.Context) (T, error)) (T, bool, error) {
+func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operationID string, tenantID uint, taskID, runID, payloadHash string, secrets []string, exec func(context.Context) (T, error), executionRight ...ExecutionRight) (T, bool, error) {
 	var zero T
 	operationID = strings.TrimSpace(operationID)
 	if !operationIDPattern.MatchString(operationID) {
@@ -384,8 +480,13 @@ func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operation
 		if o.authorize == nil {
 			return zero, false, fmt.Errorf("%w: %s is a state changing operation and the runner has no authorization channel configured", ErrNotAuthorized, operationID)
 		}
+		owner, generation := "", uint64(0)
+		for _, right := range executionRight {
+			owner, generation = right.Owner, right.Generation
+		}
 		decision, authErr := o.authorize(ctx, workspaceproto.AuthorizationRequest{
 			OperationID: operationID, Kind: kind, TenantID: tenantID, TaskID: taskID, RunID: runID, PayloadHash: payloadHash,
+			Owner: owner, Generation: generation,
 		})
 		if authErr != nil {
 			return zero, false, fmt.Errorf("confirm workspace operation authorization: %w", authErr)

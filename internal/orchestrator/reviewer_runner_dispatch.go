@@ -197,17 +197,32 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 		// 不推进任务，防止把已推进的任务回拉。
 		return nil
 	}
-	next := o.policy.NextFailureStatus(task)
-	advanced, err := o.AdvanceTask(ctx, task.TaskID, next)
+	// 当前 run 栅栏：run 已不是任务的当前 run（run2 已接管/重派）时，run1
+	// 的迟到失败只终态化 run1 自身，绝不推进 task——否则会把 run2 正在跑
+	// 的任务推入 retry_pending 并清掉当前执行权。
+	if task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
+		return nil
+	}
+	// 推进本身也带 current_run_id 条件：读 task 与本条 UPDATE 之间仍可能
+	// 发生接管，条件写把该窗口一同关闭；0 行即接管已发生，静默收敛。
+	previous := task.Status
+	if err := o.stateMachine.Transition(task, o.policy.NextFailureStatus(task)); err != nil {
+		return err
+	}
+	o.policy.Apply(task, previous, task.Status, o.now())
+	advanced, err := o.tasks.AdvanceGuardedForCurrentRun(ctx, task, previous, run.RunID)
 	if err != nil {
 		return err
 	}
-	// 通知物化先于错误信息回写:AdvanceTask 已把停靠状态落库,LastError
-	// 回写遇瞬态故障提前返回时 run 已终态、后续对账被吸收,错过即永失
-	// (与 recordDispatchFailure 的吞错照发对齐)。
-	o.materializeTesterStopIMEffect(ctx, advanced, message)
-	advanced.LastError = message
-	if _, err := o.tasks.UpdateLastErrorIfStatus(ctx, advanced.TaskID, advanced.Status, message); err != nil {
+	if !advanced {
+		return nil
+	}
+	// 通知物化先于错误信息回写:推进已把停靠状态落库,LastError 回写遇瞬态
+	// 故障提前返回时 run 已终态、后续对账被吸收,错过即永失(与
+	// recordDispatchFailure 的吞错照发对齐)。
+	o.materializeTesterStopIMEffect(ctx, task, message)
+	task.LastError = message
+	if _, err := o.tasks.UpdateLastErrorIfStatus(ctx, task.TaskID, task.Status, message); err != nil {
 		return err
 	}
 	return nil

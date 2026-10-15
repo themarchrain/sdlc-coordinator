@@ -8,6 +8,6 @@ type LocalRunWorkspaceCleaner struct {
 	WorkspaceRoot string
 }
 
-func (c LocalRunWorkspaceCleaner) RemoveRunWorkspace(_ context.Context, runID string) error {
+func (c LocalRunWorkspaceCleaner) RemoveRunWorkspace(_ context.Context, _, runID string) error {
 	return RemoveRunDirectory(c.WorkspaceRoot, runID)
 }

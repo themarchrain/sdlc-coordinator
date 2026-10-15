@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -135,12 +136,27 @@ func (service *Service) Validate(request UpdateRequest) ValidationErrors {
 func (service *Service) Update(ctx context.Context, request UpdateRequest) (*UpdateResult, ValidationErrors, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	candidate := mergeUpdate(service.current, request)
+	// 合并基线必须取库内最新快照而非本进程缓存：负载均衡下 A 改字段 X 后
+	// B 的提交可能仍带着 B 的旧缓存，按旧缓存整包发新 revision 会把 X
+	// 恢复成旧值（多实例配置回退）。库内最新快照是唯一权威基线，CAS 期望
+	// 版本与其绑定——保存窗口内的并发提交由 ErrRevisionConflict 拒绝。
+	baseline := service.current
+	expectedRevision := uint64(0)
+	latest, err := service.repository.Latest(ctx)
+	switch {
+	case err == nil:
+		baseline = latest.Config
+		expectedRevision = latest.Revision
+	case errors.Is(err, ErrSnapshotNotFound):
+	default:
+		return nil, nil, fmt.Errorf("load latest runtime configuration: %w", err)
+	}
+	candidate := mergeUpdate(baseline, request)
 	validationErrors := Validate(candidate)
 	if len(validationErrors) > 0 {
 		return nil, validationErrors, nil
 	}
-	snapshot, err := service.repository.Save(ctx, StatusRestartRequired, SourceUI, candidate)
+	snapshot, err := service.repository.SaveGuarded(ctx, StatusRestartRequired, SourceUI, candidate, expectedRevision)
 	if err != nil {
 		return nil, nil, fmt.Errorf("save runtime configuration: %w", err)
 	}

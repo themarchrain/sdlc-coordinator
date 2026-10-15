@@ -105,6 +105,23 @@ func (s *Service) publishRequirement(ctx context.Context, item *Requirement) (pu
 			_, _ = s.leases.Release(releaseCtx, lease.Scope, lease.Owner, lease.Generation)
 		}()
 	}
+	// 取得租约后重读:列表时的快照可能已过期(上一持有者发布完成、镜像轮
+	// 已推进到 done、或人工完成)。租约保证此刻单持有者,不保证旧快照的
+	// 状态仍成立——旧观察整行回写会把 done 回退成 published。
+	fresh, err := s.store.Get(ctx, item.RequirementID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publishSkipped, nil
+		}
+		return publishFailed, err
+	}
+	switch fresh.Status {
+	case StatusQueued, StatusFailed:
+		*item = *fresh
+	default:
+		// 已发布/完成/取消:不再发布,不再写回。
+		return publishSkipped, nil
+	}
 	repo, err := s.repositories.Get(ctx, item.RepositoryID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -115,7 +132,8 @@ func (s *Service) publishRequirement(ctx context.Context, item *Requirement) (pu
 	if repo.Status != registeredrepo.StatusEnabled {
 		// 禁用可能是临时的:保持 queued,只写提示,不置 failed。
 		item.LastError = "repository is not enabled"
-		return publishSkipped, s.store.Update(ctx, item)
+		_, err := s.store.UpdateStatusGuarded(ctx, item, fresh.Status)
+		return publishSkipped, err
 	}
 	if s.clients == nil {
 		return publishFailed, s.markFailure(ctx, item, "codehost client factory is required")
@@ -138,10 +156,19 @@ func (s *Service) publishRequirement(ctx context.Context, item *Requirement) (pu
 		if parseErr != nil {
 			return publishFailed, s.markFailure(ctx, item, "recovered issue iid is not numeric")
 		}
+		expected := fresh.Status
 		item.IssueIID = iid
 		item.IssueURL = found.ExternalURL
 		markPublished(item)
-		return publishRecovered, s.store.Update(ctx, item)
+		applied, err := s.store.UpdateStatusGuarded(ctx, item, expected)
+		if err != nil {
+			return publishFailed, err
+		}
+		if !applied {
+			// 并发状态前移:远端 issue 已存在,下一轮签名回查会幂等绑定。
+			return publishSkipped, nil
+		}
+		return publishRecovered, nil
 	}
 
 	issue, err := client.CreateIssue(ctx, projectID, codehost.CreateIssueRequest{
@@ -152,10 +179,18 @@ func (s *Service) publishRequirement(ctx context.Context, item *Requirement) (pu
 	if err != nil {
 		return publishFailed, s.markFailure(ctx, item, err.Error())
 	}
+	expected := fresh.Status
 	item.IssueIID = issue.IID
 	item.IssueURL = issue.WebURL
 	markPublished(item)
-	return publishCreated, s.store.Update(ctx, item)
+	applied, err := s.store.UpdateStatusGuarded(ctx, item, expected)
+	if err != nil {
+		return publishFailed, err
+	}
+	if !applied {
+		return publishSkipped, nil
+	}
+	return publishCreated, nil
 }
 
 func markPublished(item *Requirement) {
@@ -166,9 +201,11 @@ func markPublished(item *Requirement) {
 }
 
 func (s *Service) markFailure(ctx context.Context, item *Requirement, message string) error {
+	expected := item.Status
 	item.Status = StatusFailed
 	item.LastError = truncateMessage(message, 500)
-	return s.store.Update(ctx, item)
+	_, err := s.store.UpdateStatusGuarded(ctx, item, expected)
+	return err
 }
 
 func (s *Service) mirrorPublishedRequirements(ctx context.Context) (mirrored, mirrorErrors int, err error) {

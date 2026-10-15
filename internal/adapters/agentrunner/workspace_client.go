@@ -33,6 +33,14 @@ func (c *Client) PrepareWorkspace(ctx context.Context, request workspaceproto.Pr
 	return &result, nil
 }
 
+func (c *Client) PublishTaskBundle(ctx context.Context, request workspaceproto.TaskBundleRequest) (*workspaceproto.TaskBundleResult, error) {
+	var result workspaceproto.TaskBundleResult
+	if err := c.do(ctx, http.MethodPost, "/internal/workspace/bundle", request, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) CommitWorkspace(ctx context.Context, request workspaceproto.CommitRequest) (*workspaceproto.CommitResult, error) {
 	var result workspaceproto.CommitResult
 	if err := c.do(ctx, http.MethodPost, "/internal/workspace/commit", request, &result); err != nil {

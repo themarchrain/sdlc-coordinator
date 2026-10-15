@@ -83,6 +83,31 @@ func (r *RunRepository) UpdateDispatchProjection(ctx context.Context, runID, ext
 	return nil
 }
 
+// PinRunnerEndpointIfEmpty 仅在 run 尚未钉住 runner 端点时写入端点列（列级
+// 条件更新，动机同 UpdateProviderIfEmpty）。端点必须在工作区准备之前钉住：
+// 准备、任务包投递、执行、commit/push、清理全链按同一端点寻址，崩溃恢复
+// 路径按钉住值重放，不换 runner。
+func (r *RunRepository) PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (runner_endpoint = '' OR runner_endpoint IS NULL)", runID).
+		Update("runner_endpoint", endpoint).Error; err != nil {
+		return fmt.Errorf("pin run runner endpoint: %w", err)
+	}
+	return nil
+}
+
+// PinRunnerWorkspacePathIfEmpty 仅在 run 尚未记录 runner 工作区路径时写入
+// （prepare 返回值）。恢复路径按该路径重建执行请求，两侧路径不共享时这是
+// 唯一权威来源。
+func (r *RunRepository) PinRunnerWorkspacePathIfEmpty(ctx context.Context, runID, path string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (runner_workspace_path = '' OR runner_workspace_path IS NULL)", runID).
+		Update("runner_workspace_path", path).Error; err != nil {
+		return fmt.Errorf("pin run runner workspace path: %w", err)
+	}
+	return nil
+}
+
 // UpdateFailedIfInFlight 仅在 run 仍处于在途状态时把状态置为 failed 并写
 // error_message、completed_at，返回是否实际生效。在途集合取 pending、
 // running、finalizing，是既有终态写路径界定终态集合（succeeded、failed、

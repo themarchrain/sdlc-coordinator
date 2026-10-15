@@ -70,6 +70,11 @@ func (s *Service) WithWorkItemLeases(leases WorkItemLeasePort, instanceID string
 	return s
 }
 
+// WithDB 返回换库后的 Service（租户作用域请求经此按绑定库操作）。发布执行权
+// 端口（leases/instanceID）是协调器进程级装配而非库绑定数据，必须随换库
+// 保留：丢弃它们会让手动同步入口绕过发布租约，与后台 syncer 竞争时为同一
+// 需求各建一个远端 issue。租约仓储按调用方传入的 ctx 与库装配解析目标库，
+// 复用同一端口即可。
 func (service *Service) WithDB(db *gorm.DB) *Service {
 	if service == nil {
 		return NewService(NewStore(db), registeredrepo.NewStore(db), nil)
@@ -78,6 +83,8 @@ func (service *Service) WithDB(db *gorm.DB) *Service {
 		store:        NewStore(db),
 		repositories: registeredrepo.NewStore(db),
 		clients:      service.clients,
+		leases:       service.leases,
+		instanceID:   service.instanceID,
 	}
 }
 

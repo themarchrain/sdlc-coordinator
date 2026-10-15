@@ -57,6 +57,30 @@ func (s *Store) Get(ctx context.Context, requirementID string) (*Requirement, er
 	return &item, nil
 }
 
+// UpdateStatusGuarded 以期望状态为条件推进需求：只有库内仍是 expected 时
+// 才写入 item 的发布/失败字段。发布者持有租约只保证此刻单持有者，不保证
+// 其先前读到的快照仍有效（如发布完成后镜像轮已把状态推到 done）；旧观察
+// 不得整行覆盖新终态。applied=false 表示状态已并发前移，调用方须重读裁决。
+func (s *Store) UpdateStatusGuarded(ctx context.Context, item *Requirement, expected Status) (bool, error) {
+	if item == nil {
+		return false, fmt.Errorf("requirement is required")
+	}
+	result := s.db.WithContext(ctx).Model(&Requirement{}).
+		Where("requirement_id = ? AND status = ?", item.RequirementID, expected).
+		Updates(map[string]any{
+			"status":       item.Status,
+			"last_error":   item.LastError,
+			"issue_iid":    item.IssueIID,
+			"issue_url":    item.IssueURL,
+			"published_at": item.PublishedAt,
+			"completed_at": item.CompletedAt,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("guarded requirement update: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 type ListFilter struct {
 	Status       Status
 	RepositoryID string

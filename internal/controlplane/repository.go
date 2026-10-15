@@ -509,3 +509,52 @@ func (repository *Repository) DeleteLoginFailuresBefore(ctx context.Context, cut
 	}
 	return nil
 }
+
+// DeleteLoginFailuresBeforeBounded 分批删除窗口外旧行：单次最多 limit 行，
+// 约束 DELETE 的持锁时间（大表一次性清理会长时间持锁）；行数已达上限的行
+// 由后续记账轮次继续清理。清理条件走 failed_at 上的独立索引。
+func (repository *Repository) DeleteLoginFailuresBeforeBounded(ctx context.Context, cutoff time.Time, limit int) error {
+	if limit <= 0 {
+		limit = loginFailureBatchLimit
+	}
+	subquery := repository.db.Model(&LoginFailure{}).
+		Select("id").
+		Where("failed_at <= ?", cutoff).
+		Order("failed_at ASC").
+		Limit(limit)
+	if err := repository.db.WithContext(ctx).
+		Where("id IN (?)", subquery).
+		Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("delete login failures before bounded: %w", err)
+	}
+	return nil
+}
+
+// CapKeyLoginFailures 把单个键的失败行裁剪到上限（保留最新 limit 行）：
+// blocked 判定只需"窗口内行数是否达到上限"，多余历史行对判定无影响；
+// 单键上限让匿名来源用不同用户名放大总行数时，任一键不无界堆积。
+func (repository *Repository) CapKeyLoginFailures(ctx context.Context, key string, limit int) error {
+	if limit <= 0 {
+		return nil
+	}
+	var count int64
+	if err := repository.db.WithContext(ctx).Model(&LoginFailure{}).
+		Where("`key` = ?", key).Count(&count).Error; err != nil {
+		return fmt.Errorf("count login failures for key cap: %w", err)
+	}
+	if count <= int64(limit) {
+		return nil
+	}
+	// 保留最新 limit 行：删除更早的行。
+	subquery := repository.db.Model(&LoginFailure{}).
+		Select("id").
+		Where("`key` = ?", key).
+		Order("failed_at DESC").
+		Limit(limit)
+	if err := repository.db.WithContext(ctx).
+		Where("`key` = ? AND id NOT IN (?)", key, subquery).
+		Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("cap login failures for key: %w", err)
+	}
+	return nil
+}

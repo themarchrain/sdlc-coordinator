@@ -25,9 +25,18 @@ import (
 var ErrConcurrentTaskAdvance = errors.New("task advanced concurrently")
 
 // RunWorkspaceCleaner 是 run 工作区清理的窄端口：本地形态在协调器文件系统
-// 上删除；远端形态（计划 A）经受控操作在 Runner 本机删除。
+// 上删除；远端形态（计划 A）经受控操作在 Runner 本机删除。taskID 必须随行：
+// Runner 侧授权器按完整身份（tenant+task+run）裁决，缺一即拒。
 type RunWorkspaceCleaner interface {
-	RemoveRunWorkspace(ctx context.Context, runID string) error
+	RemoveRunWorkspace(ctx context.Context, taskID, runID string) error
+}
+
+// TaskBundlePublisher 是任务包投递的窄端口：远端形态经受控通道把任务包
+// 三段内容送到 run 所在 Runner 的工作区，返回 Runner 侧工作区路径（两侧
+// 路径不共享，执行请求以该值为准）；本机形态不装配（nil），任务包由协调器
+// 直接写本地路径。独立文件系统下这是任务包到达 Agent 的唯一通道。
+type TaskBundlePublisher interface {
+	PublishTaskBundle(ctx context.Context, taskID, runID string, files map[string][]byte) (string, error)
 }
 
 // WorkItemLeasePort 是跨实例执行权租约的窄端口（租户库实现）：抢占是原子
@@ -56,6 +65,10 @@ type TaskRepository interface {
 	BlockRunAndRequireHuman(context.Context, string, string, time.Time) error
 	ParkUnbound(context.Context, string) error
 	AdvanceGuarded(context.Context, *model.Task, model.TaskStatus) (bool, error)
+	// AdvanceGuardedForCurrentRun 以「仍处于 expected 状态且 current_run_id
+	// 仍是 runID」为条件推进：run 被接管/重派时 0 行，迟到失败不推进当前
+	// 任务（失败回写路径的读-写窗口栅栏）。
+	AdvanceGuardedForCurrentRun(ctx context.Context, task *model.Task, expected model.TaskStatus, runID string) (bool, error)
 	UpdateLastErrorIfStatus(context.Context, string, model.TaskStatus, string) (bool, error)
 	// RecoverExpiredGuarded 原子回收租约过期的任务：双实例同时回收同一
 	// 过期任务时恰好一个赢家，attempt_count 在数据库侧原子 +1。
@@ -73,6 +86,10 @@ type RunRepository interface {
 	UpdateTaskTimeoutIfEmpty(context.Context, string, int64) error
 	UpdateDispatchProjection(context.Context, string, string, string, string) error
 	UpdateFailedIfInFlight(context.Context, string, string, time.Time) (bool, error)
+	// PinRunnerEndpointIfEmpty / PinRunnerWorkspacePathIfEmpty 钉住 run 归属
+	// 端点与 Runner 侧工作区路径（列级条件写；空值语义 = 尚未钉住）。
+	PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error
+	PinRunnerWorkspacePathIfEmpty(ctx context.Context, runID, path string) error
 	// MarkArtifactsPurgingIfUnclean 抢占 run 的清理归属（跨实例栅栏），
 	// ClearArtifactsPurging 是清理失败的回滚通道。
 	MarkArtifactsPurgingIfUnclean(ctx context.Context, runID string, now time.Time) (bool, error)

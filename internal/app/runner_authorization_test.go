@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/config"
 	"sdlc-coordinator/internal/controlplane"
@@ -40,7 +41,7 @@ func TestRunnerAuthorizationDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tenant handle: %v", err)
 	}
-	if err := store.Migrate(handle.DB, &model.Task{}, &model.Run{}); err != nil {
+	if err := store.Migrate(handle.DB, &model.Task{}, &model.Run{}, &model.WorkItemLease{}); err != nil {
 		t.Fatalf("migrate tenant store: %v", err)
 	}
 	t.Cleanup(resolver.Close)
@@ -65,6 +66,14 @@ func TestRunnerAuthorizationDecisions(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 
+	// 交付执行权：当前 run 的 commit/push 要求请求携带与库内一致的
+	// owner+generation（接管隔离）。
+	leases := repository.NewWorkItemLeaseRepository(handle.DB)
+	lease, won, err := leases.Acquire(ctx, "developer-delivery:"+runCurrent.RunID, "instance-a:mcp", "developer-delivery", time.Minute)
+	if err != nil || !won {
+		t.Fatalf("acquire delivery lease: won=%v err=%v", won, err)
+	}
+
 	decide := func(kind, runID string) workspaceproto.AuthorizationDecision {
 		t.Helper()
 		decision, err := authorizer.AuthorizeRunnerWorkspaceOperation(ctx, workspaceproto.AuthorizationRequest{
@@ -75,12 +84,34 @@ func TestRunnerAuthorizationDecisions(t *testing.T) {
 		}
 		return decision
 	}
-
-	if decision := decide(workspaceproto.KindDeveloperCommit, runCurrent.RunID); !decision.Authorized {
-		t.Fatalf("current run commit must be authorized: %+v", decision)
+	decideWithRight := func(kind, runID, owner string, generation uint64) workspaceproto.AuthorizationDecision {
+		t.Helper()
+		decision, err := authorizer.AuthorizeRunnerWorkspaceOperation(ctx, workspaceproto.AuthorizationRequest{
+			OperationID: "op", Kind: kind, TenantID: tenant.ID, TaskID: task.TaskID, RunID: runID,
+			Owner: owner, Generation: generation,
+		})
+		if err != nil {
+			t.Fatalf("authorize %s/%s with right: %v", kind, runID, err)
+		}
+		return decision
 	}
-	if decision := decide(workspaceproto.KindDeveloperPush, runCurrent.RunID); !decision.Authorized {
-		t.Fatalf("current run push must be authorized: %+v", decision)
+
+	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, lease.Owner, lease.Generation); !decision.Authorized {
+		t.Fatalf("current run commit with the held execution right must be authorized: %+v", decision)
+	}
+	if decision := decideWithRight(workspaceproto.KindDeveloperPush, runCurrent.RunID, lease.Owner, lease.Generation); !decision.Authorized {
+		t.Fatalf("current run push with the held execution right must be authorized: %+v", decision)
+	}
+	// 无执行权身份（旧形态请求/匿名请求）拒绝。
+	if decision := decide(workspaceproto.KindDeveloperCommit, runCurrent.RunID); decision.Authorized {
+		t.Fatalf("commit without an execution right must be denied: %+v", decision)
+	}
+	// 执行权被接管（owner/generation 不再匹配）后拒绝。
+	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, "instance-b:agent_runner", lease.Generation); decision.Authorized {
+		t.Fatalf("commit after a takeover must be denied: %+v", decision)
+	}
+	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, lease.Owner, lease.Generation+1); decision.Authorized {
+		t.Fatalf("commit with a stale generation must be denied: %+v", decision)
 	}
 	if decision := decide(workspaceproto.KindDeveloperCommit, runStale.RunID); decision.Authorized {
 		t.Fatalf("stale run commit must be denied: %+v", decision)
@@ -96,7 +127,7 @@ func TestRunnerAuthorizationDecisions(t *testing.T) {
 	if err := handle.DB.Model(&model.Task{}).Where("task_id = ?", task.TaskID).Update("status", model.TaskStatusSucceeded).Error; err != nil {
 		t.Fatalf("terminalize task: %v", err)
 	}
-	if decision := decide(workspaceproto.KindDeveloperCommit, runCurrent.RunID); decision.Authorized {
+	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, lease.Owner, lease.Generation); decision.Authorized {
 		t.Fatalf("commit after terminal task must be denied: %+v", decision)
 	}
 	// 终态 run 的清理放行。

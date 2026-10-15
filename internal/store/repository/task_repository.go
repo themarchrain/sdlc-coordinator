@@ -177,6 +177,28 @@ func (r *TaskRepository) AdvanceGuarded(ctx context.Context, task *model.Task, e
 	return result.RowsAffected == 1, nil
 }
 
+// AdvanceGuardedForCurrentRun 以仍处于 expected 状态且 current_run_id 仍是
+// runID 为条件推进任务：run 已被接管/重派（current_run_id 前移）时 0 行，
+// 迟到失败不得推进当前任务、不得清掉新执行权。是失败回写路径的读-写窗口
+// 栅栏——只读 task 校验通过后，接管仍可能发生在这条 UPDATE 之前。
+func (r *TaskRepository) AdvanceGuardedForCurrentRun(ctx context.Context, task *model.Task, expected model.TaskStatus, runID string) (bool, error) {
+	if task == nil {
+		return false, fmt.Errorf("task is required")
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.Task{}).
+		Where("task_id = ? AND status = ? AND current_run_id = ?", task.TaskID, expected, runID).
+		Updates(map[string]any{
+			"status":        task.Status,
+			"attempt_count": task.AttemptCount,
+			"lease_until":   task.LeaseUntil,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("advance task guarded for current run: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // RecoverExpiredGuarded 原子回收一条租约过期的任务（跨实例过期恢复的执行权
 // 栅栏）：仅当任务仍在 claimed/running 且租约已过窗口时生效，attempt_count
 // 在数据库侧原子 +1（MySQL 用 NOW(6) 判到期，SQLite 用参数时间）。目标状态

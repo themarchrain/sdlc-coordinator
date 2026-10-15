@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,8 +143,18 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		deliveryFinalizer orchestrator.DeveloperGitFinalizer      = workspace.NewDeveloperFinalizer()
 	)
 	if shared.cfg.AgentRunner.RemoteWorkspace {
-		remoteWorkspace := agentrunner.NewRemoteWorkspace(
-			shared.cfg.AgentRunner.ServiceURL, shared.cfg.AgentRunner.InternalToken, tenantID, nil,
+		// 按 run 归属端点路由：准备、任务包投递、commit/push、清理必须命中
+		// 同一 runner（独立卷下别的端点既没有该 run 的仓库也没有 Agent 的
+		// 修改）。端点由共享库的 run 行解析（首次派发准备前钉住）。
+		endpointForRun := func(ctx context.Context, runID string) (string, error) {
+			run, err := runRepo.GetByRunID(ctx, runID)
+			if err != nil {
+				return "", fmt.Errorf("resolve runner endpoint for run %s: %w", runID, err)
+			}
+			return strings.TrimRight(strings.TrimSpace(run.RunnerEndpoint), "/"), nil
+		}
+		remoteWorkspace := agentrunner.NewRoutedRemoteWorkspace(
+			shared.cfg.AgentRunner.ServiceURL, shared.cfg.AgentRunner.InternalToken, tenantID, nil, endpointForRun,
 		)
 		reviewerPreparer = agentrunner.NewRemoteReadOnlyPreparer(remoteWorkspace)
 		developerPreparer = agentrunner.NewRemoteDeveloperPreparer(remoteWorkspace)
@@ -159,6 +170,12 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchSubmitter,
 		runnerSettings,
 	)
+	// 远端形态：任务包必须经受控通道到达 run 所属 Runner（协调器本地路径
+	// 在那边不可见）；本机形态不注入，任务包由协调器直接写本地路径。
+	if bundlePublisher, ok := deliveryFinalizer.(orchestrator.TaskBundlePublisher); ok && shared.cfg.AgentRunner.RemoteWorkspace {
+		reviewerRunnerCoordinator.SetTaskBundlePublisher(bundlePublisher)
+		developerRunnerCoordinator.SetTaskBundlePublisher(bundlePublisher)
+	}
 	// 交付检查点(租户库):派发时钉基线,commit 与 push 之间写交付 SHA,
 	// 是"提交由 Coordinator 创建"的唯一归属凭据;Agent 不可写租户库。
 	deliveryCheckpoints := repository.NewDeveloperDeliveryCheckpointRepository(db)
@@ -171,6 +188,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
 	)
+	if bundlePublisher, ok := deliveryFinalizer.(orchestrator.TaskBundlePublisher); ok && shared.cfg.AgentRunner.RemoteWorkspace {
+		testerRunnerCoordinator.SetTaskBundlePublisher(bundlePublisher)
+	}
 	opts = append(opts,
 		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),

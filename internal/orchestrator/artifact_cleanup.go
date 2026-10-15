@@ -111,7 +111,7 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 		if !applied {
 			return result
 		}
-		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.RunID); err != nil {
+		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
 			result.Error = err.Error()
 			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID)
 			return result

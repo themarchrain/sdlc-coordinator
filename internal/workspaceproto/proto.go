@@ -11,6 +11,7 @@ import (
 const (
 	KindDeveloperPrepare = "developer_prepare"
 	KindWorkspacePrepare = "workspace_prepare"
+	KindTaskBundle       = "task_bundle"
 	KindDeveloperCommit  = "developer_commit"
 	KindDeveloperPush    = "developer_push"
 	KindCleanup          = "cleanup"
@@ -56,6 +57,8 @@ type PrepareResult struct {
 }
 
 // CommitRequest 是受控提交请求：消息由协调器校验后传入，Runner 只执行。
+// Owner/Generation 是协调器交付执行权的当前持有身份（developer-delivery
+// 租约），随请求贯穿到 Runner 的授权确认：接管发生后旧持有者的请求被拒。
 type CommitRequest struct {
 	OperationID    string     `json:"operation_id"`
 	TenantID       uint       `json:"tenant_id"`
@@ -70,6 +73,8 @@ type CommitRequest struct {
 	AuthorName     string     `json:"author_name"`
 	AuthorEmail    string     `json:"author_email"`
 	Credential     Credential `json:"credential"`
+	Owner          string     `json:"owner,omitempty"`
+	Generation     uint64     `json:"generation,omitempty"`
 }
 
 // CommitResult 是可信提交结果（固定操作 ID 回读）。
@@ -79,7 +84,8 @@ type CommitResult struct {
 }
 
 // PushRequest 是固定 SHA 推送请求：协调器必须先把可信 CommitSHA 条件写入
-// MySQL，再发起本请求；Runner 以固定 SHA 推送并做远端漂移检查。
+// MySQL，再发起本请求；Runner 以固定 SHA 推送并做远端漂移检查。Owner/
+// Generation 语义同 CommitRequest（授权确认据其拒绝接管后的旧持有者）。
 type PushRequest struct {
 	OperationID    string     `json:"operation_id"`
 	TenantID       uint       `json:"tenant_id"`
@@ -92,6 +98,8 @@ type PushRequest struct {
 	CommitSHA      string     `json:"commit_sha"`
 	BaselineSHA    string     `json:"baseline_sha"`
 	Credential     Credential `json:"credential"`
+	Owner          string     `json:"owner,omitempty"`
+	Generation     uint64     `json:"generation,omitempty"`
 }
 
 // PushResult 是推送结果（远端头回读确认后的值）。
@@ -116,6 +124,26 @@ type CleanupResult struct {
 	OperationID string `json:"operation_id"`
 }
 
+// TaskBundleRequest 把任务包投递到运行该 run 的 Runner 工作区：协调器与
+// Runner 各自独占文件系统时，任务包必须走受控通道而不是协调器本地路径。
+// Files 是任务包三段内容（文件名 → 完整内容字节），由协调器以共享渲染器
+// （internal/agent.RenderTaskBundle）生成，Runner 逐字节落盘——两侧不重
+// 编码，内容天然一致。文件名限定渲染器的三个常量名（Runner 侧白名单校验）。
+type TaskBundleRequest struct {
+	OperationID string            `json:"operation_id"`
+	TenantID    uint              `json:"tenant_id"`
+	TaskID      string            `json:"task_id"`
+	RunID       string            `json:"run_id"`
+	Files       map[string]string `json:"files"`
+}
+
+// TaskBundleResult 是任务包投递结果：回报 Runner 侧工作区路径，协调器以
+// 该值作为执行请求的 WorkspacePath（独立文件系统下两侧路径不共享）。
+type TaskBundleResult struct {
+	OperationID   string `json:"operation_id"`
+	WorkspacePath string `json:"workspace_path"`
+}
+
 type AuthorizationRequest struct {
 	OperationID string `json:"operation_id"`
 	Kind        string `json:"kind"`
@@ -123,6 +151,10 @@ type AuthorizationRequest struct {
 	TaskID      string `json:"task_id"`
 	RunID       string `json:"run_id"`
 	PayloadHash string `json:"payload_hash"`
+	// Owner/Generation 是交付执行权的持有身份（commit/push 请求随行；其他
+	// 操作留空）。授权方按它拒绝接管后旧持有者的新请求。
+	Owner      string `json:"owner,omitempty"`
+	Generation uint64 `json:"generation,omitempty"`
 }
 
 // AuthorizationDecision 是授权确认结果（拒绝时带可查询原因）。
@@ -164,6 +196,9 @@ func PayloadHash(value any) (string, error) {
 		request.Credential = Credential{}
 		normalized = request
 	case CleanupRequest:
+		request.OperationID = ""
+		normalized = request
+	case TaskBundleRequest:
 		request.OperationID = ""
 		normalized = request
 	default:

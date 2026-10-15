@@ -246,6 +246,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				CommitSHA: checkpoint.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
 				Credential: workspaceRequest.Credential,
+				DeliveryOwner: deliveryLease.Owner, DeliveryGeneration: deliveryLease.Generation,
 			})
 		} else {
 			// commit 与下方 push 共用外层 err:推送错误必须走 217 行的
@@ -258,6 +259,9 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				TaskType:       task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				BaselineSHA: checkpoint.BaselineSHA,
+				// 执行权身份随行到 Runner 的授权确认：接管后旧持有者的
+				// 新请求被拒（已受理的固定操作仍可完成与回读）。
+				DeliveryOwner: deliveryLease.Owner, DeliveryGeneration: deliveryLease.Generation,
 			})
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -283,6 +287,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				CommitSHA: commit.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
 				Credential: workspaceRequest.Credential,
+				DeliveryOwner: deliveryLease.Owner, DeliveryGeneration: deliveryLease.Generation,
 			})
 		}
 		if err != nil {

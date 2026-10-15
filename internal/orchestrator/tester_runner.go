@@ -26,6 +26,9 @@ type TesterRunnerCoordinator struct {
 	submitter ReviewerResultSubmitter
 	core      *AgentRunnerCoordinator
 	channel   *ResultChannelCoordinator
+	// bundleSink 是任务包投递端口（远端工作区形态注入；本机形态 nil =
+	// 协调器直接写本地路径）。
+	bundleSink TaskBundlePublisher
 	// runnerProviderLookup 是组织段执行选择（CLI 与推理强度）的动态来源
 	// （派发时现取）；nil 或字段为空串 = 沿用系统默认。
 	runnerProviderLookup func(context.Context) RunnerSelection
@@ -66,6 +69,12 @@ func (c *TesterRunnerCoordinator) SetTenantRunnerRouter(router TenantRunnerRoute
 
 // SetRunnerProviderLookup 在装配期接入组织段执行选择（派发时现取，
 // 保存即热生效）；lookup 为 nil 或字段返回空串时保留系统默认值。
+// SetTaskBundlePublisher 在装配期接入任务包投递端口（远端工作区形态注入；
+// 本机形态不注入 = 协调器直接写本地路径）。
+func (c *TesterRunnerCoordinator) SetTaskBundlePublisher(publisher TaskBundlePublisher) {
+	c.bundleSink = publisher
+}
+
 func (c *TesterRunnerCoordinator) SetRunnerProviderLookup(lookup func(context.Context) RunnerSelection) {
 	c.runnerProviderLookup = lookup
 }
@@ -81,7 +90,13 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 	if err != nil {
 		return nil, err
 	}
-	runRoot := filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
+	// 工作区路径以 run 行已钉住的 Runner 侧路径为准（独立文件系统下协调器
+	// 本地路径在 Runner 那边不存在）；未钉住（首次派发）时用协调器本地
+	// 计算值占位，首次准备成功后由 prepare 返回值钉回。
+	runRoot := strings.TrimSpace(request.Run.RunnerWorkspacePath)
+	if runRoot == "" {
+		runRoot = filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
+	}
 	// 组织段执行选择覆盖请求 Provider 的 Name/Effort 与派发超时；run 已钉住
 	// 取值时钉住值优先，与 reviewer/developer 同一口径。
 	providerConfig, taskTimeout := resolveRunnerExecution(ctx, c.runnerProviderLookup, request.Provider, request.Timeout, request.Run)
@@ -105,6 +120,11 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 	// 派发意图尚未收敛（dispatching）：工作区与任务包在上一次派发时已就绪，
 	// 跳过重准备直接进 Start 按原端点对账，避免覆盖在途 Agent 的工作区。
 	if !found {
+		// 准备之前先解析并钉住 run 归属端点：准备、投递、执行、清理全链
+		// 按同一端点寻址。
+		if _, err := c.core.resolveAndPinEndpoint(ctx, request.Task, request.Run); err != nil {
+			return nil, err
+		}
 		manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
 		if err != nil {
 			return nil, fmt.Errorf("prepare tester workspace: %w", err)
@@ -116,9 +136,15 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 		if err != nil {
 			return nil, fmt.Errorf("build tester task bundle: %w", err)
 		}
-		if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
-			return nil, fmt.Errorf("write tester task bundle: %w", err)
+		workspacePath, err := c.deliverTaskBundle(ctx, request.Task, request.Run, bundle, runRoot)
+		if err != nil {
+			return nil, err
 		}
+		executionRequest.WorkspacePath = workspacePath
+		if err := c.runs.PinRunnerWorkspacePathIfEmpty(ctx, request.Run.RunID, workspacePath); err != nil {
+			return nil, fmt.Errorf("pin tester runner workspace path: %w", err)
+		}
+		request.Run.RunnerWorkspacePath = workspacePath
 	}
 
 	pinRunnerSelectionOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort, taskTimeout)
@@ -208,4 +234,28 @@ func normalizeTesterWorkspaceRequest(request TesterRunnerStartRequest) (workspac
 	result.Project = request.Task.TargetRepo
 	result.WorkerRole = "TesterWorker"
 	return result, nil
+}
+
+// deliverTaskBundle 把任务包送到 Agent 读取的位置：远端形态（装配了投递
+// 端口）经受控通道投递并返回 Runner 侧路径；本机形态直接写本地路径并沿用
+// 协调器计算值。两条路径共享同一渲染器，落盘内容逐字节一致。
+func (c *TesterRunnerCoordinator) deliverTaskBundle(ctx context.Context, task *model.Task, run *model.Run, bundle agent.TaskBundle, localRoot string) (string, error) {
+	if c.bundleSink == nil {
+		if err := agent.WriteTaskBundle(localRoot, bundle); err != nil {
+			return "", fmt.Errorf("write task bundle: %w", err)
+		}
+		return localRoot, nil
+	}
+	files, err := agent.RenderTaskBundle(bundle)
+	if err != nil {
+		return "", fmt.Errorf("render task bundle: %w", err)
+	}
+	workspacePath, err := c.bundleSink.PublishTaskBundle(ctx, task.TaskID, run.RunID, files)
+	if err != nil {
+		return "", fmt.Errorf("publish task bundle: %w", err)
+	}
+	if strings.TrimSpace(workspacePath) == "" {
+		return "", errors.New("runner did not report the run workspace path for the task bundle")
+	}
+	return workspacePath, nil
 }

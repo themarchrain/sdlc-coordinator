@@ -52,6 +52,18 @@ func registerWorkspaceRoutes(mux *http.ServeMux, options *httpOptions) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	}))
+	mux.HandleFunc("POST /internal/workspace/bundle", options.authorize(func(w http.ResponseWriter, r *http.Request) {
+		var request workspaceproto.TaskBundleRequest
+		if !decodeWorkspaceRequest(w, r, &request) {
+			return
+		}
+		result, err := options.workspaceOps.PublishTaskBundle(r.Context(), request)
+		if err != nil {
+			writeWorkspaceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	}))
 	mux.HandleFunc("POST /internal/workspace/commit", options.authorize(func(w http.ResponseWriter, r *http.Request) {
 		var request workspaceproto.CommitRequest
 		if !decodeWorkspaceRequest(w, r, &request) {

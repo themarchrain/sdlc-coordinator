@@ -44,6 +44,11 @@ func (a *tenantRunnerAuthorizer) AuthorizeRunnerWorkspaceOperation(ctx context.C
 	return authorizeRunnerOperation(ctx, handle.DB, request)
 }
 
+// developerDeliveryLeaseScopeForAuthorization 必须与 orchestrator 的交付执行权
+// 作用域常量一致（"developer-delivery:"+runID）；本包不 import 编排器，字面
+// 重复由两侧的集成测试锁定。
+const developerDeliveryLeaseScopeForAuthorization = "developer-delivery:"
+
 // authorizeRunnerOperation 是与存储装配解耦的裁决核心（按租户库查询）。
 func authorizeRunnerOperation(ctx context.Context, db *gorm.DB, request workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
 	deny := func(reason string) (workspaceproto.AuthorizationDecision, error) {
@@ -77,6 +82,20 @@ func authorizeRunnerOperation(ctx context.Context, db *gorm.DB, request workspac
 		}
 		if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusFinalizing {
 			return deny("task is not in a deliverable state")
+		}
+		// 执行权身份校验（接管隔离）：请求必须携带当前交付租约的 owner+
+		// generation 且与库内一致——B 接管同一 run 后，A 的新 commit/push
+		// 请求业务字段仍满足但执行权已失效，必须拒绝。未携带身份（旧形态
+		// 请求）同样拒绝：状态改变类操作不接受无执行权的匿名请求。
+		if strings.TrimSpace(request.Owner) == "" {
+			return deny("delivery execution right is required for commit and push")
+		}
+		leased, err := repository.NewWorkItemLeaseRepository(db).Get(ctx, developerDeliveryLeaseScopeForAuthorization+run.RunID)
+		if err != nil {
+			return deny("delivery execution right is not held for this run")
+		}
+		if leased.Owner != request.Owner || leased.Generation != request.Generation {
+			return deny("delivery execution right has been taken over by another owner")
 		}
 		return workspaceproto.AuthorizationDecision{Authorized: true}, nil
 	case workspaceproto.KindCleanup:

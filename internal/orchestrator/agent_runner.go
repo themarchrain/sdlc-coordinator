@@ -167,6 +167,40 @@ func (c *AgentRunnerCoordinator) attemptForTask(ctx context.Context, task *model
 	return c.router.AttemptForTask(ctx, task)
 }
 
+// resolveAndPinEndpoint 在准备之前解析并钉住 run 归属端点：准备、任务包
+// 投递、执行、commit/push、清理全链按同一端点寻址——独立卷下别的 runner
+// 既没有该 run 的仓库也没有 Agent 的修改。已有钉住值直接沿用（崩溃恢复/
+// 重建路径不换 runner）；单端点直连形态返回空串（默认端点语义）。条件写
+// 后重读以库内值为准（并发方可能已钉住）。
+func (c *AgentRunnerCoordinator) resolveAndPinEndpoint(ctx context.Context, task *model.Task, run *model.Run) (string, error) {
+	if run == nil {
+		return "", nil
+	}
+	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" {
+		return pinned, nil
+	}
+	if c.router == nil {
+		return "", nil
+	}
+	attempt, err := c.attemptForTask(ctx, task)
+	if err != nil {
+		return "", err
+	}
+	endpoint := strings.TrimSpace(attempt.Endpoint)
+	if endpoint == "" {
+		return "", nil
+	}
+	if err := c.runs.PinRunnerEndpointIfEmpty(ctx, run.RunID, endpoint); err != nil {
+		return "", fmt.Errorf("pin runner endpoint for run %s: %w", run.RunID, err)
+	}
+	refreshed, err := c.runs.GetByRunID(ctx, run.RunID)
+	if err != nil {
+		return "", fmt.Errorf("reload run %s after pinning endpoint: %w", run.RunID, err)
+	}
+	run.RunnerEndpoint = strings.TrimSpace(refreshed.RunnerEndpoint)
+	return run.RunnerEndpoint, nil
+}
+
 var ErrExecutionNotAccepted = errors.New("runner execution was never accepted")
 
 // errDispatchOutcomeUnknown 报告远端派发结果不确定（Create 歧义失败且
@@ -178,7 +212,13 @@ var errDispatchOutcomeUnknown = errors.New("dispatch outcome unknown")
 // 错误等）按既有失败语义终止，池耗尽返回首个 Create 错误。返回实际承接执行
 // 的端点，供 projection 做观测亲和；definite 报告失败是否为全部端点确定性
 // 未接纳——只有它才允许上层按失败处理（判失败/重试），否则结果不确定。
-func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt RunnerAttempt, run *model.Run, expectedHash string, request runner.CreateExecutionRequest) (*runner.Execution, string, bool, error) {
+//
+// 每次轮换到新端点前先经 repin 把新目标持久化（old→new 条件写）：Create 被
+// 远端接受后本进程若在投影回写前退出，接管方按库里记录的端点对账——不先落
+// 新目标时接管方会回到旧端点重发同 run，两个 runner 各起一个执行（同 run
+// ID 的幂等域只在各 runner 本地）。repin 失败（写库失败/条件不满足）即终止
+// 轮换并保持不确定语义，不允许远端已接受而库里仍指向旧端点的窗口存在。
+func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt RunnerAttempt, run *model.Run, expectedHash string, request runner.CreateExecutionRequest, persistedEndpoint string, repin func(context.Context, string, string) error) (*runner.Execution, string, bool, error) {
 	firstErr := error(nil)
 	for {
 		remote, createErr := attempt.Client.Create(ctx, request)
@@ -200,6 +240,14 @@ func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt Runne
 		if !ok {
 			return nil, "", true, fmt.Errorf("create runner execution: %w", firstErr)
 		}
+		if repin != nil {
+			if err := repin(ctx, persistedEndpoint, next.Endpoint); err != nil {
+				// 新目标未能持久化：绝不换端点，保持不确定语义让接管方
+				// 按既有记录对账。
+				return nil, "", false, fmt.Errorf("%w: persist fallback runner endpoint %q: %v", errDispatchOutcomeUnknown, next.Endpoint, err)
+			}
+		}
+		persistedEndpoint = next.Endpoint
 		attempt = next
 	}
 }
@@ -305,6 +353,11 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	if err != nil {
 		return nil, err
 	}
+	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" && pinned != attempt.Endpoint {
+		// 本 run 已钉住归属端点（准备/任务包投递已按它发生）：派发必须命中
+		// 同一端点，绝不轮换——独立卷下别的 runner 没有这份工作区与任务包。
+		attempt = c.attemptOnRecordedEndpoint(attempt, pinned)
+	}
 	// 先落目标再调用：意图行写入成功后才做有副作用的远端 Create；崩溃在
 	// 两者之间时，接管方按该端点回读/重发，不换 Runner、不产生第二个执行。
 	intent, err := c.persistIntent(ctx, run, request, attempt.Endpoint, expectedHash)
@@ -322,7 +375,13 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 		// 采纳并发方记录的目标端点（不换 Runner）。
 		attempt = c.attemptOnRecordedEndpoint(attempt, intent.RunnerEndpoint)
 	}
-	remote, endpoint, definite, err := c.createOnPool(ctx, attempt, run, expectedHash, request)
+	// 每次端点推进先在库里持久化新目标：Create 被接受后本进程退出时，接管
+	// 方按库内端点对账；不先落目标会让接管方回到旧端点重发同 run（两个
+	// runner 各起一个执行）。条件写按旧记录值防覆盖并发方的更新。
+	repoPin := func(pinCtx context.Context, from, to string) error {
+		return c.executions.UpdateRunnerEndpointIfUnchanged(pinCtx, run.RunID, from, to)
+	}
+	remote, endpoint, definite, err := c.createOnPool(ctx, attempt, run, expectedHash, request, intent.RunnerEndpoint, repoPin)
 	if err != nil {
 		if !definite {
 			// 结果不确定：保持意图待对账（轮询按原端点收敛），本函数按

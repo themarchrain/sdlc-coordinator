@@ -179,7 +179,7 @@ type countingWorkspaceCleaner struct {
 	calls atomic.Int32
 }
 
-func (c *countingWorkspaceCleaner) RemoveRunWorkspace(ctx context.Context, runID string) error {
+func (c *countingWorkspaceCleaner) RemoveRunWorkspace(ctx context.Context, taskID, runID string) error {
 	c.calls.Add(1)
 	return nil
 }

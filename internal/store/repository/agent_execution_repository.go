@@ -32,6 +32,23 @@ func (r *AgentExecutionRepository) Update(ctx context.Context, execution *model.
 	return nil
 }
 
+// UpdateRunnerEndpointIfUnchanged 以旧端点值为条件推进端点列（列级条件写，
+// 不整行覆盖）。fallback 轮换在远端 Create 之前调用：新目标必须先落库，
+// 接管方才不会按旧端点重发同一 run 造成双执行。0 行且库内已是他方更新时
+// 由调用方按不确定语义处理（保持待对账，不换端点）。
+func (r *AgentExecutionRepository) UpdateRunnerEndpointIfUnchanged(ctx context.Context, runID, fromEndpoint, toEndpoint string) error {
+	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND runner_endpoint = ?", runID, fromEndpoint).
+		Update("runner_endpoint", toEndpoint)
+	if result.Error != nil {
+		return fmt.Errorf("update runner endpoint for run %s: %w", runID, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("runner endpoint for run %s was changed concurrently (expected %q)", runID, fromEndpoint)
+	}
+	return nil
+}
+
 func (r *AgentExecutionRepository) GetByRunID(ctx context.Context, runID string) (*model.AgentExecution, error) {
 	var execution model.AgentExecution
 	if err := r.db.WithContext(ctx).Where("run_id = ?", runID).First(&execution).Error; err != nil {
