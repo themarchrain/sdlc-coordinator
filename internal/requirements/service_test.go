@@ -4,9 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/store"
+	"sdlc-coordinator/internal/store/repository"
+
+	"gorm.io/gorm"
 )
 
 func newTestService(t *testing.T) (*Service, *Store) {
@@ -30,6 +35,28 @@ func newTestService(t *testing.T) (*Service, *Store) {
 		t.Fatalf("seed repo: %v", err)
 	}
 	return NewService(requirementStore, repoStore, nil), requirementStore
+}
+
+func TestWithDBRebindsWorkItemLeases(t *testing.T) {
+	service, _ := newTestService(t)
+	tenantDB, err := store.Open("file:" + t.Name() + "_tenant?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(tenantDB, &model.WorkItemLease{}); err != nil {
+		t.Fatal(err)
+	}
+	service.WithWorkItemLeaseFactory(func(db *gorm.DB) WorkItemLeasePort {
+		return repository.NewWorkItemLeaseRepository(db)
+	}, "instance-a")
+	bound := service.WithDB(tenantDB)
+	lease, won, err := bound.leases.Acquire(context.Background(), "requirements-publish:test", "instance-a:requirements", "publish", time.Minute)
+	if err != nil || !won || lease.Scope != "requirements-publish:test" {
+		t.Fatalf("tenant lease acquisition: won=%v lease=%+v err=%v", won, lease, err)
+	}
+	if bound.instanceID != "instance-a" {
+		t.Fatalf("instance identity lost during tenant binding: %q", bound.instanceID)
+	}
 }
 
 func TestServiceCreateValidatesAndQueues(t *testing.T) {

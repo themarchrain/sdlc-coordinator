@@ -15,6 +15,7 @@ import (
 	"sdlc-coordinator/internal/events"
 	api "sdlc-coordinator/internal/http"
 	handlers "sdlc-coordinator/internal/http/handlers"
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
 	"sdlc-coordinator/internal/orchestrator"
@@ -26,6 +27,7 @@ import (
 	"sdlc-coordinator/internal/runnerpool"
 	"sdlc-coordinator/internal/scheduler"
 	"sdlc-coordinator/internal/store"
+	storerepository "sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
 	"sdlc-coordinator/internal/tenantmigration"
 
@@ -151,6 +153,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		requirements.NewStore(db), registeredrepo.NewStore(db),
 		requirements.NewProviderClientFactory(nil),
 	)
+	requirementsService.WithWorkItemLeaseFactory(func(db *gorm.DB) requirements.WorkItemLeasePort {
+		return storerepository.NewWorkItemLeaseRepository(db)
+	}, instance.ID())
 	connectorService := connectors.NewService(connectors.NewConnectorRepository(db), connectors.NewHTTPClient())
 	mcpHandler := handlers.NewMCPHandler(
 		nil, resultTokenSecret, nil, nil, nil,
@@ -291,7 +296,7 @@ func migrateBusinessStore(db *gorm.DB) error {
 }
 
 // newTenantResolver 按平台库方言选择租户数据面形态：MySQL → 每租户独立库
-//（平台 DSN 派生，库名由租户 ID 确定性生成）；SQLite → 本地文件（单机开发）。
+// （平台 DSN 派生，库名由租户 ID 确定性生成）；SQLite → 本地文件（单机开发）。
 func newTenantResolver(db *gorm.DB, cfg config.Config, main *tenantdb.Store, tenantDataDir string) (tenantdb.UnmanagedResolver, error) {
 	if db.Dialector.Name() != store.DriverMySQL {
 		return tenantdb.NewSqliteFileResolver(main, tenantDataDir, 0), nil
