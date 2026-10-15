@@ -190,10 +190,14 @@ func PayloadHash(value any) (string, error) {
 	case CommitRequest:
 		request.OperationID = ""
 		request.Credential = Credential{}
+		request.Owner = ""
+		request.Generation = 0
 		normalized = request
 	case PushRequest:
 		request.OperationID = ""
 		request.Credential = Credential{}
+		request.Owner = ""
+		request.Generation = 0
 		normalized = request
 	case CleanupRequest:
 		request.OperationID = ""

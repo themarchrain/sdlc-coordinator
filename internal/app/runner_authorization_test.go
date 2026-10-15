@@ -113,6 +113,22 @@ func TestRunnerAuthorizationDecisions(t *testing.T) {
 	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, lease.Owner, lease.Generation+1); decision.Authorized {
 		t.Fatalf("commit with a stale generation must be denied: %+v", decision)
 	}
+	if released, err := leases.Release(ctx, "developer-delivery:"+runCurrent.RunID, lease.Owner, lease.Generation); err != nil || !released {
+		t.Fatalf("release delivery lease: released=%v err=%v", released, err)
+	}
+	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, lease.Owner, lease.Generation); decision.Authorized {
+		t.Fatalf("commit without a lease must be denied: %+v", decision)
+	}
+	lease, won, err = leases.Acquire(ctx, "developer-delivery:"+runCurrent.RunID, "instance-a:mcp", "developer-delivery", time.Minute)
+	if err != nil || !won {
+		t.Fatalf("reacquire delivery lease: won=%v err=%v", won, err)
+	}
+	if err := handle.DB.Model(&model.WorkItemLease{}).Where("scope = ?", lease.Scope).Update("lease_until", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatalf("expire delivery lease: %v", err)
+	}
+	if decision := decideWithRight(workspaceproto.KindDeveloperCommit, runCurrent.RunID, lease.Owner, lease.Generation); decision.Authorized {
+		t.Fatalf("commit with an expired lease must be denied: %+v", decision)
+	}
 	if decision := decide(workspaceproto.KindDeveloperCommit, runStale.RunID); decision.Authorized {
 		t.Fatalf("stale run commit must be denied: %+v", decision)
 	}

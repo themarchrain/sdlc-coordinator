@@ -151,6 +151,8 @@ func TestWorkspaceOpsCommitReplayAndConflict(t *testing.T) {
 	}
 
 	commitRequest := developerCommitRequest(origin, runID, "op-commit-1", "feat: add feature file\n\n- adds feature.txt", prepare.BaselineSHA)
+	commitRequest.Owner = "coordinator-a"
+	commitRequest.Generation = 1
 	committed, err := ops.CommitWorkspace(ctx, commitRequest)
 	if err != nil {
 		t.Fatalf("commit: %v", err)
@@ -159,7 +161,10 @@ func TestWorkspaceOpsCommitReplayAndConflict(t *testing.T) {
 		t.Fatalf("commit sha = %q", committed.CommitSHA)
 	}
 
-	replayed, err := ops.CommitWorkspace(ctx, commitRequest)
+	replayRequest := commitRequest
+	replayRequest.Owner = "coordinator-b"
+	replayRequest.Generation = 2
+	replayed, err := ops.CommitWorkspace(ctx, replayRequest)
 	if err != nil {
 		t.Fatalf("commit replay: %v", err)
 	}
@@ -204,6 +209,8 @@ func TestWorkspaceOpsPushFixedSHAAndReplay(t *testing.T) {
 	}
 
 	pushRequest := developerPushRequest(origin, runID, "op-push-1", committed.CommitSHA, prepare.BaselineSHA)
+	pushRequest.Owner = "coordinator-a"
+	pushRequest.Generation = 1
 	pushed, err := ops.PushWorkspace(ctx, pushRequest)
 	if err != nil {
 		t.Fatalf("push: %v", err)
@@ -216,7 +223,10 @@ func TestWorkspaceOpsPushFixedSHAAndReplay(t *testing.T) {
 		t.Fatalf("remote head = %s, want %s", remoteHead, committed.CommitSHA)
 	}
 
-	replayed, err := ops.PushWorkspace(ctx, pushRequest)
+	replayRequest := pushRequest
+	replayRequest.Owner = "coordinator-b"
+	replayRequest.Generation = 2
+	replayed, err := ops.PushWorkspace(ctx, replayRequest)
 	if err != nil {
 		t.Fatalf("push replay: %v", err)
 	}
@@ -323,6 +333,30 @@ func TestWorkspaceOpsAuthorizationGate(t *testing.T) {
 		}
 		if _, err := ops.GetOperation("op-gate-denied"); !errors.Is(err, ErrOperationNotFound) {
 			t.Fatalf("denied operation must not be recorded: %v", err)
+		}
+	})
+
+	t.Run("takeover between first check and durable acceptance rejects execution", func(t *testing.T) {
+		checks := 0
+		ops, err := NewWorkspaceOps(WorkspaceOpsConfig{
+			DataRoot: t.TempDir(),
+			Authorize: func(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
+				checks++
+				return workspaceproto.AuthorizationDecision{Authorized: checks == 1}, nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ops.PrepareWorkspace(ctx, developerPrepareRequest(origin, "run-takeover", "op-takeover-prepare")); err != nil {
+			t.Fatal(err)
+		}
+		_, err = ops.CleanupWorkspace(ctx, workspaceproto.CleanupRequest{OperationID: "op-takeover-cleanup", TenantID: 1, TaskID: "task", RunID: "run-takeover"})
+		if !errors.Is(err, ErrNotAuthorized) {
+			t.Fatalf("stale owner operation must be denied before execution: checks=%d err=%v", checks, err)
+		}
+		if checks != 2 {
+			t.Fatalf("authorization checks = %d, want 2", checks)
 		}
 	})
 }

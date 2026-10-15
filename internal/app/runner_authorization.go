@@ -90,12 +90,12 @@ func authorizeRunnerOperation(ctx context.Context, db *gorm.DB, request workspac
 		if strings.TrimSpace(request.Owner) == "" {
 			return deny("delivery execution right is required for commit and push")
 		}
-		leased, err := repository.NewWorkItemLeaseRepository(db).Get(ctx, developerDeliveryLeaseScopeForAuthorization+run.RunID)
+		valid, err := repository.NewWorkItemLeaseRepository(db).Verify(ctx, developerDeliveryLeaseScopeForAuthorization+run.RunID, request.Owner, request.Generation)
 		if err != nil {
-			return deny("delivery execution right is not held for this run")
+			return workspaceproto.AuthorizationDecision{}, fmt.Errorf("verify delivery execution right: %w", err)
 		}
-		if leased.Owner != request.Owner || leased.Generation != request.Generation {
-			return deny("delivery execution right has been taken over by another owner")
+		if !valid {
+			return deny("delivery execution right is missing, expired, or held by another owner")
 		}
 		return workspaceproto.AuthorizationDecision{Authorized: true}, nil
 	case workspaceproto.KindCleanup:

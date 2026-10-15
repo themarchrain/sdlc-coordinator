@@ -476,9 +476,12 @@ func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operation
 	if o == nil {
 		return zero, false, ErrServiceNotAccepting
 	}
-	if gatedWorkspaceKind(kind) {
+	authorize := func() error {
+		if !gatedWorkspaceKind(kind) {
+			return nil
+		}
 		if o.authorize == nil {
-			return zero, false, fmt.Errorf("%w: %s is a state changing operation and the runner has no authorization channel configured", ErrNotAuthorized, operationID)
+			return fmt.Errorf("%w: %s is a state changing operation and the runner has no authorization channel configured", ErrNotAuthorized, operationID)
 		}
 		owner, generation := "", uint64(0)
 		for _, right := range executionRight {
@@ -489,15 +492,19 @@ func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operation
 			Owner: owner, Generation: generation,
 		})
 		if authErr != nil {
-			return zero, false, fmt.Errorf("confirm workspace operation authorization: %w", authErr)
+			return fmt.Errorf("confirm workspace operation authorization: %w", authErr)
 		}
 		if !decision.Authorized {
 			reason := strings.TrimSpace(decision.Reason)
 			if reason == "" {
 				reason = "the coordinator did not confirm current ownership"
 			}
-			return zero, false, fmt.Errorf("%w: %s: %s", ErrNotAuthorized, operationID, reason)
+			return fmt.Errorf("%w: %s: %s", ErrNotAuthorized, operationID, reason)
 		}
+		return nil
+	}
+	if err := authorize(); err != nil {
+		return zero, false, err
 	}
 
 	o.mu.Lock()
@@ -552,6 +559,18 @@ func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operation
 		o.inFlight--
 		o.mu.Unlock()
 	}()
+	if authErr := authorize(); authErr != nil {
+		o.mu.Lock()
+		record.Status = workspaceOpStatusFailed
+		record.ErrorMessage = "authorization changed before acceptance"
+		record.UpdatedAt = o.now().UTC()
+		writeErr := o.writeRecordLocked(record)
+		o.mu.Unlock()
+		if writeErr != nil {
+			return zero, false, writeErr
+		}
+		return zero, false, authErr
+	}
 
 	releaseRun := o.lockRun(runID)
 	defer releaseRun()
