@@ -27,6 +27,9 @@ type TaskRepository interface {
 	GetByDedupeKey(context.Context, string) (*model.Task, error)
 	ListExpiredLeases(context.Context, time.Time, int) ([]model.Task, error)
 	ListDispatchable(context.Context, int) ([]model.Task, error)
+	MaxTaskID(context.Context) (uint, error)
+	// ListDispatchableAfter pages after (UpdatedAt, ID), bounded by throughID when nonzero.
+	ListDispatchableAfter(context.Context, *model.Task, int, uint) ([]model.Task, error)
 	Claim(context.Context, string, string, time.Time) error
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)

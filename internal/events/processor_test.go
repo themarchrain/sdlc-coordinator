@@ -61,6 +61,52 @@ func TestProcessorCreatesTaskFromGitLabMergeRequestWebhook(t *testing.T) {
 	}
 }
 
+func TestProcessorKeepsNewReviewerHeadAndDeduplicatesSameSHA(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		normalizer Normalizer
+		opened     string
+		updated    string
+		prefix     string
+	}{
+		{"gitlab", NewGitLabNormalizer(), gitLabMROpenPayload, gitLabMRUpdateWithOldRevPayload, "gitlab:mr-review:24207:12:"},
+		{"github", GitHubNormalizer{}, githubPROpenedPayload,
+			strings.Replace(strings.Replace(githubPROpenedPayload, `"action": "opened"`, `"action": "synchronize"`, 1), `"sha": "abc123def"`, `"sha": "head-b"`, 1), "github:mr-review:42:12:"},
+		{"gitea", NewGiteaNormalizer(), giteaPROpenedPayload,
+			strings.Replace(strings.Replace(giteaPROpenedPayload, `"action": "opened"`, `"action": "synchronized"`, 1), `"sha": "abc123def"`, `"sha": "head-b"`, 1), "gitea:mr-review:42:12:"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			processor, _, tasks := newProcessorFixture(t)
+			ctx := context.Background()
+			a, err := processor.ProcessWebhook(ctx, test.normalizer, []byte(test.opened), WebhookMetadata{DeliveryID: "delivery-a"})
+			if err != nil || a.Task == nil || a.Ignored {
+				t.Fatalf("create head A: result=%#v err=%v", a, err)
+			}
+			a.Task.Status = model.TaskStatusRunning
+			if err := tasks.Update(ctx, a.Task); err != nil {
+				t.Fatal(err)
+			}
+			b, err := processor.ProcessWebhook(ctx, test.normalizer, []byte(test.updated), WebhookMetadata{DeliveryID: "delivery-b"})
+			if err != nil || b.Task == nil || b.Ignored || b.Task.Status != model.TaskStatusPending || b.Task.TaskID == a.Task.TaskID {
+				t.Fatalf("create distinct pending head B while A is active: result=%#v err=%v", b, err)
+			}
+			for _, task := range []*model.Task{a.Task, b.Task} {
+				if !strings.HasPrefix(task.DedupeKey, test.prefix) {
+					t.Fatalf("normalizer and factory must retain review identity: %q", task.DedupeKey)
+				}
+			}
+			replayed, err := processor.ProcessWebhook(ctx, test.normalizer, []byte(test.updated), WebhookMetadata{DeliveryID: "delivery-b-again"})
+			if err != nil || replayed.Task == nil || replayed.Ignored || replayed.Task.TaskID != b.Task.TaskID {
+				t.Fatalf("a different delivery of the same SHA must reuse B: result=%#v err=%v", replayed, err)
+			}
+			pending, err := tasks.ListDispatchable(ctx, 10)
+			if err != nil || len(pending) != 1 || pending[0].TaskID != b.Task.TaskID {
+				t.Fatalf("exactly one pending B must remain: tasks=%#v err=%v", pending, err)
+			}
+		})
+	}
+}
+
 func TestProcessorIgnoresGitLabMergeRequestMetadataUpdate(t *testing.T) {
 	processor, inboundRepo, taskRepo := newProcessorFixture(t)
 	ctx := context.Background()

@@ -418,6 +418,48 @@ func TestTaskRepositoryListDispatchable(t *testing.T) {
 	}
 }
 
+func TestTaskRepositoryListDispatchableAfterClaimedCursor(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(db, &model.Task{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewTaskRepository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	keys := []string{"later-timestamp", "cursor", "same-timestamp", "running"}
+	for i, updatedAt := range []time.Time{now.Add(time.Minute), now, now, now.Add(2 * time.Minute)} {
+		task := &model.Task{TaskID: keys[i], DedupeKey: keys[i], Role: "DeveloperWorker", Type: "bugfix", Status: model.TaskStatusPending, UpdatedAt: updatedAt}
+		if i == 3 {
+			task.Status = model.TaskStatusRunning
+		}
+		if err := repo.Create(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := repo.ListDispatchable(ctx, 1)
+	if err != nil || len(first) != 1 || first[0].TaskID != "cursor" {
+		t.Fatalf("unexpected first page: tasks=%#v err=%v", first, err)
+	}
+	if err := repo.Claim(ctx, first[0].TaskID, "cursor-run", now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	throughID, err := repo.MaxTaskID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := repo.ListDispatchableAfter(ctx, &first[0], 1, throughID)
+	if err != nil || len(second) != 1 || second[0].TaskID != "same-timestamp" {
+		t.Fatalf("claimed cursor must not skip equal-timestamp successor: tasks=%#v err=%v", second, err)
+	}
+	last, err := repo.ListDispatchableAfter(ctx, &second[0], 10, throughID)
+	if err != nil || len(last) != 1 || last[0].TaskID != "later-timestamp" {
+		t.Fatalf("later timestamp must take priority over ID, excluding running tasks: tasks=%#v err=%v", last, err)
+	}
+}
+
 func TestTaskRepositoryBlockRunAndRequireHumanRollsBackOnTaskFailure(t *testing.T) {
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {
@@ -521,5 +563,42 @@ func TestTaskRepositoryFindsActiveReviewerByDedupePrefix(t *testing.T) {
 	active, err = repo.HasActiveReviewerTaskForDedupePrefix(ctx, "gitlab:mr-review:group/project:210:", "task-mr-210-similar")
 	if err != nil || active {
 		t.Fatalf("own prefix with only self pending must not self-defer: active=%v err=%v", active, err)
+	}
+}
+
+func TestReviewerDedupePrefixWaitsForPredecessorsAndExecutingSuccessors(t *testing.T) {
+	for _, status := range []model.TaskStatus{
+		model.TaskStatusPending, model.TaskStatusRetryPending, model.TaskStatusClaimed,
+		model.TaskStatusRunning, model.TaskStatusFinalizing, model.TaskStatusSucceeded,
+		model.TaskStatusBlocked, model.TaskStatusHumanRequired, model.TaskStatusWaitingMerge,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			db, err := store.Open("file:" + model.NewID("review_order") + "?mode=memory&cache=shared")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Migrate(db, &model.Task{}); err != nil {
+				t.Fatal(err)
+			}
+			repo := NewTaskRepository(db)
+			ctx := context.Background()
+			prefix := "github:mr-review:42:21:"
+			a := &model.Task{TaskID: "head-a", DedupeKey: prefix + "a", Type: "review_mr", Role: "ReviewerWorker", Status: model.TaskStatusRetryPending}
+			b := &model.Task{TaskID: "head-b", DedupeKey: prefix + "b", Type: "review_mr", Role: "ReviewerWorker", Status: status}
+			for _, task := range []*model.Task{a, b} {
+				if err := repo.Create(ctx, task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			active, err := repo.HasActiveReviewerTaskForDedupePrefix(ctx, prefix, a.TaskID)
+			want := status == model.TaskStatusClaimed || status == model.TaskStatusRunning || status == model.TaskStatusFinalizing
+			if err != nil || active != want {
+				t.Fatalf("successor %s: active=%v want=%v err=%v", status, active, want, err)
+			}
+			active, err = repo.HasActiveReviewerTaskForDedupePrefix(ctx, prefix, b.TaskID)
+			if err != nil || !active {
+				t.Fatalf("retry-pending predecessor must block: active=%v err=%v", active, err)
+			}
+		})
 	}
 }
