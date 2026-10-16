@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"sdlc-coordinator/internal/app"
 	"sdlc-coordinator/internal/config"
@@ -61,6 +62,9 @@ func main() {
 		case <-ctx.Done():
 		}
 	}()
+	go configuration.WatchForNewerRevision(ctx, configurationRepository, configurationService.Status().Revision, shutdownSignal, time.Second, func(err error) {
+		logger.Warn("check runtime configuration revision failed", zap.Error(err))
+	})
 
 	if err := application.Run(ctx); err != nil {
 		logger.Fatal("application stopped with error", zap.Error(err))

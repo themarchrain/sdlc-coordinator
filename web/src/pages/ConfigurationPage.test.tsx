@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { adminApi } from '../api/client'
+import { AdminApiError, adminApi } from '../api/client'
 import type { ConfigurationView } from '../api/types'
 import { ConfigurationBoundary } from '../app/ConfigurationBoundary'
 import { WorkspaceSessionProvider } from '../app/workspaceSession'
@@ -137,6 +137,7 @@ describe('ConfigurationPage', () => {
     // provider 与 effort 已无 UI 编辑，但保存 payload 必须原样回传加载值：
     // 后端整行替换语义下缺键会把系统兜底值静默清空。
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      expected_revision: 0,
       config: expect.objectContaining({
         agent_runner: expect.objectContaining({
           service_url: 'http://agent-runner:8081',
@@ -152,6 +153,20 @@ describe('ConfigurationPage', () => {
     expect('codehost' in payload).toBe(false)
     expect('im' in payload).toBe(false)
     expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('explains that a stale runtime configuration must be reloaded', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 3, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    vi.spyOn(adminApi, 'updateConfiguration').mockRejectedValue(new AdminApiError(409, 'revision_conflict', '运行配置已被其他管理员更新，请刷新页面后重新提交'))
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    expect(await screen.findByText('运行配置已被其他管理员更新，请刷新页面后重新提交')).toBeInTheDocument()
   })
 
   it('can save from the configuration-error state through the four steps', async () => {

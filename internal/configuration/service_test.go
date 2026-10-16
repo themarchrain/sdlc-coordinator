@@ -21,7 +21,7 @@ func TestServiceUpdateRetainsReplacesAndExplicitlyClearsSecrets(t *testing.T) {
 	input.AgentRunner.Model = "updated-model"
 
 	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{
-		Config: input,
+		Config: input, ExpectedRevision: uint64Pointer(1),
 		Secrets: SecretChanges{
 			AgentRunnerAPIKey:                 stringPointer("new-runner-key"),
 			ClearAgentRunnerCustomHeadersJSON: true,
@@ -60,7 +60,7 @@ func TestServiceUpdateKeepsSchedulerFieldsWhenSubmissionOmitsThem(t *testing.T) 
 	input.Scheduler.CallbackBaseURL = ""
 	input.Scheduler.WorkspaceRoot = ""
 
-	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input})
+	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input, ExpectedRevision: uint64Pointer(1)})
 	if err != nil || len(validationErrors) != 0 {
 		t.Fatalf("update runtime configuration: result=%#v validation=%#v error=%v", result, validationErrors, err)
 	}
@@ -74,7 +74,7 @@ func TestServiceUpdateDropsLegacyTranslatorFields(t *testing.T) {
 	service := newReadyConfigurationService(t)
 	input := service.Get().Config
 
-	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input})
+	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input, ExpectedRevision: uint64Pointer(1)})
 	if err != nil || len(validationErrors) != 0 {
 		t.Fatalf("update without translator settings: result=%#v validation=%#v error=%v", result, validationErrors, err)
 	}
@@ -105,7 +105,7 @@ func TestServiceRejectsInvalidUpdateWithoutCreatingRevision(t *testing.T) {
 	input := service.Get().Config
 	input.Scheduler.CallbackBaseURL = "not-a-url"
 
-	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input})
+	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input, ExpectedRevision: uint64Pointer(1)})
 
 	if err != nil {
 		t.Fatalf("invalid request should return field errors, got %v", err)
@@ -146,5 +146,9 @@ func newReadyConfigurationService(t *testing.T) *Service {
 }
 
 func stringPointer(value string) *string {
+	return &value
+}
+
+func uint64Pointer(value uint64) *uint64 {
 	return &value
 }

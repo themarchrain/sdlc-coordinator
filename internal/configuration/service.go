@@ -76,9 +76,12 @@ type SecretChanges struct {
 }
 
 type UpdateRequest struct {
-	Config  EditableRuntimeConfig `json:"config"`
-	Secrets SecretChanges         `json:"secrets"`
+	Config           EditableRuntimeConfig `json:"config"`
+	Secrets          SecretChanges         `json:"secrets"`
+	ExpectedRevision *uint64               `json:"expected_revision"`
 }
+
+var ErrExpectedRevisionRequired = errors.New("expected runtime configuration revision is required")
 
 type UpdateResult struct {
 	StatusView
@@ -125,6 +128,18 @@ func (service *Service) Runtime() RuntimeConfig {
 	return service.current
 }
 
+func (service *Service) HasNewerRevision(ctx context.Context) (bool, error) {
+	status := service.Status()
+	latest, err := service.repository.Latest(ctx)
+	if errors.Is(err, ErrSnapshotNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return latest.Revision > status.Revision, nil
+}
+
 func (service *Service) Validate(request UpdateRequest) ValidationErrors {
 	service.mu.RLock()
 	baseline := service.current
@@ -136,6 +151,9 @@ func (service *Service) Validate(request UpdateRequest) ValidationErrors {
 func (service *Service) Update(ctx context.Context, request UpdateRequest) (*UpdateResult, ValidationErrors, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	if request.ExpectedRevision == nil {
+		return nil, nil, ErrExpectedRevisionRequired
+	}
 	// 合并基线必须取库内最新快照而非本进程缓存：负载均衡下 A 改字段 X 后
 	// B 的提交可能仍带着 B 的旧缓存，按旧缓存整包发新 revision 会把 X
 	// 恢复成旧值（多实例配置回退）。库内最新快照是唯一权威基线，CAS 期望
@@ -150,6 +168,9 @@ func (service *Service) Update(ctx context.Context, request UpdateRequest) (*Upd
 	case errors.Is(err, ErrSnapshotNotFound):
 	default:
 		return nil, nil, fmt.Errorf("load latest runtime configuration: %w", err)
+	}
+	if *request.ExpectedRevision != expectedRevision {
+		return nil, nil, ErrRevisionConflict
 	}
 	candidate := mergeUpdate(baseline, request)
 	validationErrors := Validate(candidate)

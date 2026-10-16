@@ -18,7 +18,7 @@ type SecretFieldName = string | (string | number)[]
 import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { adminApi } from '../api/client'
+import { AdminApiError, adminApi } from '../api/client'
 import { APP_VERSION } from '../app/version'
 import type {
   ConfigurationSecretChanges,
@@ -104,7 +104,7 @@ export function ConfigurationPage() {
     setFieldErrors({})
     try {
       const values = await form.validateFields()
-      const request = toUpdateRequest(values)
+      const request = toUpdateRequest(values, status?.revision ?? 0)
       const validation = await adminApi.validateConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
@@ -119,7 +119,9 @@ export function ConfigurationPage() {
       setRestarting(true)
       message.success('配置已保存，Coordinator 正在重启')
     } catch (reason) {
-      message.error(reason instanceof Error ? reason.message : '保存配置失败')
+      message.error(reason instanceof AdminApiError && reason.code === 'revision_conflict'
+        ? '运行配置已被其他管理员更新，请刷新页面后重新提交'
+        : reason instanceof Error ? reason.message : '保存配置失败')
     } finally {
       setSaving(false)
     }
@@ -291,7 +293,7 @@ function toFormValues(view: ConfigurationView): ConfigurationFormValues {
   }
 }
 
-function toUpdateRequest(values: ConfigurationFormValues): ConfigurationUpdateRequest {
+function toUpdateRequest(values: ConfigurationFormValues, expectedRevision: number): ConfigurationUpdateRequest {
   const { task_timeout_minutes, ...agentRunner } = values.agent_runner
   return {
     config: {
@@ -302,6 +304,7 @@ function toUpdateRequest(values: ConfigurationFormValues): ConfigurationUpdateRe
       scheduler: values.scheduler,
     },
     secrets: values.secrets || {},
+    expected_revision: expectedRevision,
   }
 }
 

@@ -401,6 +401,7 @@ export interface ConfigurationSecretChanges {
 export interface ConfigurationUpdateRequest {
   config: EditableRuntimeConfiguration
   secrets?: ConfigurationSecretChanges
+  expected_revision: number
 }
 
 export interface ConfigurationValidationResult {

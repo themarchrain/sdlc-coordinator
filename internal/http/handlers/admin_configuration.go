@@ -59,6 +59,14 @@ func (handler *AdminConfigurationHandler) Update(c *gin.Context) {
 	}
 	result, validationErrors, err := handler.service.Update(c.Request.Context(), request)
 	if err != nil {
+		if errors.Is(err, configuration.ErrRevisionConflict) {
+			writeAdminError(c, http.StatusConflict, "revision_conflict", "运行配置已被其他管理员更新，请刷新页面后重新提交")
+			return
+		}
+		if errors.Is(err, configuration.ErrExpectedRevisionRequired) {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求缺少 expected_revision")
+			return
+		}
 		writeAdminError(c, http.StatusInternalServerError, "internal_error", "保存运行配置失败")
 		return
 	}
@@ -77,8 +85,15 @@ func (handler *AdminConfigurationHandler) Restart(c *gin.Context) {
 		return
 	}
 	if handler.service.Status().Mode != configuration.ModeRestartRequired {
-		writeAdminError(c, http.StatusConflict, "restart_not_required", "当前没有等待生效的配置")
-		return
+		newer, err := handler.service.HasNewerRevision(c.Request.Context())
+		if err != nil {
+			writeAdminError(c, http.StatusInternalServerError, "internal_error", "读取运行配置版本失败")
+			return
+		}
+		if !newer {
+			writeAdminError(c, http.StatusConflict, "restart_not_required", "当前没有等待生效的配置")
+			return
+		}
 	}
 	c.JSON(http.StatusAccepted, gin.H{"status": "shutdown_scheduled"})
 	delay := handler.restartDelay
