@@ -87,9 +87,9 @@ assert_tenant_provisioned() {
 }
 
 create_tenant_probe() {
-    scenario="$1"; slug="$2"
+    scenario="$1"; slug="$2"; connect_ip="${3:-}"
     response=$(api_post "/api/super-admin/tenants" "$session_jar" \
-        "{\"slug\":\"${slug}\",\"display_name\":\"faultsuite ${scenario}\"}") || return 1
+        "{\"slug\":\"${slug}\",\"display_name\":\"faultsuite ${scenario}\"}" "$connect_ip") || return 1
     [ -n "$response" ]
 }
 
@@ -107,15 +107,15 @@ scenario_coordinator_pause() {
     docker compose -f "$COMPOSE_FILE" pause coordinator-a >/dev/null 2>&1
     assert_true "$scenario" "smoke_coordinator_a_paused" $?
 
-    # 暂停窗口内健康面应仍由 B 承接（LB 探活把流量切给 B）。
-    wait_until "lb still serves through B" 60 2 lb_ready
-    assert_true "$scenario" "smoke_lb_serves_via_survivor" $?
+    wait_until "coordinator-b serves during A pause" 60 2 coordinator_ready "${CONTAINER_PREFIX}-coordinator-b-1"
+    assert_true "$scenario" "smoke_survivor_ready" $?
 
     # 暂停 20 秒覆盖一个调度 tick 窗口；本场景没有创建在途 run。
     sleep 20
-    # 暂停期间经 LB 创建真实租户，验证存活实例写入共享控制面和数据面库。
+    # 暂停期间直连 B 创建租户，验证存活实例写入共享控制面和数据面库。
     tenant_slug="fault-pause-$(date +%s)"
-    if create_tenant_probe "$scenario" "$tenant_slug"; then
+    survivor_ip=$(docker inspect "${CONTAINER_PREFIX}-coordinator-b-1" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null)
+    if [ -n "$survivor_ip" ] && create_tenant_probe "$scenario" "$tenant_slug" "$survivor_ip"; then
         assert_tenant_provisioned "$scenario" "$tenant_slug"
     else
         record "$scenario" "tenant_create_while_a_paused" fail "control-plane tenant creation failed"

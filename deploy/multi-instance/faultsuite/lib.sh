@@ -75,21 +75,24 @@ mysql_scalar() {
 # api_get <path> <cookie-jar> —— 经 LB 调 Portal/管理 API（会话走 cookie）。
 api_get() {
     path="$1"; jar="$2"
-    curl -fsS -b "$jar" "http://127.0.0.1:${MULTI_LB_PORT:-8090}$path" 2>/dev/null
+    curl --max-time 12 -fsS -b "$jar" "http://127.0.0.1:${MULTI_LB_PORT:-8090}$path" 2>/dev/null
 }
 
 # api_post <path> <cookie-jar> <body>
 api_post() {
-    path="$1"; jar="$2"; body="$3"
-    curl -fsS -X POST -b "$jar" -H "Content-Type: application/json" \
-        -d "$body" "http://127.0.0.1:${MULTI_LB_PORT:-8090}$path" 2>/dev/null
+    path="$1"; jar="$2"; body="$3"; connect_ip="${4:-}"
+    set -- curl --max-time 12 -fsS -X POST -b "$jar" -H "Content-Type: application/json" -d "$body"
+    if [ -n "$connect_ip" ]; then
+        set -- "$@" --connect-to "127.0.0.1:${MULTI_LB_PORT:-8090}:${connect_ip}:8080"
+    fi
+    "$@" "http://127.0.0.1:${MULTI_LB_PORT:-8090}$path" 2>/dev/null
 }
 
 # portal_login <username> <password> <cookie-jar-path> —— 登录并保存会话
 # cookie（Portal 会话是 http-only cookie，无响应体 token）。退出码 0=成功。
 portal_login() {
     username="$1"; password="$2"; jar="$3"
-    curl -fsS -c "$jar" -X POST -H "Content-Type: application/json" \
+    curl --max-time 12 -fsS -c "$jar" -X POST -H "Content-Type: application/json" \
         -d "{\"username\":\"$username\",\"password\":\"$password\"}" \
         "http://127.0.0.1:${MULTI_LB_PORT:-8090}/api/portal/auth/login" >/dev/null 2>&1
 }
