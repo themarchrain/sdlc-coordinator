@@ -51,6 +51,7 @@ services:
       CONTROL_PLANE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@mysql:3306/sdlc_control_plane"
       CONTROL_PLANE_SUPERADMIN_USERNAME: "${MULTI_SUPERADMIN_USERNAME:-superadmin}"
       CONTROL_PLANE_SUPERADMIN_PASSWORD: "${MULTI_SUPERADMIN_PASSWORD:-multi-super-pass}"
+      PORTAL_COOKIE_SECURE: "${MULTI_PORTAL_COOKIE_SECURE:-true}"
       COORDINATOR_LOG_LEVEL: info
       COORDINATOR_LOG_DIR: /app/logs
       COORDINATOR_ENVIRONMENT: production
@@ -83,6 +84,7 @@ services:
       CONTROL_PLANE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@mysql:3306/sdlc_control_plane"
       CONTROL_PLANE_SUPERADMIN_USERNAME: "${MULTI_SUPERADMIN_USERNAME:-superadmin}"
       CONTROL_PLANE_SUPERADMIN_PASSWORD: "${MULTI_SUPERADMIN_PASSWORD:-multi-super-pass}"
+      PORTAL_COOKIE_SECURE: "${MULTI_PORTAL_COOKIE_SECURE:-true}"
       COORDINATOR_LOG_LEVEL: info
       COORDINATOR_LOG_DIR: /app/logs
       COORDINATOR_ENVIRONMENT: production
@@ -90,7 +92,8 @@ services:
       AGENT_RUNNER_REMOTE_WORKSPACE: "true"
       RESULT_CHANNEL_SECRET: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
       AGENT_RUNNER_INTERNAL_TOKEN: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
-      AGENT_RUNNER_SERVICE_URL: "http://runner-b:8081"
+      # 运行配置存入共享 MySQL；首次向导保存的默认地址会由双副本共用。
+      AGENT_RUNNER_SERVICE_URL: "http://runner-a:8081"
       AGENT_RUNNER_WORKSPACE_ROOT: "/app/workspaces"
       AGENT_RUNNER_PROVIDER: "codex-cli"
     volumes:

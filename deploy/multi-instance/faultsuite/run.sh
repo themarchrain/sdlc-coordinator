@@ -15,6 +15,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 COMPOSE_FILE=docker-compose.multi.yml
 export COMPOSE_FILE
+CONTAINER_PREFIX=${COMPOSE_PROJECT_NAME:-multi-instance}
 
 # 环境面与部署同源：宿主环境优先，其次 compose 同款 .env（密钥不入库）。
 if [ -z "${MULTI_SUPERADMIN_PASSWORD:-}" ] && [ -f .env ]; then
@@ -23,6 +24,26 @@ if [ -z "${MULTI_SUPERADMIN_PASSWORD:-}" ] && [ -f .env ]; then
 fi
 
 . faultsuite/lib.sh
+
+lb_ready() {
+    curl --max-time 12 -fsS "http://127.0.0.1:${MULTI_LB_PORT:-8090}/readyz" >/dev/null 2>&1
+}
+
+coordinator_ready() {
+    docker exec "$1" wget -qO- http://127.0.0.1:8080/readyz 2>/dev/null | grep -q '"status":"ready"'
+}
+
+runner_ready() {
+    docker exec "$1" wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok
+}
+
+topology_ready() {
+    lb_ready &&
+        coordinator_ready "${CONTAINER_PREFIX}-coordinator-a-1" &&
+        coordinator_ready "${CONTAINER_PREFIX}-coordinator-b-1" &&
+        runner_ready "${CONTAINER_PREFIX}-runner-a-1" &&
+        runner_ready "${CONTAINER_PREFIX}-runner-b-1"
+}
 
 SCENARIOS_ALL="coordinator_pause coordinator_kill runner_kill net_block lb_failover"
 SCENARIOS="${*:-$SCENARIOS_ALL}"
@@ -38,8 +59,7 @@ record "coverage" "A18_mysql_disconnect_deadlock_lock_timeout" not_covered "This
 # ---- 前置自检：部署健康才跑矩阵（避免把部署问题误报成故障场景失败）----
 preflight() {
     scenario="preflight"
-    wait_until "coordinator-a healthy" 60 2 sh -c \
-        'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
+    wait_until "coordinator-a healthy" 60 2 topology_ready
     assert_true "$scenario" "smoke_lb_reaches_coordinators" $?
     jar=$(mktemp)
     portal_login superadmin "${MULTI_SUPERADMIN_PASSWORD:?set MULTI_SUPERADMIN_PASSWORD}" "$jar"
@@ -77,21 +97,18 @@ create_tenant_probe() {
 restore_topology() {
     docker compose -f "$COMPOSE_FILE" unpause coordinator-a coordinator-b >/dev/null 2>&1
     docker compose -f "$COMPOSE_FILE" start coordinator-a coordinator-b runner-a runner-b >/dev/null 2>&1
-    docker compose -f "$COMPOSE_FILE" up -d --no-deps runner-a runner-b >/dev/null 2>&1
-    wait_until "topology healthy" 120 3 sh -c \
-        'docker compose -f '"$COMPOSE_FILE"' ps --format json | grep -c "\"Health\":\"healthy\"" >/dev/null 2>&1'
+    wait_until "topology healthy" 120 3 topology_ready
 }
 
 scenario_coordinator_pause() {
     scenario="coordinator_pause"
     echo "=== $scenario: A 暂停，经 B 写入共享 MySQL；A 恢复后状态可读 ==="
-    restarts_baseline=$(docker inspect multi-instance-coordinator-a-1 --format '{{.RestartCount}}' 2>/dev/null)
+    restarts_baseline=$(docker inspect "${CONTAINER_PREFIX}-coordinator-a-1" --format '{{.RestartCount}}' 2>/dev/null)
     docker compose -f "$COMPOSE_FILE" pause coordinator-a >/dev/null 2>&1
     assert_true "$scenario" "smoke_coordinator_a_paused" $?
 
     # 暂停窗口内健康面应仍由 B 承接（LB 探活把流量切给 B）。
-    wait_until "lb still serves through B" 60 2 sh -c \
-        'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
+    wait_until "lb still serves through B" 60 2 lb_ready
     assert_true "$scenario" "smoke_lb_serves_via_survivor" $?
 
     # 暂停 20 秒覆盖一个调度 tick 窗口；本场景没有创建在途 run。
@@ -109,7 +126,7 @@ scenario_coordinator_pause() {
 
     # A 恢复后再次读取共享状态，确保恢复过程没有覆盖 B 已落地的租户。
     assert_tenant_provisioned "$scenario" "$tenant_slug"
-    restarts_after=$(docker inspect multi-instance-coordinator-a-1 --format '{{.RestartCount}}' 2>/dev/null)
+    restarts_after=$(docker inspect "${CONTAINER_PREFIX}-coordinator-a-1" --format '{{.RestartCount}}' 2>/dev/null)
     assert_eq "$scenario" "smoke_coordinator_a_not_restarted" "$restarts_baseline" "${restarts_after:-unknown}"
 }
 
@@ -124,15 +141,13 @@ scenario_coordinator_kill() {
     sleep 3
 
     # 存活实例全程服务：LB 经 B 继续应答。
-    wait_until "lb serves through survivor" 30 2 sh -c \
-        'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
+    wait_until "lb serves through survivor" 30 2 lb_ready
     assert_true "$scenario" "smoke_survivor_never_dropped" $?
 
     # 运维拉起后 A 回池并恢复 ready。
     docker compose -f "$COMPOSE_FILE" start coordinator-a >/dev/null 2>&1
     assert_true "$scenario" "smoke_coordinator_a_started" $?
-    wait_until "coordinator-a back to ready" 120 3 sh -c \
-        'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1 && docker logs multi-instance-coordinator-a-1 2>&1 | tail -50 | grep -q "\"mode\": \"ready\""'
+    wait_until "coordinator-a back to ready" 120 3 coordinator_ready "${CONTAINER_PREFIX}-coordinator-a-1"
     assert_true "$scenario" "smoke_coordinator_a_back_to_ready" $?
 }
 
@@ -140,7 +155,7 @@ scenario_runner_kill() {
     scenario="runner_kill"
     echo "=== $scenario: kill -9 Runner A；数据卷标记保留，拉起后 Runner 恢复健康 ==="
     # 先落卷标志：kill 前写入，重启后必须仍在（卷持久性断言）。
-    docker exec multi-instance-runner-a-1 sh -c 'echo volume-marker > /app/runner-data/faultsuite-marker'
+    docker exec "${CONTAINER_PREFIX}-runner-a-1" sh -c 'echo volume-marker > /app/runner-data/faultsuite-marker'
     docker compose -f "$COMPOSE_FILE" kill -s KILL runner-a >/dev/null 2>&1
     assert_true "$scenario" "smoke_runner_a_killed" $?
     sleep 3
@@ -148,36 +163,32 @@ scenario_runner_kill() {
     # 同 docker kill 语义：手动停止不触发 restart 策略，运维拉起。
     docker compose -f "$COMPOSE_FILE" start runner-a >/dev/null 2>&1
     assert_true "$scenario" "smoke_runner_a_started" $?
-    wait_until "runner-a back up" 120 3 sh -c \
-        "docker exec multi-instance-runner-a-1 wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok"
+    wait_until "runner-a back up" 120 3 runner_ready "${CONTAINER_PREFIX}-runner-a-1"
     assert_true "$scenario" "smoke_runner_a_back_up" $?
 
     # 卷保留：kill 前的标志文件重启后仍可读。
-    docker exec multi-instance-runner-a-1 sh -c 'cat /app/runner-data/faultsuite-marker' 2>/dev/null | grep -q volume-marker
+    docker exec "${CONTAINER_PREFIX}-runner-a-1" sh -c 'cat /app/runner-data/faultsuite-marker' 2>/dev/null | grep -q volume-marker
     assert_true "$scenario" "smoke_runner_volume_preserved_across_kill" $?
 
     # 双 Runner 池中 B 仍健康：新派发不落死端点。
-    wait_until "runner-b still healthy" 30 2 sh -c \
-        "docker exec multi-instance-runner-b-1 wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok"
+    wait_until "runner-b still healthy" 30 2 runner_ready "${CONTAINER_PREFIX}-runner-b-1"
     assert_true "$scenario" "smoke_runner_b_unaffected" $?
 }
 
 scenario_net_block() {
     scenario="net_block"
     echo "=== $scenario: 断 Runner A 网络，验证协调器存活及 Runner 恢复可达 ==="
-    docker network disconnect "${MULTI_NET_NAME:-sdlc-multi-net}" multi-instance-runner-a-1 >/dev/null 2>&1
+    docker network disconnect "${MULTI_NET_NAME:-sdlc-multi-net}" "${CONTAINER_PREFIX}-runner-a-1" >/dev/null 2>&1
     assert_true "$scenario" "smoke_runner_a_network_removed" $?
 
     # 阻断期间协调器对 Runner A 的探活/派发会失败——平台不得崩溃。
     sleep 15
-    wait_until "coordinators stay healthy during block" 30 2 sh -c \
-        'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
+    wait_until "coordinators stay healthy during block" 30 2 lb_ready
     assert_true "$scenario" "smoke_coordinators_survive_block" $?
 
-    docker network connect "${MULTI_NET_NAME:-sdlc-multi-net}" multi-instance-runner-a-1 --alias runner-a >/dev/null 2>&1
+    docker network connect "${MULTI_NET_NAME:-sdlc-multi-net}" "${CONTAINER_PREFIX}-runner-a-1" --alias runner-a >/dev/null 2>&1
     assert_true "$scenario" "smoke_runner_a_network_restored" $?
-    wait_until "runner-a reachable again" 60 3 sh -c \
-        "docker exec multi-instance-runner-a-1 wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok"
+    wait_until "runner-a reachable again" 60 3 runner_ready "${CONTAINER_PREFIX}-runner-a-1"
     assert_true "$scenario" "smoke_runner_a_reachable_after_restore" $?
 }
 
@@ -200,8 +211,7 @@ scenario_lb_failover() {
     fi
 
     docker compose -f "$COMPOSE_FILE" start coordinator-b >/dev/null 2>&1
-    wait_until "coordinator-b back" 120 3 sh -c \
-        'docker compose -f '"$COMPOSE_FILE"' ps coordinator-b --format json 2>/dev/null | grep -q "\"State\":\"running\""'
+    wait_until "coordinator-b back" 120 3 coordinator_ready "${CONTAINER_PREFIX}-coordinator-b-1"
     assert_true "$scenario" "smoke_coordinator_b_restarted" $?
 }
 

@@ -65,6 +65,7 @@ flowchart TB
    export MULTI_SUPERADMIN_PASSWORD='change-me-1'      # 种子超管密码
    export MULTI_MYSQL_PASSWORD='change-me-2'           # MySQL root 密码
    export MULTI_LB_PORT=8090                           # 宿主机 LB 端口
+   export MULTI_PORTAL_COOKIE_SECURE=false              # 仅本机 HTTP 联调；HTTPS 部署保持 true
    ```
 
    `MULTI_SECRET` 是 RESULT_CHANNEL_SECRET（MCP 回传签名）与
@@ -75,10 +76,19 @@ flowchart TB
 
    ```sh
    docker compose -f docker-compose.multi.yml up -d
-   curl http://127.0.0.1:8090/healthz      # 经 LB 的健康面
+   curl http://127.0.0.1:8090/healthz      # 进程存活；首次启动会显示 setup_pending
    ```
 
-4. 初始化业务面（超管首登 + 租户开通 + runner 指派）：
+4. 首次初始化运行配置：用种子超管登录 `http://127.0.0.1:8090/admin/`，
+   依次填写 Agent Runner 的模型和凭据，以及 Scheduler 的回调地址和工作区根。
+   本机样例的回调地址可填 `http://lb:80`，工作区根填 `/app/workspaces`；
+   测试替身 CLI 不调用模型接口，但向导仍要求填写测试用模型和凭据。
+   保存并启用后，双 Coordinator 会从共享 MySQL 读取同一配置版本并自动重启。
+   必须等 `/readyz` 返回 200，且分别检查双副本的 `/healthz` 都为
+   `mode=ready`、同一 `revision`，再执行后续业务操作。`/healthz` 的 200
+   只表示进程存活。
+
+5. 初始化业务面（租户开通 + runner 指派）：
 
    ```sh
    # 超管登录（会话为 http-only cookie）
@@ -93,8 +103,9 @@ flowchart TB
         http://127.0.0.1:8090/api/super-admin/tenants/<TENANT_ID>/runner-assignments
    ```
 
-   单租户联调也可以只指派一个端点；未指派租户回退各协调器配置的默认池
-   （coordinator-a → runner-a，coordinator-b → runner-b）。
+   单租户联调也可以只指派一个端点。运行配置保存在共享 MySQL 中，
+   因此未指派租户在两个 Coordinator 上回退同一个默认 Runner（样例为
+   runner-a）；需要两台 Runner 都承载业务时，应显式指派租户池。
 
 ## 测试替身 codex（无模型凭据联调）
 
