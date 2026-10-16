@@ -33,3 +33,5 @@ __pycache__/
 # root-level tool caches (vitest/npx accidental runs)
 /node_modules/
 faultsuite-results.jsonl
+/.tmpgo-cache/
+/.tmpbuild/

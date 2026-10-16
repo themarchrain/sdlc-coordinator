@@ -67,8 +67,8 @@ type TaskRepository interface {
 	BlockRunAndRequireHuman(context.Context, string, string, time.Time) error
 	ParkUnbound(context.Context, string) error
 	AdvanceGuarded(context.Context, *model.Task, model.TaskStatus) (bool, error)
-	// AdvanceGuardedForCurrentRun 以「仍处于 expected 状态且 current_run_id
-	// 仍是 runID」为条件推进：run 被接管/重派时 0 行，迟到失败不推进当前
+	// AdvanceGuardedForCurrentRun 以 expected 状态未变且 current_run_id
+	// 仍为 runID 为条件推进：run 被接管/重派时 0 行，迟到失败不推进当前
 	// 任务（失败回写路径的读-写窗口栅栏）。
 	AdvanceGuardedForCurrentRun(ctx context.Context, task *model.Task, expected model.TaskStatus, runID string) (bool, error)
 	UpdateLastErrorIfStatus(context.Context, string, model.TaskStatus, string) (bool, error)

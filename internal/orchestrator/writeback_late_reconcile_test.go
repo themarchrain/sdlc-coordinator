@@ -11,7 +11,7 @@ import (
 // TestLateReconcileCannotRegressSucceededWriteback 审查 #5 的时序回归：对账
 // 读到 unknown 后（其 absent 结论迟到），发送方已把同一写回推进到 succeeded；
 // 迟到的对账写回必须被条件写拒绝，succeeded 保持不动，且不会再触发一次
-// 远端创建。对账与发送共享同一执行权，本测试直接构造「对账观察滞后」的
+// 远端创建。对账与发送共享同一执行权，本测试直接构造对账观察滞后的
 // 时序（发送方在两个编排器之外完成，等价于竞争已发生）。
 func TestLateReconcileCannotRegressSucceededWriteback(t *testing.T) {
 	ctx := context.Background()
