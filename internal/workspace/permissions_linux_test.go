@@ -64,7 +64,18 @@ func TestRestrictedIdleRunIsRunnerOwnedAndNotTraversableByAgent(t *testing.T) {
 		t.Fatalf("idle run mode = %04o, want 0700", got)
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestAgentUIDProbeCannotReadIdleRun$")
+	probeBinary := filepath.Join(root, "agent-probe")
+	binary, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(probeBinary, binary, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(probeBinary, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(probeBinary, "-test.run=^TestAgentUIDProbeCannotReadIdleRun$")
 	cmd.Env = append(os.Environ(), agentWorkspaceProbeEnv+"="+secret)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 10002, Gid: 10002}}
 	if output, err := cmd.CombinedOutput(); err != nil {
