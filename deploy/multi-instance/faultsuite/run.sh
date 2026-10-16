@@ -47,6 +47,12 @@ topology_ready() {
 
 SCENARIOS_ALL="coordinator_pause coordinator_kill runner_kill net_block lb_failover"
 SCENARIOS="${*:-$SCENARIOS_ALL}"
+for name in $SCENARIOS; do
+    case "$name" in
+        coordinator_pause|coordinator_kill|runner_kill|net_block|lb_failover) ;;
+        *) echo "unknown scenario: $name" >&2; exit 2 ;;
+    esac
+done
 SUITE_START=$(date +%s)
 
 # 业务验收缺口显式落入结果文件，避免健康检查被误读为业务通过。
@@ -225,7 +231,6 @@ for name in $SCENARIOS; do
         runner_kill)       scenario_runner_kill ;;
         net_block)         scenario_net_block ;;
         lb_failover)       scenario_lb_failover ;;
-        *) echo "unknown scenario: $name" >&2; continue ;;
     esac
     restore_topology
 done
