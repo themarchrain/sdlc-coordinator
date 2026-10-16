@@ -43,6 +43,7 @@ type Spec struct {
 	Host     string
 	Database string
 	Pool     PoolSettings
+	budget   *ConnectionBudget
 
 	mysqlCfg *mysql.Config
 }
@@ -65,6 +66,12 @@ func (s Spec) WithDatabase(name string) Spec {
 func (s Spec) WithPool(pool PoolSettings) Spec {
 	next := s
 	next.Pool = pool
+	return next
+}
+
+func (s Spec) WithConnectionBudget(budget *ConnectionBudget) Spec {
+	next := s
+	next.budget = budget
 	return next
 }
 

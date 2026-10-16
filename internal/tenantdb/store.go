@@ -4,13 +4,30 @@ import (
 	"context"
 	"errors"
 
+	"sdlc-coordinator/internal/store"
+
 	"gorm.io/gorm"
 )
 
 // Store 是租户作用域业务库句柄。业务代码只通过本类型碰库，
 // 禁止在全局连接上 WHERE tenant_id。
 type Store struct {
-	DB *gorm.DB
+	DB     *gorm.DB
+	budget *store.ConnectionBudget
+}
+
+func (storeHandle *Store) Close() error {
+	if storeHandle == nil || storeHandle.DB == nil {
+		return nil
+	}
+	sqlDB, err := storeHandle.DB.DB()
+	if err != nil {
+		return err
+	}
+	if storeHandle.budget != nil {
+		storeHandle.budget.UnregisterDB(sqlDB)
+	}
+	return sqlDB.Close()
 }
 
 // Resolver 按租户解析句柄。

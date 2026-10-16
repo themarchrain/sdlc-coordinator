@@ -1,11 +1,13 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"gorm.io/driver/mysql"
+	mysqlDriver "github.com/go-sql-driver/mysql"
+	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -51,7 +53,10 @@ func openSQLite(dsn string) (*gorm.DB, error) {
 }
 
 func openMySQL(spec Spec) (*gorm.DB, error) {
-	db, err := gorm.Open(mysql.Open(spec.DriverDSN), &gorm.Config{
+	if spec.budget != nil {
+		return openBudgetedMySQL(spec)
+	}
+	db, err := gorm.Open(gormmysql.Open(spec.DriverDSN), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
 	if err != nil {
@@ -68,6 +73,35 @@ func openMySQL(spec Spec) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(spec.Pool.ConnMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(spec.Pool.ConnMaxIdleTime)
 
+	return db, nil
+}
+
+func openBudgetedMySQL(spec Spec) (*gorm.DB, error) {
+	connector, err := mysqlDriver.NewConnector(spec.budget.DialectConfig(spec.mysqlCfg))
+	if err != nil {
+		return nil, fmt.Errorf("create budgeted mysql connector: %w", err)
+	}
+	sqlDB := sql.OpenDB(connector)
+	sqlDB.SetMaxOpenConns(spec.Pool.MaxOpen)
+	sqlDB.SetMaxIdleConns(spec.Pool.MaxIdle)
+	sqlDB.SetConnMaxLifetime(spec.Pool.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(spec.Pool.ConnMaxIdleTime)
+	spec.budget.registerDB(sqlDB, spec.Pool.MaxIdle)
+
+	// Neither version discovery nor automatic ping may wait on the shared budget
+	// without the caller's context. The first actual operation checks connectivity.
+	db, err := gorm.Open(gormmysql.New(gormmysql.Config{
+		Conn:                      sqlDB,
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{
+		Logger:               gormlogger.Default.LogMode(gormlogger.Silent),
+		DisableAutomaticPing: true,
+	})
+	if err != nil {
+		spec.budget.unregisterDB(sqlDB)
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("open budgeted mysql database: %w", err)
+	}
 	return db, nil
 }
 

@@ -161,6 +161,24 @@ func TestSweepFailsLoudlyWhenProvisionedDatabaseMissing(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	}()
+	disabled, err := control.CreateTenant(ctx, nil, controlplane.TenantInput{Slug: "disabled", DisplayName: "Disabled"})
+	if err != nil {
+		t.Fatalf("create disabled tenant: %v", err)
+	}
+	if _, err := control.DisableTenant(ctx, nil, disabled.ID); err != nil {
+		t.Fatalf("disable tenant: %v", err)
+	}
+	disabledName, err := resolver.DatabaseName(disabled.ID)
+	if err != nil {
+		t.Fatalf("disabled database name: %v", err)
+	}
+	if err := adminDB.Exec("DROP DATABASE `" + disabledName + "`").Error; err != nil {
+		t.Fatalf("drop disabled tenant database: %v", err)
+	}
+	resolver.Invalidate(disabled.ID)
+	if err := migrateTenantStores(ctx, control, resolver); err != nil {
+		t.Fatalf("disabled tenant database must not block active tenants: %v", err)
+	}
 	if err := adminDB.Exec("DROP DATABASE `" + name + "`").Error; err != nil {
 		t.Fatalf("drop tenant database: %v", err)
 	}

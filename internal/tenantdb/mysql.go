@@ -20,6 +20,9 @@ const (
 	// 协调器副本数估算，避免每租户无限长持大连接池。
 	DefaultTenantMaxOpenConns = 8
 	DefaultTenantMaxIdleConns = 4
+	// DefaultTenantTotalMaxOpenConns 是单个 Coordinator 进程内全部租户池的
+	// 物理连接总预算。部署样例最多两个 Coordinator，每进程预留 48 条非租户连接。
+	DefaultTenantTotalMaxOpenConns = 16
 
 	provisionLockPrefix = "sdlc:provision:"
 	provisionLockWait   = 30
@@ -35,6 +38,7 @@ type MySQLDatabaseResolver struct {
 	capacity int
 	items    map[uint]*Store
 	order    []uint
+	budget   *store.ConnectionBudget
 }
 
 // MySQLResolverOption 调整解析器形态（库名前缀用于同一 MySQL 服务上的
@@ -63,6 +67,11 @@ func NewMySQLDatabaseResolver(main *Store, platformSpec store.Spec, cacheSize in
 	if err != nil {
 		return nil, fmt.Errorf("open tenant provisioning connection: %w", err)
 	}
+	budget, err := store.NewConnectionBudget(DefaultTenantTotalMaxOpenConns)
+	if err != nil {
+		closeStore(&Store{DB: admin})
+		return nil, fmt.Errorf("create tenant mysql connection budget: %w", err)
+	}
 	resolver := &MySQLDatabaseResolver{
 		main:     main,
 		admin:    admin,
@@ -71,6 +80,7 @@ func NewMySQLDatabaseResolver(main *Store, platformSpec store.Spec, cacheSize in
 		prefix:   DefaultTenantDatabasePrefix,
 		capacity: cacheSize,
 		items:    make(map[uint]*Store),
+		budget:   budget,
 	}
 	for _, opt := range opts {
 		opt(resolver)
@@ -185,7 +195,7 @@ func (resolver *MySQLDatabaseResolver) Handle(ctx context.Context, tenantID uint
 		}
 	}()
 
-	opened, err := resolver.open(tenantID)
+	opened, err := resolver.open(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,19 +218,26 @@ func (resolver *MySQLDatabaseResolver) OpenUnmanaged(tenantID uint) (*Store, err
 	if tenantID == 0 {
 		return nil, ErrInvalidTenantID
 	}
-	return resolver.open(tenantID)
+	return resolver.open(context.Background(), tenantID)
 }
 
-func (resolver *MySQLDatabaseResolver) open(tenantID uint) (*Store, error) {
+func (resolver *MySQLDatabaseResolver) open(ctx context.Context, tenantID uint) (*Store, error) {
 	name, err := resolver.DatabaseName(tenantID)
 	if err != nil {
 		return nil, err
 	}
-	db, err := store.OpenSpec(resolver.spec.WithDatabase(name).WithPool(resolver.pool))
+	rows, err := resolver.admin.WithContext(ctx).Raw(fmt.Sprintf("SHOW TABLES FROM `%s`", name)).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("check tenant database %s: %w", name, err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close tenant database check %s: %w", name, err)
+	}
+	db, err := store.OpenSpec(resolver.spec.WithDatabase(name).WithPool(resolver.pool).WithConnectionBudget(resolver.budget))
 	if err != nil {
 		return nil, fmt.Errorf("open tenant database %s: %w", name, err)
 	}
-	return &Store{DB: db}, nil
+	return &Store{DB: db, budget: resolver.budget}, nil
 }
 
 func (resolver *MySQLDatabaseResolver) Invalidate(tenantID uint) {

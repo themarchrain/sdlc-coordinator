@@ -321,6 +321,9 @@ func migrateTenantStores(ctx context.Context, service *controlplane.Service, res
 	}
 	var failures []string
 	for _, tenant := range tenants {
+		if tenant.Status == controlplane.TenantStatusDisabled {
+			continue
+		}
 		if err := ensureTenantDataPlane(ctx, service, resolver, tenant); err != nil {
 			failures = append(failures, tenant.Slug+": "+err.Error())
 			continue
@@ -399,9 +402,7 @@ func closeTenantHandle(handle *tenantdb.Store) {
 	if handle == nil || handle.DB == nil {
 		return
 	}
-	if sqlDB, err := handle.DB.DB(); err == nil {
-		_ = sqlDB.Close()
-	}
+	_ = handle.Close()
 }
 
 // validateRunnerAssignments 在启动时校验控制面 runner 指派形态：同端点跨

@@ -50,6 +50,7 @@ type engineShared struct {
 type tenantEngine struct {
 	tenantID     uint
 	db           *gorm.DB
+	store        *tenantdb.Store
 	logger       *zap.Logger
 	orgConfig    *orgconfig.Provider
 	orch         *orchestrator.Orchestrator
@@ -337,6 +338,7 @@ func (p *enginePool) forTenantID(ctx context.Context, tenantID uint) *tenantEngi
 		p.logger.Warn("build tenant engine failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		return nil
 	}
+	engine.store = store
 	p.engines[tenantID] = engine
 	return engine
 }
@@ -350,7 +352,9 @@ func (p *enginePool) CloseTenantEngines() {
 		if engine == nil || engine.db == nil {
 			continue
 		}
-		if sqlDB, err := engine.db.DB(); err == nil {
+		if engine.store != nil {
+			_ = engine.store.Close()
+		} else if sqlDB, err := engine.db.DB(); err == nil {
 			_ = sqlDB.Close()
 		}
 		delete(p.engines, id)

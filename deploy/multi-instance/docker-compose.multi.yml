@@ -23,6 +23,7 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_bin
+      - --max_connections=200
     volumes:
       - mysql-data:/var/lib/mysql
       # 首次启动建平台库与控制面库（协调器只自动开通租户库，不建这两库）。

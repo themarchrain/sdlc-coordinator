@@ -241,7 +241,5 @@ func closeStore(store *Store) {
 	if store == nil || store.DB == nil {
 		return
 	}
-	if sqlDB, err := store.DB.DB(); err == nil {
-		_ = sqlDB.Close()
-	}
+	_ = store.Close()
 }
