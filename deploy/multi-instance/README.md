@@ -29,6 +29,8 @@ flowchart TB
     CB <--> DB
 
     CA --> RA
+    CA --> RB
+    CB --> RA
     CB --> RB
 
     RA --- VA
@@ -41,8 +43,10 @@ flowchart TB
 ```
 
 - 协调器无共享文件卷：平台库、控制面库、租户库全部在 MySQL（按租户分库）。
+- 样例 MySQL 使用 8.4、InnoDB、utf8mb4 和 UTC。已有 8.0 数据卷应先在新隔离卷
+  验证升级，不要直接用样例切换原数据卷的镜像。
 - Runner 各自独占命名卷（`runner-a-data` / `runner-b-data`），不挂共享工作区；
-  同一租户的池内端点互斥由启动校验保证（同端点指派给多租户拒绝启动）。
+  每个端点最多指派一个租户，由控制面唯一索引与启动校验保证。
 - Runner 的授权确认入口指向 LB：任一协调器副本基于共享库裁决当前归属。
 
 ## 启动
@@ -141,13 +145,16 @@ faultsuite/run.sh coordinator_pause     # 单场景
 | `lb_failover` | `stop` 协调器 B | Portal 会话经 A 仍有效；A 创建租户后 MySQL 中控制面记录与租户库均存在；B 重启回池 |
 
 当前 shell faultsuite 对 A06 原执行复用与副作用次数、A07 陈旧 owner/generation
-栅栏、A11 中断结果恢复、A12 不确定执行边界、A18 MySQL 断连/死锁/锁超时均报告
+栅栏、A08 提交/推送响应丢失、A11 中断结果恢复、A12 不确定执行边界、
+A18 MySQL 断连/死锁/锁超时均报告
 `not_covered`。这些标记只描述本部署故障套件；相关语义另有 Go 自动化测试，CI
 的 `go test ./...` 会运行这些测试，其中 A07、A18 需要 CI 提供的 MySQL：
 
 - A06：`TestA06TakeoverReusesExecutionStartedBeforeCoordinatorExit`，使用 fake
   Runner 验证接管复用原执行，不验证实际多容器交付副作用。
 - A07：`TestRemoteDeliveryTakeoverFencesStaleCoordinatorOnMySQL`，MySQL 集成测试。
+- A08：`TestRemoteControlledDeliverySurvivesLostCommitResponse`，HTTP 提交响应丢失后
+  重试回读同一操作，不重复创建提交。
 - A11：`TestRestartRecoveredInterruptedExecutionConvergesThroughCoordinator`，以及
   Runner 的重启恢复测试。
 - A12：`TestAcceptedExecutionMissingAfterRunnerVolumeLossRemainsUnknown` 和

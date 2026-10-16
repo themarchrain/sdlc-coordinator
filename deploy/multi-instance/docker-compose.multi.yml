@@ -15,14 +15,15 @@
 
 services:
   mysql:
-    image: mysql:8.0
+    image: ${MULTI_MYSQL_IMAGE:-mysql:8.4}
     restart: unless-stopped
     environment:
-      TZ: Asia/Shanghai
+      TZ: UTC
       MYSQL_ROOT_PASSWORD: "${MULTI_MYSQL_PASSWORD:-multi-root-pass}"
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_bin
+      - --default-time-zone=+00:00
       - --max_connections=200
     volumes:
       - mysql-data:/var/lib/mysql
