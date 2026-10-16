@@ -131,9 +131,22 @@ faultsuite/run.sh coordinator_pause     # 单场景
 
 当前 shell faultsuite 对 A06 原执行复用与副作用次数、A07 陈旧 owner/generation
 栅栏、A11 中断结果恢复、A12 不确定执行边界、A18 MySQL 断连/死锁/锁超时均报告
-`not_covered`。其中 A07 有独立 Go+MySQL 集成测试
-`TestRemoteDeliveryTakeoverFencesStaleCoordinatorOnMySQL`，由 CI MySQL 服务运行；
-它不改变 shell faultsuite 的覆盖计数。
+`not_covered`。这些标记只描述本部署故障套件；相关语义另有 Go 自动化测试，CI
+的 `go test ./...` 会运行这些测试，其中 A07、A18 需要 CI 提供的 MySQL：
+
+- A06：`TestA06TakeoverReusesExecutionStartedBeforeCoordinatorExit`，使用 fake
+  Runner 验证接管复用原执行，不验证实际多容器交付副作用。
+- A07：`TestRemoteDeliveryTakeoverFencesStaleCoordinatorOnMySQL`，MySQL 集成测试。
+- A11：`TestRestartRecoveredInterruptedExecutionConvergesThroughCoordinator`，以及
+  Runner 的重启恢复测试。
+- A12：`TestAcceptedExecutionMissingAfterRunnerVolumeLossRemainsUnknown` 和
+  `TestAmbiguousCreateAndRunner404DoNotFailOrRotate`。
+- A18：`TestA18MySQLDeadlockErrorIsRetryable`、
+  `TestA18MySQLDispatchLockTimeoutDoesNotConsumeAttemptAndRetriesNextDispatch`、
+  `TestA18MySQLDisconnectDoesNotDispatch`，均为 MySQL 集成测试。
+
+这些 Go 测试不计入 shell faultsuite 覆盖数；结果文件会同时保留对应的
+`not_covered` 记录，避免把单元/集成测试误读成部署故障场景通过。
 
 ## 扩缩容
 
@@ -147,6 +160,13 @@ faultsuite/run.sh coordinator_pause     # 单场景
   （或按恢复策略被另一实例接管）后再停容器。
 - **缩容 Coordinator**：从 nginx upstream 摘除后 `stop`。注意 LB 探活/摘除
   先于停容器，避免 502 窗口。
+
+本样例按 2 个 Coordinator 计算 MySQL 连接上限：每个进程的平台库、控制面库、
+开通库各最多 16 条，全部租户库共享最多 16 条，故两进程最多
+`2 × (3 × 16 + 16) = 128` 条。Compose 将 MySQL `max_connections` 设为 200，
+给管理连接和其他客户端留出 72 条。扩容 Coordinator 或调高任一非租户池上限前，
+先按新副本数重算总量，并同步调整 MySQL 上限及预留量；仅增加副本而不重算容量
+可能使新连接被 MySQL 拒绝。
 
 ## 停机与 schema 迁移顺序
 

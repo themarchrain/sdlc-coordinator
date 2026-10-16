@@ -29,11 +29,11 @@ SCENARIOS="${*:-$SCENARIOS_ALL}"
 SUITE_START=$(date +%s)
 
 # 业务验收缺口显式落入结果文件，避免健康检查被误读为业务通过。
-record "coverage" "A06_original_execution_reuse_and_single_side_effect" not_covered "Shell scenario kills a coordinator without creating an in-flight delivery; no at-most-once side-effect assertion."
-record "coverage" "A07_stale_owner_generation_fence" not_covered "Shell scenario pauses a process but does not establish an in-flight run or assert stale-write rejection. Dedicated Go+MySQL takeover test covers this separately."
-record "coverage" "A11_runner_restart_result_recovery" not_covered "Runner scenario checks container health and volume marker only; it does not recover/read an interrupted run result."
-record "coverage" "A12_runner_uncertainty_retry_boundary" not_covered "No assertion distinguishes unknown external execution from not-executed or checks explicit retry/human boundary."
-record "coverage" "A18_mysql_disconnect_deadlock_lock_timeout" not_covered "Network scenario blocks Runner connectivity; it does not inject MySQL disconnect/deadlock/lock-timeout errors."
+record "coverage" "A06_original_execution_reuse_and_single_side_effect" not_covered "This shell suite does not create an in-flight delivery; TestA06TakeoverReusesExecutionStartedBeforeCoordinatorExit covers orchestration with a fake Runner, outside this deployment suite."
+record "coverage" "A07_stale_owner_generation_fence" not_covered "This shell suite does not create an in-flight run or assert stale-write rejection; TestRemoteDeliveryTakeoverFencesStaleCoordinatorOnMySQL covers takeover in the Go+MySQL integration suite."
+record "coverage" "A11_runner_restart_result_recovery" not_covered "This shell suite checks container health and volume marker only; TestRestartRecoveredInterruptedExecutionConvergesThroughCoordinator and runner service restart tests cover recovery outside this deployment suite."
+record "coverage" "A12_runner_uncertainty_retry_boundary" not_covered "This shell suite does not assert the unknown-outcome boundary; TestAcceptedExecutionMissingAfterRunnerVolumeLossRemainsUnknown and TestAmbiguousCreateAndRunner404DoNotFailOrRotate cover orchestration behavior outside this deployment suite."
+record "coverage" "A18_mysql_disconnect_deadlock_lock_timeout" not_covered "This shell suite blocks Runner connectivity, not MySQL; TestA18MySQLDeadlockErrorIsRetryable, TestA18MySQLDispatchLockTimeoutDoesNotConsumeAttemptAndRetriesNextDispatch, and TestA18MySQLDisconnectDoesNotDispatch run in the Go+MySQL integration suite."
 
 # ---- 前置自检：部署健康才跑矩阵（避免把部署问题误报成故障场景失败）----
 preflight() {
