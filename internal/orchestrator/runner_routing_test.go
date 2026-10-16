@@ -174,6 +174,38 @@ func TestAgentRunnerCoordinatorRotatesAfterDefinitiveMiss(t *testing.T) {
 	}
 }
 
+func TestAgentRunnerCoordinatorDoesNotRotatePinnedRunAfterDefinitiveMiss(t *testing.T) {
+	world := newAgentRunnerRoutingWorld(t)
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "invalid create"}}
+	clientA.getErr = &runner.HTTPError{Method: "GET", Path: "/api/v1/executions/run-routing-core", StatusCode: http.StatusNotFound}
+	clientB := &scriptedRunnerClient{endpoint: "http://runner-b"}
+	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
+	attemptA.next = func() (RunnerAttempt, bool) { return RunnerAttempt{Client: clientB, Endpoint: "http://runner-b"}, true }
+	world.router.attempt = attemptA
+	world.run.RunnerEndpoint = "http://runner-a"
+	if err := world.coordinator.runs.PinRunnerEndpointIfEmpty(context.Background(), world.run.RunID, world.run.RunnerEndpoint); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := world.coordinator.Start(context.Background(), world.task, world.run, world.request)
+	if err == nil || !strings.Contains(err.Error(), "invalid create") {
+		t.Fatalf("pinned run must surface the definitive rejection without rotating, got %v", err)
+	}
+	if clientA.createCalls != 1 || clientA.getCalls != 1 {
+		t.Fatalf("pinned runner should see one create and confirming get: create=%d get=%d", clientA.createCalls, clientA.getCalls)
+	}
+	if clientB.createCalls != 0 {
+		t.Fatalf("pinned run must not be dispatched to another runner, calls=%d", clientB.createCalls)
+	}
+	stored, err := world.coordinator.executions.GetByRunID(context.Background(), world.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.RunnerEndpoint != world.run.RunnerEndpoint || stored.Status != model.AgentExecutionStatusFailed {
+		t.Fatalf("definitive rejection should settle on the pinned endpoint: %+v", stored)
+	}
+}
+
 func TestAgentRunnerCoordinatorRefusesRotationOnAmbiguousFailure(t *testing.T) {
 	world := newAgentRunnerRoutingWorld(t)
 	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: errors.New("connection refused")}

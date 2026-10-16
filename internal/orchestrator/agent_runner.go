@@ -353,7 +353,7 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	if err != nil {
 		return nil, err
 	}
-	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" && pinned != attempt.Endpoint {
+	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" {
 		// 本 run 已钉住归属端点（准备/任务包投递已按它发生）：派发必须命中
 		// 同一端点，绝不轮换——独立卷下别的 runner 没有这份工作区与任务包。
 		attempt = c.attemptOnRecordedEndpoint(attempt, pinned)
@@ -407,7 +407,11 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 // 否则回退默认直连；不含 Next（收敛路径禁止轮换）。
 func (c *AgentRunnerCoordinator) attemptOnRecordedEndpoint(attempt RunnerAttempt, endpoint string) RunnerAttempt {
 	endpoint = strings.TrimSpace(endpoint)
-	if endpoint == "" || endpoint == attempt.Endpoint {
+	if endpoint == "" {
+		return attempt
+	}
+	if endpoint == attempt.Endpoint {
+		attempt.next = nil
 		return attempt
 	}
 	if c.router != nil {
