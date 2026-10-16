@@ -92,8 +92,8 @@ func (InviteCode) TableName() string { return "invite_codes" }
 // 本阶段仅提供模型与超管 list/replace 端点，派发消费归后续租户化改造。
 type RunnerAssignment struct {
 	ID          uint   `gorm:"primaryKey"`
-	TenantID    uint   `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint"`
-	EndpointURL string `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint;size:512"`
+	TenantID    uint   `gorm:"not null;index"`
+	EndpointURL string `gorm:"not null;uniqueIndex:idx_runner_assignments_endpoint;size:512"`
 	CreatedAt   time.Time
 }
 

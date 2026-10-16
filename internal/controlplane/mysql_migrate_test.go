@@ -22,6 +22,52 @@ func TestControlPlaneMigrateIdempotentOnMySQL(t *testing.T) {
 	}
 }
 
+// v4→v5 升级：v4 的 (tenant_id, endpoint_url) 复合唯一索引收敛为
+// endpoint 单列唯一（端点跨租户独占），存量合法数据（每租户各占端点）
+// 保留，旧复合索引清除不残留。
+func TestControlPlaneV4SchemaUpgradesToEndpointExclusivityOnMySQL(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	db := storetest.OpenDatabase(t, admin, "cp_migrate_v4")
+	if err := db.AutoMigrate(&store.SchemaMigration{}); err != nil {
+		t.Fatalf("create migration table: %v", err)
+	}
+	if err := db.Create(&store.SchemaMigration{Component: "controlplane", Version: 4, AppliedAt: time.Now().UTC()}).Error; err != nil {
+		t.Fatalf("seed v4 schema version: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE runner_assignments (id bigint unsigned NOT NULL AUTO_INCREMENT, tenant_id bigint unsigned NOT NULL, endpoint_url varchar(512) NOT NULL, created_at datetime(3) NULL, PRIMARY KEY (id), UNIQUE KEY idx_runner_assignments_tenant_endpoint (tenant_id, endpoint_url)) ENGINE=InnoDB").Error; err != nil {
+		t.Fatalf("create v4 runner_assignments table: %v", err)
+	}
+	for _, row := range []struct{ tenant, endpoint string }{{"1", "http://runner-a:8081"}, {"2", "http://runner-b:8081"}} {
+		if err := db.Exec("INSERT INTO runner_assignments (tenant_id, endpoint_url) VALUES (?, ?)", row.tenant, row.endpoint).Error; err != nil {
+			t.Fatalf("seed v4 assignment: %v", err)
+		}
+	}
+	repository := controlplane.NewRepository(db)
+	if err := store.MigrateGuarded(context.Background(), db, "controlplane", repository.Migrate); err != nil {
+		t.Fatalf("upgrade controlplane schema v4: %v", err)
+	}
+	if version, err := store.CurrentSchemaVersion(context.Background(), db, "controlplane"); err != nil || version != store.SchemaVersion {
+		t.Fatalf("schema version = %d (%v), want %d", version, err, store.SchemaVersion)
+	}
+	if !db.Migrator().HasIndex(&controlplane.RunnerAssignment{}, "idx_runner_assignments_endpoint") {
+		t.Fatal("v4 upgrade did not create endpoint exclusivity index")
+	}
+	if db.Migrator().HasIndex(&controlplane.RunnerAssignment{}, "idx_runner_assignments_tenant_endpoint") {
+		t.Fatal("v4 upgrade left legacy tenant-endpoint index behind")
+	}
+	var rows int64
+	if err := db.Table("runner_assignments").Count(&rows).Error; err != nil {
+		t.Fatalf("count upgraded assignments: %v", err)
+	}
+	if rows != 2 {
+		t.Fatalf("upgraded assignment rows = %d, want 2", rows)
+	}
+	// 独占语义生效：另一租户抢注已占用端点必须被唯一索引拒绝。
+	if err := db.Exec("INSERT INTO runner_assignments (tenant_id, endpoint_url) VALUES (?, ?)", "3", "http://runner-a:8081").Error; err == nil {
+		t.Fatal("cross-tenant endpoint insert must fail on unique index")
+	}
+}
+
 func TestControlPlaneV3SchemaUpgradesOnMySQL(t *testing.T) {
 	admin := storetest.RequireMySQL(t)
 	db := storetest.OpenDatabase(t, admin, "cp_migrate_v3")

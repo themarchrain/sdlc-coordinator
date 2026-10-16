@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/store"
@@ -238,6 +239,15 @@ func TestSuperAdminInviteCodesAndRunnerAssignments(t *testing.T) {
 	_ = json.Unmarshal(listedRunners.Body.Bytes(), &runnerPayload)
 	if len(runnerPayload.Endpoints) != 2 {
 		t.Fatalf("expected 2 runner assignments, got %d", len(runnerPayload.Endpoints))
+	}
+
+	// 端点跨租户独占：第二租户抢注已占用端点 → 409 runner_endpoint_assigned。
+	other := world.seedTenant(t, fmt.Sprintf("globex-%d", time.Now().UnixNano()))
+	conflict := world.do(t, http.MethodPut, "/api/super-admin/tenants/"+fmtUint(other)+"/runner-assignments", superToken, map[string]any{
+		"endpoints": []string{"http://runner-acme:8081"},
+	})
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("cross-tenant endpoint assignment should conflict, got %d body=%s", conflict.Code, conflict.Body.String())
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/store"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -271,7 +273,7 @@ func (service *Service) ReplaceRunnerAssignments(ctx context.Context, actor *Act
 	if len(cleaned) > maxRunnerAssignments {
 		return ErrInvalidInput
 	}
-	return service.inTx(ctx, func(ctx context.Context) error {
+	err := service.inTx(ctx, func(ctx context.Context) error {
 		if _, err := service.repo(ctx).GetTenant(ctx, tenantID); err != nil {
 			return err
 		}
@@ -281,6 +283,12 @@ func (service *Service) ReplaceRunnerAssignments(ctx context.Context, actor *Act
 		return service.writeAudit(ctx, actor, tenantID, "runner_assignments.updated",
 			fmt.Sprintf("count=%d endpoints=%s", len(cleaned), strings.Join(cleaned, ",")))
 	})
+	if store.IsDuplicateKey(err) {
+		// 双 %w：哨兵与底层重复键错误都保持可判（handlers 层 errors.Is
+		// 认哨兵、日志/上层 IsDuplicateKey 认驱动码）。
+		return fmt.Errorf("%w: %w", ErrRunnerEndpointAssigned, err)
+	}
+	return err
 }
 
 // ListTenantInviteCodes 超管视角的组织邀请码列表（租户级吊销管理）。

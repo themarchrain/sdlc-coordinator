@@ -26,6 +26,7 @@ var (
 	ErrInviteInvalid          = errors.New("invite code invalid")
 	ErrCannotRemoveSelf       = errors.New("cannot remove self")
 	ErrReasonRequired         = errors.New("reason required")
+	ErrRunnerEndpointAssigned = errors.New("runner endpoint already assigned to another tenant")
 	ErrPasswordChangeRequired = errors.New("password change required")
 	ErrForbidden              = errors.New("forbidden")
 )

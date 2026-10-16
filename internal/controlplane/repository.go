@@ -24,6 +24,14 @@ func (repository *Repository) Migrate() error {
 	); err != nil {
 		return fmt.Errorf("migrate control plane: %w", err)
 	}
+	// v5 收敛：AutoMigrate 只增不删，v4 复合唯一索引会残留并伪装成仍
+	// 有效的约束面；端点独占约束以 idx_runner_assignments_endpoint 单一
+	// 承载，旧索引显式清除（幂等：不存在即跳过）。
+	if repository.db.Migrator().HasIndex(&RunnerAssignment{}, "idx_runner_assignments_tenant_endpoint") {
+		if err := repository.db.Migrator().DropIndex(&RunnerAssignment{}, "idx_runner_assignments_tenant_endpoint"); err != nil {
+			return fmt.Errorf("drop legacy runner assignment index: %w", err)
+		}
+	}
 	if err := repository.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&LoginFailureCapacityGuard{ID: 1}).Error; err != nil {
 		return fmt.Errorf("initialize login failure capacity guard: %w", err)
 	}
