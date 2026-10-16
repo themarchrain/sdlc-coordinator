@@ -20,9 +20,12 @@ func (repository *Repository) Migrate() error {
 	if err := repository.db.AutoMigrate(
 		&User{}, &Tenant{}, &Membership{}, &InviteCode{},
 		&RunnerAssignment{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
-		&LoginFailure{},
+		&LoginFailure{}, &LoginFailureCapacityGuard{},
 	); err != nil {
 		return fmt.Errorf("migrate control plane: %w", err)
+	}
+	if err := repository.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&LoginFailureCapacityGuard{ID: 1}).Error; err != nil {
+		return fmt.Errorf("initialize login failure capacity guard: %w", err)
 	}
 	return nil
 }
@@ -474,7 +477,7 @@ func (repository *Repository) DeleteExpiredSessions(ctx context.Context, now tim
 // 数据库时钟（NOW(6)）判定，跨实例时钟偏移免疫；SQLite 按参数时间判定。
 func (repository *Repository) CountRecentLoginFailures(ctx context.Context, key string, window time.Duration) (int64, error) {
 	var count int64
-	query := repository.db.WithContext(ctx).Model(&LoginFailure{}).Where("`key` = ?", key)
+	query := repository.db.WithContext(ctx).Model(&LoginFailure{}).Where("`key` = ? AND `pending` = ?", key, false)
 	if repository.db.Dialector.Name() == "mysql" {
 		query = query.Where("failed_at > DATE_SUB(NOW(6), INTERVAL ? MICROSECOND)", window.Microseconds())
 	} else {
@@ -486,9 +489,105 @@ func (repository *Repository) CountRecentLoginFailures(ctx context.Context, key 
 	return count, nil
 }
 
+var ErrLoginFailureCapacity = errors.New("login failure capacity reached")
+
+func (repository *Repository) ReserveLoginFailureSlots(ctx context.Context, window time.Duration, slots int) ([]uint, error) {
+	if slots <= 0 || slots > loginFailureCapacityLimit {
+		return nil, ErrLoginFailureCapacity
+	}
+	var ids []uint
+	capacityReached := false
+	err := repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var guard LoginFailureCapacityGuard
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
+			return fmt.Errorf("lock login failure capacity guard: %w", err)
+		}
+		for batch := 0; batch < (loginFailureCapacityLimit+loginFailureBatchLimit-1)/loginFailureBatchLimit; batch++ {
+			deleted, err := deleteExpiredLoginFailuresBounded(tx, window, loginFailureBatchLimit)
+			if err != nil {
+				return err
+			}
+			if deleted < loginFailureBatchLimit {
+				break
+			}
+		}
+		var count int64
+		if err := tx.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("count login failures for capacity: %w", err)
+		}
+		if count+int64(slots) > loginFailureCapacityLimit {
+			capacityReached = true
+			return nil
+		}
+		reservedAt := time.Now()
+		if tx.Dialector.Name() == "mysql" {
+			if err := tx.Raw("SELECT NOW(6)").Scan(&reservedAt).Error; err != nil {
+				return fmt.Errorf("read database time for login failure reservation: %w", err)
+			}
+		}
+		rows := make([]LoginFailure, slots)
+		for i := range rows {
+			rows[i] = LoginFailure{Key: "", FailedAt: reservedAt, Pending: true}
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return fmt.Errorf("reserve login failure capacity: %w", err)
+		}
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if capacityReached {
+		return nil, ErrLoginFailureCapacity
+	}
+	return ids, nil
+}
+
+func (repository *Repository) CompleteLoginFailureReservation(ctx context.Context, ids []uint, keys []string, failedAt time.Time) error {
+	if len(ids) != len(keys) {
+		return fmt.Errorf("complete login failure reservation: slot count mismatch")
+	}
+	err := repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		persistedAt := any(failedAt)
+		if tx.Dialector.Name() == "mysql" {
+			persistedAt = gorm.Expr("NOW(6)")
+		}
+		for i, id := range ids {
+			result := tx.Model(&LoginFailure{}).Where("id = ? AND pending = ?", id, true).
+				Updates(map[string]any{"key": keys[i], "failed_at": persistedAt, "pending": false})
+			if result.Error != nil {
+				return fmt.Errorf("complete login failure reservation: %w", result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("complete login failure reservation: reservation missing")
+			}
+		}
+		return nil
+	})
+	return err
+}
+
+func (repository *Repository) ReleaseLoginFailureReservation(ctx context.Context, ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := repository.db.WithContext(ctx).Where("id IN ? AND pending = ?", ids, true).Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("release login failure reservation: %w", err)
+	}
+	return nil
+}
+
 // RecordLoginFailure 追加一条失败记录。
-func (repository *Repository) RecordLoginFailure(ctx context.Context, key string, failedAt time.Time) error {
-	if err := repository.db.WithContext(ctx).Create(&LoginFailure{Key: key, FailedAt: failedAt}).Error; err != nil {
+func (repository *Repository) RecordLoginFailure(ctx context.Context, key string, failedAt time.Time, window time.Duration) error {
+	ids, err := repository.ReserveLoginFailureSlots(ctx, window, 1)
+	if err != nil {
+		return fmt.Errorf("record login failure: %w", err)
+	}
+	if err := repository.CompleteLoginFailureReservation(ctx, ids, []string{key}, failedAt); err != nil {
+		_ = repository.ReleaseLoginFailureReservation(context.Background(), ids)
 		return fmt.Errorf("record login failure: %w", err)
 	}
 	return nil
@@ -508,8 +607,11 @@ func (repository *Repository) DeleteExpiredLoginFailuresBounded(ctx context.Cont
 	if limit <= 0 {
 		limit = loginFailureBatchLimit
 	}
-	db := repository.db.WithContext(ctx)
-	if repository.db.Dialector.Name() == "mysql" {
+	return deleteExpiredLoginFailuresBounded(repository.db.WithContext(ctx), window, limit)
+}
+
+func deleteExpiredLoginFailuresBounded(db *gorm.DB, window time.Duration, limit int) (int64, error) {
+	if db.Dialector.Name() == "mysql" {
 		result := db.Exec("DELETE FROM `login_failures` WHERE `failed_at` <= DATE_SUB(NOW(6), INTERVAL ? MICROSECOND) ORDER BY `failed_at` ASC, `id` ASC LIMIT ?", window.Microseconds(), limit)
 		if result.Error != nil {
 			return 0, fmt.Errorf("delete expired login failures bounded: %w", result.Error)

@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -266,5 +267,121 @@ func seedRateLimitUser(t *testing.T, service *Service, username, slug string) {
 	}
 	if _, err := service.AddMembership(context.Background(), &testActor, tenantID, user.ID, RoleMember); err != nil {
 		t.Fatalf("add membership: %v", err)
+	}
+}
+
+func TestLoginFailureCapacityRejectsBeforeCompareAndReopensAfterExpiry(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_capacity")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	service := services[0]
+	seedLoginFailureCapacityRows(t, service.repository, loginFailureCapacityLimit, time.Now())
+	comparisons := 0
+	service.comparePasswords = func(_, _ []byte) error {
+		comparisons++
+		return errors.New("comparison should not run at capacity")
+	}
+	if _, err := service.Login(context.Background(), "capacity-user", "password", "192.0.2.1"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("login at total capacity must fail closed, got %v", err)
+	}
+	if comparisons != 0 {
+		t.Fatalf("password comparison ran at capacity: %d", comparisons)
+	}
+	var count int64
+	if err := service.repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count at capacity: %v", err)
+	}
+	if count != loginFailureCapacityLimit {
+		t.Fatalf("capacity check changed active failure rows: got %d", count)
+	}
+	if !service.rateLimiter.blocked("capacity-locked|192.0.2.10") {
+		t.Fatal("capacity check must preserve an existing locked key")
+	}
+	if err := service.repository.db.Exec("UPDATE login_failures SET failed_at = DATE_SUB(NOW(6), INTERVAL 2 HOUR)").Error; err != nil {
+		t.Fatalf("expire capacity rows: %v", err)
+	}
+	service.comparePasswords = func(_, _ []byte) error {
+		comparisons++
+		return errors.New("mismatch")
+	}
+	if _, err := service.Login(context.Background(), "after-expiry", "password", "192.0.2.2"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("login after expiry should reach comparison, got %v", err)
+	}
+	if comparisons != 1 {
+		t.Fatalf("comparison after expiry count = %d, want 1", comparisons)
+	}
+	if err := service.repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count after expiry: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expired rows should be reclaimed and one failed attempt should add two rows, got %d", count)
+	}
+}
+
+func TestLoginFailureCapacityAdmissionsAreSerializedAcrossMySQLServices(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_capacity_race")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	seedLoginFailureCapacityRows(t, services[0].repository, loginFailureCapacityLimit-2, time.Now())
+	for _, service := range services {
+		service.comparePasswords = func(_, _ []byte) error { return errors.New("mismatch") }
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 12)
+	for i := 0; i < cap(errs); i++ {
+		service := services[i%len(services)]
+		wg.Add(1)
+		go func(i int, service *Service) {
+			defer wg.Done()
+			_, err := service.Login(context.Background(), fmt.Sprintf("unique-%d", i), "password", "198.51.100.1")
+			errs <- err
+		}(i, service)
+	}
+	wg.Wait()
+	close(errs)
+	invalid, limited := 0, 0
+	for err := range errs {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
+			invalid++
+		case errors.Is(err, ErrRateLimited):
+			limited++
+		default:
+			t.Fatalf("unexpected login result: %v", err)
+		}
+	}
+	if invalid != 1 || limited != 11 {
+		t.Fatalf("admissions = %d invalid, %d limited; want exactly 1 admitted", invalid, limited)
+	}
+	var count int64
+	if err := services[0].repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count after concurrent attempts: %v", err)
+	}
+	if count != loginFailureCapacityLimit {
+		t.Fatalf("concurrent admissions exceeded or missed capacity: got %d, want %d", count, loginFailureCapacityLimit)
+	}
+}
+
+func seedLoginFailureCapacityRows(t *testing.T, repository *Repository, count int, failedAt time.Time) {
+	t.Helper()
+	seeded := 0
+	for count > 0 {
+		batchSize := count
+		if batchSize > 500 {
+			batchSize = 500
+		}
+		rows := make([]LoginFailure, batchSize)
+		for i := range rows {
+			key := fmt.Sprintf("seed-%d", seeded+i)
+			if seeded+i < 3 {
+				key = "capacity-locked|192.0.2.10"
+			}
+			rows[i] = LoginFailure{Key: key, FailedAt: failedAt}
+		}
+		if err := repository.db.Create(&rows).Error; err != nil {
+			t.Fatalf("seed login failures: %v", err)
+		}
+		seeded += batchSize
+		count -= batchSize
 	}
 }

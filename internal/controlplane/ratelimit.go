@@ -11,6 +11,7 @@ const (
 	defaultLoginFailureSweepInterval = time.Minute
 	loginFailureBatchLimit           = 1000
 	loginFailureSweepBatchLimit      = 10
+	loginFailureCapacityLimit        = 4096
 )
 
 // LoginFailure 是登录限流的共享存储行：键为用户名+IP 或纯用户名,
@@ -20,7 +21,14 @@ type LoginFailure struct {
 	ID       uint      `gorm:"primaryKey"`
 	Key      string    `gorm:"index:idx_login_failures_key_time,priority:1;not null;size:255"`
 	FailedAt time.Time `gorm:"index:idx_login_failures_key_time,priority:2;index:idx_login_failures_failed_at;not null"`
+	Pending  bool      `gorm:"not null;default:false;index"`
 }
+
+type LoginFailureCapacityGuard struct {
+	ID uint `gorm:"primaryKey"`
+}
+
+func (LoginFailureCapacityGuard) TableName() string { return "login_failure_capacity_guards" }
 
 // loginRateLimiter 按用户名+IP 组合做滑动窗口失败计数:窗口内失败达到
 // 上限即拒绝（含正确密码），成功登录清零。计数落控制面库，多实例部署共享
@@ -60,11 +68,15 @@ func loginFailureKeyCap(maxFailures int) int {
 
 func (limiter *loginRateLimiter) record(key string) {
 	now := time.Now()
-	if err := limiter.repository.RecordLoginFailure(context.Background(), key, now); err != nil {
+	if err := limiter.repository.RecordLoginFailure(context.Background(), key, now, limiter.window); err != nil {
 		// 记账失败不阻断登录错误路径:下一轮失败重试记账,最坏情况是
 		// 攻击者少计一次;不因限流器故障把凭据错误误报成 500。
 		return
 	}
+	limiter.cleanupRecord(key)
+}
+
+func (limiter *loginRateLimiter) cleanupRecord(key string) {
 	// 容量治理两件套（都带界）:窗口外旧行分批删除（单批上限约束持锁时间,
 	// 清理条件走 failed_at 索引）;单键行数裁剪（匿名来源可用不同键放大总
 	// 行数,单键上限保证任一键不无界堆积）。

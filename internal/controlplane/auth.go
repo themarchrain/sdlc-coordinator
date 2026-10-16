@@ -76,6 +76,16 @@ func (service *Service) Login(ctx context.Context, rawUsername, password, client
 	if service.rateLimiter.blocked(rateKey) || service.usernameLimiter.blocked(username) {
 		return nil, ErrRateLimited
 	}
+	reservations, err := service.repository.ReserveLoginFailureSlots(context.Background(), service.rateLimiter.window, 2)
+	if err != nil {
+		return nil, ErrRateLimited
+	}
+	reservationPending := true
+	defer func() {
+		if reservationPending {
+			_ = service.repository.ReleaseLoginFailureReservation(context.Background(), reservations)
+		}
+	}()
 	user, err := service.repo(ctx).GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, err
@@ -89,10 +99,18 @@ func (service *Service) Login(ctx context.Context, rawUsername, password, client
 	}
 	compareErr := service.comparePasswords(hash, []byte(password))
 	if user == nil || compareErr != nil {
-		service.rateLimiter.record(rateKey)
-		service.usernameLimiter.record(username)
+		if err := service.repository.CompleteLoginFailureReservation(context.Background(), reservations, []string{rateKey, username}, time.Now()); err != nil {
+			return nil, ErrRateLimited
+		}
+		reservationPending = false
+		service.rateLimiter.cleanupRecord(rateKey)
+		service.usernameLimiter.cleanupRecord(username)
 		return nil, ErrInvalidCredentials
 	}
+	if err := service.repository.ReleaseLoginFailureReservation(context.Background(), reservations); err != nil {
+		return nil, ErrRateLimited
+	}
+	reservationPending = false
 	service.rateLimiter.reset(rateKey)
 	service.usernameLimiter.reset(username)
 
