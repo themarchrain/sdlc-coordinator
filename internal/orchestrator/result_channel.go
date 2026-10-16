@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/results"
+	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/workspace"
 )
 
@@ -165,6 +169,53 @@ func (c *ResultChannelCoordinator) SubmitAgentResult(
 	return c.submitRoleResult(ctx, task, run, contract, normalization, rawPayload)
 }
 
+// isInfrastructureDeliveryFailure 报告交付失败是否属于基础设施/传输类
+// （超时、连接中断、5xx/503 服务不可用、容量与未接纳语义）：这类失败不是
+// Agent 可以按参数修正的问题，必须归传输桶（不做矫正计数、不给"按参数
+// 修正"提示），否则业务纠错预算被平台故障消耗。业务性冲突（如基线不符、
+// 无改动）仍走可矫正通道。
+func isInfrastructureDeliveryFailure(err error, ctx context.Context) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	var urlErr *url.Error
+	var netErr net.Error
+	if errors.As(err, &urlErr) || errors.As(err, &netErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var httpErr *runner.HTTPError
+	if errors.As(err, &httpErr) {
+		if httpErr.StatusCode >= 500 || httpErr.StatusCode == 403 || httpErr.StatusCode == 404 {
+			return true
+		}
+		if httpErr.StatusCode == 409 {
+			var response struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if json.Unmarshal([]byte(httpErr.Body), &response) != nil {
+				return true
+			}
+			return response.Error.Code != "workspace_conflict" && response.Error.Code != "delivery_conflict"
+		}
+	}
+	for _, sentinel := range []error{
+		runner.ErrServiceNotAccepting, runner.ErrTooManyOperations, runner.ErrOperationInFlight, runner.ErrNotAuthorized,
+	} {
+		if errors.Is(err, sentinel) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *ResultChannelCoordinator) submitDeveloperResult(
 	ctx context.Context,
 	task *model.Task,
@@ -245,7 +296,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				CommitSHA: checkpoint.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
-				Credential: workspaceRequest.Credential,
+				Credential:    workspaceRequest.Credential,
 				DeliveryOwner: deliveryLease.Owner, DeliveryGeneration: deliveryLease.Generation,
 			})
 		} else {
@@ -264,9 +315,9 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				DeliveryOwner: deliveryLease.Owner, DeliveryGeneration: deliveryLease.Generation,
 			})
 			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-					// git 黑洞是基础设施故障而非参数可矫正问题：归传输桶，
-					// 不消耗矫正次数。
+				if isInfrastructureDeliveryFailure(err, ctx) {
+					// 传输/平台侧故障（超时、连接中断、5xx/容量/未接纳）不是
+					// 参数可矫正问题：归传输桶，不消耗矫正次数。
 					return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize, Err: fmt.Errorf("create developer git delivery: %w", err)}, nil
 				}
 				return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("create developer git delivery: %w", err))), nil
@@ -286,14 +337,14 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				CommitSHA: commit.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
-				Credential: workspaceRequest.Credential,
+				Credential:    workspaceRequest.Credential,
 				DeliveryOwner: deliveryLease.Owner, DeliveryGeneration: deliveryLease.Generation,
 			})
 		}
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				// git 黑洞是基础设施故障而非参数可矫正问题：归传输桶，
-				// 不消耗矫正次数。
+			if isInfrastructureDeliveryFailure(err, ctx) {
+				// 传输/平台侧故障（超时、连接中断、5xx/容量/未接纳）不是
+				// 参数可矫正问题：归传输桶，不消耗矫正次数。
 				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize, Err: fmt.Errorf("push developer git delivery: %w", err)}, nil
 			}
 			return rejectedOutcome(ChannelStageFinalize, problemsFromError(fmt.Errorf("push developer git delivery: %w", err))), nil

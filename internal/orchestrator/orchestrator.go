@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,14 +92,16 @@ type RunRepository interface {
 	// 端点与 Runner 侧工作区路径（列级条件写；空值语义 = 尚未钉住）。
 	PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error
 	PinRunnerWorkspacePathIfEmpty(ctx context.Context, runID, path string) error
-	// MarkArtifactsPurgingIfUnclean 抢占 run 的清理归属（跨实例栅栏），
+	// MarkArtifactsPurgingIfUnclean 抢占 run 的清理归属（跨实例栅栏；
+	// staleBefore 之前的哨兵视为持有者已退出的崩溃遗留，可被接管），
 	// ClearArtifactsPurging 是清理失败的回滚通道。
-	MarkArtifactsPurgingIfUnclean(ctx context.Context, runID string, now time.Time) (bool, error)
-	ClearArtifactsPurging(ctx context.Context, runID string) error
+	MarkArtifactsPurgingIfUnclean(ctx context.Context, runID, claimID string, now, staleBefore time.Time) (bool, error)
+	ClearArtifactsPurging(ctx context.Context, runID, claimID string) error
+	CompleteArtifactsPurging(ctx context.Context, runID, claimID string, now time.Time) (bool, error)
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
-	ListSucceededForArtifactCleanup(context.Context, time.Time, int) ([]model.Run, error)
+	ListSucceededForArtifactCleanup(context.Context, time.Time, time.Time, int) ([]model.Run, error)
 }
 
 type ArtifactRepository interface {
@@ -141,6 +145,9 @@ type EffectExecutor interface {
 
 type WritebackRepository interface {
 	Update(context.Context, *model.Writeback) error
+	// UpdateGuardedIfStatus 以期望状态为条件写回对账结果：迟到的 absent
+	// 观察不得把已成功状态回退成 pending（并发前移时 0 行）。
+	UpdateGuardedIfStatus(ctx context.Context, writeback *model.Writeback, expected model.WritebackStatus) (bool, error)
 	GetByDedupeKey(context.Context, string) (*model.Writeback, error)
 	GetSucceededMergeRequest(context.Context, string, int) (*model.Writeback, error)
 	GetLatestSucceededReviewerComment(context.Context, string, int) (*model.Writeback, error)
@@ -422,7 +429,15 @@ func (o *Orchestrator) acquireWorkItemLease(ctx context.Context, scope, operatio
 	if o.workItemLeases == nil {
 		return model.WorkItemLease{}, true, nil
 	}
-	return o.workItemLeases.Acquire(ctx, scope, o.workItemLeaseIdentity()+":"+operation, operation, ttl)
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return model.WorkItemLease{}, false, fmt.Errorf("generate work item lease owner: %w", err)
+	}
+	owner := o.workItemLeaseIdentity() + ":" + operation
+	if len(owner) > 47 {
+		owner = owner[:47]
+	}
+	return o.workItemLeases.Acquire(ctx, scope, owner+":"+hex.EncodeToString(nonce[:]), operation, ttl)
 }
 
 // releaseWorkItemLease 尽力释放执行权（失败留待租期到期自然回收）。

@@ -10,7 +10,8 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/agent-runner ./cmd/agent-runner
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/agent-runner ./cmd/agent-runner \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/agent-runner-cli-launcher ./cmd/agent-runner-cli-launcher
 
 # git/bash/python 走 apk；go 复用 builder 阶段 /usr/local/go。
 # agent 工具（codex 必投，claude/node/jdk/maven 可选）走投放目录——有则构建、无则跳过。
@@ -19,13 +20,16 @@ FROM alpine:3.21
 
 ARG GOPROXY=https://proxy.golang.org,direct
 
-RUN apk add --no-cache tzdata ca-certificates bash git curl unzip xz jq procps python3 py3-pip su-exec gcompat \
+RUN apk add --no-cache tzdata ca-certificates bash git curl unzip xz jq procps python3 py3-pip su-exec gcompat libcap-utils \
     && git config --system --add safe.directory "*" \
-    && adduser -D -u 10001 -s /bin/bash runner
+    && adduser -D -u 10001 -s /bin/bash runner \
+    && addgroup -S -g 10002 agent \
+    && adduser -D -H -u 10002 -G agent -s /sbin/nologin agent
 
 WORKDIR /app
 
 COPY --from=builder /out/agent-runner /app/agent-runner
+COPY --from=builder /out/agent-runner-cli-launcher /usr/local/bin/agent-runner-cli-launcher
 COPY --from=builder /usr/local/go /usr/local/go
 COPY deploy/agent-runner-entrypoint.sh /usr/local/bin/agent-runner-entrypoint
 COPY deploy/agent-runner-runtime /opt/vendor
@@ -40,6 +44,8 @@ ENV TZ=Asia/Shanghai \
     PATH=/usr/local/go/bin:/opt/codex/bin:/opt/claude/bin:/opt/node/bin:/opt/jdk/bin:/opt/maven/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     AGENT_RUNNER_HTTP_ADDR=:8081 \
     AGENT_RUNNER_DATA_ROOT=/app/runner-data \
+    AGENT_RUNNER_WORKSPACE_ROOT=/app/workspaces \
+    AGENT_RUNNER_CLI_LAUNCHER=/usr/local/bin/agent-runner-cli-launcher \
     AGENT_RUNNER_CODEX_BINARY=/opt/codex/bin/codex \
     GOPROXY=${GOPROXY} \
     DISABLE_AUTOUPDATER=1 \
@@ -49,6 +55,14 @@ ENV TZ=Asia/Shanghai \
 RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/vendor/materialize.sh \
     && /opt/vendor/materialize.sh /opt/vendor \
     && rm -rf /opt/vendor \
+    && chown root:runner /usr/local/bin/agent-runner-cli-launcher \
+    && chmod 0750 /usr/local/bin/agent-runner-cli-launcher \
+    && setcap cap_chown,cap_dac_override,cap_kill,cap_setgid,cap_setuid=ep /usr/local/bin/agent-runner-cli-launcher \
+    && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_chown \
+    && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_dac_override \
+    && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_kill \
+    && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setgid \
+    && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setuid \
     && mkdir -p /app/runner-data /app/workspaces \
     && chown runner:runner /app/runner-data /app/workspaces \
     && test -x /opt/codex/bin/codex \
@@ -60,6 +74,8 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/ven
     && pip3 --version \
     && bash --version \
     && su-exec runner /bin/true \
+    && su-exec runner /usr/local/bin/agent-runner-cli-launcher --check \
+    && su-exec agent /bin/sh -c '! test -x /usr/local/bin/agent-runner-cli-launcher' \
     && if [ -x /opt/claude/bin/claude ]; then /opt/claude/bin/claude --version || echo "WARNING: claude present but failed to run"; else echo "claude: not vendored, skipped"; fi \
     && if [ -x /opt/node/bin/node ]; then node -v || echo "WARNING: node present but failed to run"; else echo "node: not vendored, skipped"; fi \
     && if [ -x /opt/jdk/bin/java ]; then java -version || echo "WARNING: jdk present but failed to run"; else echo "jdk: not vendored, skipped"; fi \

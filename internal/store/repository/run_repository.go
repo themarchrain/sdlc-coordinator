@@ -154,7 +154,7 @@ func (r *RunRepository) ListTerminalWithActiveExecution(ctx context.Context, lim
 		Where("status IN ?", []model.RunStatus{model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked}).
 		Where("external_system = ?", "agent-runner").
 		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status IN ?)",
-			[]model.AgentExecutionStatus{model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
+			[]model.AgentExecutionStatus{model.AgentExecutionStatusDispatching, model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
 		Order("updated_at ASC").
 		Order("id ASC").
 		Limit(limit).
@@ -181,14 +181,14 @@ func (r *RunRepository) ListRunning(ctx context.Context, limit int) ([]model.Run
 	return runs, nil
 }
 
-func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, before time.Time, limit int) ([]model.Run, error) {
+func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, before, staleBefore time.Time, limit int) ([]model.Run, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	var runs []model.Run
 	if err := r.db.WithContext(ctx).
-		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND external_system = ?",
-			model.RunStatusSucceeded, "", before, "agent-runner").
+		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?) AND external_system = ?",
+			model.RunStatusSucceeded, "", before, staleBefore, "agent-runner").
 		Order("completed_at ASC").
 		Order("id ASC").
 		Limit(limit).
@@ -198,28 +198,35 @@ func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, bef
 	return runs, nil
 }
 
-// MarkArtifactsPurgingIfUnclean 抢占一个 run 的清理归属（跨实例清理栅栏）：
-// 仅当 artifacts_purged_at 仍为空时写入哨兵时间，双实例同时进入清理批次时
-// 恰好一个赢家执行远端删除；applied=false 表示归属在他方，调用方跳过。
-// 清理中途失败由调用方把哨兵清回 NULL，下一轮批次重新竞争。
-func (r *RunRepository) MarkArtifactsPurgingIfUnclean(ctx context.Context, runID string, now time.Time) (bool, error) {
+// MarkArtifactsPurgingIfUnclean 抢占未完成清理的 run；超期归属可被接管。
+func (r *RunRepository) MarkArtifactsPurgingIfUnclean(ctx context.Context, runID, claimID string, now, staleBefore time.Time) (bool, error) {
 	result := r.db.WithContext(ctx).
 		Model(&model.Run{}).
-		Where("run_id = ? AND artifacts_purged_at IS NULL", runID).
-		Update("artifacts_purged_at", now)
+		Where("run_id = ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?)", runID, staleBefore).
+		Updates(map[string]any{"artifacts_purge_started_at": now, "artifacts_purge_claim_id": claimID})
 	if result.Error != nil {
 		return false, fmt.Errorf("mark artifacts purging: %w", result.Error)
 	}
 	return result.RowsAffected == 1, nil
 }
 
-// ClearArtifactsPurging 把清理哨兵清回 NULL（清理失败的回滚通道）。
-func (r *RunRepository) ClearArtifactsPurging(ctx context.Context, runID string) error {
+// ClearArtifactsPurging 仅清除当前 claim 的归属。
+func (r *RunRepository) ClearArtifactsPurging(ctx context.Context, runID, claimID string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&model.Run{}).
-		Where("run_id = ?", runID).
-		Update("artifacts_purged_at", nil).Error; err != nil {
+		Where("run_id = ? AND artifacts_purge_claim_id = ? AND artifacts_purged_at IS NULL", runID, claimID).
+		Updates(map[string]any{"artifacts_purge_started_at": nil, "artifacts_purge_claim_id": ""}).Error; err != nil {
 		return fmt.Errorf("clear artifacts purging: %w", err)
 	}
 	return nil
+}
+
+func (r *RunRepository) CompleteArtifactsPurging(ctx context.Context, runID, claimID string, now time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND artifacts_purge_claim_id = ? AND artifacts_purged_at IS NULL", runID, claimID).
+		Updates(map[string]any{"artifacts_purged_at": now, "artifacts_purge_started_at": nil, "artifacts_purge_claim_id": ""})
+	if result.Error != nil {
+		return false, fmt.Errorf("complete artifacts purging: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }

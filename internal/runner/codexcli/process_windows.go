@@ -14,7 +14,11 @@ func configureProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNewProcessGroup}
 }
 
-func terminateProcessTree(process *os.Process) error {
+func commandInvocation(spec commandSpec) (string, []string, bool, error) {
+	return spec.Binary, spec.Args, false, nil
+}
+
+func terminateProcessTree(process *os.Process, _ bool) error {
 	if process == nil {
 		return nil
 	}

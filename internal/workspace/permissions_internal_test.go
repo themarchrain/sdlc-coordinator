@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRelaxSharedWorkspacePermissionsWidensTree(t *testing.T) {
+func TestRestrictRunWorkspaceRootMakesOnlyRunBoundaryPrivate(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("mode bits are not portable on windows; behavior covered by posix runs")
 	}
@@ -24,22 +24,32 @@ func TestRelaxSharedWorkspacePermissionsWidensTree(t *testing.T) {
 	if err := os.WriteFile(packedObject, []byte("x"), 0o400); err != nil {
 		t.Fatalf("setup packed object: %v", err)
 	}
-
-	if err := relaxSharedWorkspacePermissions(root); err != nil {
-		t.Fatalf("relax shared workspace permissions: %v", err)
+	if err := os.Chmod(root, 0o777); err != nil {
+		t.Fatalf("make run root public: %v", err)
 	}
 
-	for _, dir := range []string{root, filepath.Join(root, "repo"), nested} {
-		assertMode(t, dir, 0o777)
+	if err := restrictRunWorkspaceRoot(root); err != nil {
+		t.Fatalf("restrict run workspace root: %v", err)
 	}
-	for _, file := range []string{looseFile, packedObject} {
-		assertMode(t, file, 0o666)
-	}
+
+	assertMode(t, root, 0o700)
+	assertMode(t, filepath.Join(root, "repo"), 0o700)
+	assertMode(t, nested, 0o700)
+	assertMode(t, looseFile, 0o600)
+	assertMode(t, packedObject, 0o400)
 }
 
-func TestRelaxSharedWorkspacePermissionsRejectsMissingRoot(t *testing.T) {
-	if err := relaxSharedWorkspacePermissions(filepath.Join(t.TempDir(), "absent")); err == nil {
+func TestRestrictRunWorkspaceRootRejectsMissingOrSymlinkedRoot(t *testing.T) {
+	if err := restrictRunWorkspaceRoot(filepath.Join(t.TempDir(), "absent")); err == nil {
 		t.Fatal("expected error for missing root")
+	}
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "run")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+	if err := restrictRunWorkspaceRoot(link); err == nil {
+		t.Fatal("expected error for symlinked run root")
 	}
 }
 

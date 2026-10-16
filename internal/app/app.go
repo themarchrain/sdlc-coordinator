@@ -548,6 +548,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.ControlPlane != nil {
 		go a.ControlPlane.RunSessionJanitor(runCtx)
+		go a.ControlPlane.RunLoginFailureJanitor(runCtx)
 	}
 	go a.runRepoIndexReconciler(runCtx)
 

@@ -222,9 +222,7 @@ func TestStartRecoversAcceptedIntentWithoutSwitchingRunner(t *testing.T) {
 	}
 }
 
-// TestStartResumesUnacceptedIntentOnRecordedEndpoint 确定未接纳（原端点 Get
-// 404）：在原记录端点重发同一请求，不轮换到池内其他端点。
-func TestStartResumesUnacceptedIntentOnRecordedEndpoint(t *testing.T) {
+func TestStartKeepsPersistedIntentWhenRunnerReturns404(t *testing.T) {
 	w := newIntentWorld(t)
 	ctx := context.Background()
 	hash, err := runner.RequestHash(w.request)
@@ -233,18 +231,19 @@ func TestStartResumesUnacceptedIntentOnRecordedEndpoint(t *testing.T) {
 	}
 	w.insertIntent(t, "runner-a", hash)
 
-	projection, err := w.coord.Start(ctx, w.task, w.run, w.request)
-	if err != nil {
-		t.Fatalf("start resume: %v", err)
+	_, err = w.coord.Start(ctx, w.task, w.run, w.request)
+	if !errors.Is(err, errDispatchOutcomeUnknown) {
+		t.Fatalf("start error = %v, want unknown dispatch outcome", err)
 	}
-	if projection.Status != model.AgentExecutionStatusRunning || projection.RunnerEndpoint != "runner-a" {
-		t.Fatalf("projection = %+v", projection)
+	stored, err := w.executions.GetByRunID(ctx, w.run.RunID)
+	if err != nil || stored.Status != model.AgentExecutionStatusDispatching || stored.RunnerEndpoint != "runner-a" {
+		t.Fatalf("persisted intent changed after runner 404: execution=%+v err=%v", stored, err)
 	}
-	if w.runnerA.createCalls != 1 {
-		t.Fatalf("resume must re-create once on the recorded endpoint (calls = %d)", w.runnerA.createCalls)
+	if w.runnerA.createCalls != 0 {
+		t.Fatalf("runner 404 must not trigger a second create (calls = %d)", w.runnerA.createCalls)
 	}
 	if w.runnerB.createCalls != 0 || w.runnerB.getCalls != 0 {
-		t.Fatalf("resume rotated endpoints: create=%d get=%d", w.runnerB.createCalls, w.runnerB.getCalls)
+		t.Fatalf("unknown outcome rotated endpoints: create=%d get=%d", w.runnerB.createCalls, w.runnerB.getCalls)
 	}
 }
 
@@ -280,7 +279,7 @@ func TestStartSettlesDefinitelyRejectedIntent(t *testing.T) {
 	ctx := context.Background()
 	// 单端点池：无下一个候选。
 	w.router.attempt = NewRunnerAttempt(w.runnerA, "runner-a", nil)
-	w.runnerA.createErr = errors.New("runner rejected the create")
+	w.runnerA.createErr = &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "runner rejected the create"}
 
 	_, err := w.coord.Start(ctx, w.task, w.run, w.request)
 	if err == nil {
@@ -296,7 +295,7 @@ func TestStartSettlesDefinitelyRejectedIntent(t *testing.T) {
 }
 
 // TestObserveDispatchingIntent 观测对派发意图的两个分支：远端已受理则收敛
-// 为远端状态；确定性未接纳则报告 ErrExecutionNotAccepted 供上层原端点重发。
+// 为远端状态；Runner 404 不能证明持久卷未丢失，因此保留 unknown 供人工/恢复对账。
 func TestObserveDispatchingIntent(t *testing.T) {
 	ctx := context.Background()
 
@@ -332,12 +331,69 @@ func TestObserveDispatchingIntent(t *testing.T) {
 		}
 		w.insertIntent(t, "runner-a", hash)
 		_, err = w.coord.Observe(ctx, w.run.RunID)
-		if !errors.Is(err, ErrExecutionNotAccepted) {
-			t.Fatalf("observe err = %v, want ErrExecutionNotAccepted", err)
+		if !errors.Is(err, errDispatchOutcomeUnknown) {
+			t.Fatalf("observe err = %v, want dispatch outcome unknown", err)
 		}
 		stored, lookupErr := w.executions.GetByRunID(ctx, w.run.RunID)
 		if lookupErr != nil || stored.Status != model.AgentExecutionStatusDispatching {
 			t.Fatalf("intent must stay dispatching: %+v err=%v", stored, lookupErr)
 		}
 	})
+}
+
+func TestTerminalRunWithUnknownIntentDoesNotStartRunner(t *testing.T) {
+	w := newIntentWorld(t)
+	ctx := context.Background()
+	hash, err := runner.RequestHash(w.request)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	w.insertIntent(t, "runner-a", hash)
+	w.run.Status = model.RunStatusSucceeded
+	w.run.ExternalSystem = "agent-runner"
+	if err := w.runs.Update(ctx, w.run); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+	active, err := w.runs.ListTerminalWithActiveExecution(ctx, 10)
+	if err != nil || len(active) != 1 {
+		t.Fatalf("dispatching terminal run should be swept: runs=%v err=%v", active, err)
+	}
+	if _, err := w.coord.Observe(ctx, w.run.RunID); !errors.Is(err, errDispatchOutcomeUnknown) {
+		t.Fatalf("observe terminal intent err = %v, want unknown outcome", err)
+	}
+	stored, err := w.executions.GetByRunID(ctx, w.run.RunID)
+	if err != nil || stored.Status != model.AgentExecutionStatusDispatching || w.runnerA.createCalls != 0 {
+		t.Fatalf("terminal intent must stay unresolved without relaunch: execution=%+v creates=%d err=%v", stored, w.runnerA.createCalls, err)
+	}
+	active, err = w.runs.ListTerminalWithActiveExecution(ctx, 10)
+	if err != nil || len(active) != 1 {
+		t.Fatalf("unknown terminal intent must remain visible for manual recovery: runs=%v err=%v", active, err)
+	}
+	if _, err := w.coord.Start(ctx, w.task, w.run, w.request); !errors.Is(err, errDispatchOutcomeUnknown) {
+		t.Fatalf("start terminal unknown intent err = %v, want unknown outcome", err)
+	}
+	if w.runnerA.createCalls != 0 {
+		t.Fatalf("start recreated terminal execution: %d", w.runnerA.createCalls)
+	}
+}
+
+func TestStartDoesNotReplayUnknownIntentAfterRunFinalizes(t *testing.T) {
+	w := newIntentWorld(t)
+	ctx := context.Background()
+	hash, err := runner.RequestHash(w.request)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	w.insertIntent(t, "runner-a", hash)
+	w.run.Status = model.RunStatusSucceeded
+	if err := w.runs.Update(ctx, w.run); err != nil {
+		t.Fatalf("finalize run: %v", err)
+	}
+	if _, err := w.coord.Start(ctx, w.task, w.run, w.request); !errors.Is(err, errDispatchOutcomeUnknown) {
+		t.Fatalf("reconcile terminal intent err = %v, want unknown outcome", err)
+	}
+	stored, err := w.executions.GetByRunID(ctx, w.run.RunID)
+	if err != nil || stored.Status != model.AgentExecutionStatusDispatching || w.runnerA.createCalls != 0 {
+		t.Fatalf("terminal unknown intent must not be replayed or settled: execution=%+v creates=%d err=%v", stored, w.runnerA.createCalls, err)
+	}
 }

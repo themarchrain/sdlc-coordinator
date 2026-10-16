@@ -11,6 +11,7 @@ import (
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
+	"sdlc-coordinator/internal/store/storetest"
 )
 
 type recordingArtifactStore struct {
@@ -223,4 +224,75 @@ func seedFullySucceededRun(t *testing.T, ctx context.Context, fixture artifactCl
 		t.Fatalf("create workspace: %v", err)
 	}
 	return run
+}
+
+// TestCleanupClaimRecoversAfterHolderExit 审查 #9 的回归：抢占哨兵写入后
+// 持有者进程退出（未回滚哨兵），超过有效期的遗留哨兵必须能被后续批次接管；
+// 有效期内不得被抢（防双删）。锁定未完成清理不会因崩溃永久失去候选资格。
+func TestCleanupClaimRecoversAfterHolderExit(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "purge_recover")
+	db, err := store.Open(dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := store.Migrate(db, &model.Run{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx := context.Background()
+	runs := repository.NewRunRepository(db)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	completedAt := now.Add(-8 * 24 * time.Hour)
+	run := &model.Run{
+		RunID: "run-purge-recover", TaskID: "task-purge-recover", WorkerRole: "DeveloperWorker",
+		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &completedAt,
+	}
+	if err := runs.Create(ctx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// 持有者抢占（哨兵 = 当下）。
+	if applied, err := runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, "claim-a", now, now); err != nil || !applied {
+		t.Fatalf("initial claim: applied=%v err=%v", applied, err)
+	}
+	// 有效期内的哨兵不可被抢（防双删）。
+	fresh, err := runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, "claim-b", now.Add(time.Minute), now.Add(-30*time.Minute))
+	if err != nil {
+		t.Fatalf("fresh claim: %v", err)
+	}
+	if fresh {
+		t.Fatal("a fresh purge claim must not be stolen by another instance")
+	}
+	// 持有者进程退出（未回滚哨兵）：把哨兵推回 1 小时前模拟崩溃遗留，超过
+	// 有效期（30 分钟）后可被后续批次接管。
+	if err := db.Model(&model.Run{}).Where("run_id = ?", run.RunID).
+		Update("artifacts_purge_started_at", now.Add(-time.Hour)).Error; err != nil {
+		t.Fatalf("age purge sentinel: %v", err)
+	}
+	candidates, err := runs.ListSucceededForArtifactCleanup(ctx, now.Add(-7*24*time.Hour), now.Add(-30*time.Minute), 10)
+	if err != nil || len(candidates) != 1 || candidates[0].RunID != run.RunID {
+		t.Fatalf("stale claim must return to cleanup candidates: runs=%+v err=%v", candidates, err)
+	}
+	applied, err := runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, "claim-b", now, now.Add(-30*time.Minute))
+	if err != nil || !applied {
+		t.Fatalf("stale claim must be recoverable: applied=%v err=%v", applied, err)
+	}
+	if err := runs.ClearArtifactsPurging(ctx, run.RunID, "claim-a"); err != nil {
+		t.Fatalf("old holder clear: %v", err)
+	}
+	if completed, err := runs.CompleteArtifactsPurging(ctx, run.RunID, "claim-a", now); err != nil || completed {
+		t.Fatalf("old holder must not complete new claim: completed=%v err=%v", completed, err)
+	}
+	if completed, err := runs.CompleteArtifactsPurging(ctx, run.RunID, "claim-b", now); err != nil || !completed {
+		t.Fatalf("new holder complete: completed=%v err=%v", completed, err)
+	}
+	candidates, err = runs.ListSucceededForArtifactCleanup(ctx, now.Add(-7*24*time.Hour), now.Add(time.Hour), 10)
+	if err != nil || len(candidates) != 0 {
+		t.Fatalf("completed purge must never return to cleanup candidates: runs=%+v err=%v", candidates, err)
+	}
 }

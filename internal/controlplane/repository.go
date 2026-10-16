@@ -502,32 +502,33 @@ func (repository *Repository) DeleteLoginFailures(ctx context.Context, key strin
 	return nil
 }
 
-// DeleteLoginFailuresBefore 删除窗口外的旧行（记账时顺带的容量治理）。
-func (repository *Repository) DeleteLoginFailuresBefore(ctx context.Context, cutoff time.Time) error {
-	if err := repository.db.WithContext(ctx).Where("failed_at <= ?", cutoff).Delete(&LoginFailure{}).Error; err != nil {
-		return fmt.Errorf("delete login failures before: %w", err)
-	}
-	return nil
-}
-
-// DeleteLoginFailuresBeforeBounded 分批删除窗口外旧行：单次最多 limit 行，
-// 约束 DELETE 的持锁时间（大表一次性清理会长时间持锁）；行数已达上限的行
-// 由后续记账轮次继续清理。清理条件走 failed_at 上的独立索引。
-func (repository *Repository) DeleteLoginFailuresBeforeBounded(ctx context.Context, cutoff time.Time, limit int) error {
+// DeleteExpiredLoginFailuresBounded 每次最多删除 limit 条过期行并返回删除数。
+// MySQL 使用库内时钟，与限流窗口判定保持一致；每批是独立 DELETE。
+func (repository *Repository) DeleteExpiredLoginFailuresBounded(ctx context.Context, window time.Duration, limit int) (int64, error) {
 	if limit <= 0 {
 		limit = loginFailureBatchLimit
 	}
-	subquery := repository.db.Model(&LoginFailure{}).
-		Select("id").
-		Where("failed_at <= ?", cutoff).
-		Order("failed_at ASC").
-		Limit(limit)
-	if err := repository.db.WithContext(ctx).
-		Where("id IN (?)", subquery).
-		Delete(&LoginFailure{}).Error; err != nil {
-		return fmt.Errorf("delete login failures before bounded: %w", err)
+	db := repository.db.WithContext(ctx)
+	if repository.db.Dialector.Name() == "mysql" {
+		result := db.Exec("DELETE FROM `login_failures` WHERE `failed_at` <= DATE_SUB(NOW(6), INTERVAL ? MICROSECOND) ORDER BY `failed_at` ASC, `id` ASC LIMIT ?", window.Microseconds(), limit)
+		if result.Error != nil {
+			return 0, fmt.Errorf("delete expired login failures bounded: %w", result.Error)
+		}
+		return result.RowsAffected, nil
 	}
-	return nil
+	subquery := db.Model(&LoginFailure{}).
+		Select("id").
+		Where("failed_at <= ?", time.Now().Add(-window)).
+		Order("failed_at ASC").
+		Order("id ASC").
+		Limit(limit)
+	result := db.
+		Where("id IN (?)", subquery).
+		Delete(&LoginFailure{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("delete expired login failures bounded: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // CapKeyLoginFailures 把单个键的失败行裁剪到上限（保留最新 limit 行）：

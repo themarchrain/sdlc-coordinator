@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +50,63 @@ func createSeedOrigin(t *testing.T) (string, string) {
 // allowAllAuthorizer 是测试用授权确认桩（状态改变类操作放行）。
 func allowAllAuthorizer(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
 	return workspaceproto.AuthorizationDecision{Authorized: true}, nil
+}
+
+func TestWorkspaceOpRejectsTakeoverWhileWaitingForRunLock(t *testing.T) {
+	var authorized atomic.Bool
+	var executed atomic.Bool
+	authorized.Store(true)
+	ops, err := NewWorkspaceOps(WorkspaceOpsConfig{
+		DataRoot: t.TempDir(),
+		Authorize: func(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
+			return workspaceproto.AuthorizationDecision{Authorized: authorized.Load()}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := ops.lockRun("run-takeover-wait")
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
+	done := make(chan error, 1)
+	go func() {
+		_, _, opErr := runWorkspaceOp(context.Background(), ops, workspaceproto.KindCleanup,
+			"op-takeover-wait", 1, "task-takeover-wait", "run-takeover-wait", "hash", nil,
+			func(context.Context) (string, error) {
+				executed.Store(true)
+				return "done", nil
+			})
+		done <- opErr
+	}()
+	recordPath := filepath.Join(ops.opsRoot, "op-takeover-wait.json")
+	deadline := time.After(3 * time.Second)
+	for {
+		if _, err := os.Stat(recordPath); err == nil {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("operation did not persist its in-flight record")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	authorized.Store(false)
+	release()
+	release = nil
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrNotAuthorized) {
+			t.Fatalf("operation after takeover error = %v, want ErrNotAuthorized", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("operation did not leave the run lock")
+	}
+	if executed.Load() {
+		t.Fatal("stale operation executed after takeover")
+	}
 }
 
 func newWorkspaceOpsForTest(t *testing.T, maxInFlight int) (*WorkspaceOps, string) {

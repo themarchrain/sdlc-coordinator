@@ -167,6 +167,15 @@ func TestMigrateGuardedRecordsVersionAndRefusesNewer(t *testing.T) {
 	if runs != 1 {
 		t.Fatalf("migration fn ran %d times, want 1 (skip when recorded version matches)", runs)
 	}
+	if err := db.Exec("UPDATE schema_migrations SET version = ? WHERE component = 'biz'", store.SchemaVersion-1).Error; err != nil {
+		t.Fatalf("set previous version: %v", err)
+	}
+	if err := store.MigrateGuarded(ctx, db, "biz", fn); err != nil {
+		t.Fatalf("upgrade from previous version: %v", err)
+	}
+	if runs != 2 {
+		t.Fatalf("migration fn ran %d times, want 2 after upgrade", runs)
+	}
 
 	if err := db.Exec("UPDATE schema_migrations SET version = ? WHERE component = 'biz'", store.SchemaVersion+1).Error; err != nil {
 		t.Fatalf("bump recorded version: %v", err)
@@ -175,7 +184,7 @@ func TestMigrateGuardedRecordsVersionAndRefusesNewer(t *testing.T) {
 	if !errors.Is(err, store.ErrSchemaNewerThanBinary) {
 		t.Fatalf("newer-schema migrate err = %v, want ErrSchemaNewerThanBinary", err)
 	}
-	if runs != 1 {
+	if runs != 2 {
 		t.Fatalf("migration fn must not run against newer schema (ran %d times)", runs)
 	}
 }

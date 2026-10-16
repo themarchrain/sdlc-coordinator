@@ -42,7 +42,11 @@ func NewService(dataRoot string, providers map[string]Provider) (*Service, error
 	if dataRoot == "" {
 		return nil, errors.New("runner data root is required")
 	}
-	if err := os.MkdirAll(filepath.Join(dataRoot, "executions"), 0o755); err != nil {
+	executionsRoot := filepath.Join(dataRoot, "executions")
+	if err := os.MkdirAll(executionsRoot, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(executionsRoot, 0o700); err != nil {
 		return nil, err
 	}
 	registry := make(map[string]Provider, len(providers))

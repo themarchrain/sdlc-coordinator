@@ -75,6 +75,18 @@ func (w *RemoteWorkspace) clientFor(ctx context.Context, runID string) (*Client,
 	return client, nil
 }
 
+func (w *RemoteWorkspace) DeleteForRun(ctx context.Context, runID, executionID string) error {
+	client, err := w.clientFor(ctx, runID)
+	if err != nil {
+		return err
+	}
+	return client.Delete(ctx, executionID)
+}
+
+func (w *RemoteWorkspace) Delete(ctx context.Context, executionID string) error {
+	return w.base.Delete(ctx, executionID)
+}
+
 // RemoteDeveloperPreparer 适配 orchestrator.DeveloperWorkspacePreparer。
 type RemoteDeveloperPreparer struct {
 	workspace *RemoteWorkspace

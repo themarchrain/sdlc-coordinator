@@ -36,7 +36,9 @@ type GitCredential struct {
 }
 
 type ReviewerRequest struct {
-	WorkspaceRoot       string
+	WorkspaceRoot string
+	// PrivateRunRoot is enabled by the Runner operation service's isolated CLI mode.
+	PrivateRunRoot      bool
 	TaskID              string
 	RunID               string
 	Project             string

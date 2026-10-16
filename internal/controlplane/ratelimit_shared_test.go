@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -151,6 +152,106 @@ func TestLoginRateLimitSQLiteSemanticsMatchMySQL(t *testing.T) {
 	// 键隔离:其他用户名不受影响。
 	if _, err := service.Login(ctx, "other-ratelimit-user", "test-password", "10.4.4.4"); err != nil {
 		t.Fatalf("other key must be unaffected: %v", err)
+	}
+}
+
+func TestLoginFailureJanitorDrainsExpiredRowsAfterTrafficStops(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "rate-cleanup.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	repository := NewRepository(db)
+	if err := repository.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	rows := make([]LoginFailure, loginFailureBatchLimit*10+17)
+	for i := range rows {
+		rows[i] = LoginFailure{Key: "stopped-traffic", FailedAt: time.Now().Add(-2 * time.Hour)}
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("seed expired login failures: %v", err)
+	}
+	service := NewService(repository)
+	service.sweepExpiredLoginFailures(context.Background())
+	var remaining int64
+	if err := db.Model(&LoginFailure{}).Count(&remaining).Error; err != nil {
+		t.Fatalf("count after one cleanup sweep: %v", err)
+	}
+	if remaining != 17 {
+		t.Fatalf("one sweep should process ten bounded batches and leave 17 rows, found %d", remaining)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		service.runLoginFailureJanitor(ctx, 10*time.Millisecond)
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var count int64
+		if err := db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+			cancel()
+			<-finished
+			t.Fatalf("count login failures: %v", err)
+		}
+		if count == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-finished
+			t.Fatalf("janitor left %d expired rows after traffic stopped", count)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-finished
+}
+
+func TestBoundedLoginFailureCleanupConcurrentOnMySQL(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_cleanup")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	rows := make([]LoginFailure, loginFailureBatchLimit*2+17)
+	for i := range rows {
+		rows[i] = LoginFailure{Key: "stopped-traffic", FailedAt: time.Now().Add(-2 * time.Hour)}
+	}
+	if err := services[0].repository.db.Create(&rows).Error; err != nil {
+		t.Fatalf("seed expired login failures: %v", err)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(services))
+	for _, service := range services {
+		wg.Add(1)
+		go func(service *Service) {
+			defer wg.Done()
+			_, err := service.repository.DeleteExpiredLoginFailuresBounded(context.Background(), time.Hour, loginFailureBatchLimit)
+			errs <- err
+		}(service)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent bounded cleanup: %v", err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := services[i%len(services)].repository.DeleteExpiredLoginFailuresBounded(context.Background(), time.Hour, loginFailureBatchLimit); err != nil {
+			t.Fatalf("cleanup batch %d: %v", i, err)
+		}
+	}
+	var count int64
+	if err := services[0].repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count login failures: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected concurrent bounded cleanup and follow-up batches to drain rows, found %d", count)
 	}
 }
 

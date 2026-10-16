@@ -118,13 +118,22 @@ faultsuite/run.sh coordinator_pause     # 单场景
 
 场景与断言（JSON Lines 落 `faultsuite-results.jsonl`，不依赖人工截图）：
 
+套件会把尚未验证的任务书业务项作为 `not_covered` 写入结果，并在汇总中
+单独计数。`smoke_*` 断言只表示进程、容器或连通性正常，不代表在途业务已收敛。
+
 | 场景 | 注入 | 断言要点 |
 |---|---|---|
-| `coordinator_pause` | `docker pause` 协调器 A 20s | 暂停期 LB 仍服务；恢复后工作继续、无异常重启 |
-| `coordinator_kill` | `kill -9` 协调器 A | 容器自动拉起；存活实例全程健康 |
+| `coordinator_pause` | `docker pause` 协调器 A 20s | 暂停期间经 B 创建租户；MySQL 中控制面记录与租户库均存在；A 恢复后状态仍在且无异常重启 |
+| `coordinator_kill` | `kill -9` 协调器 A | 存活实例全程服务；人工 start A 后恢复 ready |
 | `runner_kill` | `kill -9` Runner A | 卷保留重启后健康；另一 Runner 不受影响 |
 | `net_block` | 断开 Runner A 容器网络 15s | 协调器存活；恢复后可达 |
-| `lb_failover` | `stop` 协调器 B | Portal 会话（共享控制面库）经 A 仍有效；B 重启回池 |
+| `lb_failover` | `stop` 协调器 B | Portal 会话经 A 仍有效；A 创建租户后 MySQL 中控制面记录与租户库均存在；B 重启回池 |
+
+当前 shell faultsuite 对 A06 原执行复用与副作用次数、A07 陈旧 owner/generation
+栅栏、A11 中断结果恢复、A12 不确定执行边界、A18 MySQL 断连/死锁/锁超时均报告
+`not_covered`。其中 A07 有独立 Go+MySQL 集成测试
+`TestRemoteDeliveryTakeoverFencesStaleCoordinatorOnMySQL`，由 CI MySQL 服务运行；
+它不改变 shell faultsuite 的覆盖计数。
 
 ## 扩缩容
 

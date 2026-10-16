@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -201,15 +202,18 @@ func (c *AgentRunnerCoordinator) resolveAndPinEndpoint(ctx context.Context, task
 	return run.RunnerEndpoint, nil
 }
 
-var ErrExecutionNotAccepted = errors.New("runner execution was never accepted")
-
 // errDispatchOutcomeUnknown 报告远端派发结果不确定（Create 歧义失败且
 // 无法按原端点回读）：意图行保持待对账，不得判失败重派新执行。
 var errDispatchOutcomeUnknown = errors.New("dispatch outcome unknown")
 
+func runnerCreateDefinitelyRejected(err error) bool {
+	return runnerHTTPStatus(err, http.StatusBadRequest) || runnerHTTPStatus(err, http.StatusUnprocessableEntity)
+}
+
 // createOnPool 在端点池上派发执行：每轮先 Create，失败后同端点 Get 崩溃恢复
-// （既有语义）；Get 返回 404（确定性未建）才轮换下一端点，歧义失败（传输层
-// 错误等）按既有失败语义终止，池耗尽返回首个 Create 错误。返回实际承接执行
+// （既有语义）；仅 Create 明确返回请求校验 400/422 且 Get 返回 404 时，才
+// 能确认未接纳并轮换下一端点。传输错误、5xx 和其他歧义响应都保持 pending。
+// 池耗尽返回首个 Create 错误。返回实际承接执行
 // 的端点，供 projection 做观测亲和；definite 报告失败是否为全部端点确定性
 // 未接纳——只有它才允许上层按失败处理（判失败/重试），否则结果不确定。
 //
@@ -235,6 +239,9 @@ func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt Runne
 		if !runnerNotFound(getErr) {
 			// 结果不确定：不轮换、不判失败，交上层保持意图待对账。
 			return nil, "", false, fmt.Errorf("%w: create runner execution: %v", errDispatchOutcomeUnknown, firstErr)
+		}
+		if !runnerCreateDefinitelyRejected(createErr) {
+			return nil, "", false, fmt.Errorf("%w: create runner execution: %v; execution read-back returned 404 on %q", errDispatchOutcomeUnknown, firstErr, attempt.Endpoint)
 		}
 		next, ok := attempt.Next()
 		if !ok {
@@ -298,7 +305,7 @@ func (c *AgentRunnerCoordinator) projectRemoteIntoIntent(ctx context.Context, st
 	return projection, nil
 }
 
-func (c *AgentRunnerCoordinator) reconcileIntent(ctx context.Context, stored *model.AgentExecution, request runner.CreateExecutionRequest) (*model.AgentExecution, error) {
+func (c *AgentRunnerCoordinator) reconcileIntent(ctx context.Context, stored *model.AgentExecution) (*model.AgentExecution, error) {
 	client := c.executionClient(stored)
 	remote, getErr := client.Get(ctx, stored.ExecutionID)
 	if getErr == nil {
@@ -310,14 +317,7 @@ func (c *AgentRunnerCoordinator) reconcileIntent(ctx context.Context, stored *mo
 	if !runnerNotFound(getErr) {
 		return nil, fmt.Errorf("%w: read back execution %s on %q: %v", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint, getErr)
 	}
-	remote, createErr := client.Create(ctx, request)
-	if createErr != nil {
-		return nil, fmt.Errorf("%w: resume dispatch of execution %s on %q: %v", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint, createErr)
-	}
-	if err := validateRemoteExecution(remote, stored.ExecutionID, stored.RequestHash); err != nil {
-		return nil, err
-	}
-	return c.projectRemoteIntoIntent(ctx, stored, remote, 0)
+	return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
 }
 
 func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, run *model.Run, request runner.CreateExecutionRequest) (*model.AgentExecution, error) {
@@ -340,7 +340,7 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	}
 	if found {
 		// 意图已落库、远端结果未定：按原目标端点收敛。
-		return c.reconcileIntent(ctx, existing, request)
+		return c.reconcileIntent(ctx, existing)
 	}
 	if c.ingressIssuer != nil && c.ingressEndpoint != "" {
 		token, err := c.ingressIssuer.IssueRunToken(task.TaskID, run.RunID, task.Role, time.Duration(request.TimeoutSeconds)*time.Second)
@@ -445,7 +445,7 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if stored.Status == model.AgentExecutionStatusDispatching {
 		remote, getErr := client.Get(ctx, stored.ExecutionID)
 		if runnerNotFound(getErr) {
-			return nil, fmt.Errorf("%w: execution %s on runner %q", ErrExecutionNotAccepted, stored.ExecutionID, stored.RunnerEndpoint)
+			return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
 		}
 		if getErr != nil {
 			return nil, fmt.Errorf("read back dispatching execution %s: %w", stored.ExecutionID, getErr)

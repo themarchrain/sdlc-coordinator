@@ -7,6 +7,7 @@ SUITE_NAME="${SUITE_NAME:-faultsuite}"
 RESULTS_FILE="${RESULTS_FILE:-$(pwd)/faultsuite-results.jsonl}"
 PASS_COUNT=0
 FAIL_COUNT=0
+NOT_COVERED_COUNT=0
 
 # record <scenario> <assertion> <pass|fail> <detail>
 record() {
@@ -17,6 +18,9 @@ record() {
     if [ "$verdict" = "pass" ]; then
         PASS_COUNT=$((PASS_COUNT + 1))
         echo "PASS [$scenario] $assertion"
+    elif [ "$verdict" = "not_covered" ]; then
+        NOT_COVERED_COUNT=$((NOT_COVERED_COUNT + 1))
+        echo "NOT_COVERED [$scenario] $assertion: $detail"
     else
         FAIL_COUNT=$((FAIL_COUNT + 1))
         echo "FAIL [$scenario] $assertion: $detail"
@@ -43,7 +47,7 @@ assert_true() {
 
 finish_suite() {
     echo "----"
-    echo "suite=$SUITE_NAME pass=$PASS_COUNT fail=$FAIL_COUNT results=$RESULTS_FILE"
+    echo "suite=$SUITE_NAME pass=$PASS_COUNT fail=$FAIL_COUNT not_covered=$NOT_COVERED_COUNT results=$RESULTS_FILE"
     [ "$FAIL_COUNT" -eq 0 ]
 }
 

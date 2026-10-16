@@ -73,6 +73,32 @@ func (r *WritebackRepository) Update(ctx context.Context, writeback *model.Write
 	return nil
 }
 
+// UpdateGuardedIfStatus 以 expected 状态为条件写回对账结果：对账读到的是
+// 旧快照，期间发送路径可能已把同一写回推进到 succeeded——迟到的 absent
+// 观察不得把已完成状态回退成 pending 并诱发第二次远端创建。applied=false
+// 表示状态已并发前移，调用方按库内当前状态裁决。
+func (r *WritebackRepository) UpdateGuardedIfStatus(ctx context.Context, writeback *model.Writeback, expected model.WritebackStatus) (bool, error) {
+	if writeback == nil {
+		return false, fmt.Errorf("writeback is required")
+	}
+	result := r.db.WithContext(ctx).Model(&model.Writeback{}).
+		Where("writeback_id = ? AND status = ?", writeback.WritebackID, expected).
+		Updates(map[string]any{
+			"status":                  writeback.Status,
+			"attempt_count":           writeback.AttemptCount,
+			"reconcile_attempt_count": writeback.ReconcileAttemptCount,
+			"last_reconciled_at":      writeback.LastReconciledAt,
+			"response_json":           writeback.ResponseJSON,
+			"external_id":             writeback.ExternalID,
+			"external_url":            writeback.ExternalURL,
+			"error_message":           writeback.ErrorMessage,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("update writeback guarded: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func (r *WritebackRepository) GetByDedupeKey(ctx context.Context, dedupeKey string) (*model.Writeback, error) {
 	var writeback model.Writeback
 	if err := r.db.WithContext(ctx).Where("dedupe_key = ?", dedupeKey).First(&writeback).Error; err != nil {

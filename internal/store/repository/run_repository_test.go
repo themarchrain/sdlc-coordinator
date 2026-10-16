@@ -182,6 +182,7 @@ func TestRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T) {
 	now := time.Now().UTC()
 	old := now.Add(-8 * 24 * time.Hour)
 	recent := now.Add(-time.Hour)
+	freshStarted := now.Add(-time.Minute)
 	eligible := &model.Run{
 		RunID: "run-old-success", TaskID: "task-1", WorkerRole: "ReviewerWorker",
 		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &old,
@@ -198,16 +199,27 @@ func TestRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T) {
 		RunID: "run-already-purged", TaskID: "task-4", WorkerRole: "ReviewerWorker",
 		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &old, ArtifactsPurgedAt: &old,
 	}
-	for _, run := range []*model.Run{eligible, tooNew, failed, purged} {
+	freshClaimed := &model.Run{
+		RunID: "run-fresh-claim", TaskID: "task-5", WorkerRole: "ReviewerWorker",
+		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &old,
+		ArtifactsPurgeStartedAt: &freshStarted, ArtifactsPurgeClaimID: "fresh",
+	}
+	staleStarted := now.Add(-time.Hour)
+	staleClaimed := &model.Run{
+		RunID: "run-stale-claim", TaskID: "task-6", WorkerRole: "ReviewerWorker",
+		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &old,
+		ArtifactsPurgeStartedAt: &staleStarted, ArtifactsPurgeClaimID: "stale",
+	}
+	for _, run := range []*model.Run{eligible, tooNew, failed, purged, freshClaimed, staleClaimed} {
 		if err := repo.Create(ctx, run); err != nil {
 			t.Fatalf("create %s: %v", run.RunID, err)
 		}
 	}
-	got, err := repo.ListSucceededForArtifactCleanup(ctx, now.Add(-7*24*time.Hour), 10)
+	got, err := repo.ListSucceededForArtifactCleanup(ctx, now.Add(-7*24*time.Hour), now.Add(-30*time.Minute), 10)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(got) != 1 || got[0].RunID != "run-old-success" {
-		t.Fatalf("expected only the old unpurged success, got %#v", got)
+	if len(got) != 2 || got[0].RunID != "run-old-success" || got[1].RunID != "run-stale-claim" {
+		t.Fatalf("expected unclaimed and stale-claimed successes, got %#v", got)
 	}
 }

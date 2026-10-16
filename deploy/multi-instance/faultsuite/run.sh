@@ -7,12 +7,8 @@
 #   faultsuite/run.sh                 # 全场景
 #   faultsuite/run.sh coordinator_pause coordinator_kill   # 指定场景
 #
-# 场景清单（与任务书验收矩阵对应）：
-#   coordinator_pause  A07：协调器 A 暂停期间 B 接管恢复过期任务，A 恢复后陈旧写入被拒
-#   coordinator_kill   A06/A19：协调器 A 被 kill 后 B 继续推进，A 重启后不加倍副作用
-#   runner_kill        A11/A12：Runner A 执行中被 kill，任务按恢复策略收敛不丢归属
-#   net_block          A18：Runner A 网络阻断，协调器可重试错误有界不误判
-#   lb_failover        A15/A19：LB 后单协调器下线，Portal 会话与轮询余下实例继续
+# 场景清单：本 shell suite 只断言部署/容器行为和租户控制面探针。
+# 在途交付、租约栅栏、恢复语义及 MySQL 故障注入目前不由这些场景覆盖。
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -32,16 +28,49 @@ SCENARIOS_ALL="coordinator_pause coordinator_kill runner_kill net_block lb_failo
 SCENARIOS="${*:-$SCENARIOS_ALL}"
 SUITE_START=$(date +%s)
 
+# 业务验收缺口显式落入结果文件，避免健康检查被误读为业务通过。
+record "coverage" "A06_original_execution_reuse_and_single_side_effect" not_covered "Shell scenario kills a coordinator without creating an in-flight delivery; no at-most-once side-effect assertion."
+record "coverage" "A07_stale_owner_generation_fence" not_covered "Shell scenario pauses a process but does not establish an in-flight run or assert stale-write rejection. Dedicated Go+MySQL takeover test covers this separately."
+record "coverage" "A11_runner_restart_result_recovery" not_covered "Runner scenario checks container health and volume marker only; it does not recover/read an interrupted run result."
+record "coverage" "A12_runner_uncertainty_retry_boundary" not_covered "No assertion distinguishes unknown external execution from not-executed or checks explicit retry/human boundary."
+record "coverage" "A18_mysql_disconnect_deadlock_lock_timeout" not_covered "Network scenario blocks Runner connectivity; it does not inject MySQL disconnect/deadlock/lock-timeout errors."
+
 # ---- 前置自检：部署健康才跑矩阵（避免把部署问题误报成故障场景失败）----
 preflight() {
     scenario="preflight"
     wait_until "coordinator-a healthy" 60 2 sh -c \
         'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
-    assert_true "$scenario" "lb_reaches_coordinators" $?
+    assert_true "$scenario" "smoke_lb_reaches_coordinators" $?
     jar=$(mktemp)
     portal_login superadmin "${MULTI_SUPERADMIN_PASSWORD:?set MULTI_SUPERADMIN_PASSWORD}" "$jar"
-    assert_true "$scenario" "superadmin_login_via_lb" $?
+    assert_true "$scenario" "smoke_superadmin_login_via_lb" $?
     session_jar="$jar"
+}
+
+# Create a tenant through the current LB pool and verify the shared control-plane
+# row and its provisioned database in MySQL.
+assert_tenant_provisioned() {
+    scenario="$1"; slug="$2"
+    tenant_count=$(mysql_scalar "SELECT COUNT(*) FROM sdlc_control_plane.tenants WHERE slug='${slug}' AND status='active' AND db_locator LIKE 'mysql://%'")
+    assert_eq "$scenario" "tenant_row_provisioned_${slug}" "1" "${tenant_count:-unknown}"
+
+    tenant_db=$(mysql_scalar "SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(db_locator, '/', -1), '?', 1) FROM sdlc_control_plane.tenants WHERE slug='${slug}'")
+    case "$tenant_db" in
+        sdlc_tenant_*) tenant_id=${tenant_db#sdlc_tenant_} ;;
+        *) record "$scenario" "tenant_database_locator_${slug}" fail "unexpected database locator: ${tenant_db:-empty}"; return ;;
+    esac
+    case "$tenant_id" in
+        ''|*[!0-9]*) record "$scenario" "tenant_database_locator_${slug}" fail "unexpected database locator: ${tenant_db}"; return ;;
+    esac
+    db_count=$(mysql_scalar "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${tenant_db}'")
+    assert_eq "$scenario" "tenant_database_exists_${slug}" "1" "${db_count:-unknown}"
+}
+
+create_tenant_probe() {
+    scenario="$1"; slug="$2"
+    response=$(api_post "/api/super-admin/tenants" "$session_jar" \
+        "{\"slug\":\"${slug}\",\"display_name\":\"faultsuite ${scenario}\"}") || return 1
+    [ -n "$response" ]
 }
 
 # ---- 恢复现场（每场景结束后把拓扑拉回全健康）----
@@ -55,32 +84,33 @@ restore_topology() {
 
 scenario_coordinator_pause() {
     scenario="coordinator_pause"
-    echo "=== $scenario: A 暂停，B 承担全部调度；A 恢复后无重复副作用 ==="
+    echo "=== $scenario: A 暂停，经 B 写入共享 MySQL；A 恢复后状态可读 ==="
     restarts_baseline=$(docker inspect multi-instance-coordinator-a-1 --format '{{.RestartCount}}' 2>/dev/null)
     docker compose -f "$COMPOSE_FILE" pause coordinator-a >/dev/null 2>&1
-    assert_true "$scenario" "coordinator_a_paused" $?
+    assert_true "$scenario" "smoke_coordinator_a_paused" $?
 
     # 暂停窗口内健康面应仍由 B 承接（LB 探活把流量切给 B）。
     wait_until "lb still serves through B" 60 2 sh -c \
         'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
-    assert_true "$scenario" "lb_serves_via_survivor" $?
+    assert_true "$scenario" "smoke_lb_serves_via_survivor" $?
 
-    # 暂停 20 秒——足以覆盖一个调度 tick 窗口；期间 B 独自推进。
+    # 暂停 20 秒覆盖一个调度 tick 窗口；本场景没有创建在途 run。
     sleep 20
-    docker compose -f "$COMPOSE_FILE" unpause coordinator-a >/dev/null 2>&1
-    assert_true "$scenario" "coordinator_a_resumed" $?
-
-    # A 恢复后控制面写路径继续可用（经 LB 创建租户成功=新请求被某一
-    # 实例处理；空闲系统的调度 tick 无独立观测信号，以控制面写代之）。
-    if curl -fsS -b "$session_jar" -X POST -H "Content-Type: application/json" \
-        -d "{\"slug\":\"pause-probe-$(date +%s)\",\"display_name\":\"pause probe\"}" \
-        http://127.0.0.1:8090/api/super-admin/tenants >/dev/null 2>&1; then
-        record "$scenario" "work_continues_after_resume" pass "control-plane write succeeded"
+    # 暂停期间经 LB 创建真实租户，验证存活实例写入共享控制面和数据面库。
+    tenant_slug="fault-pause-$(date +%s)"
+    if create_tenant_probe "$scenario" "$tenant_slug"; then
+        assert_tenant_provisioned "$scenario" "$tenant_slug"
     else
-        record "$scenario" "work_continues_after_resume" fail "control-plane write failed after resume"
+        record "$scenario" "tenant_create_while_a_paused" fail "control-plane tenant creation failed"
     fi
+
+    docker compose -f "$COMPOSE_FILE" unpause coordinator-a >/dev/null 2>&1
+    assert_true "$scenario" "smoke_coordinator_a_resumed" $?
+
+    # A 恢复后再次读取共享状态，确保恢复过程没有覆盖 B 已落地的租户。
+    assert_tenant_provisioned "$scenario" "$tenant_slug"
     restarts_after=$(docker inspect multi-instance-coordinator-a-1 --format '{{.RestartCount}}' 2>/dev/null)
-    assert_eq "$scenario" "coordinator_a_not_restarted" "$restarts_baseline" "${restarts_after:-unknown}"
+    assert_eq "$scenario" "smoke_coordinator_a_not_restarted" "$restarts_baseline" "${restarts_after:-unknown}"
 }
 
 scenario_coordinator_kill() {
@@ -90,81 +120,89 @@ scenario_coordinator_kill() {
     # 覆盖进程自身崩溃（exitCode 非 0 且非手动停止）。因此本场景断言分两段：
     # kill 后存活实例继续服务；运维拉起（docker start）后 A 回池。
     docker compose -f "$COMPOSE_FILE" kill -s KILL coordinator-a >/dev/null 2>&1
-    assert_true "$scenario" "coordinator_a_killed" $?
+    assert_true "$scenario" "smoke_coordinator_a_killed" $?
     sleep 3
 
     # 存活实例全程服务：LB 经 B 继续应答。
     wait_until "lb serves through survivor" 30 2 sh -c \
         'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
-    assert_true "$scenario" "survivor_never_dropped" $?
+    assert_true "$scenario" "smoke_survivor_never_dropped" $?
 
     # 运维拉起后 A 回池并恢复 ready。
     docker compose -f "$COMPOSE_FILE" start coordinator-a >/dev/null 2>&1
-    assert_true "$scenario" "coordinator_a_started" $?
+    assert_true "$scenario" "smoke_coordinator_a_started" $?
     wait_until "coordinator-a back to ready" 120 3 sh -c \
         'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1 && docker logs multi-instance-coordinator-a-1 2>&1 | tail -50 | grep -q "\"mode\": \"ready\""'
-    assert_true "$scenario" "coordinator_a_back_to_ready" $?
+    assert_true "$scenario" "smoke_coordinator_a_back_to_ready" $?
 }
 
 scenario_runner_kill() {
     scenario="runner_kill"
-    echo "=== $scenario: kill -9 Runner A；数据卷保留，拉起后工作区原样可见 ==="
+    echo "=== $scenario: kill -9 Runner A；数据卷标记保留，拉起后 Runner 恢复健康 ==="
     # 先落卷标志：kill 前写入，重启后必须仍在（卷持久性断言）。
     docker exec multi-instance-runner-a-1 sh -c 'echo volume-marker > /app/runner-data/faultsuite-marker'
     docker compose -f "$COMPOSE_FILE" kill -s KILL runner-a >/dev/null 2>&1
-    assert_true "$scenario" "runner_a_killed" $?
+    assert_true "$scenario" "smoke_runner_a_killed" $?
     sleep 3
 
     # 同 docker kill 语义：手动停止不触发 restart 策略，运维拉起。
     docker compose -f "$COMPOSE_FILE" start runner-a >/dev/null 2>&1
-    assert_true "$scenario" "runner_a_started" $?
+    assert_true "$scenario" "smoke_runner_a_started" $?
     wait_until "runner-a back up" 120 3 sh -c \
         "docker exec multi-instance-runner-a-1 wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok"
-    assert_true "$scenario" "runner_a_back_up" $?
+    assert_true "$scenario" "smoke_runner_a_back_up" $?
 
     # 卷保留：kill 前的标志文件重启后仍可读。
     docker exec multi-instance-runner-a-1 sh -c 'cat /app/runner-data/faultsuite-marker' 2>/dev/null | grep -q volume-marker
-    assert_true "$scenario" "runner_volume_preserved_across_kill" $?
+    assert_true "$scenario" "smoke_runner_volume_preserved_across_kill" $?
 
     # 双 Runner 池中 B 仍健康：新派发不落死端点。
     wait_until "runner-b still healthy" 30 2 sh -c \
         "docker exec multi-instance-runner-b-1 wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok"
-    assert_true "$scenario" "runner_b_unaffected" $?
+    assert_true "$scenario" "smoke_runner_b_unaffected" $?
 }
 
 scenario_net_block() {
     scenario="net_block"
-    echo "=== $scenario: 断 Runner A 网络（网络阻断注入），恢复后有界收敛 ==="
+    echo "=== $scenario: 断 Runner A 网络，验证协调器存活及 Runner 恢复可达 ==="
     docker network disconnect "${MULTI_NET_NAME:-sdlc-multi-net}" multi-instance-runner-a-1 >/dev/null 2>&1
-    assert_true "$scenario" "runner_a_network_removed" $?
+    assert_true "$scenario" "smoke_runner_a_network_removed" $?
 
     # 阻断期间协调器对 Runner A 的探活/派发会失败——平台不得崩溃。
     sleep 15
     wait_until "coordinators stay healthy during block" 30 2 sh -c \
         'curl -fsS http://127.0.0.1:8090/healthz >/dev/null 2>&1'
-    assert_true "$scenario" "coordinators_survive_block" $?
+    assert_true "$scenario" "smoke_coordinators_survive_block" $?
 
     docker network connect "${MULTI_NET_NAME:-sdlc-multi-net}" multi-instance-runner-a-1 --alias runner-a >/dev/null 2>&1
-    assert_true "$scenario" "runner_a_network_restored" $?
+    assert_true "$scenario" "smoke_runner_a_network_restored" $?
     wait_until "runner-a reachable again" 60 3 sh -c \
         "docker exec multi-instance-runner-a-1 wget -qO- http://127.0.0.1:8081/healthz 2>/dev/null | grep -q ok"
-    assert_true "$scenario" "runner_a_reachable_after_restore" $?
+    assert_true "$scenario" "smoke_runner_a_reachable_after_restore" $?
 }
 
 scenario_lb_failover() {
     scenario="lb_failover"
-    echo "=== $scenario: LB 后单协调器下线，Portal 会话与调度由余下实例承接 ==="
+    echo "=== $scenario: LB 后单协调器下线，存活实例继续处理 Portal 与租户请求 ==="
     docker compose -f "$COMPOSE_FILE" stop coordinator-b >/dev/null 2>&1
-    assert_true "$scenario" "coordinator_b_stopped" $?
+    assert_true "$scenario" "smoke_coordinator_b_stopped" $?
 
     # 会话在共享控制面库里：A 单独也能验同一会话 cookie。
     api_get "/api/portal/auth/session" "$session_jar" >/dev/null 2>&1
-    assert_true "$scenario" "portal_session_survives_failover" $?
+    assert_true "$scenario" "business_portal_session_survives_failover" $?
+
+    # B 停机期间由 A 完成租户创建；MySQL 必须持有唯一控制面行和数据面库。
+    tenant_slug="fault-lb-$(date +%s)"
+    if create_tenant_probe "$scenario" "$tenant_slug"; then
+        assert_tenant_provisioned "$scenario" "$tenant_slug"
+    else
+        record "$scenario" "tenant_create_on_survivor" fail "control-plane tenant creation failed"
+    fi
 
     docker compose -f "$COMPOSE_FILE" start coordinator-b >/dev/null 2>&1
     wait_until "coordinator-b back" 120 3 sh -c \
         'docker compose -f '"$COMPOSE_FILE"' ps coordinator-b --format json 2>/dev/null | grep -q "\"State\":\"running\""'
-    assert_true "$scenario" "coordinator_b_restarted" $?
+    assert_true "$scenario" "smoke_coordinator_b_restarted" $?
 }
 
 # 前置自检始终执行：指定单场景时登录态（session_jar）也要就绪。

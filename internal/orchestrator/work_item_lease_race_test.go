@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
@@ -16,6 +17,34 @@ import (
 
 	"gorm.io/gorm"
 )
+
+func TestSameInstanceWorkItemLeaseAcquisitionsCompete(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "same_owner_lease")
+	db, err := store.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+	if err := store.Migrate(db, &model.WorkItemLease{}); err != nil {
+		t.Fatal(err)
+	}
+	o := &Orchestrator{workItemLeases: storerepo.NewWorkItemLeaseRepository(db), workItemLeaseOwner: "same-instance"}
+	ctx := context.Background()
+	first, won, err := o.acquireWorkItemLease(ctx, "codehost-writeback:same-key", "codehost-writeback", time.Minute)
+	if err != nil || !won {
+		t.Fatalf("first acquisition: won=%v err=%v", won, err)
+	}
+	defer o.releaseWorkItemLease(first)
+	second, won, err := o.acquireWorkItemLease(ctx, "codehost-writeback:same-key", "codehost-writeback", time.Minute)
+	if err != nil || won {
+		t.Fatalf("same-instance second acquisition: lease=%+v won=%v err=%v", second, won, err)
+	}
+}
 
 // TestWritebackLeaseDualInstanceSingleExecution 两实例同时执行同一 codehost
 // 写回：租约执行权保证远端 CreateIssue 恰好发生一次，败者不执行远端调用。

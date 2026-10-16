@@ -31,6 +31,7 @@ type ReviewerRunnerClient interface {
 type AgentExecutionProjectionRepository interface {
 	Create(context.Context, *model.AgentExecution) error
 	Update(context.Context, *model.AgentExecution) error
+	SettleUnacceptedIfDispatching(context.Context, string, time.Time) (bool, error)
 	GetByRunID(context.Context, string) (*model.AgentExecution, error)
 	UpsertEvents(context.Context, []model.AgentExecutionEvent) error
 	// UpdateRunnerEndpointIfUnchanged 以旧端点值为条件推进端点（fallback

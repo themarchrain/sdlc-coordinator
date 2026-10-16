@@ -14,6 +14,9 @@ import (
 const (
 	artifactRetention        = 7 * 24 * time.Hour
 	artifactCleanupBatchSize = 10
+	// artifactPurgeLeaseWindow 是清理归属哨兵的有效期：远端删除远短于此
+	// 窗口；超过即视为持有者已退出的崩溃遗留，允许接管重试。
+	artifactPurgeLeaseWindow = 30 * time.Minute
 )
 
 type ArtifactCleanupResult struct {
@@ -34,8 +37,8 @@ func (o *Orchestrator) cleanupExpiredArtifacts(ctx context.Context) []ArtifactCl
 	if workspaceRoot == "" && o.runWorkspaceCleaner == nil {
 		return nil
 	}
-	cutoff := o.now().UTC().Add(-artifactRetention)
-	runs, err := o.runs.ListSucceededForArtifactCleanup(ctx, cutoff, artifactCleanupBatchSize)
+	now := o.now().UTC()
+	runs, err := o.runs.ListSucceededForArtifactCleanup(ctx, now.Add(-artifactRetention), now.Add(-artifactPurgeLeaseWindow), artifactCleanupBatchSize)
 	if err != nil {
 		return []ArtifactCleanupResult{{Error: err.Error()}}
 	}
@@ -99,41 +102,46 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 			}
 		}
 	}
+	claimedAt := o.now().UTC()
+	claimID := model.NewID("purge")
+	applied, err := o.runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, claimID, claimedAt, claimedAt.Add(-artifactPurgeLeaseWindow))
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if !applied {
+		return result
+	}
 	if o.runWorkspaceCleaner != nil {
-		// 跨实例清理归属栅栏:先原子抢占(哨兵写入 artifacts_purged_at),
-		// 双实例同时进入清理批次时恰好一个赢家执行远端删除;败者静默跳过。
-		// 远端删除失败把哨兵清回 NULL,下一轮批次重新竞争。
-		applied, err := o.runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, o.now().UTC())
-		if err != nil {
-			result.Error = err.Error()
-			return result
-		}
-		if !applied {
-			return result
-		}
 		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
 			result.Error = err.Error()
-			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID)
+			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID, claimID)
 			return result
 		}
 	} else if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
 		result.Error = err.Error()
+		_ = o.runs.ClearArtifactsPurging(ctx, run.RunID, claimID)
 		return result
 	}
-	if err := o.runnerArtifacts.Delete(ctx, execution.ExecutionID); err != nil {
+	var deleteErr error
+	if routed, ok := o.runnerArtifacts.(interface {
+		DeleteForRun(context.Context, string, string) error
+	}); ok {
+		deleteErr = routed.DeleteForRun(ctx, run.RunID, execution.ExecutionID)
+	} else {
+		deleteErr = o.runnerArtifacts.Delete(ctx, execution.ExecutionID)
+	}
+	if deleteErr != nil {
+		result.Error = deleteErr.Error()
+		_ = o.runs.ClearArtifactsPurging(ctx, run.RunID, claimID)
+		return result
+	}
+	completed, err := o.runs.CompleteArtifactsPurging(ctx, run.RunID, claimID, o.now().UTC())
+	if err != nil {
 		result.Error = err.Error()
-		if o.runWorkspaceCleaner != nil {
-			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID)
-		}
 		return result
 	}
-	now := o.now().UTC()
-	run.ArtifactsPurgedAt = &now
-	if err := o.runs.Update(ctx, &run); err != nil {
-		result.Error = err.Error()
-		return result
-	}
-	result.Purged = true
+	result.Purged = completed
 	return result
 }
 

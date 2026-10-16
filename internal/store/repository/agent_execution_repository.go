@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 
@@ -30,6 +31,22 @@ func (r *AgentExecutionRepository) Update(ctx context.Context, execution *model.
 		return fmt.Errorf("update agent execution: %w", err)
 	}
 	return nil
+}
+
+func (r *AgentExecutionRepository) SettleUnacceptedIfDispatching(ctx context.Context, runID string, now time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND status = ?", runID, model.AgentExecutionStatusDispatching).
+		Updates(map[string]any{
+			"status":           model.AgentExecutionStatusInterrupted,
+			"error_code":       "dispatch_not_accepted_after_run_terminal",
+			"error_message":    "run finalized before runner accepted the execution",
+			"finished_at":      now,
+			"last_observed_at": now,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("settle unaccepted execution for run %s: %w", runID, result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // UpdateRunnerEndpointIfUnchanged 以旧端点值为条件推进端点列（列级条件写，

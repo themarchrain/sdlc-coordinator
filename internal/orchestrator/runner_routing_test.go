@@ -151,7 +151,7 @@ func TestAgentRunnerCoordinatorDispatchesThroughTenantRouter(t *testing.T) {
 
 func TestAgentRunnerCoordinatorRotatesAfterDefinitiveMiss(t *testing.T) {
 	world := newAgentRunnerRoutingWorld(t)
-	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: errors.New("boom")}
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "invalid create"}}
 	clientA.getErr = &runner.HTTPError{Method: "GET", Path: "/api/v1/executions/run-routing-core", StatusCode: http.StatusNotFound}
 	clientB := &scriptedRunnerClient{endpoint: "http://runner-b"}
 	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
@@ -233,9 +233,9 @@ func TestAgentRunnerCoordinatorObservesOnPinnedEndpoint(t *testing.T) {
 
 func TestAgentRunnerCoordinatorSurfacesFirstCreateErrorWhenPoolExhausted(t *testing.T) {
 	world := newAgentRunnerRoutingWorld(t)
-	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: errors.New("runner-a refused")}
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "runner-a refused"}}
 	clientA.getErr = &runner.HTTPError{Method: "GET", StatusCode: http.StatusNotFound}
-	clientB := &scriptedRunnerClient{endpoint: "http://runner-b", createErr: errors.New("runner-b refused")}
+	clientB := &scriptedRunnerClient{endpoint: "http://runner-b", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "runner-b refused"}}
 	clientB.getErr = &runner.HTTPError{Method: "GET", StatusCode: http.StatusNotFound}
 	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
 	attemptA.next = func() (RunnerAttempt, bool) { return RunnerAttempt{Client: clientB, Endpoint: "http://runner-b"}, true }

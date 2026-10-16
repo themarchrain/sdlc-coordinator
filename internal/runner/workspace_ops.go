@@ -48,6 +48,7 @@ const (
 	workspaceOpStatusFailed    = "failed"
 
 	defaultWorkspaceMaxInFlight = 4
+	cliIsolationEnv             = "AGENT_RUNNER_CLI_LAUNCHER"
 )
 
 var operationIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
@@ -120,8 +121,16 @@ func NewWorkspaceOps(config WorkspaceOpsConfig) (*WorkspaceOps, error) {
 	if err := os.MkdirAll(opsRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("create runner operations directory: %w", err)
 	}
+	if err := secureOperationsDirectory(opsRoot); err != nil {
+		return nil, fmt.Errorf("secure runner operations directory: %w", err)
+	}
 	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("create runner workspace root: %w", err)
+	}
+	if cliIdentityIsolationEnabled() {
+		if err := secureWorkspaceRunRoots(workspaceRoot); err != nil {
+			return nil, fmt.Errorf("secure runner workspaces: %w", err)
+		}
 	}
 	ops := &WorkspaceOps{
 		opsRoot:          opsRoot,
@@ -139,6 +148,10 @@ func NewWorkspaceOps(config WorkspaceOpsConfig) (*WorkspaceOps, error) {
 		return nil, err
 	}
 	return ops, nil
+}
+
+func cliIdentityIsolationEnabled() bool {
+	return strings.TrimSpace(os.Getenv(cliIsolationEnv)) != ""
 }
 
 func (o *WorkspaceOps) recoverInterruptedRecords() error {
@@ -228,8 +241,8 @@ func (o *WorkspaceOps) prepareDeveloperWorkspace(ctx context.Context, request wo
 	preExisted := statErr == nil
 
 	requested := workspace.DeveloperRequest{
-		WorkspaceRoot: o.workspaceRoot,
-		TaskID:        request.TaskID, RunID: request.RunID, TaskType: request.TaskType,
+		WorkspaceRoot: o.workspaceRoot, PrivateRunRoot: cliIdentityIsolationEnabled(),
+		TaskID: request.TaskID, RunID: request.RunID, TaskType: request.TaskType,
 		Project: request.Project, RepositoryURL: request.RepositoryURL,
 		SourceBranch: request.SourceBranch, TargetBranch: request.TargetBranch,
 		DeliveryBranch: request.DeliveryBranch, ExpectedHeadSHA: request.ExpectedHeadSHA,
@@ -254,8 +267,8 @@ func (o *WorkspaceOps) prepareReadOnlyWorkspace(ctx context.Context, request wor
 	preExisted := statErr == nil
 
 	requested := workspace.ReviewerRequest{
-		WorkspaceRoot: o.workspaceRoot,
-		TaskID:        request.TaskID, RunID: request.RunID,
+		WorkspaceRoot: o.workspaceRoot, PrivateRunRoot: cliIdentityIsolationEnabled(),
+		TaskID: request.TaskID, RunID: request.RunID,
 		Project: request.Project, RepositoryURL: request.RepositoryURL,
 		SourceBranch: request.SourceBranch, TargetBranch: request.TargetBranch,
 		HeadSHA: request.HeadSHA, BaseSHA: request.BaseSHA,
@@ -559,6 +572,8 @@ func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operation
 		o.inFlight--
 		o.mu.Unlock()
 	}()
+	releaseRun := o.lockRun(runID)
+	defer releaseRun()
 	if authErr := authorize(); authErr != nil {
 		o.mu.Lock()
 		record.Status = workspaceOpStatusFailed
@@ -572,8 +587,6 @@ func runWorkspaceOp[T any](ctx context.Context, o *WorkspaceOps, kind, operation
 		return zero, false, authErr
 	}
 
-	releaseRun := o.lockRun(runID)
-	defer releaseRun()
 	if o.testBeforeExecute != nil {
 		o.testBeforeExecute()
 	}

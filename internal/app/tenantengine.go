@@ -138,9 +138,10 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	// 工作区形态：远端（计划 A，Runner 本机执行受控 Git）或本机（单机开发
 	// 与测试）。三个角色的准备与交付必须同形态，不得混用。
 	var (
-		reviewerPreparer  orchestrator.ReviewerWorkspacePreparer  = workspace.NewReviewerPreparer()
-		developerPreparer orchestrator.DeveloperWorkspacePreparer = workspace.NewDeveloperPreparer()
-		deliveryFinalizer orchestrator.DeveloperGitFinalizer      = workspace.NewDeveloperFinalizer()
+		reviewerPreparer    orchestrator.ReviewerWorkspacePreparer  = workspace.NewReviewerPreparer()
+		developerPreparer   orchestrator.DeveloperWorkspacePreparer = workspace.NewDeveloperPreparer()
+		deliveryFinalizer   orchestrator.DeveloperGitFinalizer      = workspace.NewDeveloperFinalizer()
+		runnerArtifactStore orchestrator.RunnerArtifactStore        = shared.defaultRunner
 	)
 	if shared.cfg.AgentRunner.RemoteWorkspace {
 		// 按 run 归属端点路由：准备、任务包投递、commit/push、清理必须命中
@@ -159,6 +160,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		reviewerPreparer = agentrunner.NewRemoteReadOnlyPreparer(remoteWorkspace)
 		developerPreparer = agentrunner.NewRemoteDeveloperPreparer(remoteWorkspace)
 		deliveryFinalizer = remoteWorkspace
+		runnerArtifactStore = remoteWorkspace
 		opts = append(opts, orchestrator.WithRunWorkspaceCleaner(remoteWorkspace))
 	}
 	reviewerRunnerCoordinator := orchestrator.NewReviewerRunnerCoordinator(
@@ -200,7 +202,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithAutoMergeEnabled(tenantAutoMergeEnabledLookup(orgConfig, shared.logger, tenantID)),
 		orchestrator.WithMergeGateClients(orchestrator.DefaultMergeGateClientFactory),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
-		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
+		orchestrator.WithRunnerArtifactStore(runnerArtifactStore),
 		// 写回/合并门禁的跨实例执行权:双协调器对同一写回、同一验证任务的
 		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
 		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),

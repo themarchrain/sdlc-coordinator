@@ -47,12 +47,14 @@ type Run struct {
 	RunnerEndpoint string `gorm:"column:runner_endpoint;size:512"`
 	// RunnerWorkspacePath 记录 runner 侧 run 工作区路径（prepare 返回值）：
 	// 独立文件系统下两侧路径不共享，执行请求必须用 runner 自己的路径。
-	RunnerWorkspacePath string     `gorm:"column:runner_workspace_path;size:1024"`
-	StartedAt           *time.Time `gorm:"index"`
-	CompletedAt         *time.Time `gorm:"index"`
-	ArtifactsPurgedAt   *time.Time `gorm:"index"`
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	RunnerWorkspacePath     string     `gorm:"column:runner_workspace_path;size:1024"`
+	StartedAt               *time.Time `gorm:"index"`
+	CompletedAt             *time.Time `gorm:"index"`
+	ArtifactsPurgedAt       *time.Time `gorm:"index"`
+	ArtifactsPurgeStartedAt *time.Time `gorm:"index"`
+	ArtifactsPurgeClaimID   string     `gorm:"size:128"`
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 func (r *Run) BeforeCreate(tx *gorm.DB) error {

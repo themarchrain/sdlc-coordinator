@@ -6,16 +6,16 @@ import (
 )
 
 const (
-	defaultRateLimitWindow      = 15 * time.Minute
-	defaultRateLimitMaxFailures = 10
-	// loginFailureBatchLimit 是单次清理的删除上限：约束 DELETE 的持锁时间，
-	// 残留旧行由后续记账轮次继续清理。
-	loginFailureBatchLimit = 1000
+	defaultRateLimitWindow           = 15 * time.Minute
+	defaultRateLimitMaxFailures      = 10
+	defaultLoginFailureSweepInterval = time.Minute
+	loginFailureBatchLimit           = 1000
+	loginFailureSweepBatchLimit      = 10
 )
 
 // LoginFailure 是登录限流的共享存储行：键为用户名+IP 或纯用户名,
-// 每次失败一行。行存控制面库，双实例共享同一失败配额（轮流访问不能
-// 扩大原配额）；窗口判定用库内时钟（MySQL NOW(6)），跨实例时钟偏移免疫。
+// 每个限流键每次失败一行。行存控制面库，双实例共享同一失败配额（轮流访问不能
+// 扩大原配额）；窗口判定和 MySQL 清理都用库内时钟（NOW(6)），不受实例时钟偏移影响。
 type LoginFailure struct {
 	ID       uint      `gorm:"primaryKey"`
 	Key      string    `gorm:"index:idx_login_failures_key_time,priority:1;not null;size:255"`
@@ -24,7 +24,7 @@ type LoginFailure struct {
 
 // loginRateLimiter 按用户名+IP 组合做滑动窗口失败计数:窗口内失败达到
 // 上限即拒绝（含正确密码），成功登录清零。计数落控制面库，多实例部署共享
-// 同一配额；窗口外旧行在记账时顺带清理（登录低频，代价可忽略）。
+// 同一配额；记账和周期清理都会回收窗口外旧行。
 type loginRateLimiter struct {
 	repository  *Repository
 	window      time.Duration
@@ -68,7 +68,7 @@ func (limiter *loginRateLimiter) record(key string) {
 	// 容量治理两件套（都带界）:窗口外旧行分批删除（单批上限约束持锁时间,
 	// 清理条件走 failed_at 索引）;单键行数裁剪（匿名来源可用不同键放大总
 	// 行数,单键上限保证任一键不无界堆积）。
-	_ = limiter.repository.DeleteLoginFailuresBeforeBounded(context.Background(), now.Add(-limiter.window), loginFailureBatchLimit)
+	_, _ = limiter.repository.DeleteExpiredLoginFailuresBounded(context.Background(), limiter.window, loginFailureBatchLimit)
 	_ = limiter.repository.CapKeyLoginFailures(context.Background(), key, loginFailureKeyCap(limiter.maxFailures))
 }
 
@@ -78,4 +78,35 @@ func (limiter *loginRateLimiter) reset(key string) {
 
 func (limiter *loginRateLimiter) prune(key string) {
 	// DB 后端的窗口过期在读取时按库内时间过滤,无需显式清理。
+}
+
+// RunLoginFailureJanitor 周期性清理过期登录失败行；启动时先清一批。
+func (service *Service) RunLoginFailureJanitor(ctx context.Context) {
+	service.runLoginFailureJanitor(ctx, defaultLoginFailureSweepInterval)
+}
+
+func (service *Service) runLoginFailureJanitor(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = defaultLoginFailureSweepInterval
+	}
+	service.sweepExpiredLoginFailures(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			service.sweepExpiredLoginFailures(ctx)
+		}
+	}
+}
+
+func (service *Service) sweepExpiredLoginFailures(ctx context.Context) {
+	for batch := 0; batch < loginFailureSweepBatchLimit; batch++ {
+		deleted, err := service.repository.DeleteExpiredLoginFailuresBounded(ctx, service.rateLimiter.window, loginFailureBatchLimit)
+		if err != nil || deleted < loginFailureBatchLimit {
+			return
+		}
+	}
 }
