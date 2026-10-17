@@ -349,14 +349,16 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 		}
 		request.ResultSubmission = &runner.ResultSubmissionChannel{EndpointURL: c.ingressEndpoint, BearerToken: token}
 	}
-	attempt, err := c.attemptForTask(ctx, task)
-	if err != nil {
-		return nil, err
-	}
+	var attempt RunnerAttempt
 	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" {
 		// 本 run 已钉住归属端点（准备/任务包投递已按它发生）：派发必须命中
 		// 同一端点，绝不轮换——独立卷下别的 runner 没有这份工作区与任务包。
-		attempt = c.attemptOnRecordedEndpoint(attempt, pinned)
+		attempt = c.attemptOnRecordedEndpoint(RunnerAttempt{Client: c.runner}, pinned)
+	} else {
+		attempt, err = c.attemptForTask(ctx, task)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// 先落目标再调用：意图行写入成功后才做有副作用的远端 Create；崩溃在
 	// 两者之间时，接管方按该端点回读/重发，不换 Runner、不产生第二个执行。

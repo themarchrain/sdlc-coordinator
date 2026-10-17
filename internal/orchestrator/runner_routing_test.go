@@ -182,6 +182,7 @@ func TestAgentRunnerCoordinatorDoesNotRotatePinnedRunAfterDefinitiveMiss(t *test
 	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
 	attemptA.next = func() (RunnerAttempt, bool) { return RunnerAttempt{Client: clientB, Endpoint: "http://runner-b"}, true }
 	world.router.attempt = attemptA
+	world.router.pinned = map[string]ReviewerRunnerClient{"http://runner-a": clientA}
 	world.run.RunnerEndpoint = "http://runner-a"
 	if err := world.coordinator.runs.PinRunnerEndpointIfEmpty(context.Background(), world.run.RunID, world.run.RunnerEndpoint); err != nil {
 		t.Fatal(err)
@@ -203,6 +204,23 @@ func TestAgentRunnerCoordinatorDoesNotRotatePinnedRunAfterDefinitiveMiss(t *test
 	}
 	if stored.RunnerEndpoint != world.run.RunnerEndpoint || stored.Status != model.AgentExecutionStatusFailed {
 		t.Fatalf("definitive rejection should settle on the pinned endpoint: %+v", stored)
+	}
+}
+
+func TestAgentRunnerCoordinatorDoesNotSelectPoolAgainAfterPin(t *testing.T) {
+	world := newAgentRunnerRoutingWorld(t)
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a"}
+	world.router.attempt = RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
+	world.router.pinned = map[string]ReviewerRunnerClient{"http://runner-a": clientA}
+	ctx := context.Background()
+	if _, err := world.coordinator.resolveAndPinEndpoint(ctx, world.task, world.run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := world.coordinator.Start(ctx, world.task, world.run, world.request); err != nil {
+		t.Fatal(err)
+	}
+	if world.router.taskCalls != 1 || clientA.createCalls != 1 {
+		t.Fatalf("pinned dispatch consumed another pool slot: selections=%d creates=%d", world.router.taskCalls, clientA.createCalls)
 	}
 }
 
