@@ -224,6 +224,16 @@ func TestRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	assertRunRepositoryListsSucceededRunsForArtifactCleanup(t, db)
+}
+
+func TestRunRepositoryListsSucceededRunsForArtifactCleanupMySQL(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	assertRunRepositoryListsSucceededRunsForArtifactCleanup(t, storetest.OpenDatabase(t, admin, "artifact_cleanup_order"))
+}
+
+func assertRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
