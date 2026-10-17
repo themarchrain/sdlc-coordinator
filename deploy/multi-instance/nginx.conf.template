@@ -1,8 +1,8 @@
 # LB 配置：双协调器负载均衡。无 WebSocket/SSE（前端轮询），无需升级头。
 upstream sdlc_coordinators {
     # ip_hash 保证 Portal 会话粘性（会话本身跨实例共享，粘性只是优化）。
-    server coordinator-a:8080;
-    server coordinator-b:8080;
+    server ${MULTI_COORDINATOR_A_UPSTREAM};
+    server ${MULTI_COORDINATOR_B_UPSTREAM};
 }
 
 server {

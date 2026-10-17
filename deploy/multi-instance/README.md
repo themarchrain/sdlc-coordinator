@@ -215,9 +215,24 @@ A18 MySQL 断连/死锁/锁超时均报告
 单机样例 → 两台主机的改动点：
 
 1. 每台主机各跑一个 Coordinator + 一个 Runner（compose 只保留本机服务）。
-2. MySQL 与 nginx 部署在独立主机或其中一台（`COORDINATOR_DATABASE_DSN`、
-   `CONTROL_PLANE_DSN`、`AGENT_RUNNER_SERVICE_URL`、
-   `AGENT_RUNNER_AUTHORIZATION_URL` 改为跨机地址）。
-3. 唯一的文件系统边界就在两台 Runner 的数据卷——隔离断言在跨机形态下
+2. MySQL 与 nginx 部署在独立主机或其中一台。拆分 Compose 服务时，移除指向
+   本机不存在服务的 `depends_on`，并在私网发布 Coordinator 的 8080 端口和
+   Runner 的 8081 端口。两台 Coordinator 必须都能访问两个 Runner 端点。
+3. 在各主机注入同一组数据库地址、密钥及可跨机访问的端点；单机部署可省略
+   下列地址变量并沿用容器网络默认值：
+
+   ```sh
+   export MULTI_MYSQL_HOST=mysql.internal
+   export MULTI_MYSQL_PORT=3306
+   export MULTI_DEFAULT_RUNNER_URL=http://runner-a.internal:8081
+   export MULTI_RUNNER_AUTHORIZATION_URL=http://lb.internal/runner-authorization
+   export MULTI_COORDINATOR_A_UPSTREAM=coordinator-a.internal:8080
+   export MULTI_COORDINATOR_B_UPSTREAM=coordinator-b.internal:8080
+   ```
+
+   Runner 池指派也必须使用两台 Coordinator 都能访问的 Runner 地址。
+   nginx 通过 `nginx.conf.template` 读取两个上游变量；两台 Coordinator 与
+   两台 Runner 使用同一个 `MULTI_SECRET`，数据库凭据在 Coordinator 上保持一致。
+4. 唯一的文件系统边界就在两台 Runner 的数据卷——隔离断言在跨机形态下
    才算真正过界；单机多容器只是前置验证。
-4. webhook 与 Portal 入口统一走 LB 公网地址；Runner 之间不需要互通。
+5. webhook 与 Portal 入口统一走 LB 公网地址；Runner 之间不需要互通。

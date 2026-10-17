@@ -3,7 +3,7 @@
 # 隔离红线：
 # - 两个 Coordinator 不挂任何共享文件卷（平台库/控制面库/租户库全部在 MySQL）。
 # - 两个 Runner 各自独占命名卷（runner-a-data / runner-b-data），互不可见。
-# - Runner 不经 LB：每个 Runner 只被本机 Coordinator 与池指派寻址。
+# - Runner 不经 LB：两个 Coordinator 均按池指派直连相应 Runner。
 #
 # 启动前置：先按 README 构建两个镜像（sdlc-coordinator / sdlc-agent-runner），
 # 假 CLI 投放见 deploy/agent-runner-runtime/README.md 与本目录 README。
@@ -48,8 +48,8 @@ services:
       TZ: Asia/Shanghai
       COORDINATOR_HTTP_ADDR: ":8080"
       # 共享状态：平台库/控制面库同库（控制面库可拆，样例从简）。
-      COORDINATOR_DATABASE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@mysql:3306/sdlc_platform"
-      CONTROL_PLANE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@mysql:3306/sdlc_control_plane"
+      COORDINATOR_DATABASE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@${MULTI_MYSQL_HOST:-mysql}:${MULTI_MYSQL_PORT:-3306}/sdlc_platform"
+      CONTROL_PLANE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@${MULTI_MYSQL_HOST:-mysql}:${MULTI_MYSQL_PORT:-3306}/sdlc_control_plane"
       CONTROL_PLANE_SUPERADMIN_USERNAME: "${MULTI_SUPERADMIN_USERNAME:-superadmin}"
       CONTROL_PLANE_SUPERADMIN_PASSWORD: "${MULTI_SUPERADMIN_PASSWORD:-multi-super-pass}"
       PORTAL_COOKIE_SECURE: "${MULTI_PORTAL_COOKIE_SECURE:-true}"
@@ -61,8 +61,8 @@ services:
       AGENT_RUNNER_REMOTE_WORKSPACE: "true"
       RESULT_CHANNEL_SECRET: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
       AGENT_RUNNER_INTERNAL_TOKEN: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
-      # 默认 runner 端点：本实例同侧 runner（未指派租户回退此池）。
-      AGENT_RUNNER_SERVICE_URL: "http://runner-a:8081"
+      # 默认 runner 端点：未指派租户回退此池，两个副本保持一致。
+      AGENT_RUNNER_SERVICE_URL: "${MULTI_DEFAULT_RUNNER_URL:-http://runner-a:8081}"
       AGENT_RUNNER_WORKSPACE_ROOT: "/app/workspaces"
       AGENT_RUNNER_PROVIDER: "codex-cli"
     volumes:
@@ -80,9 +80,9 @@ services:
     environment:
       TZ: Asia/Shanghai
       COORDINATOR_HTTP_ADDR: ":8080"
-      COORDINATOR_DATABASE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@mysql:3306/sdlc_platform"
+      COORDINATOR_DATABASE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@${MULTI_MYSQL_HOST:-mysql}:${MULTI_MYSQL_PORT:-3306}/sdlc_platform"
       CONTROL_PLAIN_DSN_UNUSED: ""
-      CONTROL_PLANE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@mysql:3306/sdlc_control_plane"
+      CONTROL_PLANE_DSN: "mysql://root:${MULTI_MYSQL_PASSWORD:-multi-root-pass}@${MULTI_MYSQL_HOST:-mysql}:${MULTI_MYSQL_PORT:-3306}/sdlc_control_plane"
       CONTROL_PLANE_SUPERADMIN_USERNAME: "${MULTI_SUPERADMIN_USERNAME:-superadmin}"
       CONTROL_PLANE_SUPERADMIN_PASSWORD: "${MULTI_SUPERADMIN_PASSWORD:-multi-super-pass}"
       PORTAL_COOKIE_SECURE: "${MULTI_PORTAL_COOKIE_SECURE:-true}"
@@ -94,7 +94,7 @@ services:
       RESULT_CHANNEL_SECRET: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
       AGENT_RUNNER_INTERNAL_TOKEN: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
       # 运行配置存入共享 MySQL；首次向导保存的默认地址会由双副本共用。
-      AGENT_RUNNER_SERVICE_URL: "http://runner-a:8081"
+      AGENT_RUNNER_SERVICE_URL: "${MULTI_DEFAULT_RUNNER_URL:-http://runner-a:8081}"
       AGENT_RUNNER_WORKSPACE_ROOT: "/app/workspaces"
       AGENT_RUNNER_PROVIDER: "codex-cli"
     volumes:
@@ -115,7 +115,7 @@ services:
       AGENT_RUNNER_INTERNAL_TOKEN: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
       # 状态改变类操作的授权确认入口：指向 LB（任一协调器副本都能基于
       # 共享库裁决当前归属）。
-      AGENT_RUNNER_AUTHORIZATION_URL: "http://lb:80/runner-authorization"
+      AGENT_RUNNER_AUTHORIZATION_URL: "${MULTI_RUNNER_AUTHORIZATION_URL:-http://lb:80/runner-authorization}"
     volumes:
       - runner-a-data:/app/runner-data
     healthcheck:
@@ -136,7 +136,7 @@ services:
       AGENT_RUNNER_DATA_ROOT: /app/runner-data
       AGENT_RUNNER_CODEX_BINARY: /opt/codex/bin/codex
       AGENT_RUNNER_INTERNAL_TOKEN: "${MULTI_SECRET:?set MULTI_SECRET to a 64-char hex string}"
-      AGENT_RUNNER_AUTHORIZATION_URL: "http://lb:80/runner-authorization"
+      AGENT_RUNNER_AUTHORIZATION_URL: "${MULTI_RUNNER_AUTHORIZATION_URL:-http://lb:80/runner-authorization}"
     volumes:
       - runner-b-data:/app/runner-data
     healthcheck:
@@ -153,8 +153,11 @@ services:
     depends_on:
       - coordinator-a
       - coordinator-b
+    environment:
+      MULTI_COORDINATOR_A_UPSTREAM: "${MULTI_COORDINATOR_A_UPSTREAM:-coordinator-a:8080}"
+      MULTI_COORDINATOR_B_UPSTREAM: "${MULTI_COORDINATOR_B_UPSTREAM:-coordinator-b:8080}"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     ports:
       - "${MULTI_LB_PORT:-8090}:80"
     networks:
