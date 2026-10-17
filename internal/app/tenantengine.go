@@ -207,6 +207,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		// 写回/合并门禁的跨实例执行权:双协调器对同一写回、同一验证任务的
 		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
 		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),
+		orchestrator.WithLogger(shared.logger),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎
 	// 租户，回传端按声明路由回同一引擎（无租户声明的 token 一律拒绝）。

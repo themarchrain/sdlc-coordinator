@@ -54,6 +54,8 @@ func (handler *ControlPlaneHandler) RegisterAuthRoutes(group *gin.RouterGroup) {
 	authed.GET("/session", handler.Session)
 	authed.POST("/select-tenant", handler.SelectTenant)
 	authed.POST("/change-password", handler.ChangePassword)
+	authed.POST("/switch-account", handler.SwitchAccount)
+	authed.POST("/revoke-saved", handler.RevokeSaved)
 }
 
 // RegisterTenantRoutes 挂载组织作用域端点：成员与邀请码管理归组织管理员
@@ -193,7 +195,7 @@ func (handler *ControlPlaneHandler) Login(c *gin.Context) {
 		return
 	}
 	handler.setPortalSessionCookie(c, result.Token)
-	c.JSON(http.StatusOK, portalAuthPayload(result.User, result.Scope, result.Tenants))
+	c.JSON(http.StatusOK, portalAuthPayloadWithToken(result.User, result.Scope, result.Tenants, result.Token))
 }
 
 type portalRegisterBody struct {
@@ -214,7 +216,7 @@ func (handler *ControlPlaneHandler) Register(c *gin.Context) {
 		return
 	}
 	handler.setPortalSessionCookie(c, result.Token)
-	c.JSON(http.StatusOK, portalAuthPayload(result.User, result.Scope, result.Tenants))
+	c.JSON(http.StatusOK, portalAuthPayloadWithToken(result.User, result.Scope, result.Tenants, result.Token))
 }
 
 type portalSelectTenantBody struct {
@@ -233,7 +235,7 @@ func (handler *ControlPlaneHandler) SelectTenant(c *gin.Context) {
 		return
 	}
 	handler.setPortalSessionCookie(c, result.Token)
-	c.JSON(http.StatusOK, portalAuthPayload(result.User, result.Scope, result.Tenants))
+	c.JSON(http.StatusOK, portalAuthPayloadWithToken(result.User, result.Scope, result.Tenants, result.Token))
 }
 
 type portalChangePasswordBody struct {
@@ -264,6 +266,46 @@ func (handler *ControlPlaneHandler) ChangePassword(c *gin.Context) {
 func (handler *ControlPlaneHandler) Logout(c *gin.Context) {
 	// 撤销失败不得伪报已登出：保留会话 cookie 供用户重试，错误走统一包络。
 	if err := handler.service.Logout(c.Request.Context(), portalCookieToken(c)); err != nil {
+		writeControlPlaneError(c, err)
+		return
+	}
+	handler.clearPortalSessionCookie(c)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+type portalSwitchAccountBody struct {
+	Token string `json:"token"`
+}
+
+// SwitchAccount 把会话 cookie 改写为注册表中的另一账号 token：服务端校验
+// 该 token 指向有效会话后原样写回，不新建也不吊销任何会话。
+func (handler *ControlPlaneHandler) SwitchAccount(c *gin.Context) {
+	var body portalSwitchAccountBody
+	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Token) == "" {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请提供要切换的会话")
+		return
+	}
+	if err := handler.service.SwitchAccount(c.Request.Context(), body.Token); err != nil {
+		writeControlPlaneError(c, err)
+		return
+	}
+	handler.setPortalSessionCookie(c, body.Token)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+type portalRevokeSavedBody struct {
+	Tokens []string `json:"tokens"`
+}
+
+// RevokeSaved 批量撤销已保存账号的会话并清除本端 cookie：token 不存在或
+// 已过期按已撤销处理（幂等）。
+func (handler *ControlPlaneHandler) RevokeSaved(c *gin.Context) {
+	var body portalRevokeSavedBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请提供要退出的账号列表")
+		return
+	}
+	if err := handler.service.RevokeSavedSessions(c.Request.Context(), body.Tokens); err != nil {
 		writeControlPlaneError(c, err)
 		return
 	}
@@ -415,6 +457,15 @@ func portalAuthPayload(user *controlplane.User, scope controlplane.SessionScope,
 	if scope.Kind == controlplane.ScopeUnscoped {
 		payload["tenants"] = tenants
 	}
+	return payload
+}
+
+// portalAuthPayloadWithToken 在登录/注册/选择组织响应中附带会话 token：
+// 前端多账号注册表凭此登记当前账号。session 查询端点不得使用本变体
+// （会话令牌只在颁发时刻下发，不随查询回显）。
+func portalAuthPayloadWithToken(user *controlplane.User, scope controlplane.SessionScope, tenants []controlplane.TenantOption, token string) gin.H {
+	payload := portalAuthPayload(user, scope, tenants)
+	payload["session_token"] = token
 	return payload
 }
 

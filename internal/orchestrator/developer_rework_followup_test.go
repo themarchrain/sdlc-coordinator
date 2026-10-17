@@ -161,6 +161,23 @@ func TestDeveloperReworkClarificationIMBody(t *testing.T) {
 		}
 	})
 
+	t.Run("unmanaged merge request omits the issue link line", func(t *testing.T) {
+		contextValue, err := decodeDeveloperReworkContext(`{
+			"merge_request":{"iid":21,"url":"https://github.com/themarchrain/sdlc-coordinator/pull/21","source_branch":"feat/account-center"}
+		}`)
+		if err != nil {
+			t.Fatalf("decode rework context: %v", err)
+		}
+		imBody, err := developerReworkClarificationIMBody(contextValue, body)
+		if err != nil {
+			t.Fatalf("build rework clarification IM body: %v", err)
+		}
+		segments := strings.Split(imBody, "\n\n")
+		if len(segments) < 2 || segments[1] != "> - MR: [!21](https://github.com/themarchrain/sdlc-coordinator/pull/21)" {
+			t.Fatalf("link block must carry only the MR line when there is no origin issue, got %q", imBody)
+		}
+	})
+
 	t.Run("empty base body", func(t *testing.T) {
 		if _, err := developerReworkClarificationIMBody(developerReworkContext{}, "  "); err == nil {
 			t.Fatal("expected error for empty base body")
@@ -193,5 +210,102 @@ func developerReworkFollowupTask() *model.Task {
 			"merge_request":{"iid":21,"url":"https://gitlab.example/demo-group/demo-project/-/merge_requests/21","source_branch":"developer/issue-19-20260806","assignee_ids":[42],"reviewer_ids":[43]},
 			"rework_request":{"requester":{"id":44,"email":"requester@example.com"}}
 		}`,
+	}
+}
+
+func TestDeveloperReworkUnmanagedMergeRequestWithoutOriginIssue(t *testing.T) {
+	unmanaged := developerReworkFollowupTask()
+	unmanaged.ContextJSON = `{
+		"merge_request":{"iid":21,"url":"https://github.com/themarchrain/sdlc-coordinator/pull/21","source_branch":"feat/account-center","assignee_ids":[42],"reviewer_ids":[43]},
+		"rework_request":{"requester":{"id":44,"email":"requester@example.com"}}
+	}`
+
+	t.Run("success derives the IM without an origin issue", func(t *testing.T) {
+		orch := newDeveloperReworkFollowupOrchestrator(t)
+		payload := results.CanonicalResult{
+			TaskID: unmanaged.TaskID, RunID: "run-unmanaged-success", Status: results.StatusSucceeded,
+			Summary: "已按最新评论清理退出全部按钮的状态逻辑。",
+			Artifacts: map[string]any{
+				"commit_sha":   "a78d201361f203f19a94d0c9f1f7588ace8782c7",
+				"test_results": []results.TestEvidence{{Command: "git diff --check", Passed: true, Summary: "clean"}},
+			},
+		}
+		updated, err := orch.withDeveloperReworkFollowups(context.Background(), unmanaged, payload)
+		if err != nil {
+			t.Fatalf("derive unmanaged rework followups: %v", err)
+		}
+		if len(updated.Writebacks) != 0 || len(updated.Effects) != 1 {
+			t.Fatalf("expected one IM effect and no writeback, got %#v / %#v", updated.Writebacks, updated.Effects)
+		}
+		effect := updated.Effects[0]
+		if effect.DedupeKey != "developer-rework-im:task-rework-followup:run-unmanaged-success" || effect.Critical {
+			t.Fatalf("unexpected rework effect identity: %#v", effect)
+		}
+		body, _ := effect.Request["body"].(string)
+		for _, expected := range []string{
+			"[!21](https://github.com/themarchrain/sdlc-coordinator/pull/21)",
+			"feat/account-center",
+			"a78d2013",
+			"git diff --check",
+			"将进入增量代码审查",
+		} {
+			if !strings.Contains(body, expected) {
+				t.Fatalf("unmanaged rework IM body missing %q: %s", expected, body)
+			}
+		}
+		if strings.Contains(body, "Issue") {
+			t.Fatalf("rework success body must not reference an origin issue: %s", body)
+		}
+	})
+
+	t.Run("clarification derives the MR note and IM without an origin issue", func(t *testing.T) {
+		orch := newDeveloperReworkFollowupOrchestrator(t)
+		reason := "请确认空值时应返回默认值还是错误。"
+		payload := results.CanonicalResult{
+			TaskID: unmanaged.TaskID, RunID: "run-unmanaged-clarification", Status: results.StatusHumanRequired,
+			Summary: "需要业务确认", BlockerReason: &reason,
+		}
+		updated, err := orch.withDeveloperReworkFollowups(context.Background(), unmanaged, payload)
+		if err != nil {
+			t.Fatalf("derive unmanaged rework clarification: %v", err)
+		}
+		if len(updated.Writebacks) != 1 || len(updated.Effects) != 1 {
+			t.Fatalf("expected one MR comment and one IM, got %#v / %#v", updated.Writebacks, updated.Effects)
+		}
+		if updated.Writebacks[0].Kind != CodeHostWritebackCreateMergeRequestNote || updated.Writebacks[0].MergeRequestIID != 21 {
+			t.Fatalf("unexpected clarification writeback: %#v", updated.Writebacks[0])
+		}
+		imBody, _ := updated.Effects[0].Request["body"].(string)
+		if !strings.Contains(imBody, "> - MR: [!21](https://github.com/themarchrain/sdlc-coordinator/pull/21)") {
+			t.Fatalf("clarification IM must keep the linked MR reference, got %q", imBody)
+		}
+		if strings.Contains(imBody, "Issue") {
+			t.Fatalf("clarification IM must omit the issue line without an origin issue, got %q", imBody)
+		}
+	})
+}
+
+func TestDecodeDeveloperReworkContextRequiresOnlyMergeRequest(t *testing.T) {
+	contextValue, err := decodeDeveloperReworkContext(`{
+		"merge_request":{"iid":21,"url":"https://github.com/themarchrain/sdlc-coordinator/pull/21","source_branch":"feat/account-center"},
+		"rework_request":{"requester":{"email":"requester@example.com"}}
+	}`)
+	if err != nil {
+		t.Fatalf("unmanaged rework context must decode without an origin issue: %v", err)
+	}
+	if contextValue.OriginIssue.IID != 0 || contextValue.MergeRequest.IID != 21 {
+		t.Fatalf("unexpected decoded rework context: %#v", contextValue)
+	}
+
+	rejected := map[string]string{
+		"missing merge request iid":    `{"merge_request":{"url":"https://example.test/pull/21","source_branch":"feat/x"}}`,
+		"missing merge request url":    `{"merge_request":{"iid":21,"source_branch":"feat/x"}}`,
+		"missing merge request branch": `{"merge_request":{"iid":21,"url":"https://example.test/pull/21"}}`,
+		"invalid json":                 `{`,
+	}
+	for name, raw := range rejected {
+		if _, err := decodeDeveloperReworkContext(raw); err == nil {
+			t.Fatalf("%s must still be rejected", name)
+		}
 	}
 }

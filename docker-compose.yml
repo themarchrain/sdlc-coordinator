@@ -42,9 +42,12 @@ services:
       AGENT_RUNNER_HTTP_ADDR: ":8081"
       AGENT_RUNNER_DATA_ROOT: /app/runner-data
       AGENT_RUNNER_CODEX_BINARY: /opt/codex/bin/codex
+      AGENT_RUNNER_LOG_LEVEL: info
+      AGENT_RUNNER_LOG_DIR: /app/logs/agent-runner
     volumes:
       - ./workspaces:/app/workspaces
       - ./runner-data:/app/runner-data
+      - ./runner-logs:/app/logs/agent-runner
     healthcheck:
       # alpine 基底无 curl；busybox wget 即可。
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]

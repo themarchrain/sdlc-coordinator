@@ -47,9 +47,15 @@ ENV TZ=Asia/Shanghai \
     AGENT_RUNNER_WORKSPACE_ROOT=/app/workspaces \
     AGENT_RUNNER_CLI_LAUNCHER=/usr/local/bin/agent-runner-cli-launcher \
     AGENT_RUNNER_CODEX_BINARY=/opt/codex/bin/codex \
+    AGENT_RUNNER_LOG_DIR=/app/logs/agent-runner \
     GOPROXY=${GOPROXY} \
     DISABLE_AUTOUPDATER=1 \
     DISABLE_TELEMETRY=1
+
+RUN sed -i '1i agent_runner_original_path=$PATH' /etc/profile \
+    && printf '\n%s\n' 'export PATH="$agent_runner_original_path"' 'unset agent_runner_original_path' >> /etc/profile \
+    && ln -s /usr/local/go/bin/go /usr/local/bin/go \
+    && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 
 # 必备项校验失败即构建失败；可选组件（claude/node/jdk/maven）失败仅告警。
 RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/vendor/materialize.sh \
@@ -63,13 +69,20 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/ven
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_kill \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setgid \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setuid \
-    && mkdir -p /app/runner-data /app/workspaces \
-    && chown runner:runner /app/runner-data /app/workspaces \
+    && mkdir -p /app/runner-data /app/workspaces /app/logs/agent-runner \
+    && chown runner:runner /app/runner-data /app/workspaces /app/logs/agent-runner \
     && test -x /opt/codex/bin/codex \
     && command -v su-exec \
     && /opt/codex/bin/codex --version \
     && git --version \
     && go version \
+    && for shell in /bin/sh /bin/bash; do \
+         for mode in -c -lc; do \
+           su-exec runner "$shell" "$mode" 'command -v go && command -v gofmt && command -v codex && go version && test "$(go env GOROOT)" = /usr/local/go' || exit 1; \
+         done; \
+         su-exec runner env PATH="/agent-runner-path-check:$PATH" AGENT_RUNNER_EXPECTED_PATH="/agent-runner-path-check:$PATH" "$shell" -lc 'test "$PATH" = "$AGENT_RUNNER_EXPECTED_PATH"' || exit 1; \
+       done \
+    && su-exec runner env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/sh -c 'go version && gofmt -h && test "$(go env GOROOT)" = /usr/local/go' \
     && python3 --version | grep -q 'Python 3\.1[2-9]' \
     && pip3 --version \
     && bash --version \

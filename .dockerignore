@@ -13,5 +13,6 @@ docs
 data
 logs
 runner-data
+runner-logs
 workspaces
 web/node_modules

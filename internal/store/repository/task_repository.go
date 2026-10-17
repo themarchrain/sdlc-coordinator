@@ -60,7 +60,7 @@ func (r *TaskRepository) GetByDedupeKey(ctx context.Context, dedupeKey string) (
 // head). Used to serialize reviewer dispatch per MR so multi-round review
 // conclusions settle in order.
 func (r *TaskRepository) HasActiveReviewerTaskForDedupePrefix(ctx context.Context, prefix string, excludeTaskID string) (bool, error) {
-	var count int64
+	var ids []uint
 	err := r.db.WithContext(ctx).Model(&model.Task{}).
 		Where("role = ?", "ReviewerWorker").
 		Where("status IN ?", []model.TaskStatus{
@@ -68,12 +68,15 @@ func (r *TaskRepository) HasActiveReviewerTaskForDedupePrefix(ctx context.Contex
 			model.TaskStatusFinalizing, model.TaskStatusRetryPending,
 		}).
 		Where("task_id <> ?", excludeTaskID).
+		Where("(id < (?) OR status IN ?)",
+			r.db.Model(&model.Task{}).Select("id").Where("task_id = ?", excludeTaskID),
+			[]model.TaskStatus{model.TaskStatusClaimed, model.TaskStatusRunning, model.TaskStatusFinalizing}).
 		Where("substr(dedupe_key, 1, ?) = ?", len(prefix), prefix).
-		Count(&count).Error
+		Limit(1).Pluck("id", &ids).Error
 	if err != nil {
 		return false, fmt.Errorf("find active reviewer by dedupe prefix: %w", err)
 	}
-	return count > 0, nil
+	return len(ids) > 0, nil
 }
 
 func (r *TaskRepository) ListExpiredLeases(ctx context.Context, now time.Time, limit int) ([]model.Task, error) {
@@ -95,13 +98,32 @@ func (r *TaskRepository) ListExpiredLeases(ctx context.Context, now time.Time, l
 }
 
 func (r *TaskRepository) ListDispatchable(ctx context.Context, limit int) ([]model.Task, error) {
+	return r.ListDispatchableAfter(ctx, nil, limit, 0)
+}
+
+func (r *TaskRepository) MaxTaskID(ctx context.Context) (uint, error) {
+	var id uint
+	if err := r.db.WithContext(ctx).Model(&model.Task{}).Select("COALESCE(MAX(id), 0)").Scan(&id).Error; err != nil {
+		return 0, fmt.Errorf("find maximum task id: %w", err)
+	}
+	return id, nil
+}
+
+func (r *TaskRepository) ListDispatchableAfter(ctx context.Context, after *model.Task, limit int, throughID uint) ([]model.Task, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 
+	query := r.db.WithContext(ctx).
+		Where("status IN ?", []model.TaskStatus{model.TaskStatusPending, model.TaskStatusRetryPending})
+	if throughID > 0 {
+		query = query.Where("id <= ?", throughID)
+	}
+	if after != nil {
+		query = query.Where("updated_at > ? OR (updated_at = ? AND id > ?)", after.UpdatedAt, after.UpdatedAt, after.ID)
+	}
 	var tasks []model.Task
-	if err := r.db.WithContext(ctx).
-		Where("status IN ?", []model.TaskStatus{model.TaskStatusPending, model.TaskStatusRetryPending}).
+	if err := query.
 		Order("updated_at ASC").
 		Order("id ASC").
 		Limit(limit).

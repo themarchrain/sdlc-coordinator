@@ -1,9 +1,14 @@
 #!/bin/sh
 set -eu
 
-mkdir -p /app/runner-data/operations /app/workspaces
-chown runner:runner /app/runner-data /app/workspaces
-chown runner:runner /app/runner-data/operations
+# 日志目录按实际环境变量准备:bind mount 后宿主机目录的 owner 可能与镜像内
+# 不一致,这里只把顶层目录交给 runner 用户,不递归改已有文件。
+log_dir="${AGENT_RUNNER_LOG_DIR:-/app/logs/agent-runner}"
+log_dir="$(printf '%s' "$log_dir" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+[ -n "$log_dir" ] || log_dir=/app/logs/agent-runner
+
+mkdir -p /app/runner-data/operations /app/workspaces "$log_dir"
+chown -h runner:runner /app/runner-data /app/workspaces /app/runner-data/operations "$log_dir"
 chmod 0700 /app/runner-data/operations
 
 runner_cap_eff=$(su-exec runner /bin/sh -c 'sed -n "s/^CapEff:[[:space:]]*//p" /proc/self/status')
