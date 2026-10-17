@@ -22,6 +22,41 @@ func TestControlPlaneMigrateIdempotentOnMySQL(t *testing.T) {
 	}
 }
 
+func TestControlPlaneUpgradesRouteVersionsOnMySQL(t *testing.T) {
+	ctx := context.Background()
+	db := storetest.OpenDatabase(t, storetest.RequireMySQL(t), "cp_route_version")
+	if err := db.AutoMigrate(&store.SchemaMigration{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&store.SchemaMigration{Component: "controlplane", Version: 6, AppliedAt: time.Now().UTC()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE repo_route_index (
+		id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		provider varchar(64) NOT NULL, base_url varchar(255) NOT NULL,
+		path_with_namespace varchar(255) NOT NULL, tenant_id bigint unsigned NOT NULL,
+		repo_fingerprint varchar(255) NOT NULL DEFAULT '',
+		created_at datetime(3) NULL, updated_at datetime(3) NULL,
+		UNIQUE KEY idx_repo_route_identity (provider, base_url, path_with_namespace)
+	) ENGINE=InnoDB`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO repo_route_index (provider, base_url, path_with_namespace, tenant_id, repo_fingerprint) VALUES (?, ?, ?, ?, ?)",
+		"gitlab", "https://gitlab.example.com", "group/repo", 7, "repo").Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := controlplane.NewRepository(db)
+	if err := store.MigrateGuarded(ctx, db, "controlplane", repo.Migrate); err != nil {
+		t.Fatal(err)
+	}
+	row, err := repo.GetRepoRouteIndex(ctx, controlplane.RepoRouteIdentity{
+		Provider: "gitlab", BaseURL: "https://gitlab.example.com", PathWithNamespace: "group/repo",
+	})
+	if err != nil || row.Version != 1 || row.TenantID != 7 || row.RepoFingerprint != "repo" {
+		t.Fatalf("upgrade did not preserve and version the route: row=%+v err=%v", row, err)
+	}
+}
+
 // v4→v5 升级：v4 的 (tenant_id, endpoint_url) 复合唯一索引收敛为
 // endpoint 单列唯一（端点跨租户独占），存量合法数据（每租户各占端点）
 // 保留，旧复合索引清除不残留。
