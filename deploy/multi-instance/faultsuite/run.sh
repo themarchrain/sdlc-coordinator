@@ -45,11 +45,11 @@ topology_ready() {
         runner_ready "${CONTAINER_PREFIX}-runner-b-1"
 }
 
-SCENARIOS_ALL="coordinator_pause coordinator_kill runner_kill net_block lb_failover"
+SCENARIOS_ALL="coordinator_pause coordinator_kill runner_kill net_block lb_failover login_shared_state"
 SCENARIOS="${*:-$SCENARIOS_ALL}"
 for name in $SCENARIOS; do
     case "$name" in
-        coordinator_pause|coordinator_kill|runner_kill|net_block|lb_failover) ;;
+        coordinator_pause|coordinator_kill|runner_kill|net_block|lb_failover|login_shared_state) ;;
         *) echo "unknown scenario: $name" >&2; exit 2 ;;
     esac
 done
@@ -70,7 +70,8 @@ preflight() {
     assert_true "$scenario" "smoke_lb_reaches_coordinators" $?
     jar=$(mktemp)
     portal_login superadmin "${MULTI_SUPERADMIN_PASSWORD:?set MULTI_SUPERADMIN_PASSWORD}" "$jar"
-    assert_true "$scenario" "smoke_superadmin_login_via_lb" $?
+    preflight_login_status=$?
+    assert_true "$scenario" "smoke_superadmin_login_via_lb" "$preflight_login_status"
     session_jar="$jar"
 }
 
@@ -222,6 +223,61 @@ scenario_lb_failover() {
     assert_true "$scenario" "smoke_coordinator_b_restarted" $?
 }
 
+scenario_login_shared_state() {
+    scenario="login_shared_state"
+    echo "=== $scenario: A/B 共享 Portal 会话、注销与登录失败配额 ==="
+    a15_a_ip=$(docker inspect "${CONTAINER_PREFIX}-coordinator-a-1" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null)
+    a15_b_ip=$(docker inspect "${CONTAINER_PREFIX}-coordinator-b-1" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null)
+    if [ -z "$a15_a_ip" ] || [ -z "$a15_b_ip" ]; then
+        record "$scenario" "coordinator_addresses_available" fail "missing container IP"
+        return
+    fi
+    a15_base="http://127.0.0.1:${MULTI_LB_PORT:-8090}/api/portal/auth"
+    a15_connect_a="127.0.0.1:${MULTI_LB_PORT:-8090}:${a15_a_ip}:8080"
+    a15_connect_b="127.0.0.1:${MULTI_LB_PORT:-8090}:${a15_b_ip}:8080"
+    if [ "${preflight_login_status:-1}" -ne 0 ]; then
+        record "$scenario" "session_preflight_required" fail "superadmin preflight login failed"
+        return
+    fi
+    a15_jar=$(mktemp)
+    portal_login superadmin "${MULTI_SUPERADMIN_PASSWORD:?set MULTI_SUPERADMIN_PASSWORD}" "$a15_jar"
+    assert_true "$scenario" "session_created" $?
+    a15_body_a=$(mktemp)
+    a15_body_b=$(mktemp)
+    a15_status=$(curl --max-time 12 -sS -o "$a15_body_a" -w '%{http_code}' -b "$a15_jar" --connect-to "$a15_connect_a" "$a15_base/session" 2>/dev/null)
+    assert_eq "$scenario" "session_valid_on_a" "200" "$a15_status"
+    a15_status=$(curl --max-time 12 -sS -o "$a15_body_b" -w '%{http_code}' -b "$a15_jar" --connect-to "$a15_connect_b" "$a15_base/session" 2>/dev/null)
+    assert_eq "$scenario" "session_valid_on_b" "200" "$a15_status"
+    cmp -s "$a15_body_a" "$a15_body_b"
+    assert_true "$scenario" "session_authorization_view_matches" $?
+    rm -f "$a15_body_a" "$a15_body_b"
+    a15_status=$(curl --max-time 12 -sS -o /dev/null -w '%{http_code}' -X POST -b "$a15_jar" --connect-to "$a15_connect_a" "$a15_base/logout" 2>/dev/null)
+    assert_eq "$scenario" "logout_on_a" "200" "$a15_status"
+    a15_status=$(curl --max-time 12 -sS -o /dev/null -w '%{http_code}' -b "$a15_jar" --connect-to "$a15_connect_b" "$a15_base/session" 2>/dev/null)
+    assert_eq "$scenario" "logout_seen_on_b" "401" "$a15_status"
+    rm -f "$a15_jar"
+
+    a15_username="fault-a15-$(date +%s)-$$"
+    a15_attempt=1
+    while [ "$a15_attempt" -le 10 ]; do
+        if [ $((a15_attempt % 2)) -eq 0 ]; then
+            a15_connect="$a15_connect_b"
+        else
+            a15_connect="$a15_connect_a"
+        fi
+        a15_status=$(curl --max-time 12 -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+            -d "{\"username\":\"$a15_username\",\"password\":\"wrong\"}" --connect-to "$a15_connect" "$a15_base/login" 2>/dev/null)
+        assert_eq "$scenario" "shared_failure_${a15_attempt}" "401" "$a15_status"
+        a15_attempt=$((a15_attempt + 1))
+    done
+    a15_status=$(curl --max-time 12 -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+        -d "{\"username\":\"$a15_username\",\"password\":\"wrong\"}" --connect-to "$a15_connect_a" "$a15_base/login" 2>/dev/null)
+    assert_eq "$scenario" "shared_limit_on_a" "429" "$a15_status"
+    a15_status=$(curl --max-time 12 -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+        -d "{\"username\":\"$a15_username\",\"password\":\"wrong\"}" --connect-to "$a15_connect_b" "$a15_base/login" 2>/dev/null)
+    assert_eq "$scenario" "shared_limit_on_b" "429" "$a15_status"
+}
+
 # 前置自检始终执行：指定单场景时登录态（session_jar）也要就绪。
 preflight
 for name in $SCENARIOS; do
@@ -231,6 +287,7 @@ for name in $SCENARIOS; do
         runner_kill)       scenario_runner_kill ;;
         net_block)         scenario_net_block ;;
         lb_failover)       scenario_lb_failover ;;
+        login_shared_state) scenario_login_shared_state ;;
     esac
     restore_topology
 done

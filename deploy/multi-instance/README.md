@@ -143,6 +143,7 @@ faultsuite/run.sh coordinator_pause     # 单场景
 | `runner_kill` | `kill -9` Runner A | 卷保留重启后健康；另一 Runner 不受影响 |
 | `net_block` | 断开 Runner A 容器网络 15s | 协调器存活；恢复后可达 |
 | `lb_failover` | `stop` 协调器 B | Portal 会话经 A 仍有效；A 创建租户后 MySQL 中控制面记录与租户库均存在；B 重启回池 |
+| `login_shared_state` | 会话查询、注销与错误登录直达 A/B | A/B 的会话授权视图一致，A 注销后 B 拒绝旧会话；10 次错误登录交替经过 A/B 后，两副本均返回 429；限流探针使用一次性不存在用户名 |
 
 当前 shell faultsuite 对 A06 原执行复用与副作用次数、A07 陈旧 owner/generation
 栅栏、A08 提交/推送响应丢失、A11 中断结果恢复、A12 不确定执行边界、
