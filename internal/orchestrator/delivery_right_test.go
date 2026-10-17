@@ -95,9 +95,18 @@ func TestDeveloperDeliveryRightSerializesConcurrentChannels(t *testing.T) {
 
 	channels := []*ResultChannelCoordinator{mcpChannel, textChannel}
 	finalizers := []*fakeDeveloperFinalizer{mcpFinalizer, textFinalizer}
+	commitStarted := make(chan struct{}, 1)
+	releaseCommit := make(chan struct{})
+	for _, finalizer := range finalizers {
+		finalizer.onCreate = func() {
+			commitStarted <- struct{}{}
+			<-releaseCommit
+		}
+	}
 	outcomes := make([]ChannelOutcome, 2)
 	errs := make([]error, 2)
 	start := make(chan struct{})
+	finished := make(chan struct{}, 2)
 	var wg sync.WaitGroup
 	for i := range channels {
 		wg.Add(1)
@@ -105,9 +114,25 @@ func TestDeveloperDeliveryRightSerializesConcurrentChannels(t *testing.T) {
 			defer wg.Done()
 			<-start
 			outcomes[i], errs[i] = channels[i].SubmitAgentResult(ctx, f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+			finished <- struct{}{}
 		}(i)
 	}
 	close(start)
+	select {
+	case <-commitStarted:
+	case <-time.After(5 * time.Second):
+		close(releaseCommit)
+		wg.Wait()
+		t.Fatal("neither channel entered commit")
+	}
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		close(releaseCommit)
+		wg.Wait()
+		t.Fatal("competing channel did not finish while the delivery right was held")
+	}
+	close(releaseCommit)
 	wg.Wait()
 
 	commits := mcpFinalizer.commits + textFinalizer.commits
