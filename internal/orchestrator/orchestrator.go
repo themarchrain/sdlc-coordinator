@@ -93,10 +93,8 @@ type RunRepository interface {
 	PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error
 	PinRunnerWorkspacePathIfEmpty(ctx context.Context, runID, path string) error
 	// MarkArtifactsPurgingIfUnclean 抢占 run 的清理归属（跨实例栅栏；
-	// staleBefore 之前的哨兵视为持有者已退出的崩溃遗留，可被接管），
-	// ClearArtifactsPurging 是清理失败的回滚通道。
+	// staleBefore 之前的哨兵可被接管）。
 	MarkArtifactsPurgingIfUnclean(ctx context.Context, runID, claimID string, now, staleBefore time.Time) (bool, error)
-	ClearArtifactsPurging(ctx context.Context, runID, claimID string) error
 	CompleteArtifactsPurging(ctx context.Context, runID, claimID string, now time.Time) (bool, error)
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)

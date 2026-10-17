@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,8 +85,8 @@ func TestTickSkipsAnomalousRunsDuringArtifactCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tick: %v", err)
 	}
-	if len(result.CleanedArtifacts) != 2 {
-		t.Fatalf("expected both candidates to be inspected, got %#v", result.CleanedArtifacts)
+	if len(result.CleanedArtifacts) != 0 {
+		t.Fatalf("ineligible runs entered the cleanup batch: %#v", result.CleanedArtifacts)
 	}
 	for _, item := range result.CleanedArtifacts {
 		if item.Purged {
@@ -94,6 +95,31 @@ func TestTickSkipsAnomalousRunsDuringArtifactCleanup(t *testing.T) {
 	}
 	if len(fixture.store.deleted) != 0 {
 		t.Fatalf("runner delete called for anomalies: %#v", fixture.store.deleted)
+	}
+}
+
+func TestTickArtifactCleanupSkipsIneligibleBatchHead(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	fixture := newArtifactCleanupFixture(t, root)
+	old := fixture.now.Add(-9 * 24 * time.Hour)
+	for i := 0; i < artifactCleanupBatchSize; i++ {
+		id := fmt.Sprintf("run-blocked-%02d", i)
+		run := seedFullySucceededRun(t, ctx, fixture, root, id, old)
+		if err := fixture.writebacks.Create(ctx, &model.Writeback{
+			TaskID: run.TaskID, RunID: run.RunID, DedupeKey: "wb-" + id,
+			Kind: "create_merge_request", ProjectID: "group/project", Status: model.WritebackStatusFailed,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedFullySucceededRun(t, ctx, fixture, root, "run-eligible", fixture.now.Add(-8*24*time.Hour))
+	result, err := fixture.orch.Tick(ctx, TickRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.CleanedArtifacts) != 1 || result.CleanedArtifacts[0].RunID != "run-eligible" || !result.CleanedArtifacts[0].Purged {
+		t.Fatalf("eligible run starved by ineligible batch head: %+v", result.CleanedArtifacts)
 	}
 }
 
@@ -141,6 +167,34 @@ func TestTickKeepsGoingWhenArtifactDeleteFails(t *testing.T) {
 	run, err := fixture.runs.GetByRunID(ctx, "run-delete-fail")
 	if err != nil || run.ArtifactsPurgedAt != nil {
 		t.Fatalf("failed cleanup must not stamp purged: run=%#v err=%v", run, err)
+	}
+	if run.ArtifactsPurgeStartedAt == nil {
+		t.Fatal("failed cleanup must retain its claim until retry window expires")
+	}
+}
+
+func TestTickArtifactCleanupRotatesPastFailedBatch(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	fixture := newArtifactCleanupFixture(t, root)
+	old := fixture.now.Add(-9 * 24 * time.Hour)
+	for i := 0; i < artifactCleanupBatchSize; i++ {
+		seedFullySucceededRun(t, ctx, fixture, root, fmt.Sprintf("run-delete-fail-%02d", i), old)
+	}
+	seedFullySucceededRun(t, ctx, fixture, root, "run-behind-failures", fixture.now.Add(-8*24*time.Hour))
+	fixture.store.err = errors.New("runner unavailable")
+	first, err := fixture.orch.Tick(ctx, TickRequest{})
+	if err != nil || len(first.CleanedArtifacts) != artifactCleanupBatchSize {
+		t.Fatalf("first cleanup batch = %+v, err=%v", first, err)
+	}
+	fixture.orch.now = func() time.Time { return fixture.now.Add(artifactPurgeLeaseWindow + time.Minute) }
+	fixture.store.err = nil
+	second, err := fixture.orch.Tick(ctx, TickRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.CleanedArtifacts) != artifactCleanupBatchSize || second.CleanedArtifacts[0].RunID != "run-behind-failures" || !second.CleanedArtifacts[0].Purged {
+		t.Fatalf("later run starved by failed batch: %+v", second.CleanedArtifacts)
 	}
 }
 
@@ -241,7 +295,7 @@ func TestCleanupClaimRecoversAfterHolderExit(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := store.Migrate(db, &model.Run{}); err != nil {
+	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	ctx := context.Background()
@@ -254,6 +308,12 @@ func TestCleanupClaimRecoversAfterHolderExit(t *testing.T) {
 	}
 	if err := runs.Create(ctx, run); err != nil {
 		t.Fatalf("create run: %v", err)
+	}
+	if err := db.Create(&model.AgentExecution{RunID: run.RunID, ExecutionID: run.RunID, Provider: "codex-cli", Status: model.AgentExecutionStatusSucceeded, ResultHash: "result"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ResultSubmission{TaskID: run.TaskID, RunID: run.RunID, Source: "agent-runner", Role: run.WorkerRole, Status: model.ResultSubmissionStatusSucceeded, PayloadHash: "payload", RawPayloadJSON: "{}", CanonicalJSON: "{}"}).Error; err != nil {
+		t.Fatal(err)
 	}
 
 	// 持有者抢占（哨兵 = 当下）。
@@ -281,9 +341,6 @@ func TestCleanupClaimRecoversAfterHolderExit(t *testing.T) {
 	applied, err := runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, "claim-b", now, now.Add(-30*time.Minute))
 	if err != nil || !applied {
 		t.Fatalf("stale claim must be recoverable: applied=%v err=%v", applied, err)
-	}
-	if err := runs.ClearArtifactsPurging(ctx, run.RunID, "claim-a"); err != nil {
-		t.Fatalf("old holder clear: %v", err)
 	}
 	if completed, err := runs.CompleteArtifactsPurging(ctx, run.RunID, "claim-a", now); err != nil || completed {
 		t.Fatalf("old holder must not complete new claim: completed=%v err=%v", completed, err)

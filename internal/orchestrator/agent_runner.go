@@ -445,6 +445,9 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if err != nil {
 		return nil, err
 	}
+	if err := c.executions.TouchLastObservedAt(ctx, runID, c.now().UTC()); err != nil {
+		return nil, err
+	}
 	client := c.executionClient(stored)
 	if stored.Status == model.AgentExecutionStatusDispatching {
 		remote, getErr := client.Get(ctx, stored.ExecutionID)

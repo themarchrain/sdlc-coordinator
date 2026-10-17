@@ -14,8 +14,7 @@ import (
 const (
 	artifactRetention        = 7 * 24 * time.Hour
 	artifactCleanupBatchSize = 10
-	// artifactPurgeLeaseWindow 是清理归属哨兵的有效期：远端删除远短于此
-	// 窗口；超过即视为持有者已退出的崩溃遗留，允许接管重试。
+	// artifactPurgeLeaseWindow 是清理归属哨兵的有效期；失败或持有者退出后，到期才允许重试。
 	artifactPurgeLeaseWindow = 30 * time.Minute
 )
 
@@ -115,12 +114,10 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 	if o.runWorkspaceCleaner != nil {
 		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
 			result.Error = err.Error()
-			_ = o.runs.ClearArtifactsPurging(ctx, run.RunID, claimID)
 			return result
 		}
 	} else if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
 		result.Error = err.Error()
-		_ = o.runs.ClearArtifactsPurging(ctx, run.RunID, claimID)
 		return result
 	}
 	var deleteErr error
@@ -133,7 +130,6 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 	}
 	if deleteErr != nil {
 		result.Error = deleteErr.Error()
-		_ = o.runs.ClearArtifactsPurging(ctx, run.RunID, claimID)
 		return result
 	}
 	completed, err := o.runs.CompleteArtifactsPurging(ctx, run.RunID, claimID, o.now().UTC())

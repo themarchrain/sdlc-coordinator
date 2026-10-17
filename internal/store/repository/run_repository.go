@@ -151,13 +151,14 @@ func (r *RunRepository) ListTerminalWithActiveExecution(ctx context.Context, lim
 	}
 	var runs []model.Run
 	if err := r.db.WithContext(ctx).
-		Where("status IN ?", []model.RunStatus{model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked}).
-		Where("external_system = ?", "agent-runner").
-		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status IN ?)",
-			[]model.AgentExecutionStatus{model.AgentExecutionStatusDispatching, model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
-		Order("updated_at ASC").
-		Order("id ASC").
+		Joins("JOIN agent_executions ae ON ae.run_id = runs.run_id").
+		Where("runs.status IN ?", []model.RunStatus{model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked}).
+		Where("runs.external_system = ?", "agent-runner").
+		Where("ae.status IN ?", []model.AgentExecutionStatus{model.AgentExecutionStatusDispatching, model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
+		Order("ae.last_observed_at ASC").
+		Order("ae.id ASC").
 		Limit(limit).
+		Select("runs.*").
 		Find(&runs).Error; err != nil {
 		return nil, fmt.Errorf("list terminal runs with active execution: %w", err)
 	}
@@ -189,6 +190,11 @@ func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, bef
 	if err := r.db.WithContext(ctx).
 		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?) AND external_system = ?",
 			model.RunStatusSucceeded, "", before, staleBefore, "agent-runner").
+		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status = ? AND TRIM(COALESCE(ae.result_hash, '')) <> '' AND TRIM(COALESCE(ae.error_code, '')) = '' AND TRIM(COALESCE(ae.error_message, '')) = '')", model.AgentExecutionStatusSucceeded).
+		Where("EXISTS (SELECT 1 FROM result_submissions rs WHERE rs.run_id = runs.run_id AND rs.status = ? AND TRIM(COALESCE(rs.error_message, '')) = '')", model.ResultSubmissionStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM writebacks wb WHERE wb.run_id = runs.run_id AND (wb.status IS NULL OR wb.status <> ?))", model.WritebackStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM effects e WHERE e.run_id = runs.run_id AND (e.status IS NULL OR e.status NOT IN ?))", []model.EffectStatus{model.EffectStatusSucceeded, model.EffectStatusSkipped, model.EffectStatusDeliveryUnverified}).
+		Order("artifacts_purge_started_at ASC").
 		Order("completed_at ASC").
 		Order("id ASC").
 		Limit(limit).
@@ -208,17 +214,6 @@ func (r *RunRepository) MarkArtifactsPurgingIfUnclean(ctx context.Context, runID
 		return false, fmt.Errorf("mark artifacts purging: %w", result.Error)
 	}
 	return result.RowsAffected == 1, nil
-}
-
-// ClearArtifactsPurging 仅清除当前 claim 的归属。
-func (r *RunRepository) ClearArtifactsPurging(ctx context.Context, runID, claimID string) error {
-	if err := r.db.WithContext(ctx).
-		Model(&model.Run{}).
-		Where("run_id = ? AND artifacts_purge_claim_id = ? AND artifacts_purged_at IS NULL", runID, claimID).
-		Updates(map[string]any{"artifacts_purge_started_at": nil, "artifacts_purge_claim_id": ""}).Error; err != nil {
-		return fmt.Errorf("clear artifacts purging: %w", err)
-	}
-	return nil
 }
 
 func (r *RunRepository) CompleteArtifactsPurging(ctx context.Context, runID, claimID string, now time.Time) (bool, error) {

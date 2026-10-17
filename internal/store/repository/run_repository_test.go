@@ -7,6 +7,9 @@ import (
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
+	"sdlc-coordinator/internal/store/storetest"
+
+	"gorm.io/gorm"
 )
 
 func TestRunRepositoryCreateAndLookup(t *testing.T) {
@@ -169,12 +172,59 @@ func TestRunRepositoryListRunning(t *testing.T) {
 	}
 }
 
+func TestRunRepositoryRotatesTerminalExecutionObservation(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTerminalExecutionObservationRotation(t, db)
+}
+
+func TestRunRepositoryRotatesTerminalExecutionObservationMySQL(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	assertTerminalExecutionObservationRotation(t, storetest.OpenDatabase(t, admin, "terminal_observation"))
+}
+
+func assertTerminalExecutionObservationRotation(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}); err != nil {
+		t.Fatal(err)
+	}
+	runs := NewRunRepository(db)
+	executions := NewAgentExecutionRepository(db)
+	ctx := context.Background()
+	older := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Minute)
+	for _, item := range []struct {
+		id string
+		at time.Time
+	}{{"old", older}, {"new", newer}} {
+		if err := runs.Create(ctx, &model.Run{RunID: item.id, TaskID: "task-" + item.id, WorkerRole: "ReviewerWorker", Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", UpdatedAt: item.at}); err != nil {
+			t.Fatal(err)
+		}
+		if err := executions.Create(ctx, &model.AgentExecution{RunID: item.id, ExecutionID: item.id, Provider: "codex-cli", Status: model.AgentExecutionStatusDispatching, RequestHash: "hash-" + item.id, LastObservedAt: &item.at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := runs.ListTerminalWithActiveExecution(ctx, 1)
+	if err != nil || len(first) != 1 || first[0].RunID != "old" {
+		t.Fatalf("first observation candidate = %+v, err=%v", first, err)
+	}
+	if err := executions.TouchLastObservedAt(ctx, "old", newer.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	second, err := runs.ListTerminalWithActiveExecution(ctx, 1)
+	if err != nil || len(second) != 1 || second[0].RunID != "new" {
+		t.Fatalf("next observation candidate = %+v, err=%v", second, err)
+	}
+}
+
 func TestRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T) {
 	db, err := store.Open("file::memory:?cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := store.Migrate(db, &model.Run{}); err != nil {
+	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	repo := NewRunRepository(db)
@@ -205,14 +255,24 @@ func TestRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T) {
 		ArtifactsPurgeStartedAt: &freshStarted, ArtifactsPurgeClaimID: "fresh",
 	}
 	staleStarted := now.Add(-time.Hour)
+	staleCompleted := old.Add(-time.Minute)
 	staleClaimed := &model.Run{
 		RunID: "run-stale-claim", TaskID: "task-6", WorkerRole: "ReviewerWorker",
-		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &old,
+		Status: model.RunStatusSucceeded, ExternalSystem: "agent-runner", CompletedAt: &staleCompleted,
 		ArtifactsPurgeStartedAt: &staleStarted, ArtifactsPurgeClaimID: "stale",
 	}
 	for _, run := range []*model.Run{eligible, tooNew, failed, purged, freshClaimed, staleClaimed} {
 		if err := repo.Create(ctx, run); err != nil {
 			t.Fatalf("create %s: %v", run.RunID, err)
+		}
+	}
+	for _, run := range []*model.Run{eligible, staleClaimed} {
+		id := run.RunID
+		if err := db.Create(&model.AgentExecution{RunID: id, ExecutionID: id, Provider: "codex-cli", Status: model.AgentExecutionStatusSucceeded, ResultHash: "result-" + id}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.ResultSubmission{RunID: id, TaskID: run.TaskID, Source: "agent-runner", Role: "ReviewerWorker", Status: model.ResultSubmissionStatusSucceeded, PayloadHash: "payload-" + id, RawPayloadJSON: "{}", CanonicalJSON: "{}"}).Error; err != nil {
+			t.Fatal(err)
 		}
 	}
 	got, err := repo.ListSucceededForArtifactCleanup(ctx, now.Add(-7*24*time.Hour), now.Add(-30*time.Minute), 10)

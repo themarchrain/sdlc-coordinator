@@ -33,6 +33,17 @@ func (r *AgentExecutionRepository) Update(ctx context.Context, execution *model.
 	return nil
 }
 
+func (r *AgentExecutionRepository) TouchLastObservedAt(ctx context.Context, runID string, at time.Time) error {
+	if err := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND status IN ?", runID, []model.AgentExecutionStatus{
+			model.AgentExecutionStatusDispatching, model.AgentExecutionStatusAccepted,
+			model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning,
+		}).Update("last_observed_at", at).Error; err != nil {
+		return fmt.Errorf("touch agent execution observation for run %s: %w", runID, err)
+	}
+	return nil
+}
+
 func (r *AgentExecutionRepository) SettleUnacceptedIfDispatching(ctx context.Context, runID string, now time.Time) (bool, error) {
 	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
 		Where("run_id = ? AND status = ?", runID, model.AgentExecutionStatusDispatching).

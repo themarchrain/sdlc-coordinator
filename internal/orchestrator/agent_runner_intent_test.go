@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/runner"
@@ -358,12 +359,17 @@ func TestTerminalRunWithUnknownIntentDoesNotStartRunner(t *testing.T) {
 	if err != nil || len(active) != 1 {
 		t.Fatalf("dispatching terminal run should be swept: runs=%v err=%v", active, err)
 	}
+	nextObservation := time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC)
+	w.coord.now = func() time.Time { return nextObservation }
 	if _, err := w.coord.Observe(ctx, w.run.RunID); !errors.Is(err, errDispatchOutcomeUnknown) {
 		t.Fatalf("observe terminal intent err = %v, want unknown outcome", err)
 	}
 	stored, err := w.executions.GetByRunID(ctx, w.run.RunID)
 	if err != nil || stored.Status != model.AgentExecutionStatusDispatching || w.runnerA.createCalls != 0 {
 		t.Fatalf("terminal intent must stay unresolved without relaunch: execution=%+v creates=%d err=%v", stored, w.runnerA.createCalls, err)
+	}
+	if stored.LastObservedAt == nil || !stored.LastObservedAt.Equal(nextObservation) {
+		t.Fatalf("unknown observation did not advance fairness order: %+v", stored.LastObservedAt)
 	}
 	active, err = w.runs.ListTerminalWithActiveExecution(ctx, 10)
 	if err != nil || len(active) != 1 {
