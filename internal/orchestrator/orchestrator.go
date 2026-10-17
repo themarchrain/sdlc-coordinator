@@ -1008,18 +1008,25 @@ func (o *Orchestrator) StartRun(ctx context.Context, taskID string, run *model.R
 	if err != nil {
 		return nil, nil, err
 	}
+	if task.Status != model.TaskStatusClaimed || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
+		return nil, nil, repository.ErrTaskNotClaimable
+	}
 
 	if err := o.runs.Create(ctx, run); err != nil {
 		return nil, nil, fmt.Errorf("create run %s: %w", run.RunID, err)
 	}
 
-	task, err = o.AdvanceTask(ctx, taskID, model.TaskStatusRunning)
-	if err != nil {
+	previous := task.Status
+	if err := o.stateMachine.Transition(task, model.TaskStatusRunning); err != nil {
 		return nil, nil, err
 	}
-	task.CurrentRunID = &run.RunID
-	if err := o.tasks.Update(ctx, task); err != nil {
-		return nil, nil, fmt.Errorf("attach run to task %s: %w", taskID, err)
+	o.policy.Apply(task, previous, model.TaskStatusRunning, o.now())
+	applied, err := o.tasks.AdvanceGuardedForCurrentRun(ctx, task, previous, run.RunID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("start run %s: %w", run.RunID, err)
+	}
+	if !applied {
+		return nil, nil, repository.ErrTaskNotClaimable
 	}
 
 	run.Status = model.RunStatusRunning
@@ -1027,6 +1034,13 @@ func (o *Orchestrator) StartRun(ctx context.Context, taskID string, run *model.R
 	run.StartedAt = &startedAt
 	if err := o.runs.Update(ctx, run); err != nil {
 		return nil, nil, fmt.Errorf("update run %s: %w", run.RunID, err)
+	}
+	task, err = o.tasks.GetByTaskID(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if task.Status != model.TaskStatusRunning || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
+		return nil, nil, repository.ErrTaskNotClaimable
 	}
 
 	return run, task, nil
