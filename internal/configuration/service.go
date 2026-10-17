@@ -55,8 +55,9 @@ type SecretStatus struct {
 }
 
 type ConfigurationView struct {
-	Config  EditableRuntimeConfig `json:"config"`
-	Secrets SecretStatus          `json:"secrets"`
+	Revision uint64                `json:"revision"`
+	Config   EditableRuntimeConfig `json:"config"`
+	Secrets  SecretStatus          `json:"secrets"`
 }
 
 type StatusView struct {
@@ -116,7 +117,9 @@ func (service *Service) Status() StatusView {
 func (service *Service) Get() ConfigurationView {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	return MaskRuntimeConfig(service.current)
+	view := MaskRuntimeConfig(service.current)
+	view.Revision = service.statusLocked().Revision
+	return view
 }
 
 func (service *Service) Runtime() RuntimeConfig {
@@ -185,9 +188,11 @@ func (service *Service) Update(ctx context.Context, request UpdateRequest) (*Upd
 	service.snapshot = snapshot
 	service.mode = ModeRestartRequired
 	service.configurationError = ""
+	configuration := MaskRuntimeConfig(candidate)
+	configuration.Revision = snapshot.Revision
 	return &UpdateResult{
 		StatusView:    service.statusLocked(),
-		Configuration: MaskRuntimeConfig(candidate),
+		Configuration: configuration,
 	}, nil, nil
 }
 

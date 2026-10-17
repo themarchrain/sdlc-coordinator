@@ -35,6 +35,7 @@ func TestAdminConfigurationGetMasksAllSecrets(t *testing.T) {
 	}
 	for _, flag := range []string{
 		`"agent_runner_api_key_configured":true`,
+		`"revision":1`,
 	} {
 		if !strings.Contains(body, flag) {
 			t.Fatalf("missing configured flag %s: %s", flag, body)

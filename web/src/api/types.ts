@@ -387,6 +387,7 @@ export interface TenantConfigurationUpdateRequest {
 }
 
 export interface ConfigurationView {
+  revision: number
   config: EditableRuntimeConfiguration
   secrets: ConfigurationSecretStatus
 }

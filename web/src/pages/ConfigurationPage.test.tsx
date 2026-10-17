@@ -23,6 +23,7 @@ function RouteProbe({ label }: { label: string }) {
 }
 
 const configuration: ConfigurationView = {
+  revision: 2,
   config: {
     agent_runner: { service_url: 'http://agent-runner:8081', workspace_root: '/app/workspaces', provider: 'codex-cli', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
     scheduler: {
@@ -121,10 +122,10 @@ describe('ConfigurationPage', () => {
 
   it('validates, saves, and requests restart from the final step with a system-only payload', async () => {
     vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'setup_pending', revision: 0 })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 0 })
     vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
     const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
-      mode: 'restart_required', revision: 1, source: 'ui', configuration,
+      mode: 'restart_required', revision: 1, source: 'ui', configuration: { ...configuration, revision: 1 },
     })
     const restart = vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
 
@@ -169,16 +170,32 @@ describe('ConfigurationPage', () => {
     expect(await screen.findByText('运行配置已被其他管理员更新，请刷新页面后重新提交')).toBeInTheDocument()
   })
 
+  it('submits the revision belonging to the loaded configuration when status is newer', async () => {
+    const staleView = { ...configuration, revision: 1 }
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(staleView)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateConfiguration').mockRejectedValue(new AdminApiError(409, 'revision_conflict', '运行配置已被其他管理员更新，请刷新页面后重新提交'))
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    expect(await screen.findByText('运行配置已被其他管理员更新，请刷新页面后重新提交')).toBeInTheDocument()
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 1 }))
+  })
+
   it('can save from the configuration-error state through the four steps', async () => {
     vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({
       mode: 'configuration_error',
       revision: 4,
       configuration_error: 'runtime configuration validation failed: runtime configuration has 4 validation error(s)',
     })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 4 })
     vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
     const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
-      mode: 'restart_required', revision: 5, source: 'ui', configuration,
+      mode: 'restart_required', revision: 5, source: 'ui', configuration: { ...configuration, revision: 5 },
     })
     vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
 
@@ -197,10 +214,10 @@ describe('ConfigurationPage', () => {
     status.mockResolvedValueOnce({ mode: 'setup_pending', revision: 0 }) // 边界挂载
       .mockResolvedValueOnce({ mode: 'setup_pending', revision: 0 }) // 页面初始加载
       .mockResolvedValue({ mode: 'ready', revision: 1, source: 'ui' }) // 重启轮询
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 0 })
     vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
     vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
-      mode: 'restart_required', revision: 1, source: 'ui', configuration,
+      mode: 'restart_required', revision: 1, source: 'ui', configuration: { ...configuration, revision: 1 },
     })
     vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
 

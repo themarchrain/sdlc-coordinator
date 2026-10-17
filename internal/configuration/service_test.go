@@ -41,7 +41,7 @@ func TestServiceUpdateRetainsReplacesAndExplicitlyClearsSecrets(t *testing.T) {
 	if latest.Config.AgentRunner.Model != "updated-model" || latest.Status != StatusRestartRequired {
 		t.Fatalf("unexpected latest configuration: %#v", latest)
 	}
-	if result.Mode != ModeRestartRequired || result.Revision != latest.Revision {
+	if result.Mode != ModeRestartRequired || result.Revision != latest.Revision || result.Configuration.Revision != latest.Revision {
 		t.Fatalf("unexpected update result: %#v", result)
 	}
 }

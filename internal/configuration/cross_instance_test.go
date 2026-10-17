@@ -2,6 +2,8 @@ package configuration
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -34,6 +36,70 @@ func TestCrossInstanceRevisionConvergence(t *testing.T) {
 	}
 	if resolutionB.EffectiveConfig.AgentRunner.Model != "model-from-instance-a" {
 		t.Fatalf("instance B config = %q, want the value saved by instance A", resolutionB.EffectiveConfig.AgentRunner.Model)
+	}
+}
+
+func TestConfigurationViewRevisionProtectsAnOlderInstanceView(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	initial := validRuntimeConfig()
+	snapshot, err := repository.Save(context.Background(), StatusReady, SourceUI, initial)
+	if err != nil {
+		t.Fatalf("seed configuration: %v", err)
+	}
+	serviceA := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: snapshot})
+	serviceB := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: snapshot})
+	staleView := serviceB.Get()
+
+	var response struct {
+		Revision uint64 `json:"revision"`
+	}
+	payload, err := json.Marshal(staleView)
+	if err != nil {
+		t.Fatalf("marshal configuration view: %v", err)
+	}
+	if err := json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("unmarshal configuration revision: %v", err)
+	}
+	if response.Revision != 1 {
+		t.Fatalf("configuration view revision = %d, want 1", response.Revision)
+	}
+
+	newer := EditableFromRuntime(initial)
+	newer.AgentRunner.Model = "model-from-instance-a"
+	if _, validationErrors, err := serviceA.Update(context.Background(), UpdateRequest{Config: newer, ExpectedRevision: uint64Pointer(1)}); err != nil || len(validationErrors) > 0 {
+		t.Fatalf("instance A update: validation=%#v error=%v", validationErrors, err)
+	}
+
+	stale := staleView.Config
+	stale.AgentRunner.Model = "model-from-stale-instance-b"
+	_, _, err = serviceB.Update(context.Background(), UpdateRequest{Config: stale, ExpectedRevision: uint64Pointer(response.Revision)})
+	if !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("stale instance update error = %v, want revision conflict", err)
+	}
+
+	latest, err := repository.Latest(context.Background())
+	if err != nil {
+		t.Fatalf("load latest configuration: %v", err)
+	}
+	if latest.Config.AgentRunner.Model != "model-from-instance-a" {
+		t.Fatalf("stale instance overwrote newer configuration: got %q", latest.Config.AgentRunner.Model)
+	}
+}
+
+func TestConfigurationViewRevisionIsZeroBeforeInitialization(t *testing.T) {
+	service := NewService(newConfigurationRepositoryTestDB(t), Resolution{Mode: ModeSetupPending, Prefill: validRuntimeConfig()})
+	payload, err := json.Marshal(service.Get())
+	if err != nil {
+		t.Fatalf("marshal initial configuration view: %v", err)
+	}
+	var response struct {
+		Revision *uint64 `json:"revision"`
+	}
+	if err := json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("unmarshal initial configuration revision: %v", err)
+	}
+	if response.Revision == nil || *response.Revision != 0 {
+		t.Fatalf("initial configuration view revision = %v, want 0", response.Revision)
 	}
 }
 

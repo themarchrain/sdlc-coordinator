@@ -100,11 +100,12 @@ export function ConfigurationPage() {
   const secretTotal = useMemo(() => view ? Object.values(view.secrets).length : 0, [view])
 
   const saveAndRestart = async () => {
+    if (!view) return
     setSaving(true)
     setFieldErrors({})
     try {
       const values = await form.validateFields()
-      const request = toUpdateRequest(values, status?.revision ?? 0)
+      const request = toUpdateRequest(values, view.revision)
       const validation = await adminApi.validateConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
