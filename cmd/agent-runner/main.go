@@ -58,6 +58,14 @@ func loadConfig(getenv func(string) string) config {
 
 func main() {
 	config := loadConfig(os.Getenv)
+	workspaceRoot, err := filepath.Abs(config.WorkspaceRoot)
+	if err != nil {
+		log.Fatalf("resolve runner workspace root: %v", err)
+	}
+	config.WorkspaceRoot = workspaceRoot
+	if err := os.Setenv("AGENT_RUNNER_WORKSPACE_ROOT", workspaceRoot); err != nil {
+		log.Fatalf("set runner workspace root: %v", err)
+	}
 	service, err := newService(config)
 	if err != nil {
 		log.Fatalf("initialize agent runner: %v", err)

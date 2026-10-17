@@ -35,6 +35,17 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) == 3 && os.Args[1] == "--recover" {
+		if err := checkPrivileges(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if err := recoverRunWorkspaces(os.Args[2], agentRunLockPath); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	code, err := launch(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -246,6 +257,166 @@ func acquireAgentRunLock(path string, signals <-chan os.Signal) (*os.File, error
 func releaseAgentRunLock(lock *os.File) {
 	_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	_ = lock.Close()
+}
+
+func recoverRunWorkspaces(workspaceRoot, lockPath string) error {
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open Agent run lock for workspace recovery: %w", err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return errors.New("Agent CLI is active; cannot recover Runner workspaces")
+		}
+		return fmt.Errorf("lock Agent run workspace for recovery: %w", err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if err := stopLingeringAgentProcesses(); err != nil {
+		return fmt.Errorf("stop Agent processes before workspace recovery: %w", err)
+	}
+	return recoverRunWorkspaceTrees(workspaceRoot)
+}
+
+func recoverRunWorkspaceTrees(workspaceRoot string) error {
+	var err error
+	workspaceRoot, err = filepath.Abs(workspaceRoot)
+	if err != nil {
+		return fmt.Errorf("resolve workspace root for recovery: %w", err)
+	}
+	workspaceInfo, err := os.Lstat(workspaceRoot)
+	if err != nil {
+		return fmt.Errorf("inspect workspace root for recovery: %w", err)
+	}
+	if !workspaceInfo.IsDir() {
+		return errors.New("workspace root for recovery must be a real directory")
+	}
+	if err := requireOwner(workspaceRoot, runnerUID, runnerGID); err != nil {
+		return fmt.Errorf("workspace root for recovery: %w", err)
+	}
+	workspaceStat, ok := workspaceInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return errors.New("workspace root for recovery has an unsupported file identity")
+	}
+	runsRoot := filepath.Join(workspaceRoot, "runs")
+	runsInfo, err := os.Lstat(runsRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect runs directory for recovery: %w", err)
+	}
+	if !runsInfo.IsDir() {
+		return errors.New("runs directory for recovery must be a real directory")
+	}
+	if err := requireOwner(runsRoot, runnerUID, runnerGID); err != nil {
+		return fmt.Errorf("runs directory for recovery: %w", err)
+	}
+	runsStat, ok := runsInfo.Sys().(*syscall.Stat_t)
+	if !ok || runsStat.Dev != workspaceStat.Dev {
+		return errors.New("runs directory for recovery is on an unexpected filesystem")
+	}
+	entries, err := os.ReadDir(runsRoot)
+	if err != nil {
+		return fmt.Errorf("read runs directory for recovery: %w", err)
+	}
+	var paths []recoveryEntry
+	for _, entry := range entries {
+		runRoot := filepath.Join(runsRoot, entry.Name())
+		info, err := os.Lstat(runRoot)
+		if err != nil {
+			return fmt.Errorf("inspect run workspace %q for recovery: %w", entry.Name(), err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("run workspace %q must be a real directory", entry.Name())
+		}
+		workspacePaths, err := inspectRunWorkspaceTree(runRoot, runsStat.Dev)
+		if err != nil {
+			return fmt.Errorf("recover run workspace %q: %w", entry.Name(), err)
+		}
+		paths = append(paths, workspacePaths...)
+	}
+	return restoreRunnerWorkspaceOwnership(paths)
+}
+
+type recoveryEntry struct {
+	path         string
+	mode         os.FileMode
+	runRoot      bool
+	preserveMode bool
+}
+
+func inspectRunWorkspaceTree(runRoot string, expectedDev uint64) ([]recoveryEntry, error) {
+	paths := make([]recoveryEntry, 0, 32)
+	if err := filepath.WalkDir(runRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		preserveMode := info.Mode()&(os.ModeSymlink|os.ModeNamedPipe|os.ModeSocket) != 0
+		if !preserveMode && !info.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("special file is not allowed in a recoverable workspace: %q", path)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || stat.Dev != expectedDev {
+			return fmt.Errorf("workspace entry is on an unexpected filesystem: %q", path)
+		}
+		if !((int(stat.Uid) == runnerUID && int(stat.Gid) == runnerGID) || (int(stat.Uid) == agentUID && int(stat.Gid) == agentGID)) {
+			return fmt.Errorf("workspace entry %q has an untrusted owner %d:%d", path, stat.Uid, stat.Gid)
+		}
+		if info.Mode().IsRegular() && stat.Nlink != 1 {
+			return fmt.Errorf("hard-linked file is not allowed in a recoverable workspace: %q", path)
+		}
+		paths = append(paths, recoveryEntry{path: path, mode: info.Mode(), runRoot: filepath.Clean(path) == filepath.Clean(runRoot), preserveMode: preserveMode})
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("preflight workspace tree: %w", err)
+	}
+	return paths, nil
+}
+
+func restoreRunnerWorkspaceOwnership(paths []recoveryEntry) error {
+	for _, entry := range paths {
+		if err := os.Lchown(entry.path, runnerUID, runnerGID); err != nil {
+			return fmt.Errorf("return workspace entry %q to Runner: %w", entry.path, err)
+		}
+		if entry.preserveMode {
+			continue
+		}
+		mode := entry.mode.Perm()
+		if entry.runRoot {
+			mode = 0o700
+		} else if entry.mode.IsDir() {
+			mode |= 0o700
+		} else {
+			mode |= 0o600
+		}
+		if err := os.Chmod(entry.path, mode); err != nil {
+			return fmt.Errorf("restore Runner access to workspace entry %q: %w", entry.path, err)
+		}
+	}
+	return nil
+}
+
+func requireOwner(path string, uid, gid int) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("path must be a real directory")
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return errors.New("directory must not be group or world writable")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) != uid || int(stat.Gid) != gid {
+		return fmt.Errorf("directory must be owned by Runner %d:%d", uid, gid)
+	}
+	return nil
 }
 
 func stopLingeringAgentProcesses() error {

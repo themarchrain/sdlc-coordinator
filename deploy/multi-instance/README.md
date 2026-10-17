@@ -129,7 +129,10 @@ flowchart TB
 cd deploy/multi-instance
 faultsuite/run.sh                       # 全部场景
 faultsuite/run.sh coordinator_pause     # 单场景
+faultsuite/runner_restart.sh sdlc-agent-runner:YOUR_TAG  # 独立 Runner A11 重启验收
 ```
+
+`runner_restart.sh` 使用唯一测试容器与命名卷，运行真实 Runner HTTP 执行后验证成功结果保留、强杀时在途执行恢复为 `interrupted`。它保留命名卷作为证据，输出中将 Coordinator 投影收敛标为 `not_covered`。
 
 场景与断言（JSON Lines 落 `faultsuite-results.jsonl`，不依赖人工截图）：
 

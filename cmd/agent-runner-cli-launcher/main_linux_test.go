@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -197,5 +198,324 @@ func TestRestoreRunWorkspaceReturnsOwnershipAndClosesRoot(t *testing.T) {
 	fileStat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok || int(fileStat.Uid) != runnerUID || int(fileStat.Gid) != runnerGID || fileInfo.Mode().Perm() != 0o600 {
 		t.Fatalf("restored run file = owner %v mode %04o, want Runner %d:%d mode 0600", fileInfo.Sys(), fileInfo.Mode().Perm(), runnerUID, runnerGID)
+	}
+}
+
+func TestRecoverRunWorkspacesRestoresMixedOwnershipAndIsIdempotent(t *testing.T) {
+	workspaceRoot, runRoot := newRecoveryWorkspace(t)
+	file := filepath.Join(runRoot, "nested", "private")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(runRoot, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := chownTree(filepath.Join(runRoot, "nested"), agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err != nil {
+		t.Fatalf("recover mixed ownership workspace: %v", err)
+	}
+	assertOwner(t, runRoot, runnerUID, runnerGID)
+	if mode := modeOf(t, runRoot); mode != 0o700 {
+		t.Fatalf("recovered run root mode = %04o, want 0700", mode)
+	}
+	assertOwner(t, filepath.Dir(file), runnerUID, runnerGID)
+	assertOwner(t, file, runnerUID, runnerGID)
+	if mode := modeOf(t, filepath.Dir(file)); mode&0o700 != 0o700 {
+		t.Fatalf("recovered directory mode = %04o, want owner rwx", mode)
+	}
+
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err != nil {
+		t.Fatalf("repeat recovery: %v", err)
+	}
+	assertOwner(t, runRoot, runnerUID, runnerGID)
+	assertOwner(t, filepath.Dir(file), runnerUID, runnerGID)
+	assertOwner(t, file, runnerUID, runnerGID)
+}
+
+func TestRecoverRunWorkspacesRejectsWritableWorkspaceParents(t *testing.T) {
+	for _, target := range []string{"workspace root", "runs root"} {
+		t.Run(target, func(t *testing.T) {
+			workspaceRoot, runRoot := newRecoveryWorkspace(t)
+			if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+				t.Fatal(err)
+			}
+			path := workspaceRoot
+			if target == "runs root" {
+				path = filepath.Join(workspaceRoot, "runs")
+			}
+			if err := os.Chmod(path, 0o777); err != nil {
+				t.Fatal(err)
+			}
+			if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err == nil {
+				t.Fatal("recovery accepted a group/world-writable workspace parent")
+			}
+			assertOwner(t, runRoot, agentUID, agentGID)
+		})
+	}
+}
+
+func TestRecoverRunWorkspacesRejectsUnsafeTreesWithoutPartialChown(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("changing workspace ownership requires root")
+	}
+	for _, kind := range []string{"hardlink", "third-party owner"} {
+		t.Run(kind, func(t *testing.T) {
+			workspaceRoot, runRoot := newRecoveryWorkspace(t)
+			earlyFile := filepath.Join(runRoot, "a-agent-file")
+			if err := os.WriteFile(earlyFile, []byte("secret"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chown(earlyFile, agentUID, agentGID); err != nil {
+				t.Fatal(err)
+			}
+			var externalPath string
+			switch kind {
+			case "hardlink":
+				externalPath = filepath.Join(workspaceRoot, "outside")
+				if err := os.WriteFile(externalPath, []byte("outside"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chown(externalPath, agentUID, agentGID); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Link(externalPath, filepath.Join(runRoot, "z-link")); err != nil {
+					t.Fatal(err)
+				}
+			case "third-party owner":
+				path := filepath.Join(runRoot, "z-foreign")
+				if err := os.WriteFile(path, []byte("foreign"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chown(path, 10003, 10003); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock"))
+			if err == nil {
+				t.Fatal("recovery accepted an unsafe workspace tree")
+			}
+			assertOwner(t, runRoot, agentUID, agentGID)
+			assertOwner(t, earlyFile, agentUID, agentGID)
+			if externalPath != "" {
+				assertOwner(t, externalPath, agentUID, agentGID)
+			}
+		})
+	}
+}
+
+func TestRecoverRunWorkspacesRestoresFIFO(t *testing.T) {
+	workspaceRoot, runRoot := newRecoveryWorkspace(t)
+	fifo := filepath.Join(runRoot, "pipe")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(fifo, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err != nil {
+		t.Fatal(err)
+	}
+	assertOwner(t, runRoot, runnerUID, runnerGID)
+	assertOwner(t, fifo, runnerUID, runnerGID)
+}
+
+func TestRecoverRunWorkspacesRestoresSymlinkWithoutChangingTarget(t *testing.T) {
+	workspaceRoot, runRoot := newRecoveryWorkspace(t)
+	target := filepath.Join(workspaceRoot, "outside-target")
+	content := []byte("outside content")
+	if err := os.WriteFile(target, content, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(target, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(runRoot, "repo-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+	if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Lchown(link, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err != nil {
+		t.Fatalf("recover workspace with repository symlink: %v", err)
+	}
+	assertOwner(t, runRoot, runnerUID, runnerGID)
+	assertOwner(t, link, runnerUID, runnerGID)
+	assertOwner(t, target, agentUID, agentGID)
+	if got := modeOf(t, target); got != 0o400 {
+		t.Fatalf("symlink target mode = %04o, want unchanged 0400", got)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("symlink target content = %q, want %q", got, content)
+	}
+}
+
+func TestRecoverRunWorkspacesPreflightsEveryRunBeforeChangingOwnership(t *testing.T) {
+	workspaceRoot, firstRun := newRecoveryWorkspace(t)
+	if err := os.Chown(firstRun, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	secondRun := filepath.Join(workspaceRoot, "runs", "run-2")
+	if err := os.Mkdir(secondRun, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(secondRun, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(workspaceRoot, "outside")
+	if err := os.WriteFile(external, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(external, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(external, filepath.Join(secondRun, "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err == nil {
+		t.Fatal("recovery accepted a later unsafe run workspace")
+	}
+	assertOwner(t, firstRun, agentUID, agentGID)
+	assertOwner(t, secondRun, agentUID, agentGID)
+}
+
+func TestRecoverRunWorkspacesRejectsActiveLauncherLock(t *testing.T) {
+	workspaceRoot, runRoot := newRecoveryWorkspace(t)
+	if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(t.TempDir(), "agent-cli.lock")
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	err = recoverRunWorkspaces(workspaceRoot, lockPath)
+	if err == nil || !strings.Contains(err.Error(), "Agent CLI is active") {
+		t.Fatalf("recovery error = %v, want active Agent CLI lock error", err)
+	}
+	assertOwner(t, runRoot, agentUID, agentGID)
+}
+
+func newRecoveryWorkspace(t *testing.T) (string, string) {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		t.Skip("changing workspace ownership requires root")
+	}
+	base := t.TempDir()
+	workspaceRoot := filepath.Join(base, "workspaces")
+	runRoot := filepath.Join(workspaceRoot, "runs", "run-1")
+	if err := os.MkdirAll(runRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{workspaceRoot, filepath.Join(workspaceRoot, "runs")} {
+		if err := os.Chown(path, runnerUID, runnerGID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return workspaceRoot, runRoot
+}
+
+func assertOwner(t *testing.T, path string, uid, gid int) {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) != uid || int(stat.Gid) != gid {
+		t.Fatalf("owner(%q) = %v, want %d:%d", path, info.Sys(), uid, gid)
+	}
+}
+
+func modeOf(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm()
+}
+
+func TestRecoverRunWorkspacesRejectsMissingAndSymlinkedRoots(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "missing")
+	if err := recoverRunWorkspaces(missing, filepath.Join(t.TempDir(), "lock")); err == nil {
+		t.Fatal("recovery accepted a missing workspace root")
+	}
+	link := filepath.Join(root, "linked")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+	if err := recoverRunWorkspaces(link, filepath.Join(t.TempDir(), "lock")); err == nil {
+		t.Fatal("recovery accepted a symlinked workspace root")
+	}
+
+	workspaceRoot, runRoot := newRecoveryWorkspace(t)
+	outsideRun := filepath.Join(root, "outside-run")
+	if err := os.Mkdir(outsideRun, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(runRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideRun, runRoot); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "lock")); err == nil {
+		t.Fatal("recovery accepted a symlinked direct run root")
+	}
+	assertOwner(t, outsideRun, os.Getuid(), os.Getgid())
+}
+
+func TestRecoverRunWorkspacesAcceptsRelativeAndTrailingSlashRoots(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("changing workspace ownership requires root")
+	}
+	workspaceRoot, _ := newRecoveryWorkspace(t)
+	if err := os.Chown(filepath.Join(workspaceRoot, "runs", "run-1"), agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeRoot, err := filepath.Rel(workingDir, workspaceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{relativeRoot, workspaceRoot + string(os.PathSeparator)} {
+		if err := recoverRunWorkspaces(root, filepath.Join(t.TempDir(), "lock")); err != nil {
+			t.Fatalf("recover workspace root %q: %v", root, err)
+		}
 	}
 }
