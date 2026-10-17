@@ -252,6 +252,10 @@ func (service *Service) ListAllRunnerAssignments(ctx context.Context) ([]RunnerA
 	return service.repo(ctx).ListAllRunnerAssignments(ctx)
 }
 
+func (service *Service) ClaimRunnerPool(ctx context.Context, tenantID uint) ([]RunnerAssignment, uint64, error) {
+	return service.repo(ctx).ClaimRunnerPool(ctx, tenantID)
+}
+
 // ReplaceRunnerAssignments 整表替换组织 runner 端点列表：仅接受绝对
 // http/https URL（含 host，与消费端启动校验同口径），去重、上限 20 条；
 // 写 runner_assignments.updated 审计。

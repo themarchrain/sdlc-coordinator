@@ -19,7 +19,7 @@ func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 func (repository *Repository) Migrate() error {
 	if err := repository.db.AutoMigrate(
 		&User{}, &Tenant{}, &Membership{}, &InviteCode{},
-		&RunnerAssignment{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
+		&RunnerAssignment{}, &RunnerPoolCursor{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
 		&LoginFailure{}, &LoginFailureCapacityGuard{},
 	); err != nil {
 		return fmt.Errorf("migrate control plane: %w", err)
@@ -338,6 +338,41 @@ func (repository *Repository) ListRunnerAssignments(ctx context.Context, tenantI
 	return assignments, nil
 }
 
+func (repository *Repository) ClaimRunnerPool(ctx context.Context, tenantID uint) ([]RunnerAssignment, uint64, error) {
+	var assignments []RunnerAssignment
+	var slot uint64
+	err := repository.withLockedRunnerPoolCursor(ctx, tenantID, func(tx *gorm.DB, cursor RunnerPoolCursor) error {
+		if err := tx.Where("tenant_id = ?", tenantID).Order("endpoint_url ASC").Find(&assignments).Error; err != nil {
+			return fmt.Errorf("list runner assignments: %w", err)
+		}
+		slot = cursor.NextSlot
+		if err := tx.Model(&RunnerPoolCursor{}).
+			Where("tenant_id = ?", tenantID).
+			UpdateColumn("next_slot", gorm.Expr("next_slot + 1")).Error; err != nil {
+			return fmt.Errorf("advance runner pool cursor: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("claim runner pool: %w", err)
+	}
+	return assignments, slot, nil
+}
+
+func (repository *Repository) withLockedRunnerPoolCursor(ctx context.Context, tenantID uint, fn func(*gorm.DB, RunnerPoolCursor) error) error {
+	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		cursor := RunnerPoolCursor{TenantID: tenantID}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&cursor).Error; err != nil {
+			return fmt.Errorf("initialize runner pool cursor: %w", err)
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ?", tenantID).Take(&cursor).Error; err != nil {
+			return fmt.Errorf("lock runner pool cursor: %w", err)
+		}
+		return fn(tx, cursor)
+	})
+}
+
 // ListAllRunnerAssignments 跨租户全量列举指派行（启动校验消费端：需要
 // 全表形态判断，租户池路由按租户走 ListRunnerAssignments）。
 func (repository *Repository) ListAllRunnerAssignments(ctx context.Context) ([]RunnerAssignment, error) {
@@ -351,7 +386,7 @@ func (repository *Repository) ListAllRunnerAssignments(ctx context.Context) ([]R
 
 // ReplaceRunnerAssignments 事务内整表替换。
 func (repository *Repository) ReplaceRunnerAssignments(ctx context.Context, tenantID uint, endpoints []string) error {
-	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return repository.withLockedRunnerPoolCursor(ctx, tenantID, func(tx *gorm.DB, _ RunnerPoolCursor) error {
 		if err := tx.Where("tenant_id = ?", tenantID).Delete(&RunnerAssignment{}).Error; err != nil {
 			return fmt.Errorf("clear runner assignments: %w", err)
 		}

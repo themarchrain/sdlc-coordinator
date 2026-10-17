@@ -99,6 +99,13 @@ type RunnerAssignment struct {
 
 func (RunnerAssignment) TableName() string { return "runner_assignments" }
 
+type RunnerPoolCursor struct {
+	TenantID uint   `gorm:"primaryKey;autoIncrement:false"`
+	NextSlot uint64 `gorm:"not null;default:0"`
+}
+
+func (RunnerPoolCursor) TableName() string { return "runner_pool_cursors" }
+
 // AuditLog 记录超管动作与支持访问等控制面留痕。
 type AuditLog struct {
 	ID            uint `gorm:"primaryKey"`

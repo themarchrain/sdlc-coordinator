@@ -55,6 +55,9 @@ func TestControlPlaneV4SchemaUpgradesToEndpointExclusivityOnMySQL(t *testing.T) 
 	if db.Migrator().HasIndex(&controlplane.RunnerAssignment{}, "idx_runner_assignments_tenant_endpoint") {
 		t.Fatal("v4 upgrade left legacy tenant-endpoint index behind")
 	}
+	if !db.Migrator().HasTable(&controlplane.RunnerPoolCursor{}) {
+		t.Fatal("schema upgrade did not create runner_pool_cursors")
+	}
 	var rows int64
 	if err := db.Table("runner_assignments").Count(&rows).Error; err != nil {
 		t.Fatalf("count upgraded assignments: %v", err)
