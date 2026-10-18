@@ -91,8 +91,9 @@ Runner 的工作区操作接口；同机部署也不需要共享目录。多个 
    ```
 
 4. 首次初始化运行配置：用种子超管登录 `http://127.0.0.1:8090/admin/`，
-   依次填写 Agent Runner 的模型和凭据，以及 Scheduler 的回调地址和工作区根。
-   本机样例的回调地址可填 `http://lb:80`，工作区根填 `/app/workspaces`；
+   依次填写 Agent Runner 的模型和凭据，以及 Scheduler 的 MCP 结果回调地址。
+   本机样例的回调地址可填 `http://lb:80/mcp`；工作区根由各 Runner 的
+   `AGENT_RUNNER_WORKSPACE_ROOT` 和目录挂载配置，不在此向导中填写。
    测试替身 CLI 不调用模型接口，但向导仍要求填写测试用模型和凭据。
    保存并启用后，双 Coordinator 会从共享 MySQL 读取同一配置版本并自动重启。
    必须等 `/readyz` 返回 200，且分别检查双副本的 `/healthz` 都为
