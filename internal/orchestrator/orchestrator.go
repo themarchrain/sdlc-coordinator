@@ -27,17 +27,12 @@ import (
 // 不一致：调用方不得用旧快照续写，应重新读取并按当前状态裁决。
 var ErrConcurrentTaskAdvance = errors.New("task advanced concurrently")
 
-// RunWorkspaceCleaner 是 run 工作区清理的窄端口：本地形态在协调器文件系统
-// 上删除；远端形态（计划 A）经受控操作在 Runner 本机删除。taskID 必须随行：
-// Runner 侧授权器按完整身份（tenant+task+run）裁决，缺一即拒。
+// RunWorkspaceCleaner 通过 Runner 操作接口清理指定任务的 run 工作区。
 type RunWorkspaceCleaner interface {
 	RemoveRunWorkspace(ctx context.Context, taskID, runID string) error
 }
 
-// TaskBundlePublisher 是任务包投递的窄端口：远端形态经受控通道把任务包
-// 三段内容送到 run 所在 Runner 的工作区，返回 Runner 侧工作区路径（两侧
-// 路径不共享，执行请求以该值为准）；本机形态不装配（nil），任务包由协调器
-// 直接写本地路径。独立文件系统下这是任务包到达 Agent 的唯一通道。
+// TaskBundlePublisher 把任务包发送给 Runner，并返回 Runner 的工作区路径。
 type TaskBundlePublisher interface {
 	PublishTaskBundle(ctx context.Context, taskID, runID string, files map[string][]byte) (string, error)
 }
@@ -241,8 +236,7 @@ type RunnerArtifactStore interface {
 }
 
 type ReviewerRunnerSettings struct {
-	WorkspaceRoot string
-	Provider      runner.ProviderConfig
+	Provider runner.ProviderConfig
 	// ResolveRepository 按任务解析注册仓行:workspace clone/push URL 与 git 凭据的
 	// 唯一权威源(URL 由仓行 CloneURL 派生、凭据取同一行的每仓 Token,单次查询双消费);
 	// 任务未绑定注册仓时返回 ErrRepositoryNotBound。

@@ -152,7 +152,6 @@ func newRemoteDeliveryWorld(t *testing.T) *remoteDeliveryWorld {
 		GitAuthorName: "AI Developer", GitAuthorEmail: "ai-developer@localhost",
 	}
 	settings := orchestrator.ReviewerRunnerSettings{
-		WorkspaceRoot: "unused-in-remote-mode",
 		ResolveRepository: func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
 			return repoRow, nil
 		},

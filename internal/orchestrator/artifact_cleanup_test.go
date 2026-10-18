@@ -233,7 +233,8 @@ func newArtifactCleanupFixture(t *testing.T, workspaceRoot string) artifactClean
 		WithEffectRepository(effects),
 		WithAgentExecutionLookup(executions),
 		WithRunnerArtifactStore(storeRec),
-		WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{WorkspaceRoot: workspaceRoot}),
+		WithRunWorkspaceCleaner(fixtureRunnerWorkspace{root: workspaceRoot}),
+		WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{}),
 		WithClock(func() time.Time { return now }),
 	)
 	return artifactCleanupFixture{

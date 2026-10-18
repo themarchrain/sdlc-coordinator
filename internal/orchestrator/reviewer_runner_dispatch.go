@@ -248,7 +248,7 @@ func buildReviewerWorkspaceRequest(ctx context.Context, task *model.Task, run *m
 	}
 	mergeRequest, _ := pkg.Context["merge_request"].(map[string]any)
 	request := workspace.ReviewerRequest{
-		WorkspaceRoot: strings.TrimSpace(settings.WorkspaceRoot), TaskID: task.TaskID, RunID: run.RunID,
+		TaskID: task.TaskID, RunID: run.RunID,
 		Project: task.TargetRepo, RepositoryURL: cloneURL,
 		SourceBranch: stringContextField(mergeRequest, "source_branch"),
 		TargetBranch: stringContextField(mergeRequest, "target_branch"),

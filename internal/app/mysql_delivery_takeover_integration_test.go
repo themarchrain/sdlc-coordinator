@@ -79,7 +79,6 @@ func TestRemoteDeliveryTakeoverFencesStaleCoordinatorOnMySQL(t *testing.T) {
 	}
 
 	settings := orchestrator.ReviewerRunnerSettings{
-		WorkspaceRoot: "unused-in-remote-mode",
 		ResolveRepository: func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
 			return repoRow, nil
 		},

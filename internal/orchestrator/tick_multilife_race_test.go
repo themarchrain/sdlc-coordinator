@@ -235,7 +235,7 @@ func TestArtifactCleanupDualInstanceSinglePurge(t *testing.T) {
 			WithResultSubmissionRepository(repository.NewResultSubmissionRepository(db)),
 			WithRunnerArtifactStore(&recordingArtifactStore{}),
 			WithRunWorkspaceCleaner(cleaner),
-			WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws"}),
+			WithReviewerRunner(&fakeReviewerRunnerCoordinator{}, ReviewerRunnerSettings{}),
 		}
 	})
 

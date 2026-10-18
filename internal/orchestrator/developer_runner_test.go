@@ -102,7 +102,7 @@ func TestReconcileDeveloperRunnerConvergesDeliveryFailureToHumanRequired(t *test
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
 		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"change_ready","summary":"implemented fix","tests":[{"command":"go test ./...","passed":true,"summary":"passed"}],"merge_request":{"title":"Fix issue","description":"Implements fix"},"commit_message":"fix: implement the requested change"}`),
 	}
-	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	observed, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID)
 	if err != nil {
@@ -217,21 +217,22 @@ func newDeveloperRunnerFixture(t *testing.T, taskType string) developerRunnerFix
 	if err := runs.Create(context.Background(), run); err != nil {
 		t.Fatal(err)
 	}
-	preparer := &fakeDeveloperWorkspacePreparer{}
+	root := t.TempDir()
+	preparer := &fakeDeveloperWorkspacePreparer{root: root}
 	finalizer := &fakeDeveloperFinalizer{delivery: &workspace.DeveloperDelivery{CommitSHA: "commit-123", ChangedFiles: []string{"main.go"}, DiffSummary: "1 file changed"}}
 	checkpoints := &fakeDeliveryCheckpoints{}
 	runnerClient := &fakeReviewerRunnerClient{}
 	submitter := &recordingResultSubmitter{}
-	coordinator := NewDeveloperRunnerCoordinator(tasks, runs, executions, preparer, finalizer, runnerClient, submitter, ReviewerRunnerSettings{WorkspaceRoot: "", ResolveRepository: stubRunnerRepository()})
+	coordinator := NewDeveloperRunnerCoordinator(tasks, runs, executions, preparer, finalizer, runnerClient, submitter, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()})
 	coordinator.SetDeveloperDeliveryCheckpoints(checkpoints)
+	coordinator.SetTaskBundlePublisher(fixtureRunnerWorkspace{root: root})
 	return developerRunnerFixture{
-		root: t.TempDir(), tasks: tasks, runs: runs, task: task, run: run, preparer: preparer, finalizer: finalizer, checkpoints: checkpoints, runner: runnerClient, submitter: submitter,
+		root: root, tasks: tasks, runs: runs, task: task, run: run, preparer: preparer, finalizer: finalizer, checkpoints: checkpoints, runner: runnerClient, submitter: submitter,
 		coordinator: coordinator,
 	}
 }
 
 func (f developerRunnerFixture) startRequest() DeveloperRunnerStartRequest {
-	f.coordinator.settings.WorkspaceRoot = f.root
 	return DeveloperRunnerStartRequest{
 		Task: f.task, Run: f.run,
 		Workspace: workspace.DeveloperRequest{
@@ -242,11 +243,14 @@ func (f developerRunnerFixture) startRequest() DeveloperRunnerStartRequest {
 	}
 }
 
-type fakeDeveloperWorkspacePreparer struct{ calls int }
+type fakeDeveloperWorkspacePreparer struct {
+	calls int
+	root  string
+}
 
 func (f *fakeDeveloperWorkspacePreparer) Prepare(_ context.Context, request workspace.DeveloperRequest) (*workspace.Manifest, error) {
 	f.calls++
-	root := filepath.Join(request.WorkspaceRoot, "runs", request.RunID)
+	root := filepath.Join(f.root, "runs", request.RunID)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
@@ -255,10 +259,10 @@ func (f *fakeDeveloperWorkspacePreparer) Prepare(_ context.Context, request work
 }
 
 type fakeDeveloperFinalizer struct {
-	commits  int
-	pushes   int
+	commits int
+	pushes  int
 	// onCreate 在 CommitDelivery 计数后、返回前调用（故障注入用）。
-	onCreate func()
+	onCreate      func()
 	commitRequest workspace.DeveloperCommitRequest
 	pushRequest   workspace.DeveloperPushRequest
 	commitErr     error

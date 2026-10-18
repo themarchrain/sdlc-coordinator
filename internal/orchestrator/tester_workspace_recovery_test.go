@@ -17,7 +17,6 @@ func TestTesterWorkspaceRequestIsStableAcrossDispatchAndRebuild(t *testing.T) {
 	run := &model.Run{RunID: "run-tester-rebuild", TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusRunning}
 	task.CurrentRunID = &run.RunID
 	settings := ReviewerRunnerSettings{
-		WorkspaceRoot:     "/app/workspaces",
 		Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 4, Model: "model-a"},
 		ResolveRepository: verifyCommandRepository("go test ./..."),
 	}

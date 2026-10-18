@@ -181,8 +181,6 @@ func TestDeveloperDispatchDeliversTaskBundleAcrossFilesystemBoundary(t *testing.
 		PathWithNamespace: pathWithNamespace, Status: registeredrepo.StatusEnabled,
 		GitAuthorName: "AI Developer", GitAuthorEmail: "ai-developer@localhost",
 	}
-	// 协调器工作区根是另一个目录树（模拟 coordinator 容器内路径）。
-	coordinatorWorkspaceRoot := t.TempDir()
 	// 按 run 归属端点路由：读 run 行钉住的端点（首次派发时为空 → 默认端点）。
 	remote := agentrunner.NewRoutedRemoteWorkspace(defaultEndpoint.server.URL, probeToken, 1, nil, func(ctx context.Context, runID string) (string, error) {
 		record, err := runRepo.GetByRunID(ctx, runID)
@@ -195,8 +193,7 @@ func TestDeveloperDispatchDeliversTaskBundleAcrossFilesystemBoundary(t *testing.
 	defaultClient := agentrunner.NewClient(defaultEndpoint.server.URL, nil)
 	poolClient := agentrunner.NewClient(targetEndpoint.server.URL, nil)
 	settings := orchestrator.ReviewerRunnerSettings{
-		WorkspaceRoot: coordinatorWorkspaceRoot,
-		Provider:      runner.ProviderConfig{Name: "probe-cli", Revision: 1},
+		Provider: runner.ProviderConfig{Name: "probe-cli", Revision: 1},
 		ResolveRepository: func(context.Context, *model.Task) (*registeredrepo.RegisteredRepository, error) {
 			return repoRow, nil
 		},
@@ -230,9 +227,6 @@ func TestDeveloperDispatchDeliversTaskBundleAcrossFilesystemBoundary(t *testing.
 	runnerRoot := filepath.Join(targetRoot, "workspaces", "runs", runID)
 	if targetEndpoint.provider.path != runnerRoot {
 		t.Fatalf("provider workspace path = %q, want runner-side %q", targetEndpoint.provider.path, runnerRoot)
-	}
-	if strings.HasPrefix(targetEndpoint.provider.path, coordinatorWorkspaceRoot) {
-		t.Fatalf("provider read a coordinator-side path %q: the bundle never crossed the filesystem boundary", targetEndpoint.provider.path)
 	}
 	// 内容与协调器渲染产物逐字节一致（共享渲染器）。
 	reloadedTask, err := taskRepo.GetByTaskID(ctx, task.TaskID)

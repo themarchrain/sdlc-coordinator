@@ -39,7 +39,7 @@ func newResultChannelFixture(role string) resultChannelFixture {
 		BaselineSHA: "baseline-sha",
 	}}
 	submitter := &recordingResultSubmitter{}
-	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}, "mcp")
+	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}, "mcp")
 	core.SetDeveloperDeliveryCheckpoints(checkpoints)
 	return resultChannelFixture{task: task, run: run, finalizer: finalizer, checkpoints: checkpoints, submitter: submitter, core: core}
 }

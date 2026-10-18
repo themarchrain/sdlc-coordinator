@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"sdlc-coordinator/internal/agent"
 	"sdlc-coordinator/internal/model"
@@ -195,7 +194,7 @@ func assembleTesterWorkspaceRequest(task *model.Task, run *model.Run, repoRow *r
 	}
 	mergeRequest, _ := pkg.Context["merge_request"].(map[string]any)
 	return workspace.ReviewerRequest{
-		WorkspaceRoot: strings.TrimSpace(settings.WorkspaceRoot), TaskID: task.TaskID, RunID: run.RunID,
+		TaskID: task.TaskID, RunID: run.RunID,
 		Project: task.TargetRepo, RepositoryURL: cloneURL,
 		SourceBranch: stringContextField(mergeRequest, "source_branch"),
 		TargetBranch: stringContextField(mergeRequest, "target_branch"),

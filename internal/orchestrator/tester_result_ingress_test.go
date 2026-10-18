@@ -238,7 +238,9 @@ func newTesterIngressFixture(t *testing.T) testerIngressFixture {
 		}
 		fixture.records[role] = testerIngressRecord{task: task, run: run}
 	}
-	fixture.tester = NewTesterRunnerCoordinator(tasks, runs, executions, &testerIngressWorkspacePreparer{}, fixture.testerClient, fixture.submitter)
+	root := t.TempDir()
+	fixture.tester = NewTesterRunnerCoordinator(tasks, runs, executions, &testerIngressWorkspacePreparer{root: root}, fixture.testerClient, fixture.submitter)
+	fixture.tester.SetTaskBundlePublisher(fixtureRunnerWorkspace{root: root})
 	return fixture
 }
 
@@ -266,10 +268,10 @@ func testerIngressStartRequest(task *model.Task, run *model.Run, root string) Te
 	}
 }
 
-type testerIngressWorkspacePreparer struct{}
+type testerIngressWorkspacePreparer struct{ root string }
 
-func (*testerIngressWorkspacePreparer) Prepare(_ context.Context, request workspace.ReviewerRequest) (*workspace.Manifest, error) {
-	root := filepath.Join(request.WorkspaceRoot, "runs", request.RunID)
+func (f *testerIngressWorkspacePreparer) Prepare(_ context.Context, request workspace.ReviewerRequest) (*workspace.Manifest, error) {
+	root := filepath.Join(f.root, "runs", request.RunID)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}

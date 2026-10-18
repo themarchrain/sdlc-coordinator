@@ -82,7 +82,7 @@ func TestDeveloperDeliveryRightSerializesConcurrentChannels(t *testing.T) {
 		RepositoryURL: "https://gitlab.example/group/project.git", DeliveryBranch: f.task.DeliveryBranch,
 		BaselineSHA: "baseline-sha",
 	}}
-	settings := ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}
+	settings := ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}
 
 	mcpFinalizer := &fakeDeveloperFinalizer{commit: &workspace.DeveloperCommitResult{CommitSHA: "commit-from-mcp"}}
 	textFinalizer := &fakeDeveloperFinalizer{commit: &workspace.DeveloperCommitResult{CommitSHA: "commit-from-text"}}
@@ -203,7 +203,7 @@ func TestDeveloperDeliveryRightTakeoverBlocksPush(t *testing.T) {
 		RepositoryURL: "https://gitlab.example/group/project.git", DeliveryBranch: f.task.DeliveryBranch,
 		BaselineSHA: "baseline-sha",
 	}}
-	settings := ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}
+	settings := ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}
 
 	finalizer := &fakeDeveloperFinalizer{commit: &workspace.DeveloperCommitResult{CommitSHA: "commit-before-takeover"}}
 	// commit 期间被另一实例接管：强制租约过期后由 instance-b 抢走。
@@ -261,7 +261,7 @@ func TestDeveloperDeliveryCommitResponseLostStaysConservative(t *testing.T) {
 		RepositoryURL: "https://gitlab.example/group/project.git", DeliveryBranch: f.task.DeliveryBranch,
 		BaselineSHA: "baseline-sha",
 	}}
-	settings := ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}
+	settings := ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}
 
 	// 第一次：commit 实际发生（工作区出现交付提交）但响应丢失。
 	lostFinalizer := &fakeDeveloperFinalizer{commitErr: errors.New("connection reset by peer")}

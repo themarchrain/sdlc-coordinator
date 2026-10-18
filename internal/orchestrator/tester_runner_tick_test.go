@@ -37,7 +37,6 @@ func TestTickDispatchesTesterTaskToRunner(t *testing.T) {
 	tasks, runs := newTickRepositories(t)
 	tester := &fakeTesterRunnerCoordinator{}
 	orch := New(tasks, runs, WithTesterRunner(tester, ReviewerRunnerSettings{
-		WorkspaceRoot:     "/app/workspaces",
 		Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 4, Model: "model-a", APIKey: "secret"},
 		ResolveRepository: verifyCommandRepository("go test ./..."),
 	}))
@@ -56,7 +55,7 @@ func TestTickDispatchesTesterTaskToRunner(t *testing.T) {
 	if tester.startRequest.Task.TaskID != task.TaskID || tester.startRequest.Task.Role != "TesterWorker" {
 		t.Fatalf("unexpected tester start request: %#v", tester.startRequest)
 	}
-	if tester.startRequest.Workspace.WorkspaceRoot != "/app/workspaces" || tester.startRequest.Workspace.HeadSHA != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+	if tester.startRequest.Workspace.WorkspaceRoot != "" || tester.startRequest.Workspace.HeadSHA != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("workspace must be pinned to the frozen head sha: %#v", tester.startRequest.Workspace)
 	}
 	if tester.startRequest.Workspace.WorkerRole != "TesterWorker" || tester.startRequest.Workspace.Credential.Token != "git-token" {

@@ -8,7 +8,6 @@ import (
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store/repository"
-	"sdlc-coordinator/internal/workspace"
 )
 
 const (
@@ -29,11 +28,7 @@ func (o *Orchestrator) cleanupExpiredArtifacts(ctx context.Context) []ArtifactCl
 	if o.agentExecutions == nil || o.runnerArtifacts == nil || o.resultSubmissions == nil {
 		return nil
 	}
-	workspaceRoot := strings.TrimSpace(o.reviewerRunnerSettings.WorkspaceRoot)
-	if workspaceRoot == "" {
-		workspaceRoot = strings.TrimSpace(o.developerRunnerSettings.WorkspaceRoot)
-	}
-	if workspaceRoot == "" && o.runWorkspaceCleaner == nil {
+	if o.runWorkspaceCleaner == nil {
 		return nil
 	}
 	now := o.now().UTC()
@@ -43,13 +38,13 @@ func (o *Orchestrator) cleanupExpiredArtifacts(ctx context.Context) []ArtifactCl
 	}
 	results := make([]ArtifactCleanupResult, 0, len(runs))
 	for _, run := range runs {
-		result := o.purgeSucceededRunArtifacts(ctx, workspaceRoot, run)
+		result := o.purgeSucceededRunArtifacts(ctx, run)
 		results = append(results, result)
 	}
 	return results
 }
 
-func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspaceRoot string, run model.Run) ArtifactCleanupResult {
+func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, run model.Run) ArtifactCleanupResult {
 	result := ArtifactCleanupResult{RunID: run.RunID}
 	execution, err := o.agentExecutions.GetByRunID(ctx, run.RunID)
 	if err != nil {
@@ -111,12 +106,7 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 	if !applied {
 		return result
 	}
-	if o.runWorkspaceCleaner != nil {
-		if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
-			result.Error = err.Error()
-			return result
-		}
-	} else if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
+	if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
 		result.Error = err.Error()
 		return result
 	}

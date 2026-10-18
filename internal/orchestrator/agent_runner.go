@@ -58,16 +58,16 @@ func (c *AgentRunnerCoordinator) Existing(ctx context.Context, runID string, req
 	if err := c.validateDependencies(); err != nil {
 		return nil, false, err
 	}
-	expectedHash, err := runner.RequestHash(request)
-	if err != nil {
-		return nil, false, fmt.Errorf("build runner request identity: %w", err)
-	}
 	existing, err := c.executions.GetByRunID(ctx, runID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
+	}
+	expectedHash, err := runner.RequestHash(request)
+	if err != nil {
+		return nil, false, fmt.Errorf("build runner request identity: %w", err)
 	}
 	if err := validateStoredExecution(existing, runID, expectedHash); err != nil {
 		return nil, false, err

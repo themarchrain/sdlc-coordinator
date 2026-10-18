@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,14 +50,12 @@ func (submit ReviewerResultSubmitterFunc) SubmitResult(ctx context.Context, requ
 }
 
 type ReviewerRunnerCoordinator struct {
-	tasks     TaskRepository
-	runs      RunRepository
-	preparer  ReviewerWorkspacePreparer
-	submitter ReviewerResultSubmitter
-	core      *AgentRunnerCoordinator
-	channel   *ResultChannelCoordinator
-	// bundleSink 是任务包投递端口（远端工作区形态注入；本机形态 nil =
-	// 协调器直接写本地路径）。
+	tasks      TaskRepository
+	runs       RunRepository
+	preparer   ReviewerWorkspacePreparer
+	submitter  ReviewerResultSubmitter
+	core       *AgentRunnerCoordinator
+	channel    *ResultChannelCoordinator
 	bundleSink TaskBundlePublisher
 	// runnerProviderLookup 是组织段执行选择（CLI 与推理强度）的动态来源
 	// （派发时现取）；nil 或字段为空串 = 沿用系统默认。
@@ -111,14 +108,12 @@ func (c *ReviewerRunnerCoordinator) SetTenantRunnerRouter(router TenantRunnerRou
 	c.core.setTenantRunnerRouter(router)
 }
 
-// SetRunnerProviderLookup 在装配期接入组织段执行选择（派发时现取，
-// 保存即热生效）；lookup 为 nil 或字段返回空串时保留系统默认值。
-// SetTaskBundlePublisher 在装配期接入任务包投递端口（远端工作区形态注入；
-// 本机形态不注入 = 协调器直接写本地路径）。
 func (c *ReviewerRunnerCoordinator) SetTaskBundlePublisher(publisher TaskBundlePublisher) {
 	c.bundleSink = publisher
 }
 
+// SetRunnerProviderLookup 在装配期接入组织段执行选择（派发时现取，
+// 保存即热生效）；lookup 为 nil 或字段返回空串时保留系统默认值。
 func (c *ReviewerRunnerCoordinator) SetRunnerProviderLookup(lookup func(context.Context) RunnerSelection) {
 	c.runnerProviderLookup = lookup
 }
@@ -127,6 +122,9 @@ func (c *ReviewerRunnerCoordinator) Start(ctx context.Context, request ReviewerR
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
 	}
+	if c.bundleSink == nil {
+		return nil, errors.New("runner task bundle publisher is required")
+	}
 	if err := validateReviewerRunnerTask(request.Task, request.Run); err != nil {
 		return nil, err
 	}
@@ -134,13 +132,7 @@ func (c *ReviewerRunnerCoordinator) Start(ctx context.Context, request ReviewerR
 	if err != nil {
 		return nil, err
 	}
-	// 工作区路径以 run 行已钉住的 Runner 侧路径为准（独立文件系统下协调器
-	// 本地路径在 Runner 那边不存在）；未钉住（首次派发）时用协调器本地
-	// 计算值占位，首次准备成功后由 prepare 返回值钉回。
 	runRoot := strings.TrimSpace(request.Run.RunnerWorkspacePath)
-	if runRoot == "" {
-		runRoot = filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
-	}
 	// 组织段执行选择覆盖请求 Provider 的 Name/Effort 与派发超时（值拷贝，
 	// 其余字段保持系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。
 	// run 已钉住取值时（恢复/重建路径）钉住值优先，配置热切换不改变在途
@@ -182,7 +174,7 @@ func (c *ReviewerRunnerCoordinator) Start(ctx context.Context, request ReviewerR
 		if err != nil {
 			return nil, fmt.Errorf("build reviewer task bundle: %w", err)
 		}
-		workspacePath, err := c.deliverTaskBundle(ctx, request.Task, request.Run, bundle, runRoot)
+		workspacePath, err := c.deliverTaskBundle(ctx, request.Task, request.Run, bundle)
 		if err != nil {
 			return nil, err
 		}
@@ -324,16 +316,7 @@ func projectRunnerStatus(status runner.Status) (model.AgentExecutionStatus, erro
 	}
 }
 
-// deliverTaskBundle 把任务包送到 Agent 读取的位置：远端形态（装配了投递
-// 端口）经受控通道投递并返回 Runner 侧路径；本机形态直接写本地路径并沿用
-// 协调器计算值。两条路径共享同一渲染器，落盘内容逐字节一致。
-func (c *ReviewerRunnerCoordinator) deliverTaskBundle(ctx context.Context, task *model.Task, run *model.Run, bundle agent.TaskBundle, localRoot string) (string, error) {
-	if c.bundleSink == nil {
-		if err := agent.WriteTaskBundle(localRoot, bundle); err != nil {
-			return "", fmt.Errorf("write task bundle: %w", err)
-		}
-		return localRoot, nil
-	}
+func (c *ReviewerRunnerCoordinator) deliverTaskBundle(ctx context.Context, task *model.Task, run *model.Run, bundle agent.TaskBundle) (string, error) {
 	files, err := agent.RenderTaskBundle(bundle)
 	if err != nil {
 		return "", fmt.Errorf("render task bundle: %w", err)

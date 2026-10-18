@@ -292,7 +292,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 					Err: errors.New("developer delivery right was lost before push")}, nil
 			}
 			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
-				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
+				TaskID: task.TaskID, RunID: run.RunID,
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				CommitSHA: checkpoint.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
@@ -304,7 +304,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 			// 结构化错误出口,不能在 else 块内被遮蔽吞掉。
 			var commit *workspace.DeveloperCommitResult
 			commit, err = c.finalizer.CommitDelivery(finalizeCtx, workspace.DeveloperCommitRequest{
-				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
+				TaskID: task.TaskID, RunID: run.RunID,
 				CommitMessage: inputValue.CommitMessage, GitAuthorName: workspaceRequest.GitAuthorName,
 				GitAuthorEmail: workspaceRequest.GitAuthorEmail,
 				TaskType:       task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
@@ -333,7 +333,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 					Err: errors.New("developer delivery right was lost before push")}, nil
 			}
 			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
-				WorkspaceRoot: c.settings.WorkspaceRoot, TaskID: task.TaskID, RunID: run.RunID,
+				TaskID: task.TaskID, RunID: run.RunID,
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
 				CommitSHA: commit.CommitSHA, BaselineSHA: checkpoint.BaselineSHA,
