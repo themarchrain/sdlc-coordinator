@@ -28,6 +28,7 @@ import (
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
+	"sdlc-coordinator/internal/workspaceproto"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -199,12 +200,23 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runner service: %v", err)
 	}
-	runnerServer := httptest.NewServer(runner.NewHTTPHandler(runnerService))
+	ops, err := runner.NewWorkspaceOps(runner.WorkspaceOpsConfig{
+		DataRoot: t.TempDir(), WorkspaceRoot: t.TempDir(),
+		Authorize: func(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
+			return workspaceproto.AuthorizationDecision{Authorized: true}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const internalToken = "app-test-internal-token"
+	runnerServer := httptest.NewServer(runner.NewHTTPHandler(runnerService, runner.WithWorkspaceOperations(ops, internalToken)))
 	defer runnerServer.Close()
 	cfg := config.Config{HTTPAddr: ":0"}
 	cfg.AgentRunner = config.AgentRunnerSettings{
-		ServiceURL: runnerServer.URL, WorkspaceRoot: t.TempDir(), Provider: "fake",
+		ServiceURL: runnerServer.URL, Provider: "fake",
 		Model: "model-a", Effort: "high", ProviderConfigRevision: 9,
+		InternalToken: internalToken,
 	}
 	application, err := New(withTestControlPlane(t, cfg), zap.NewNop(), openAppTestDB(t))
 	if err != nil {
@@ -249,6 +261,9 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	remote, err := runnerService.Get(dispatched.Run.RunID)
 	if err != nil || remote.Provider != "fake" || remote.RequestHash == "" {
 		t.Fatalf("configured runner did not receive execution: execution=%#v err=%v", remote, err)
+	}
+	if _, err := os.Stat(filepath.Join(ops.WorkspaceRoot(), "runs", dispatched.Run.RunID)); err != nil {
+		t.Fatalf("workspace must be prepared on the runner: %v", err)
 	}
 }
 

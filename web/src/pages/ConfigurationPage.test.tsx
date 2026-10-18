@@ -25,10 +25,10 @@ function RouteProbe({ label }: { label: string }) {
 const configuration: ConfigurationView = {
   revision: 2,
   config: {
-    agent_runner: { service_url: 'http://agent-runner:8081', workspace_root: '/app/workspaces', provider: 'codex-cli', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
+    agent_runner: { service_url: 'http://agent-runner:8081', provider: 'codex-cli', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
     scheduler: {
       enabled: true, interval: '30s',
-      callback_base_url: 'http://127.0.0.1:8080', workspace_root: '/app/workspaces',
+      callback_base_url: 'http://127.0.0.1:8080',
       dispatch_limit: 1, poll_limit: 5, reconciliation_limit: 5, finalization_limit: 5, recovery_limit: 5, effect_limit: 5,
     },
   },
@@ -96,7 +96,7 @@ describe('ConfigurationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 
     expect(screen.getByLabelText('Runner 服务地址')).toHaveValue('http://agent-runner:8081')
-    expect(screen.getByLabelText('共享工作区')).toHaveValue('/app/workspaces')
+    expect(screen.queryByLabelText('共享工作区')).not.toBeInTheDocument()
     // 执行 Provider 已撤出向导：不再提供选择 UI，只按加载值展示协议说明。
     expect(screen.queryByLabelText('执行 Provider')).not.toBeInTheDocument()
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument()
@@ -118,6 +118,29 @@ describe('ConfigurationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 
     expect(screen.getByText('裸 Agent，不加载个人 Claude 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。')).toBeInTheDocument()
+  })
+
+  it('saves runtime settings without workspace paths', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
+      mode: 'restart_required', revision: 3, source: 'ui', configuration: { ...configuration, revision: 3 },
+    })
+    vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(screen.queryByRole('textbox', { name: '共享工作区' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(screen.queryByRole('textbox', { name: '工作区根目录' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update.mock.calls[0][0].config.agent_runner).not.toHaveProperty('workspace_root')
+    expect(update.mock.calls[0][0].config.scheduler).not.toHaveProperty('workspace_root')
   })
 
   it('validates, saves, and requests restart from the final step with a system-only payload', async () => {
@@ -147,7 +170,7 @@ describe('ConfigurationPage', () => {
           effort: 'high',
           task_timeout: '30m',
         }),
-        scheduler: expect.objectContaining({ callback_base_url: 'http://127.0.0.1:8080', workspace_root: '/app/workspaces' }),
+        scheduler: expect.objectContaining({ callback_base_url: 'http://127.0.0.1:8080' }),
       }),
     }))
     const payload = update.mock.calls[0][0].config as unknown as Record<string, unknown>

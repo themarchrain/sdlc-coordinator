@@ -25,7 +25,6 @@ import (
 	"sdlc-coordinator/internal/runnerpool"
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
-	"sdlc-coordinator/internal/workspace"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -123,8 +122,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		providerHeaders[name] = value
 	}
 	runnerSettings := orchestrator.ReviewerRunnerSettings{
-		WorkspaceRoot: shared.cfg.AgentRunner.WorkspaceRoot,
-		TaskTimeout:   shared.cfg.AgentRunner.TaskTimeout,
+		TaskTimeout: shared.cfg.AgentRunner.TaskTimeout,
 		Provider: runner.ProviderConfig{
 			Name: shared.cfg.AgentRunner.Provider, Revision: int64(shared.cfg.AgentRunner.ProviderConfigRevision),
 			BaseURL: shared.cfg.AgentRunner.ProviderBaseURL, APIKey: shared.cfg.AgentRunner.APIKey,
@@ -136,34 +134,20 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
 		return orch.SubmitResult(ctx, request)
 	})
-	// 工作区形态：远端（计划 A，Runner 本机执行受控 Git）或本机（单机开发
-	// 与测试）。三个角色的准备与交付必须同形态，不得混用。
-	var (
-		reviewerPreparer    orchestrator.ReviewerWorkspacePreparer  = workspace.NewReviewerPreparer()
-		developerPreparer   orchestrator.DeveloperWorkspacePreparer = workspace.NewDeveloperPreparer()
-		deliveryFinalizer   orchestrator.DeveloperGitFinalizer      = workspace.NewDeveloperFinalizer()
-		runnerArtifactStore orchestrator.RunnerArtifactStore        = shared.defaultRunner
-	)
-	if shared.cfg.AgentRunner.RemoteWorkspace {
-		// 按 run 归属端点路由：准备、任务包投递、commit/push、清理必须命中
-		// 同一 runner（独立卷下别的端点既没有该 run 的仓库也没有 Agent 的
-		// 修改）。端点由共享库的 run 行解析（首次派发准备前钉住）。
-		endpointForRun := func(ctx context.Context, runID string) (string, error) {
-			run, err := runRepo.GetByRunID(ctx, runID)
-			if err != nil {
-				return "", fmt.Errorf("resolve runner endpoint for run %s: %w", runID, err)
-			}
-			return strings.TrimRight(strings.TrimSpace(run.RunnerEndpoint), "/"), nil
+	endpointForRun := func(ctx context.Context, runID string) (string, error) {
+		run, err := runRepo.GetByRunID(ctx, runID)
+		if err != nil {
+			return "", fmt.Errorf("resolve runner endpoint for run %s: %w", runID, err)
 		}
-		remoteWorkspace := agentrunner.NewRoutedRemoteWorkspace(
-			shared.cfg.AgentRunner.ServiceURL, shared.cfg.AgentRunner.InternalToken, tenantID, nil, endpointForRun,
-		)
-		reviewerPreparer = agentrunner.NewRemoteReadOnlyPreparer(remoteWorkspace)
-		developerPreparer = agentrunner.NewRemoteDeveloperPreparer(remoteWorkspace)
-		deliveryFinalizer = remoteWorkspace
-		runnerArtifactStore = remoteWorkspace
-		opts = append(opts, orchestrator.WithRunWorkspaceCleaner(remoteWorkspace))
+		return strings.TrimRight(strings.TrimSpace(run.RunnerEndpoint), "/"), nil
 	}
+	remoteWorkspace := agentrunner.NewRoutedRemoteWorkspace(
+		shared.cfg.AgentRunner.ServiceURL, shared.cfg.AgentRunner.InternalToken, tenantID, nil, endpointForRun,
+	)
+	reviewerPreparer := agentrunner.NewRemoteReadOnlyPreparer(remoteWorkspace)
+	developerPreparer := agentrunner.NewRemoteDeveloperPreparer(remoteWorkspace)
+	deliveryFinalizer := remoteWorkspace
+	opts = append(opts, orchestrator.WithRunWorkspaceCleaner(remoteWorkspace))
 	reviewerRunnerCoordinator := orchestrator.NewReviewerRunnerCoordinator(
 		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
@@ -173,12 +157,8 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchSubmitter,
 		runnerSettings,
 	)
-	// 远端形态：任务包必须经受控通道到达 run 所属 Runner（协调器本地路径
-	// 在那边不可见）；本机形态不注入，任务包由协调器直接写本地路径。
-	if bundlePublisher, ok := deliveryFinalizer.(orchestrator.TaskBundlePublisher); ok && shared.cfg.AgentRunner.RemoteWorkspace {
-		reviewerRunnerCoordinator.SetTaskBundlePublisher(bundlePublisher)
-		developerRunnerCoordinator.SetTaskBundlePublisher(bundlePublisher)
-	}
+	reviewerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
+	developerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
 	// 交付检查点(租户库):派发时钉基线,commit 与 push 之间写交付 SHA,
 	// 是"提交由 Coordinator 创建"的唯一归属凭据;Agent 不可写租户库。
 	deliveryCheckpoints := repository.NewDeveloperDeliveryCheckpointRepository(db)
@@ -191,9 +171,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
 	)
-	if bundlePublisher, ok := deliveryFinalizer.(orchestrator.TaskBundlePublisher); ok && shared.cfg.AgentRunner.RemoteWorkspace {
-		testerRunnerCoordinator.SetTaskBundlePublisher(bundlePublisher)
-	}
+	testerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
 	opts = append(opts,
 		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
@@ -203,7 +181,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithAutoMergeEnabled(tenantAutoMergeEnabledLookup(orgConfig, shared.logger, tenantID)),
 		orchestrator.WithMergeGateClients(orchestrator.DefaultMergeGateClientFactory),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
-		orchestrator.WithRunnerArtifactStore(runnerArtifactStore),
+		orchestrator.WithRunnerArtifactStore(remoteWorkspace),
 		// 写回/合并门禁的跨实例执行权:双协调器对同一写回、同一验证任务的
 		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
 		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),

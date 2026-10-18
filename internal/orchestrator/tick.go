@@ -11,7 +11,6 @@ import (
 
 type TickRequest struct {
 	CallbackBaseURL     string `json:"callback_base_url,omitempty"`
-	WorkspaceRoot       string `json:"workspace_root,omitempty"`
 	DispatchLimit       int    `json:"dispatch_limit,omitempty"`
 	PollLimit           int    `json:"poll_limit,omitempty"`
 	ReconciliationLimit int    `json:"reconciliation_limit,omitempty"`

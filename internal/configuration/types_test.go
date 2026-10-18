@@ -80,7 +80,7 @@ func TestSnapshotDecodeDropsOrgScopedSections(t *testing.T) {
 func TestApplyDefaultsUsesExistingSafeRuntimeDefaults(t *testing.T) {
 	got := ApplyDefaults(RuntimeConfig{})
 
-	if got.AgentRunner.ServiceURL != "http://agent-runner:8081" || got.AgentRunner.WorkspaceRoot != "/app/workspaces" || got.AgentRunner.Provider != "codex-cli" || got.AgentRunner.Effort != "high" {
+	if got.AgentRunner.ServiceURL != "http://agent-runner:8081" || got.AgentRunner.Provider != "codex-cli" || got.AgentRunner.Effort != "high" {
 		t.Fatalf("unexpected agent runner defaults: %#v", got.AgentRunner)
 	}
 	if got.AgentRunner.TaskTimeout != "30m" {
@@ -188,7 +188,7 @@ func TestToEffectiveConfigPreservesBootstrapAndConvertsRuntime(t *testing.T) {
 func validRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
 		AgentRunner: AgentRunnerConfig{
-			ServiceURL: "http://agent-runner:8081", WorkspaceRoot: "/app/workspaces", Provider: "codex-cli",
+			ServiceURL: "http://agent-runner:8081", Provider: "codex-cli",
 			ProviderBaseURL: "https://gateway.example", APIKey: "runner-api-key",
 			CustomHeadersJSON: `{"X-Tenant":"example-tenant"}`, Model: "deepseek-v4-flash-0731", Effort: "high", TaskTimeout: "45m",
 		},
@@ -196,7 +196,6 @@ func validRuntimeConfig() RuntimeConfig {
 			Enabled:             true,
 			Interval:            "45s",
 			CallbackBaseURL:     "https://coordinator.example.com",
-			WorkspaceRoot:       "/app/workspaces",
 			DispatchLimit:       1,
 			PollLimit:           5,
 			ReconciliationLimit: 5,

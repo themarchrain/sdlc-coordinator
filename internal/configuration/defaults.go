@@ -14,9 +14,6 @@ func ApplyDefaults(cfg RuntimeConfig) RuntimeConfig {
 	if strings.TrimSpace(cfg.AgentRunner.ServiceURL) == "" {
 		cfg.AgentRunner.ServiceURL = "http://agent-runner:8081"
 	}
-	if strings.TrimSpace(cfg.AgentRunner.WorkspaceRoot) == "" {
-		cfg.AgentRunner.WorkspaceRoot = "/app/workspaces"
-	}
 	if strings.TrimSpace(cfg.AgentRunner.Provider) == "" {
 		cfg.AgentRunner.Provider = "codex-cli"
 	}
@@ -66,7 +63,6 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 	result := config.Config{
 		AgentRunner: config.AgentRunnerSettings{
 			ServiceURL:      strings.TrimRight(strings.TrimSpace(runtimeConfig.AgentRunner.ServiceURL), "/"),
-			WorkspaceRoot:   strings.TrimSpace(runtimeConfig.AgentRunner.WorkspaceRoot),
 			Provider:        strings.TrimSpace(runtimeConfig.AgentRunner.Provider),
 			ProviderBaseURL: strings.TrimRight(strings.TrimSpace(runtimeConfig.AgentRunner.ProviderBaseURL), "/"),
 			APIKey:          runtimeConfig.AgentRunner.APIKey,
@@ -86,7 +82,6 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 			Interval: schedulerInterval,
 			TickRequest: orchestrator.TickRequest{
 				CallbackBaseURL:     runtimeConfig.Scheduler.CallbackBaseURL,
-				WorkspaceRoot:       runtimeConfig.Scheduler.WorkspaceRoot,
 				DispatchLimit:       runtimeConfig.Scheduler.DispatchLimit,
 				PollLimit:           runtimeConfig.Scheduler.PollLimit,
 				ReconciliationLimit: runtimeConfig.Scheduler.ReconciliationLimit,

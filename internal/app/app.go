@@ -84,18 +84,11 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		}
 	}()
 
-	// 远端工作区形态要求内部通道令牌齐备：缺令牌时全部受控操作会被
-	// fail-closed 拒绝，属配置错误，启动即失败而不是运行期才暴露。
-	if cfg.AgentRunner.RemoteWorkspace && strings.TrimSpace(cfg.AgentRunner.InternalToken) == "" {
-		return nil, fmt.Errorf("remote workspace mode requires AGENT_RUNNER_INTERNAL_TOKEN")
+	if strings.TrimSpace(cfg.AgentRunner.InternalToken) == "" {
+		return nil, fmt.Errorf("runner workspace operations require AGENT_RUNNER_INTERNAL_TOKEN")
 	}
-	// MCP 结果回传通道签名密钥：部署级 RESULT_CHANNEL_SECRET（hex 64）配置
-	// 时跨实例跨重启共用（A 实例签发 B 实例可验）；未配置时进程内存随机
-	// （单机开发形态，重启即失效，在途 agent 落入文本降级通道）。远端工作
-	// 区形态（多实例部署的前提）缺部署级密钥启动即失败：随机密钥下双实例
-	// 的回传通道互相不可验，属配置错误而非运行期回退。
-	if cfg.AgentRunner.RemoteWorkspace && strings.TrimSpace(cfg.ResultChannelSecret) == "" {
-		return nil, fmt.Errorf("remote workspace mode requires RESULT_CHANNEL_SECRET (32 bytes of hex)")
+	if strings.TrimSpace(cfg.ResultChannelSecret) == "" {
+		return nil, fmt.Errorf("result callbacks require RESULT_CHANNEL_SECRET (32 bytes of hex)")
 	}
 	resultTokenSecret, err := resolveResultChannelSecret(cfg.ResultChannelSecret)
 	if err != nil {

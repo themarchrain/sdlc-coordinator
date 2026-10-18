@@ -49,6 +49,13 @@ flowchart TB
   每个端点最多指派一个租户，由控制面唯一索引与启动校验保证。
 - Runner 的授权确认入口指向 LB：任一协调器副本基于共享库裁决当前归属。
 
+远端工作区的实际根目录由各 Runner 的 `AGENT_RUNNER_WORKSPACE_ROOT` 和目录挂载
+决定。运行时快照和系统配置 API 不包含工作区路径。修改根目录时，调整 Runner
+的环境变量与目录挂载，并重新创建 Runner 容器。Coordinator 始终通过 HTTP 调用
+Runner 的工作区操作接口；同机部署也不需要共享目录。多个 Runner 各自挂载独立存储。
+系统配置中的 MCP 结果回调地址应填写 Agent 可访问的完整 `/mcp` URL；代码托管平台
+的公网 Webhook 接收地址独立配置。
+
 ## 启动
 
 1. 构建镜像（仓库根）：

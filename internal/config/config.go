@@ -28,7 +28,6 @@ type SchedulerSettings struct {
 
 type AgentRunnerSettings struct {
 	ServiceURL             string
-	WorkspaceRoot          string
 	Provider               string
 	ProviderBaseURL        string
 	APIKey                 string
@@ -38,7 +37,6 @@ type AgentRunnerSettings struct {
 	TaskTimeout            time.Duration
 	ProviderConfigRevision uint64
 	InternalToken          string
-	RemoteWorkspace        bool
 }
 
 // ErrControlPlaneNotConfigured 表示装配控制面时缺少 DSN 或种子超管（
@@ -82,7 +80,7 @@ type Config struct {
 	Scheduler     SchedulerSettings
 	// ResultChannelSecret 是 MCP 结果回传通道的部署级签名密钥（hex 64=
 	// 32 字节）：多实例部署共用同一值，A 实例签发的 token B 实例可验，
-	// 滚动重启不失效；未配置时进程内存随机（单机开发，重启即失效）。
+	// 滚动重启不失效；启动时必须配置。
 	ResultChannelSecret string
 }
 
@@ -98,7 +96,6 @@ func Load() Config {
 		TenantDataDir: strings.TrimSpace(getEnv("TENANT_DATA_DIR", DefaultTenantDataDir)),
 		AgentRunner: AgentRunnerSettings{
 			ServiceURL:      getEnv("AGENT_RUNNER_SERVICE_URL", "http://agent-runner:8081"),
-			WorkspaceRoot:   getEnv("AGENT_RUNNER_WORKSPACE_ROOT", "/app/workspaces"),
 			Provider:        getEnv("AGENT_RUNNER_PROVIDER", "codex-cli"),
 			ProviderBaseURL: providerEnv("AGENT_PROVIDER_BASE_URL", "CLAUDE_PROVIDER_BASE_URL", ""),
 			APIKey:          providerEnv("AGENT_PROVIDER_API_KEY", "CLAUDE_PROVIDER_API_KEY", ""),
@@ -107,7 +104,6 @@ func Load() Config {
 			Effort:          providerEnv("AGENT_PROVIDER_EFFORT", "CLAUDE_PROVIDER_EFFORT", "high"),
 			TaskTimeout:     getEnvDurationBetween("AGENT_RUNNER_TASK_TIMEOUT", defaultAgentRunnerTaskTimeout, minimumAgentRunnerTaskTimeout, maximumAgentRunnerTaskTimeout),
 			InternalToken:   strings.TrimSpace(getEnv("AGENT_RUNNER_INTERNAL_TOKEN", "")),
-			RemoteWorkspace: getEnvBool("AGENT_RUNNER_REMOTE_WORKSPACE", false),
 		},
 		HTTPAddr:    bootstrap.HTTPAddr,
 		DatabaseDSN: bootstrap.DatabaseDSN,

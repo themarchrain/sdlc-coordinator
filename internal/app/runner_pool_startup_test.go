@@ -32,7 +32,7 @@ func TestNewReadyRejectsStartupOnInvalidRunnerAssignments(t *testing.T) {
 	})
 	cfg := config.Config{HTTPAddr: ":0", ControlPlane: settings, TenantDataDir: t.TempDir()}
 
-	_, err = New(cfg, zap.NewNop(), db)
+	_, err = New(withTestControlPlane(t, cfg), zap.NewNop(), db)
 	if err == nil {
 		t.Fatalf("expected startup rejection on invalid runner assignments")
 	}

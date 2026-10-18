@@ -84,6 +84,8 @@ func (resolver *Resolver) resolveSnapshot(ctx context.Context, bootstrap config.
 		return Resolution{Mode: ModeConfigurationError, Prefill: snapshot.Config, Snapshot: snapshot, ConfigurationError: err.Error()}
 	}
 	effective.AgentRunner.ProviderConfigRevision = snapshot.Revision
+	effective.AgentRunner.InternalToken = legacy.AgentRunner.InternalToken
+	effective.ResultChannelSecret = legacy.ResultChannelSecret
 	// 控制面是基础设施配置（与 bootstrap 同级），不进快照 schema。ready
 	// 产物必须回填 legacy，否则生产永远落到内存库且不建种子超管。
 	effective.ControlPlane = legacy.ControlPlane

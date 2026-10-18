@@ -16,7 +16,6 @@ type EditableRuntimeConfig struct {
 
 type EditableAgentRunnerConfig struct {
 	ServiceURL      string `json:"service_url"`
-	WorkspaceRoot   string `json:"workspace_root"`
 	Provider        string `json:"provider"`
 	ProviderBaseURL string `json:"provider_base_url"`
 	Model           string `json:"model"`
@@ -199,8 +198,8 @@ func (service *Service) Update(ctx context.Context, request UpdateRequest) (*Upd
 func EditableFromRuntime(cfg RuntimeConfig) EditableRuntimeConfig {
 	return EditableRuntimeConfig{
 		AgentRunner: EditableAgentRunnerConfig{
-			ServiceURL: cfg.AgentRunner.ServiceURL, WorkspaceRoot: cfg.AgentRunner.WorkspaceRoot,
-			Provider: cfg.AgentRunner.Provider, ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
+			ServiceURL: cfg.AgentRunner.ServiceURL,
+			Provider:   cfg.AgentRunner.Provider, ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
 			Model: cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort, TaskTimeout: cfg.AgentRunner.TaskTimeout,
 		},
 		Scheduler: cfg.Scheduler,
@@ -230,17 +229,14 @@ func (service *Service) statusLocked() StatusView {
 func mergeUpdate(current RuntimeConfig, request UpdateRequest) RuntimeConfig {
 	result := RuntimeConfig{
 		AgentRunner: AgentRunnerConfig{
-			ServiceURL: request.Config.AgentRunner.ServiceURL, WorkspaceRoot: request.Config.AgentRunner.WorkspaceRoot,
-			Provider: request.Config.AgentRunner.Provider, ProviderBaseURL: request.Config.AgentRunner.ProviderBaseURL,
+			ServiceURL: request.Config.AgentRunner.ServiceURL,
+			Provider:   request.Config.AgentRunner.Provider, ProviderBaseURL: request.Config.AgentRunner.ProviderBaseURL,
 			APIKey: current.AgentRunner.APIKey, CustomHeadersJSON: current.AgentRunner.CustomHeadersJSON,
 			Model: request.Config.AgentRunner.Model, Effort: request.Config.AgentRunner.Effort, TaskTimeout: request.Config.AgentRunner.TaskTimeout,
 		},
 		Scheduler: func() SchedulerConfig {
-			// 这两项是必填运行参数；UI 或旧客户端可能整包提交 scheduler 而漏带它们，
-			// 空值时保留当前值，避免合法配置被一次不完整提交打回。
 			scheduler := request.Config.Scheduler
 			scheduler.CallbackBaseURL = keepTrimmed(scheduler.CallbackBaseURL, current.Scheduler.CallbackBaseURL)
-			scheduler.WorkspaceRoot = keepTrimmed(scheduler.WorkspaceRoot, current.Scheduler.WorkspaceRoot)
 			return scheduler
 		}(),
 	}

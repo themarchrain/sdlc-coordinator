@@ -211,13 +211,13 @@ func newAdminConfigurationHandlerTest(t *testing.T) (*AdminConfigurationHandler,
 func configurationHandlerRuntimeConfig() configuration.RuntimeConfig {
 	return configuration.RuntimeConfig{
 		AgentRunner: configuration.AgentRunnerConfig{
-			ServiceURL: "http://agent-runner:8081", WorkspaceRoot: "/app/workspaces", Provider: "claude-cli", ProviderBaseURL: "https://gateway.example",
+			ServiceURL: "http://agent-runner:8081", Provider: "claude-cli", ProviderBaseURL: "https://gateway.example",
 			APIKey: "runner-key", Model: "model-a", Effort: "high",
 		},
 		Scheduler: configuration.SchedulerConfig{
 			Enabled: true, Interval: "30s",
-			CallbackBaseURL: "https://coordinator.example.com", WorkspaceRoot: "/app/workspaces",
-			DispatchLimit: 1, PollLimit: 5, ReconciliationLimit: 5, FinalizationLimit: 5, RecoveryLimit: 5, EffectLimit: 5,
+			CallbackBaseURL: "https://coordinator.example.com",
+			DispatchLimit:   1, PollLimit: 5, ReconciliationLimit: 5, FinalizationLimit: 5, RecoveryLimit: 5, EffectLimit: 5,
 		},
 	}
 }

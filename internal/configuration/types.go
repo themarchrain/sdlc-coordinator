@@ -40,7 +40,6 @@ type RuntimeConfig struct {
 
 type AgentRunnerConfig struct {
 	ServiceURL        string `json:"service_url"`
-	WorkspaceRoot     string `json:"workspace_root"`
 	Provider          string `json:"provider"`
 	ProviderBaseURL   string `json:"provider_base_url"`
 	APIKey            string `json:"api_key"`
@@ -117,7 +116,6 @@ type SchedulerConfig struct {
 	Enabled             bool   `json:"enabled"`
 	Interval            string `json:"interval"`
 	CallbackBaseURL     string `json:"callback_base_url"`
-	WorkspaceRoot       string `json:"workspace_root"`
 	DispatchLimit       int    `json:"dispatch_limit"`
 	PollLimit           int    `json:"poll_limit"`
 	ReconciliationLimit int    `json:"reconciliation_limit"`
@@ -168,7 +166,6 @@ func validateDurationRange(errs ValidationErrors, field, raw string, minimum, ma
 func Validate(cfg RuntimeConfig) ValidationErrors {
 	errs := ValidationErrors{}
 	requireAbsoluteHTTPURL(errs, "agent_runner.service_url", cfg.AgentRunner.ServiceURL, true)
-	requireTrimmed(errs, "agent_runner.workspace_root", cfg.AgentRunner.WorkspaceRoot)
 	agentProvider := strings.TrimSpace(cfg.AgentRunner.Provider)
 	if agentProvider != "codex-cli" && agentProvider != "claude-cli" {
 		errs["agent_runner.provider"] = "仅支持 codex-cli 或 claude-cli"
@@ -188,7 +185,6 @@ func Validate(cfg RuntimeConfig) ValidationErrors {
 	}
 
 	requireAbsoluteHTTPURL(errs, "scheduler.callback_base_url", cfg.Scheduler.CallbackBaseURL, true)
-	requireTrimmed(errs, "scheduler.workspace_root", cfg.Scheduler.WorkspaceRoot)
 	validateDuration(errs, "scheduler.interval", cfg.Scheduler.Interval, 5*time.Second)
 	validateNonNegative(errs, "scheduler.dispatch_limit", cfg.Scheduler.DispatchLimit)
 	validateNonNegative(errs, "scheduler.poll_limit", cfg.Scheduler.PollLimit)

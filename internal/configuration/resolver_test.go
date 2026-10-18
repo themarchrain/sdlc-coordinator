@@ -49,6 +49,33 @@ func TestResolverIgnoresLegacyEnvironmentWhenSnapshotExists(t *testing.T) {
 	}
 }
 
+func TestResolverRetainsDeploymentCredentialsOutsideSnapshots(t *testing.T) {
+	for _, existingSnapshot := range []bool{false, true} {
+		t.Run(map[bool]string{false: "environment_import", true: "existing_snapshot"}[existingSnapshot], func(t *testing.T) {
+			repository := newConfigurationRepositoryTestDB(t)
+			if existingSnapshot {
+				if _, err := repository.Save(context.Background(), StatusReady, SourceUI, validRuntimeConfig()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			deployment := completeLegacyConfig()
+			deployment.AgentRunner.InternalToken = "deployment-runner-token"
+			deployment.ResultChannelSecret = strings.Repeat("ab", 32)
+			result := NewResolver(repository).Resolve(context.Background(), testBootstrapConfig(), deployment)
+			if result.Mode != ModeReady || result.EffectiveConfig.AgentRunner.InternalToken != deployment.AgentRunner.InternalToken || result.EffectiveConfig.ResultChannelSecret != deployment.ResultChannelSecret {
+				t.Fatal("deployment credentials were lost while resolving runtime configuration")
+			}
+			var record SnapshotRecord
+			if err := repository.db.First(&record).Error; err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(record.PayloadJSON, deployment.AgentRunner.InternalToken) || strings.Contains(record.PayloadJSON, deployment.ResultChannelSecret) {
+				t.Fatal("deployment credentials must not be stored in runtime snapshots")
+			}
+		})
+	}
+}
+
 func TestResolverReturnsSetupPendingWithPartialLegacyPrefill(t *testing.T) {
 	repository := newConfigurationRepositoryTestDB(t)
 	legacy := config.Config{

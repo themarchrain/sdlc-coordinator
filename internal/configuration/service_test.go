@@ -46,9 +46,7 @@ func TestServiceUpdateRetainsReplacesAndExplicitlyClearsSecrets(t *testing.T) {
 	}
 }
 
-// scheduler.callback_base_url / workspace_root 是必填运行参数；UI 或旧客户端
-// 可能整包提交 scheduler 而漏带这两个字段，空值时必须保留当前值而不是校验打回。
-func TestServiceUpdateKeepsSchedulerFieldsWhenSubmissionOmitsThem(t *testing.T) {
+func TestServiceUpdateKeepsCallbackWhenSubmissionOmitsIt(t *testing.T) {
 	repository := newConfigurationRepositoryTestDB(t)
 	initial := validRuntimeConfig()
 	saved, err := repository.Save(context.Background(), StatusReady, SourceUI, initial)
@@ -58,15 +56,50 @@ func TestServiceUpdateKeepsSchedulerFieldsWhenSubmissionOmitsThem(t *testing.T) 
 	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: saved})
 	input := EditableFromRuntime(initial)
 	input.Scheduler.CallbackBaseURL = ""
-	input.Scheduler.WorkspaceRoot = ""
 
 	result, validationErrors, err := service.Update(context.Background(), UpdateRequest{Config: input, ExpectedRevision: uint64Pointer(1)})
 	if err != nil || len(validationErrors) != 0 {
 		t.Fatalf("update runtime configuration: result=%#v validation=%#v error=%v", result, validationErrors, err)
 	}
-	if result.Configuration.Config.Scheduler.CallbackBaseURL != "https://coordinator.example.com" ||
-		result.Configuration.Config.Scheduler.WorkspaceRoot != "/app/workspaces" {
+	if result.Configuration.Config.Scheduler.CallbackBaseURL != "https://coordinator.example.com" {
 		t.Fatalf("omitted scheduler fields were not retained: %#v", result.Configuration.Config.Scheduler)
+	}
+}
+
+func TestServiceUpdateDoesNotPersistWorkspacePaths(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	initial := validRuntimeConfig()
+	saved, err := repository.Save(context.Background(), StatusReady, SourceUI, initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: saved})
+	request := UpdateRequest{Config: EditableFromRuntime(initial), ExpectedRevision: uint64Pointer(1)}
+	request.Config.AgentRunner.Model = "updated-model"
+	result, validationErrors, err := service.Update(context.Background(), request)
+	if err != nil || len(validationErrors) != 0 {
+		t.Fatalf("update configuration: validation=%v error=%v", validationErrors, err)
+	}
+	latest, err := repository.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record SnapshotRecord
+	if err := repository.db.Where("revision = ?", result.Revision).First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(record.PayloadJSON, "workspace_root") {
+		t.Fatalf("deployment-only workspace paths persisted in runtime snapshot: %s", record.PayloadJSON)
+	}
+	raw, err := json.Marshal(result.Configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "workspace_root") {
+		t.Fatalf("configuration response exposes deployment-only workspace paths: %s", raw)
+	}
+	if latest.Config.AgentRunner.Model != "updated-model" || result.Revision != 2 {
+		t.Fatal("configuration update was not persisted")
 	}
 }
 

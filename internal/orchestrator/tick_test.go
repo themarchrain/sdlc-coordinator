@@ -448,7 +448,7 @@ func TestTickParksUnboundTaskAndDispatchesBoundTask(t *testing.T) {
 		t.Fatalf("create bound task: %v", err)
 	}
 
-	if _, err := orch.Tick(ctx, TickRequest{CallbackBaseURL: "http://coordinator.local", WorkspaceRoot: "/tmp/ws", DispatchLimit: 1}); err != nil {
+	if _, err := orch.Tick(ctx, TickRequest{CallbackBaseURL: "http://coordinator.local", DispatchLimit: 1}); err != nil {
 		t.Fatalf("first tick: %v", err)
 	}
 	unbound, err := taskRepo.GetByTaskID(ctx, "task-unbound")
@@ -459,7 +459,7 @@ func TestTickParksUnboundTaskAndDispatchesBoundTask(t *testing.T) {
 		t.Fatalf("expected unbound task parked as blocked with last_error, got status=%s last_error=%q", unbound.Status, unbound.LastError)
 	}
 
-	result, err := orch.Tick(ctx, TickRequest{CallbackBaseURL: "http://coordinator.local", WorkspaceRoot: "/tmp/ws", DispatchLimit: 1})
+	result, err := orch.Tick(ctx, TickRequest{CallbackBaseURL: "http://coordinator.local", DispatchLimit: 1})
 	if err != nil {
 		t.Fatalf("second tick: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestTickSkipsDispatchForDisabledRepository(t *testing.T) {
 		t.Fatalf("create disabled-repo task: %v", err)
 	}
 
-	result, err := orch.Tick(ctx, TickRequest{CallbackBaseURL: "http://coordinator.local", WorkspaceRoot: "/tmp/ws", DispatchLimit: 1})
+	result, err := orch.Tick(ctx, TickRequest{CallbackBaseURL: "http://coordinator.local", DispatchLimit: 1})
 	if err != nil {
 		t.Fatalf("tick: %v", err)
 	}
