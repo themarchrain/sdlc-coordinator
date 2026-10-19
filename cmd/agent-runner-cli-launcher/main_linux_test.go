@@ -35,6 +35,14 @@ func TestLaunchProvidesWritablePrivateHomeForAgentTools(t *testing.T) {
 	if err := os.Chown(runnerHome, runnerUID, runnerGID); err != nil {
 		t.Fatal(err)
 	}
+	cacheRoot := filepath.Join(base, "cache")
+	if err := os.Mkdir(cacheRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(cacheRoot, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENT_RUNNER_CACHE_ROOT", cacheRoot)
 	for name, value := range map[string]string{
 		"HOME": runnerHome, "USER": "runner", "LOGNAME": "runner",
 		"XDG_CACHE_HOME": filepath.Join(runnerHome, ".cache"),
@@ -97,8 +105,13 @@ test "$LOGNAME" = agent
 test "$COORDINATOR_RUN_TOKEN" = fixture-token
 test "$(stat -c %a "$HOME")" = 700
 case "$HOME" in "$PWD"/*) ;; *) exit 1 ;; esac
-for directory in "$HOME" "$XDG_CACHE_HOME" "$GOCACHE" "$GOPATH" "$GOMODCACHE"; do
+for directory in "$HOME" "$XDG_CACHE_HOME"; do
     case "$directory" in "$HOME"|"$HOME"/*) ;; *) exit 1 ;; esac
+    mkdir -p "$directory"
+    printf check > "$directory/write-check"
+done
+for directory in "$GOCACHE" "$GOPATH" "$GOMODCACHE"; do
+    case "$directory" in "$AGENT_RUNNER_CACHE_ROOT"/*) ;; *) exit 1 ;; esac
     mkdir -p "$directory"
     printf check > "$directory/write-check"
 done

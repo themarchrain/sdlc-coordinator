@@ -11,6 +11,12 @@ mkdir -p /app/runner-data/operations /app/workspaces "$log_dir"
 chown -h runner:runner /app/runner-data /app/workspaces /app/runner-data/operations "$log_dir"
 chmod 0700 /app/runner-data/operations
 
+cache_root="${AGENT_RUNNER_CACHE_ROOT:-/app/dependency-cache}"
+mkdir -p "$cache_root"
+chown -h agent:agent "$cache_root"
+chmod 0700 "$cache_root"
+export AGENT_RUNNER_CACHE_ROOT="$cache_root"
+
 runner_cap_eff=$(su-exec runner /bin/sh -c 'sed -n "s/^CapEff:[[:space:]]*//p" /proc/self/status')
 runner_cap_prm=$(su-exec runner /bin/sh -c 'sed -n "s/^CapPrm:[[:space:]]*//p" /proc/self/status')
 runner_cap_inh=$(su-exec runner /bin/sh -c 'sed -n "s/^CapInh:[[:space:]]*//p" /proc/self/status')
