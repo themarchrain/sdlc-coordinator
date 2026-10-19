@@ -251,6 +251,8 @@ func agentEnvironment(home string) []string {
 		"NPM_CONFIG_CACHE":        filepath.Join(cacheRoot, "npm"),
 		"pnpm_config_store_dir":   filepath.Join(cacheRoot, "pnpm"),
 		"PNPM_CONFIG_STORE_DIR":   filepath.Join(cacheRoot, "pnpm"),
+		"pnpm_config_cache_dir":   filepath.Join(cacheRoot, "pnpm-cache"),
+		"PNPM_CONFIG_CACHE_DIR":   filepath.Join(cacheRoot, "pnpm-cache"),
 		"PIP_CACHE_DIR":           filepath.Join(cacheRoot, "pip"),
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))

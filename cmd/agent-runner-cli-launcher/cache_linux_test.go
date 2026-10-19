@@ -22,6 +22,8 @@ func TestAgentEnvironmentUsesPersistentToolCaches(t *testing.T) {
 		"NPM_CONFIG_CACHE":        filepath.Join(root, "npm"),
 		"pnpm_config_store_dir":   filepath.Join(root, "pnpm"),
 		"PNPM_CONFIG_STORE_DIR":   filepath.Join(root, "pnpm"),
+		"pnpm_config_cache_dir":   filepath.Join(root, "pnpm-cache"),
+		"PNPM_CONFIG_CACHE_DIR":   filepath.Join(root, "pnpm-cache"),
 		"PIP_CACHE_DIR":           filepath.Join(root, "pip"),
 		"HOME":                    "/private-home", "XDG_CACHE_HOME": "/private-home/.cache",
 		"CODEX_HOME": "/cli-config", "PATH": "/custom-bin:/usr/bin",
@@ -91,7 +93,7 @@ func TestLaunchReusesPersistentCachesAcrossInvocations(t *testing.T) {
 test "$(id -u)" = 10002
 test "$(id -g)" = 10002
 printf '%s\n' "$HOME" > home.path
-for directory in "$GOCACHE" "$GOMODCACHE" "$npm_config_cache" "$pnpm_config_store_dir" "$PIP_CACHE_DIR"; do
+for directory in "$GOCACHE" "$GOMODCACHE" "$npm_config_cache" "$pnpm_config_store_dir" "$pnpm_config_cache_dir" "$PIP_CACHE_DIR"; do
   case "$directory" in "$AGENT_RUNNER_CACHE_ROOT"/*) ;; *) exit 23 ;; esac
   mkdir -p "$directory"
   if [ "$1" = first ]; then printf retained > "$directory/probe"; else test "$(cat "$directory/probe")" = retained; fi
