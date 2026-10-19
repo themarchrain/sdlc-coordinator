@@ -151,7 +151,7 @@ func TestAgentRunnerCoordinatorDispatchesThroughTenantRouter(t *testing.T) {
 
 func TestAgentRunnerCoordinatorRotatesAfterDefinitiveMiss(t *testing.T) {
 	world := newAgentRunnerRoutingWorld(t)
-	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: errors.New("boom")}
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "invalid create"}}
 	clientA.getErr = &runner.HTTPError{Method: "GET", Path: "/api/v1/executions/run-routing-core", StatusCode: http.StatusNotFound}
 	clientB := &scriptedRunnerClient{endpoint: "http://runner-b"}
 	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
@@ -174,6 +174,56 @@ func TestAgentRunnerCoordinatorRotatesAfterDefinitiveMiss(t *testing.T) {
 	}
 }
 
+func TestAgentRunnerCoordinatorDoesNotRotatePinnedRunAfterDefinitiveMiss(t *testing.T) {
+	world := newAgentRunnerRoutingWorld(t)
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "invalid create"}}
+	clientA.getErr = &runner.HTTPError{Method: "GET", Path: "/api/v1/executions/run-routing-core", StatusCode: http.StatusNotFound}
+	clientB := &scriptedRunnerClient{endpoint: "http://runner-b"}
+	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
+	attemptA.next = func() (RunnerAttempt, bool) { return RunnerAttempt{Client: clientB, Endpoint: "http://runner-b"}, true }
+	world.router.attempt = attemptA
+	world.router.pinned = map[string]ReviewerRunnerClient{"http://runner-a": clientA}
+	world.run.RunnerEndpoint = "http://runner-a"
+	if err := world.coordinator.runs.PinRunnerEndpointIfEmpty(context.Background(), world.run.RunID, world.run.RunnerEndpoint); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := world.coordinator.Start(context.Background(), world.task, world.run, world.request)
+	if err == nil || !strings.Contains(err.Error(), "invalid create") {
+		t.Fatalf("pinned run must surface the definitive rejection without rotating, got %v", err)
+	}
+	if clientA.createCalls != 1 || clientA.getCalls != 1 {
+		t.Fatalf("pinned runner should see one create and confirming get: create=%d get=%d", clientA.createCalls, clientA.getCalls)
+	}
+	if clientB.createCalls != 0 {
+		t.Fatalf("pinned run must not be dispatched to another runner, calls=%d", clientB.createCalls)
+	}
+	stored, err := world.coordinator.executions.GetByRunID(context.Background(), world.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.RunnerEndpoint != world.run.RunnerEndpoint || stored.Status != model.AgentExecutionStatusFailed {
+		t.Fatalf("definitive rejection should settle on the pinned endpoint: %+v", stored)
+	}
+}
+
+func TestAgentRunnerCoordinatorDoesNotSelectPoolAgainAfterPin(t *testing.T) {
+	world := newAgentRunnerRoutingWorld(t)
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a"}
+	world.router.attempt = RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
+	world.router.pinned = map[string]ReviewerRunnerClient{"http://runner-a": clientA}
+	ctx := context.Background()
+	if _, err := world.coordinator.resolveAndPinEndpoint(ctx, world.task, world.run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := world.coordinator.Start(ctx, world.task, world.run, world.request); err != nil {
+		t.Fatal(err)
+	}
+	if world.router.taskCalls != 1 || clientA.createCalls != 1 {
+		t.Fatalf("pinned dispatch consumed another pool slot: selections=%d creates=%d", world.router.taskCalls, clientA.createCalls)
+	}
+}
+
 func TestAgentRunnerCoordinatorRefusesRotationOnAmbiguousFailure(t *testing.T) {
 	world := newAgentRunnerRoutingWorld(t)
 	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: errors.New("connection refused")}
@@ -186,9 +236,17 @@ func TestAgentRunnerCoordinatorRefusesRotationOnAmbiguousFailure(t *testing.T) {
 	}
 	world.router.attempt = attemptA
 
-	_, err := world.coordinator.Start(context.Background(), world.task, world.run, world.request)
-	if err == nil || !strings.Contains(err.Error(), "create runner execution") {
-		t.Fatalf("expected dispatch failure preserving create error, got %v", err)
+	// 结果不确定：不轮换、不判失败——意图保持 dispatching 待对账，本函数按
+	// 已受理返回（轮询按原端点收敛，确定未接纳前不产生第二个执行）。
+	projection, err := world.coordinator.Start(context.Background(), world.task, world.run, world.request)
+	if err != nil {
+		t.Fatalf("ambiguous outcome must not fail the dispatch: %v", err)
+	}
+	if projection.Status != model.AgentExecutionStatusDispatching || projection.RunnerEndpoint != "http://runner-a" {
+		t.Fatalf("intent must stay dispatching on endpoint-a: %+v", projection)
+	}
+	if clientA.createCalls != 1 || clientA.getCalls != 1 {
+		t.Fatalf("runner-a should see one create and one read-back: create=%d get=%d", clientA.createCalls, clientA.getCalls)
 	}
 	if clientB.createCalls != 0 {
 		t.Fatalf("runner-b must not receive dispatch on ambiguous failure, calls=%d", clientB.createCalls)
@@ -225,9 +283,9 @@ func TestAgentRunnerCoordinatorObservesOnPinnedEndpoint(t *testing.T) {
 
 func TestAgentRunnerCoordinatorSurfacesFirstCreateErrorWhenPoolExhausted(t *testing.T) {
 	world := newAgentRunnerRoutingWorld(t)
-	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: errors.New("runner-a refused")}
+	clientA := &scriptedRunnerClient{endpoint: "http://runner-a", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "runner-a refused"}}
 	clientA.getErr = &runner.HTTPError{Method: "GET", StatusCode: http.StatusNotFound}
-	clientB := &scriptedRunnerClient{endpoint: "http://runner-b", createErr: errors.New("runner-b refused")}
+	clientB := &scriptedRunnerClient{endpoint: "http://runner-b", createErr: &runner.HTTPError{StatusCode: http.StatusUnprocessableEntity, Body: "runner-b refused"}}
 	clientB.getErr = &runner.HTTPError{Method: "GET", StatusCode: http.StatusNotFound}
 	attemptA := RunnerAttempt{Client: clientA, Endpoint: "http://runner-a"}
 	attemptA.next = func() (RunnerAttempt, bool) { return RunnerAttempt{Client: clientB, Endpoint: "http://runner-b"}, true }

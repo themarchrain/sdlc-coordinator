@@ -1,0 +1,29 @@
+# LB 配置：双协调器负载均衡。无 WebSocket/SSE（前端轮询），无需升级头。
+upstream sdlc_coordinators {
+    # ip_hash 保证 Portal 会话粘性（会话本身跨实例共享，粘性只是优化）。
+    server ${MULTI_COORDINATOR_A_UPSTREAM};
+    server ${MULTI_COORDINATOR_B_UPSTREAM};
+}
+
+server {
+    listen 80;
+
+    # MCP 结果回传与 runner 授权确认走 LB：任一副本基于共享库裁决。
+    location /runner-authorization {
+        proxy_pass http://sdlc_coordinators/internal/runner-authorization;
+        proxy_set_header Content-Type application/json;
+        proxy_connect_timeout 2s;
+        proxy_next_upstream_tries 2;
+    }
+
+    location / {
+        proxy_pass http://sdlc_coordinators;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 100m;
+        proxy_connect_timeout 2s;
+        proxy_next_upstream_tries 2;
+        proxy_read_timeout 300s;
+    }
+}

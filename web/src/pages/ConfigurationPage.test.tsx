@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { adminApi } from '../api/client'
+import { AdminApiError, adminApi } from '../api/client'
 import type { ConfigurationView } from '../api/types'
 import { ConfigurationBoundary } from '../app/ConfigurationBoundary'
 import { WorkspaceSessionProvider } from '../app/workspaceSession'
@@ -23,11 +23,12 @@ function RouteProbe({ label }: { label: string }) {
 }
 
 const configuration: ConfigurationView = {
+  revision: 2,
   config: {
-    agent_runner: { service_url: 'http://agent-runner:8081', workspace_root: '/app/workspaces', provider: 'codex-cli', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
+    agent_runner: { service_url: 'http://agent-runner:8081', provider: 'codex-cli', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
     scheduler: {
       enabled: true, interval: '30s',
-      callback_base_url: 'http://127.0.0.1:8080', workspace_root: '/app/workspaces',
+      callback_base_url: 'http://127.0.0.1:8080',
       dispatch_limit: 1, poll_limit: 5, reconciliation_limit: 5, finalization_limit: 5, recovery_limit: 5, effect_limit: 5,
     },
   },
@@ -95,7 +96,7 @@ describe('ConfigurationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 
     expect(screen.getByLabelText('Runner 服务地址')).toHaveValue('http://agent-runner:8081')
-    expect(screen.getByLabelText('共享工作区')).toHaveValue('/app/workspaces')
+    expect(screen.queryByLabelText('共享工作区')).not.toBeInTheDocument()
     // 执行 Provider 已撤出向导：不再提供选择 UI，只按加载值展示协议说明。
     expect(screen.queryByLabelText('执行 Provider')).not.toBeInTheDocument()
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument()
@@ -119,12 +120,35 @@ describe('ConfigurationPage', () => {
     expect(screen.getByText('裸 Agent，不加载个人 Claude 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。')).toBeInTheDocument()
   })
 
-  it('validates, saves, and requests restart from the final step with a system-only payload', async () => {
-    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'setup_pending', revision: 0 })
+  it('saves runtime settings without workspace paths', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
     vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
     vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
     const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
-      mode: 'restart_required', revision: 1, source: 'ui', configuration,
+      mode: 'restart_required', revision: 3, source: 'ui', configuration: { ...configuration, revision: 3 },
+    })
+    vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(screen.queryByRole('textbox', { name: '共享工作区' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(screen.queryByRole('textbox', { name: '工作区根目录' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update.mock.calls[0][0].config.agent_runner).not.toHaveProperty('workspace_root')
+    expect(update.mock.calls[0][0].config.scheduler).not.toHaveProperty('workspace_root')
+  })
+
+  it('validates, saves, and requests restart from the final step with a system-only payload', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'setup_pending', revision: 0 })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 0 })
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
+      mode: 'restart_required', revision: 1, source: 'ui', configuration: { ...configuration, revision: 1 },
     })
     const restart = vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
 
@@ -137,6 +161,7 @@ describe('ConfigurationPage', () => {
     // provider 与 effort 已无 UI 编辑，但保存 payload 必须原样回传加载值：
     // 后端整行替换语义下缺键会把系统兜底值静默清空。
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      expected_revision: 0,
       config: expect.objectContaining({
         agent_runner: expect.objectContaining({
           service_url: 'http://agent-runner:8081',
@@ -145,7 +170,7 @@ describe('ConfigurationPage', () => {
           effort: 'high',
           task_timeout: '30m',
         }),
-        scheduler: expect.objectContaining({ callback_base_url: 'http://127.0.0.1:8080', workspace_root: '/app/workspaces' }),
+        scheduler: expect.objectContaining({ callback_base_url: 'http://127.0.0.1:8080' }),
       }),
     }))
     const payload = update.mock.calls[0][0].config as unknown as Record<string, unknown>
@@ -154,16 +179,46 @@ describe('ConfigurationPage', () => {
     expect(restart).toHaveBeenCalledTimes(1)
   })
 
+  it('explains that a stale runtime configuration must be reloaded', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 3, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    vi.spyOn(adminApi, 'updateConfiguration').mockRejectedValue(new AdminApiError(409, 'revision_conflict', '运行配置已被其他管理员更新，请刷新页面后重新提交'))
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    expect(await screen.findByText('运行配置已被其他管理员更新，请刷新页面后重新提交')).toBeInTheDocument()
+  })
+
+  it('submits the revision belonging to the loaded configuration when status is newer', async () => {
+    const staleView = { ...configuration, revision: 1 }
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(staleView)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateConfiguration').mockRejectedValue(new AdminApiError(409, 'revision_conflict', '运行配置已被其他管理员更新，请刷新页面后重新提交'))
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    expect(await screen.findByText('运行配置已被其他管理员更新，请刷新页面后重新提交')).toBeInTheDocument()
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 1 }))
+  })
+
   it('can save from the configuration-error state through the four steps', async () => {
     vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({
       mode: 'configuration_error',
       revision: 4,
       configuration_error: 'runtime configuration validation failed: runtime configuration has 4 validation error(s)',
     })
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 4 })
     vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
     const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
-      mode: 'restart_required', revision: 5, source: 'ui', configuration,
+      mode: 'restart_required', revision: 5, source: 'ui', configuration: { ...configuration, revision: 5 },
     })
     vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
 
@@ -182,10 +237,10 @@ describe('ConfigurationPage', () => {
     status.mockResolvedValueOnce({ mode: 'setup_pending', revision: 0 }) // 边界挂载
       .mockResolvedValueOnce({ mode: 'setup_pending', revision: 0 }) // 页面初始加载
       .mockResolvedValue({ mode: 'ready', revision: 1, source: 'ui' }) // 重启轮询
-    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 0 })
     vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
     vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
-      mode: 'restart_required', revision: 1, source: 'ui', configuration,
+      mode: 'restart_required', revision: 1, source: 'ui', configuration: { ...configuration, revision: 1 },
     })
     vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
 

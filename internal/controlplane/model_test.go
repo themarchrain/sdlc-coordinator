@@ -26,7 +26,7 @@ func TestMigrateCreatesControlPlaneTables(t *testing.T) {
 	if err := repository.Migrate(); err != nil {
 		t.Fatalf("migrate control plane: %v", err)
 	}
-	for _, table := range []string{"users", "tenants", "memberships", "invite_codes", "runner_assignments", "audit_log", "sessions"} {
+	for _, table := range []string{"users", "tenants", "memberships", "invite_codes", "runner_assignments", "runner_pool_cursors", "audit_log", "sessions"} {
 		if !repository.db.Migrator().HasTable(table) {
 			t.Fatalf("control plane table %q was not created", table)
 		}

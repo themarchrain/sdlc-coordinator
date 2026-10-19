@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"sdlc-coordinator/internal/app"
 	"sdlc-coordinator/internal/config"
@@ -35,7 +36,7 @@ func main() {
 	}
 
 	configurationRepository := configuration.NewRepository(db)
-	if err := configurationRepository.Migrate(); err != nil {
+	if err := store.MigrateGuarded(context.Background(), db, "configuration", configurationRepository.Migrate); err != nil {
 		logger.Fatal("migrate runtime configuration failed", zap.Error(err))
 	}
 	resolution := configuration.NewResolver(configurationRepository).Resolve(context.Background(), bootstrap, legacy)
@@ -61,6 +62,9 @@ func main() {
 		case <-ctx.Done():
 		}
 	}()
+	go configuration.WatchForNewerRevision(ctx, configurationRepository, configurationService.Status().Revision, shutdownSignal, time.Second, func(err error) {
+		logger.Warn("check runtime configuration revision failed", zap.Error(err))
+	})
 
 	if err := application.Run(ctx); err != nil {
 		logger.Fatal("application stopped with error", zap.Error(err))

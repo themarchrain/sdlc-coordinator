@@ -3,9 +3,9 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"sdlc-coordinator/internal/people"
+	"sdlc-coordinator/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -237,7 +237,8 @@ func writeAdminPeopleError(c *gin.Context, err error) {
 	case errors.Is(err, people.ErrGitLabLookupFailed):
 		writeAdminError(c, http.StatusBadGateway, "gitlab_lookup_failed", "GitLab 用户查询失败")
 	default:
-		if strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+		// 按驱动错误码判定唯一冲突（MySQL 1062/SQLite 2067），不依赖错误文本。
+		if store.IsDuplicateKey(err) {
 			writeAdminError(c, http.StatusConflict, "codehost_identity_conflict", "CodeHost 身份已被其他有效人员使用")
 			return
 		}

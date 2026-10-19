@@ -44,7 +44,7 @@ func (o *Orchestrator) DispatchDeveloperTask(ctx context.Context, taskID string)
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.Update(ctx, run); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	workspaceRequest, err := buildDeveloperWorkspaceRequest(ctx, task, run, o.developerRunnerSettings)
@@ -68,6 +68,7 @@ func (o *Orchestrator) ReconcileDeveloperRunner(ctx context.Context, runID strin
 	}
 	result, err := o.developerRunner.Reconcile(ctx, runID)
 	if errors.Is(err, repository.ErrNotFound) {
+		// 投影缺失时重建；已有派发意图的 Runner 404 属于结果未知，不能据此重发。
 		if _, repairErr := o.rebuildDeveloperRunnerProjection(ctx, runID); repairErr != nil {
 			return nil, fmt.Errorf("rebuild developer runner projection: %w", repairErr)
 		}

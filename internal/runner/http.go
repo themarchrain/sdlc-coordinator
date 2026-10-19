@@ -9,8 +9,10 @@ import (
 	"strconv"
 )
 
-func NewHTTPHandler(service *Service) http.Handler {
+func NewHTTPHandler(service *Service, options ...HTTPOption) http.Handler {
+	opts := newHTTPOptions(options)
 	mux := http.NewServeMux()
+	registerWorkspaceRoutes(mux, opts)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})

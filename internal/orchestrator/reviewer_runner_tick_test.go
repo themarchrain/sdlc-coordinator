@@ -20,12 +20,10 @@ func TestTickDispatchesReviewerAndDeveloperToRunnerAndParksUnknownRoles(t *testi
 		tasks,
 		runs,
 		WithReviewerRunner(reviewer, ReviewerRunnerSettings{
-			WorkspaceRoot:     "/app/workspaces",
 			Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 4, Model: "model-a", APIKey: "secret"},
 			ResolveRepository: stubRunnerRepository(),
 		}),
 		WithDeveloperRunner(developer, ReviewerRunnerSettings{
-			WorkspaceRoot:     "/app/workspaces",
 			Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 4, Model: "model-a", APIKey: "secret"},
 			ResolveRepository: stubRunnerRepository(),
 		}),
@@ -57,13 +55,13 @@ func TestTickDispatchesReviewerAndDeveloperToRunnerAndParksUnknownRoles(t *testi
 	if len(result.DispatchedTasks) != 2 || reviewer.startCalls != 1 || developer.startCalls != 1 {
 		t.Fatalf("unexpected mixed dispatch: result=%#v reviewer_starts=%d developer_starts=%d", result.DispatchedTasks, reviewer.startCalls, developer.startCalls)
 	}
-	if reviewer.startRequest.Task.TaskID != reviewerTask.TaskID || reviewer.startRequest.Workspace.WorkspaceRoot != "/app/workspaces" {
+	if reviewer.startRequest.Task.TaskID != reviewerTask.TaskID || reviewer.startRequest.Workspace.WorkspaceRoot != "" {
 		t.Fatalf("unexpected reviewer runner request: %#v", reviewer.startRequest)
 	}
 	if reviewer.startRequest.Provider.Model != "model-a" || reviewer.startRequest.Provider.APIKey != "secret" || reviewer.startRequest.Workspace.Credential.Token != "git-token" {
 		t.Fatalf("reviewer fixed configuration was not propagated: %#v", reviewer.startRequest)
 	}
-	if developer.startRequest.Task.Role != "DeveloperWorker" || developer.startRequest.Workspace.WorkspaceRoot != "/app/workspaces" || developer.startRequest.Workspace.DeliveryBranch != "agent/task-tick-runner-developer" {
+	if developer.startRequest.Task.Role != "DeveloperWorker" || developer.startRequest.Workspace.WorkspaceRoot != "" || developer.startRequest.Workspace.DeliveryBranch != "agent/task-tick-runner-developer" {
 		t.Fatalf("unexpected developer runner request: %#v", developer.startRequest)
 	}
 	unknown, err := tasks.GetByTaskID(ctx, "task-tick-unknown-role")
@@ -164,7 +162,6 @@ func TestTickRebuildsMissingReviewerExecutionProjectionBeforeReconcile(t *testin
 		tasks,
 		runs,
 		WithReviewerRunner(reviewer, ReviewerRunnerSettings{
-			WorkspaceRoot:     "/app/workspaces",
 			Provider:          runner.ProviderConfig{Name: "claude-cli", Revision: 5, Model: "model-a"},
 			ResolveRepository: stubRunnerRepository(),
 		}),
@@ -189,7 +186,7 @@ func TestTickRebuildsMissingReviewerExecutionProjectionBeforeReconcile(t *testin
 	if reviewer.startCalls != 1 || reviewer.reconcileCalls != 2 {
 		t.Fatalf("missing projection was not rebuilt: start=%d reconcile=%d", reviewer.startCalls, reviewer.reconcileCalls)
 	}
-	if reviewer.startRequest.Run.RunID != runID || reviewer.startRequest.Task.TaskID != task.TaskID || reviewer.startRequest.Workspace.WorkspaceRoot != "/app/workspaces" {
+	if reviewer.startRequest.Run.RunID != runID || reviewer.startRequest.Task.TaskID != task.TaskID || reviewer.startRequest.Workspace.WorkspaceRoot != "" {
 		t.Fatalf("unexpected repair request: %#v", reviewer.startRequest)
 	}
 	if len(result.PolledRuns) != 1 || result.PolledRuns[0].Error != "" || result.PolledRuns[0].ExecutionStatus != string(model.AgentExecutionStatusRunning) {

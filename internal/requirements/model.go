@@ -44,13 +44,13 @@ func ValidPriority(priority string) bool {
 
 type Requirement struct {
 	ID            uint      `gorm:"primaryKey"`
-	RequirementID string    `gorm:"column:requirement_id;uniqueIndex;not null"`
+	RequirementID string    `gorm:"column:requirement_id;uniqueIndex;not null;size:128"`
 	Title         string    `gorm:"column:title;not null"`
 	Description   string    `gorm:"column:description;type:text"`
-	Status        Status    `gorm:"column:status;index;not null"`
-	RepositoryID  string    `gorm:"column:repository_id;index;not null"`
+	Status        Status    `gorm:"column:status;index;not null;size:32"`
+	RepositoryID  string    `gorm:"column:repository_id;index;not null;size:128"`
 	Labels        string    `gorm:"column:labels;type:text"`
-	Priority      string    `gorm:"column:priority;index;not null;default:''"`
+	Priority      string    `gorm:"column:priority;index;not null;default:'';size:16"`
 	IssueIID      int       `gorm:"column:issue_iid;index;not null;default:0"`
 	IssueURL      string    `gorm:"column:issue_url;type:text"`
 	LastError     string    `gorm:"column:last_error;type:text"`

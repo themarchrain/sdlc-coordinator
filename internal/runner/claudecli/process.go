@@ -36,7 +36,11 @@ func (processRunner) Run(ctx context.Context, spec commandSpec, onLine func([]by
 	if strings.TrimSpace(spec.Binary) == "" {
 		return errors.New("command binary is required")
 	}
-	command := exec.Command(spec.Binary, spec.Args...)
+	binary, args, launcher, err := commandInvocation(spec)
+	if err != nil {
+		return err
+	}
+	command := exec.Command(binary, args...)
 	command.Dir = spec.Dir
 	command.Env = spec.Env
 	command.Stdin = strings.NewReader(spec.Stdin)
@@ -55,7 +59,7 @@ func (processRunner) Run(ctx context.Context, spec commandSpec, onLine func([]by
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = terminateProcessTree(command.Process)
+			_ = terminateProcessTree(command.Process, launcher)
 		case <-cancelWatch:
 		}
 	}()
@@ -67,7 +71,7 @@ func (processRunner) Run(ctx context.Context, spec commandSpec, onLine func([]by
 		line := append([]byte(nil), scanner.Bytes()...)
 		if err := onLine(line); err != nil {
 			streamErr = err
-			_ = terminateProcessTree(command.Process)
+			_ = terminateProcessTree(command.Process, launcher)
 			break
 		}
 	}

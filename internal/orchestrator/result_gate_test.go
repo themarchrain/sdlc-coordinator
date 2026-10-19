@@ -96,7 +96,7 @@ func TestDeveloperDispatchAcceptsAbsorbedSucceededExecution(t *testing.T) {
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
 		StructuredOutput: json.RawMessage(`{"task_id":"task-developer-runner","run_id":"run-developer-runner","outcome":"fix_failed","summary":"late","blocker_reason":"late text"}`),
 	}
-	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	observed, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestTickClosesExecutionProjectionForMCPFinalizedRuns(t *testing.T) {
 		StructuredOutput: json.RawMessage(`{"task_id":"task-reviewer-runner","run_id":"run-reviewer-runner","verdict":"approved","summary":"late","findings":[],"test_summary":"x","comment_body":"y"}`),
 	}
 
-	orch := New(fixture.tasks, fixture.runs, WithReviewerRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root}))
+	orch := New(fixture.tasks, fixture.runs, WithReviewerRunner(fixture.coordinator, ReviewerRunnerSettings{}))
 	if _, err := orch.Tick(context.Background(), TickRequest{PollLimit: 10}); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestReviewerRunnerDispatchConvergesDeliveryMarkerWhileRunRunning(t *testing
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
 		StructuredOutput: runner.NewDeliveryMarker(fixture.task.TaskID, fixture.run.RunID),
 	}
-	orch := New(fixture.tasks, fixture.runs, WithReviewerRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root}))
+	orch := New(fixture.tasks, fixture.runs, WithReviewerRunner(fixture.coordinator, ReviewerRunnerSettings{}))
 
 	if _, err := orch.ReconcileReviewerRunner(context.Background(), fixture.run.RunID); err != nil {
 		t.Fatalf("convergence must not surface as a poll error: %v", err)
@@ -308,7 +308,7 @@ func TestDeveloperRunnerDispatchConvergesDeliveryMarkerWhileRunRunning(t *testin
 		ExecutionID: fixture.run.RunID, ResultHash: "result-hash",
 		StructuredOutput: runner.NewDeliveryMarker(fixture.task.TaskID, fixture.run.RunID),
 	}
-	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{WorkspaceRoot: fixture.root, ResolveRepository: stubRunnerRepository()}))
+	orch := New(fixture.tasks, fixture.runs, WithDeveloperRunner(fixture.coordinator, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}))
 
 	if _, err := orch.ReconcileDeveloperRunner(context.Background(), fixture.run.RunID); err != nil {
 		t.Fatalf("convergence must not surface as a poll error: %v", err)

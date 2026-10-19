@@ -40,6 +40,12 @@ func withTestControlPlane(t *testing.T, cfg config.Config) config.Config {
 	if strings.TrimSpace(cfg.TenantDataDir) == "" || cfg.TenantDataDir == config.DefaultTenantDataDir {
 		cfg.TenantDataDir = t.TempDir()
 	}
+	if cfg.AgentRunner.InternalToken == "" {
+		cfg.AgentRunner.InternalToken = "app-test-internal-token"
+	}
+	if cfg.ResultChannelSecret == "" {
+		cfg.ResultChannelSecret = strings.Repeat("01", 32)
+	}
 	return cfg
 }
 

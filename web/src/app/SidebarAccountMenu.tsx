@@ -413,4 +413,3 @@ export function SidebarAccountMenu({ collapsed = false }: { collapsed?: boolean 
     </div>
   )
 }
-

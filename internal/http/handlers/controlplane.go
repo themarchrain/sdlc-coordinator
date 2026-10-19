@@ -562,6 +562,8 @@ func writeControlPlaneError(c *gin.Context, err error) {
 		writeAdminError(c, http.StatusBadRequest, "cannot_remove_self", "不能移除自己的成员关系")
 	case errors.Is(err, controlplane.ErrUsernameTaken):
 		writeAdminError(c, http.StatusConflict, "username_taken", "用户名已被占用")
+	case errors.Is(err, controlplane.ErrRunnerEndpointAssigned):
+		writeAdminError(c, http.StatusConflict, "runner_endpoint_assigned", "Runner 端点已指派给其他组织")
 	case errors.Is(err, controlplane.ErrMembershipExists):
 		writeAdminError(c, http.StatusConflict, "membership_exists", "该成员关系已存在")
 	case errors.Is(err, controlplane.ErrSlugTaken):

@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,7 +16,6 @@ type EditableRuntimeConfig struct {
 
 type EditableAgentRunnerConfig struct {
 	ServiceURL      string `json:"service_url"`
-	WorkspaceRoot   string `json:"workspace_root"`
 	Provider        string `json:"provider"`
 	ProviderBaseURL string `json:"provider_base_url"`
 	Model           string `json:"model"`
@@ -54,8 +54,9 @@ type SecretStatus struct {
 }
 
 type ConfigurationView struct {
-	Config  EditableRuntimeConfig `json:"config"`
-	Secrets SecretStatus          `json:"secrets"`
+	Revision uint64                `json:"revision"`
+	Config   EditableRuntimeConfig `json:"config"`
+	Secrets  SecretStatus          `json:"secrets"`
 }
 
 type StatusView struct {
@@ -75,9 +76,12 @@ type SecretChanges struct {
 }
 
 type UpdateRequest struct {
-	Config  EditableRuntimeConfig `json:"config"`
-	Secrets SecretChanges         `json:"secrets"`
+	Config           EditableRuntimeConfig `json:"config"`
+	Secrets          SecretChanges         `json:"secrets"`
+	ExpectedRevision *uint64               `json:"expected_revision"`
 }
+
+var ErrExpectedRevisionRequired = errors.New("expected runtime configuration revision is required")
 
 type UpdateResult struct {
 	StatusView
@@ -112,7 +116,9 @@ func (service *Service) Status() StatusView {
 func (service *Service) Get() ConfigurationView {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	return MaskRuntimeConfig(service.current)
+	view := MaskRuntimeConfig(service.current)
+	view.Revision = service.statusLocked().Revision
+	return view
 }
 
 func (service *Service) Runtime() RuntimeConfig {
@@ -122,6 +128,18 @@ func (service *Service) Runtime() RuntimeConfig {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
 	return service.current
+}
+
+func (service *Service) HasNewerRevision(ctx context.Context) (bool, error) {
+	status := service.Status()
+	latest, err := service.repository.Latest(ctx)
+	if errors.Is(err, ErrSnapshotNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return latest.Revision > status.Revision, nil
 }
 
 func (service *Service) Validate(request UpdateRequest) ValidationErrors {
@@ -135,12 +153,33 @@ func (service *Service) Validate(request UpdateRequest) ValidationErrors {
 func (service *Service) Update(ctx context.Context, request UpdateRequest) (*UpdateResult, ValidationErrors, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	candidate := mergeUpdate(service.current, request)
+	if request.ExpectedRevision == nil {
+		return nil, nil, ErrExpectedRevisionRequired
+	}
+	// 合并基线必须取库内最新快照而非本进程缓存：负载均衡下 A 改字段 X 后
+	// B 的提交可能仍带着 B 的旧缓存，按旧缓存整包发新 revision 会把 X
+	// 恢复成旧值（多实例配置回退）。库内最新快照是唯一权威基线，CAS 期望
+	// 版本与其绑定——保存窗口内的并发提交由 ErrRevisionConflict 拒绝。
+	baseline := service.current
+	expectedRevision := uint64(0)
+	latest, err := service.repository.Latest(ctx)
+	switch {
+	case err == nil:
+		baseline = latest.Config
+		expectedRevision = latest.Revision
+	case errors.Is(err, ErrSnapshotNotFound):
+	default:
+		return nil, nil, fmt.Errorf("load latest runtime configuration: %w", err)
+	}
+	if *request.ExpectedRevision != expectedRevision {
+		return nil, nil, ErrRevisionConflict
+	}
+	candidate := mergeUpdate(baseline, request)
 	validationErrors := Validate(candidate)
 	if len(validationErrors) > 0 {
 		return nil, validationErrors, nil
 	}
-	snapshot, err := service.repository.Save(ctx, StatusRestartRequired, SourceUI, candidate)
+	snapshot, err := service.repository.SaveGuarded(ctx, StatusRestartRequired, SourceUI, candidate, expectedRevision)
 	if err != nil {
 		return nil, nil, fmt.Errorf("save runtime configuration: %w", err)
 	}
@@ -148,17 +187,19 @@ func (service *Service) Update(ctx context.Context, request UpdateRequest) (*Upd
 	service.snapshot = snapshot
 	service.mode = ModeRestartRequired
 	service.configurationError = ""
+	configuration := MaskRuntimeConfig(candidate)
+	configuration.Revision = snapshot.Revision
 	return &UpdateResult{
 		StatusView:    service.statusLocked(),
-		Configuration: MaskRuntimeConfig(candidate),
+		Configuration: configuration,
 	}, nil, nil
 }
 
 func EditableFromRuntime(cfg RuntimeConfig) EditableRuntimeConfig {
 	return EditableRuntimeConfig{
 		AgentRunner: EditableAgentRunnerConfig{
-			ServiceURL: cfg.AgentRunner.ServiceURL, WorkspaceRoot: cfg.AgentRunner.WorkspaceRoot,
-			Provider: cfg.AgentRunner.Provider, ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
+			ServiceURL: cfg.AgentRunner.ServiceURL,
+			Provider:   cfg.AgentRunner.Provider, ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
 			Model: cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort, TaskTimeout: cfg.AgentRunner.TaskTimeout,
 		},
 		Scheduler: cfg.Scheduler,
@@ -188,17 +229,14 @@ func (service *Service) statusLocked() StatusView {
 func mergeUpdate(current RuntimeConfig, request UpdateRequest) RuntimeConfig {
 	result := RuntimeConfig{
 		AgentRunner: AgentRunnerConfig{
-			ServiceURL: request.Config.AgentRunner.ServiceURL, WorkspaceRoot: request.Config.AgentRunner.WorkspaceRoot,
-			Provider: request.Config.AgentRunner.Provider, ProviderBaseURL: request.Config.AgentRunner.ProviderBaseURL,
+			ServiceURL: request.Config.AgentRunner.ServiceURL,
+			Provider:   request.Config.AgentRunner.Provider, ProviderBaseURL: request.Config.AgentRunner.ProviderBaseURL,
 			APIKey: current.AgentRunner.APIKey, CustomHeadersJSON: current.AgentRunner.CustomHeadersJSON,
 			Model: request.Config.AgentRunner.Model, Effort: request.Config.AgentRunner.Effort, TaskTimeout: request.Config.AgentRunner.TaskTimeout,
 		},
 		Scheduler: func() SchedulerConfig {
-			// 这两项是必填运行参数；UI 或旧客户端可能整包提交 scheduler 而漏带它们，
-			// 空值时保留当前值，避免合法配置被一次不完整提交打回。
 			scheduler := request.Config.Scheduler
 			scheduler.CallbackBaseURL = keepTrimmed(scheduler.CallbackBaseURL, current.Scheduler.CallbackBaseURL)
-			scheduler.WorkspaceRoot = keepTrimmed(scheduler.WorkspaceRoot, current.Scheduler.WorkspaceRoot)
 			return scheduler
 		}(),
 	}

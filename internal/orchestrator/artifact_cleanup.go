@@ -8,12 +8,13 @@ import (
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store/repository"
-	"sdlc-coordinator/internal/workspace"
 )
 
 const (
 	artifactRetention        = 7 * 24 * time.Hour
 	artifactCleanupBatchSize = 10
+	// artifactPurgeLeaseWindow 是清理归属哨兵的有效期；失败或持有者退出后，到期才允许重试。
+	artifactPurgeLeaseWindow = 30 * time.Minute
 )
 
 type ArtifactCleanupResult struct {
@@ -27,27 +28,23 @@ func (o *Orchestrator) cleanupExpiredArtifacts(ctx context.Context) []ArtifactCl
 	if o.agentExecutions == nil || o.runnerArtifacts == nil || o.resultSubmissions == nil {
 		return nil
 	}
-	workspaceRoot := strings.TrimSpace(o.reviewerRunnerSettings.WorkspaceRoot)
-	if workspaceRoot == "" {
-		workspaceRoot = strings.TrimSpace(o.developerRunnerSettings.WorkspaceRoot)
-	}
-	if workspaceRoot == "" {
+	if o.runWorkspaceCleaner == nil {
 		return nil
 	}
-	cutoff := o.now().UTC().Add(-artifactRetention)
-	runs, err := o.runs.ListSucceededForArtifactCleanup(ctx, cutoff, artifactCleanupBatchSize)
+	now := o.now().UTC()
+	runs, err := o.runs.ListSucceededForArtifactCleanup(ctx, now.Add(-artifactRetention), now.Add(-artifactPurgeLeaseWindow), artifactCleanupBatchSize)
 	if err != nil {
 		return []ArtifactCleanupResult{{Error: err.Error()}}
 	}
 	results := make([]ArtifactCleanupResult, 0, len(runs))
 	for _, run := range runs {
-		result := o.purgeSucceededRunArtifacts(ctx, workspaceRoot, run)
+		result := o.purgeSucceededRunArtifacts(ctx, run)
 		results = append(results, result)
 	}
 	return results
 }
 
-func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspaceRoot string, run model.Run) ArtifactCleanupResult {
+func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, run model.Run) ArtifactCleanupResult {
 	result := ArtifactCleanupResult{RunID: run.RunID}
 	execution, err := o.agentExecutions.GetByRunID(ctx, run.RunID)
 	if err != nil {
@@ -99,21 +96,38 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, workspace
 			}
 		}
 	}
-	if err := workspace.RemoveRunDirectory(workspaceRoot, run.RunID); err != nil {
+	claimedAt := o.now().UTC()
+	claimID := model.NewID("purge")
+	applied, err := o.runs.MarkArtifactsPurgingIfUnclean(ctx, run.RunID, claimID, claimedAt, claimedAt.Add(-artifactPurgeLeaseWindow))
+	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	if err := o.runnerArtifacts.Delete(ctx, execution.ExecutionID); err != nil {
+	if !applied {
+		return result
+	}
+	if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	now := o.now().UTC()
-	run.ArtifactsPurgedAt = &now
-	if err := o.runs.Update(ctx, &run); err != nil {
+	var deleteErr error
+	if routed, ok := o.runnerArtifacts.(interface {
+		DeleteForRun(context.Context, string, string) error
+	}); ok {
+		deleteErr = routed.DeleteForRun(ctx, run.RunID, execution.ExecutionID)
+	} else {
+		deleteErr = o.runnerArtifacts.Delete(ctx, execution.ExecutionID)
+	}
+	if deleteErr != nil {
+		result.Error = deleteErr.Error()
+		return result
+	}
+	completed, err := o.runs.CompleteArtifactsPurging(ctx, run.RunID, claimID, o.now().UTC())
+	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	result.Purged = true
+	result.Purged = completed
 	return result
 }
 

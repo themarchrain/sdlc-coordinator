@@ -24,6 +24,7 @@ import (
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/workspace"
+	"sdlc-coordinator/internal/workspaceproto"
 )
 
 func TestReviewerRunnerPersistedFlow(t *testing.T) {
@@ -97,16 +98,28 @@ func testReviewerRunnerPersistedFlow(t *testing.T, providerName string, provider
 	if err != nil {
 		t.Fatalf("new runner service: %v", err)
 	}
-	server := httptest.NewServer(runner.NewHTTPHandler(runnerService))
+	workspaceRoot := t.TempDir()
+	ops, err := runner.NewWorkspaceOps(runner.WorkspaceOpsConfig{
+		DataRoot: t.TempDir(), WorkspaceRoot: workspaceRoot,
+		Authorize: func(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
+			return workspaceproto.AuthorizationDecision{Authorized: true}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const internalToken = "reviewer-integration-token"
+	server := httptest.NewServer(runner.NewHTTPHandler(runnerService, runner.WithWorkspaceOperations(ops, internalToken)))
 	defer server.Close()
 	client := agentrunner.NewClient(server.URL, server.Client())
-	workspaceRoot := t.TempDir()
-	coordinator := NewReviewerRunnerCoordinator(tasks, runs, executions, workspace.NewReviewerPreparer(), client, orch)
+	remote := agentrunner.NewRemoteWorkspace(server.URL, internalToken, 1, server.Client())
+	coordinator := NewReviewerRunnerCoordinator(tasks, runs, executions, agentrunner.NewRemoteReadOnlyPreparer(remote), client, orch)
+	coordinator.SetTaskBundlePublisher(remote)
 	started, err := coordinator.Start(ctx, ReviewerRunnerStartRequest{
 		Task: task,
 		Run:  runRecord,
 		Workspace: workspace.ReviewerRequest{
-			WorkspaceRoot: workspaceRoot, Project: task.TargetRepo, RepositoryURL: origin,
+			Project: task.TargetRepo, RepositoryURL: origin,
 			SourceBranch: "feature/review", TargetBranch: "master", HeadSHA: headSHA, RequestedReviewMode: workspace.ReviewModeFull,
 		},
 		Provider: runner.ProviderConfig{Name: providerName, Revision: 1},

@@ -47,6 +47,10 @@ type DeveloperCommitRequest struct {
 	// BaselineSHA 是租户库检查点钉住的初始 HEAD:新建交付提交必须是它的
 	// 直接子提交,当前 HEAD 偏离基线时拒绝新建。
 	BaselineSHA string
+	// DeliveryOwner/DeliveryGeneration 是交付执行权的当前持有身份（远端
+	// 形态随请求传给 Runner 的授权确认；本机形态不消费）。
+	DeliveryOwner      string
+	DeliveryGeneration uint64
 }
 
 type DeveloperCommitResult struct {
@@ -66,6 +70,9 @@ type DeveloperPushRequest struct {
 	CommitSHA   string
 	BaselineSHA string
 	Credential  *GitCredential
+	// DeliveryOwner/DeliveryGeneration 语义同 DeveloperCommitRequest。
+	DeliveryOwner      string
+	DeliveryGeneration uint64
 }
 
 type DeveloperDelivery struct {

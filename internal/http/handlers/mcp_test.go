@@ -66,7 +66,7 @@ func newMCPFixtureWithCodeHost(t *testing.T, withCodeHost bool) mcpFixture {
 		return orch.SubmitResult(ctx, request)
 	})
 	finalizer := &stubMCPFinalizer{}
-	channel := orchestrator.NewResultChannelCoordinator(finalizer, submitter, orchestrator.ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepositoryForMCP()}, "mcp")
+	channel := orchestrator.NewResultChannelCoordinator(finalizer, submitter, orchestrator.ReviewerRunnerSettings{ResolveRepository: stubRunnerRepositoryForMCP()}, "mcp")
 	// 交付检查点桩:基线字段与 createDeveloperRun 的任务元数据一致。
 	channel.SetDeveloperDeliveryCheckpoints(&stubMCPCheckpoints{record: &model.DeveloperDeliveryCheckpoint{
 		TaskID: mcpTestEndpointTask, TaskType: "develop_from_issue",

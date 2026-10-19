@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"sdlc-coordinator/internal/agent"
 	"sdlc-coordinator/internal/model"
@@ -55,7 +54,7 @@ func (o *Orchestrator) DispatchTesterTask(ctx context.Context, taskID string) (*
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.Update(ctx, run); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		// InputJSON 已组好但落库失败:任务回退重试路径,不留孤儿 run。
 		o.recordDispatchFailure(ctx, task, run, err)
 		return nil, err
@@ -80,6 +79,7 @@ func (o *Orchestrator) ReconcileTesterRunner(ctx context.Context, runID string) 
 	}
 	result, err := o.testerRunner.Reconcile(ctx, runID)
 	if errors.Is(err, repository.ErrNotFound) {
+		// 投影缺失时重建；已有派发意图的 Runner 404 属于结果未知，不能据此重发。
 		if _, repairErr := o.rebuildTesterRunnerProjection(ctx, runID); repairErr != nil {
 			return nil, fmt.Errorf("rebuild tester runner projection: %w", repairErr)
 		}
@@ -194,7 +194,7 @@ func assembleTesterWorkspaceRequest(task *model.Task, run *model.Run, repoRow *r
 	}
 	mergeRequest, _ := pkg.Context["merge_request"].(map[string]any)
 	return workspace.ReviewerRequest{
-		WorkspaceRoot: strings.TrimSpace(settings.WorkspaceRoot), TaskID: task.TaskID, RunID: run.RunID,
+		TaskID: task.TaskID, RunID: run.RunID,
 		Project: task.TargetRepo, RepositoryURL: cloneURL,
 		SourceBranch: stringContextField(mergeRequest, "source_branch"),
 		TargetBranch: stringContextField(mergeRequest, "target_branch"),

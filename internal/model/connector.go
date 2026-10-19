@@ -18,14 +18,14 @@ const (
 
 type ConnectorInstance struct {
 	ID                uint                  `gorm:"primaryKey"`
-	ConnectorID       string                `gorm:"uniqueIndex;not null"`
-	Kind              string                `gorm:"not null;uniqueIndex:idx_connector_kind_url"`
+	ConnectorID       string                `gorm:"uniqueIndex;not null;size:128"`
+	Kind              string                `gorm:"not null;uniqueIndex:idx_connector_kind_url;size:64"`
 	DisplayName       string                `gorm:"not null"`
-	BaseURL           string                `gorm:"type:text;not null;uniqueIndex:idx_connector_kind_url"`
+	BaseURL           string                `gorm:"size:512;not null;uniqueIndex:idx_connector_kind_url"`
 	Enabled           bool                  `gorm:"not null"`
-	TargetProjectPath string                `gorm:"index"`
+	TargetProjectPath string                `gorm:"index;size:255"`
 	CapabilitiesJSON  string                `gorm:"type:text;not null"`
-	LastHealthStatus  ConnectorHealthStatus `gorm:"index;not null"`
+	LastHealthStatus  ConnectorHealthStatus `gorm:"index;not null;size:32"`
 	LastHealthMessage string                `gorm:"type:text"`
 	LastHealthAt      *time.Time            `gorm:"index"`
 	CreatedAt         time.Time

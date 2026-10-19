@@ -68,6 +68,46 @@ func (r *RunRepository) UpdateTaskTimeoutIfEmpty(ctx context.Context, runID stri
 	return nil
 }
 
+// UpdateDispatchProjection 只写派发投影列（external_system/external_id/
+// input_json）：不整行覆盖，避免把并发推进的状态字段回滚成旧快照。
+func (r *RunRepository) UpdateDispatchProjection(ctx context.Context, runID, externalSystem, externalID, inputJSON string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ?", runID).
+		Updates(map[string]any{
+			"external_system": externalSystem,
+			"external_id":     externalID,
+			"input_json":      inputJSON,
+		}).Error; err != nil {
+		return fmt.Errorf("update run dispatch projection: %w", err)
+	}
+	return nil
+}
+
+// PinRunnerEndpointIfEmpty 仅在 run 尚未钉住 runner 端点时写入端点列（列级
+// 条件更新，动机同 UpdateProviderIfEmpty）。端点必须在工作区准备之前钉住：
+// 准备、任务包投递、执行、commit/push、清理全链按同一端点寻址，崩溃恢复
+// 路径按钉住值重放，不换 runner。
+func (r *RunRepository) PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (runner_endpoint = '' OR runner_endpoint IS NULL)", runID).
+		Update("runner_endpoint", endpoint).Error; err != nil {
+		return fmt.Errorf("pin run runner endpoint: %w", err)
+	}
+	return nil
+}
+
+// PinRunnerWorkspacePathIfEmpty 仅在 run 尚未记录 runner 工作区路径时写入
+// （prepare 返回值）。恢复路径按该路径重建执行请求，两侧路径不共享时这是
+// 唯一权威来源。
+func (r *RunRepository) PinRunnerWorkspacePathIfEmpty(ctx context.Context, runID, path string) error {
+	if err := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND (runner_workspace_path = '' OR runner_workspace_path IS NULL)", runID).
+		Update("runner_workspace_path", path).Error; err != nil {
+		return fmt.Errorf("pin run runner workspace path: %w", err)
+	}
+	return nil
+}
+
 // UpdateFailedIfInFlight 仅在 run 仍处于在途状态时把状态置为 failed 并写
 // error_message、completed_at，返回是否实际生效。在途集合取 pending、
 // running、finalizing，是既有终态写路径界定终态集合（succeeded、failed、
@@ -111,13 +151,14 @@ func (r *RunRepository) ListTerminalWithActiveExecution(ctx context.Context, lim
 	}
 	var runs []model.Run
 	if err := r.db.WithContext(ctx).
-		Where("status IN ?", []model.RunStatus{model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked}).
-		Where("external_system = ?", "agent-runner").
-		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status IN ?)",
-			[]model.AgentExecutionStatus{model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
-		Order("updated_at ASC").
-		Order("id ASC").
+		Joins("JOIN agent_executions ae ON ae.run_id = runs.run_id").
+		Where("runs.status IN ?", []model.RunStatus{model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked}).
+		Where("runs.external_system = ?", "agent-runner").
+		Where("ae.status IN ?", []model.AgentExecutionStatus{model.AgentExecutionStatusDispatching, model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning}).
+		Order("ae.last_observed_at ASC").
+		Order("ae.id ASC").
 		Limit(limit).
+		Select("runs.*").
 		Find(&runs).Error; err != nil {
 		return nil, fmt.Errorf("list terminal runs with active execution: %w", err)
 	}
@@ -141,14 +182,19 @@ func (r *RunRepository) ListRunning(ctx context.Context, limit int) ([]model.Run
 	return runs, nil
 }
 
-func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, before time.Time, limit int) ([]model.Run, error) {
+func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, before, staleBefore time.Time, limit int) ([]model.Run, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	var runs []model.Run
 	if err := r.db.WithContext(ctx).
-		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND external_system = ?",
-			model.RunStatusSucceeded, "", before, "agent-runner").
+		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?) AND external_system = ?",
+			model.RunStatusSucceeded, "", before, staleBefore, "agent-runner").
+		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status = ? AND TRIM(COALESCE(ae.result_hash, '')) <> '' AND TRIM(COALESCE(ae.error_code, '')) = '' AND TRIM(COALESCE(ae.error_message, '')) = '')", model.AgentExecutionStatusSucceeded).
+		Where("EXISTS (SELECT 1 FROM result_submissions rs WHERE rs.run_id = runs.run_id AND rs.status = ? AND TRIM(COALESCE(rs.error_message, '')) = '')", model.ResultSubmissionStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM writebacks wb WHERE wb.run_id = runs.run_id AND (wb.status IS NULL OR wb.status <> ?))", model.WritebackStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM effects e WHERE e.run_id = runs.run_id AND (e.status IS NULL OR e.status NOT IN ?))", []model.EffectStatus{model.EffectStatusSucceeded, model.EffectStatusSkipped, model.EffectStatusDeliveryUnverified}).
+		Order("artifacts_purge_started_at ASC").
 		Order("completed_at ASC").
 		Order("id ASC").
 		Limit(limit).
@@ -156,4 +202,26 @@ func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, bef
 		return nil, fmt.Errorf("list succeeded runs for artifact cleanup: %w", err)
 	}
 	return runs, nil
+}
+
+// MarkArtifactsPurgingIfUnclean 抢占未完成清理的 run；超期归属可被接管。
+func (r *RunRepository) MarkArtifactsPurgingIfUnclean(ctx context.Context, runID, claimID string, now, staleBefore time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&model.Run{}).
+		Where("run_id = ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?)", runID, staleBefore).
+		Updates(map[string]any{"artifacts_purge_started_at": now, "artifacts_purge_claim_id": claimID})
+	if result.Error != nil {
+		return false, fmt.Errorf("mark artifacts purging: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (r *RunRepository) CompleteArtifactsPurging(ctx context.Context, runID, claimID string, now time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.Run{}).
+		Where("run_id = ? AND artifacts_purge_claim_id = ? AND artifacts_purged_at IS NULL", runID, claimID).
+		Updates(map[string]any{"artifacts_purged_at": now, "artifacts_purge_started_at": nil, "artifacts_purge_claim_id": ""})
+	if result.Error != nil {
+		return false, fmt.Errorf("complete artifacts purging: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }

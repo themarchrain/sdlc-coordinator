@@ -18,7 +18,7 @@ type SecretFieldName = string | (string | number)[]
 import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { adminApi } from '../api/client'
+import { AdminApiError, adminApi } from '../api/client'
 import { APP_VERSION } from '../app/version'
 import type {
   ConfigurationSecretChanges,
@@ -100,11 +100,12 @@ export function ConfigurationPage() {
   const secretTotal = useMemo(() => view ? Object.values(view.secrets).length : 0, [view])
 
   const saveAndRestart = async () => {
+    if (!view) return
     setSaving(true)
     setFieldErrors({})
     try {
       const values = await form.validateFields()
-      const request = toUpdateRequest(values)
+      const request = toUpdateRequest(values, view.revision)
       const validation = await adminApi.validateConfiguration(request)
       if (!validation.valid) {
         setFieldErrors(validation.field_errors)
@@ -119,7 +120,9 @@ export function ConfigurationPage() {
       setRestarting(true)
       message.success('配置已保存，Coordinator 正在重启')
     } catch (reason) {
-      message.error(reason instanceof Error ? reason.message : '保存配置失败')
+      message.error(reason instanceof AdminApiError && reason.code === 'revision_conflict'
+        ? '运行配置已被其他管理员更新，请刷新页面后重新提交'
+        : reason instanceof Error ? reason.message : '保存配置失败')
     } finally {
       setSaving(false)
     }
@@ -204,7 +207,7 @@ function RuntimeBoundaryStep({ status }: { status: ConfigurationStatus }) {
           message="系统已初始化，点击“下一步”开始更新配置，手动确认后，将重启并应用。"
           description="请依次完成 Agent Runner 和调度设置。最后一步点击“保存并启用”后，系统会用本次填写的完整配置覆盖当前运行配置，并自动重启；重启完成后新配置才会生效。组织级配置（代码仓库默认值、通知）由组织管理员在组织工作台维护。"
         />}
-    {importedLegacy ? <Alert type="success" showIcon message="旧环境变量已完成一次性导入；请确认后保存，后续以 SQLite 配置为准。" /> : null}
+    {importedLegacy ? <Alert type="success" showIcon message="旧环境变量已完成一次性导入；请确认后保存，后续以数据库中的运行配置为准。" /> : null}
   </div>
 }
 
@@ -216,11 +219,10 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
       type="info"
       showIcon
       message="Reviewer 与 Developer 通过独立 Runner 执行"
-      description="两个容器在同一 Docker 网络和共享工作区内通信。这里填写内部地址，不需要开放 Runner 的宿主机端口。"
+      description="Coordinator 通过 HTTP 调用 Runner，仓库准备、执行和交付由 Runner 完成。这里填写 Coordinator 可访问的默认 Runner 地址；多 Runner 通过组织 Runner 池选择。"
     />
     <div className="configuration-form-grid">
-      <Form.Item name={['agent_runner', 'service_url']} label="Runner 服务地址" rules={[{ required: true }, { validator: validateHTTPURL }]} extra="同一 Compose 网络内默认使用 http://agent-runner:8081。"><Input placeholder="http://agent-runner:8081" /></Form.Item>
-      <Form.Item name={['agent_runner', 'workspace_root']} label="共享工作区" rules={[{ required: true }]} extra="Coordinator 与 Runner 容器内必须映射到同一路径。"><Input className="mono" placeholder="/app/workspaces" /></Form.Item>
+      <Form.Item name={['agent_runner', 'service_url']} label="Runner 服务地址" rules={[{ required: true }, { validator: validateHTTPURL }]} extra="使用可达的服务名和端口，例如 http://agent-runner:8081。该地址是默认端点，不是多个 Runner 的地址列表。"><Input placeholder="http://agent-runner:8081" /></Form.Item>
       {/* 执行 Provider 不再提供 UI 编辑（切换属系统级变更，不进配置向导）；
           保留隐藏注册字段让保存 payload 原样回传加载值——后端整行替换语义下
           缺键会把系统默认 CLI 静默清空。 */}
@@ -239,6 +241,7 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
       <SecretField name="agent_runner_api_key" clearName="clear_agent_runner_api_key" label="模型 API Key" configured={secrets.agent_runner_api_key_configured} />
       <SecretField name="agent_runner_custom_headers_json" clearName="clear_agent_runner_custom_headers_json" label="自定义 Header JSON" configured={secrets.agent_runner_custom_headers_configured} optional />
     </div>
+    <Alert type="info" showIcon message="工作区由 Runner 部署配置管理" description="Runner 通过 AGENT_RUNNER_WORKSPACE_ROOT 和目录挂载管理实际工作目录。修改目录需要调整部署配置并重新创建 Runner 容器。Coordinator 通过 HTTP 操作 Runner 工作区，无需挂载该目录，多个 Runner 各自保存文件。" />
   </div>
 }
 
@@ -251,8 +254,7 @@ function RuntimeSettingsStep() {
     <div className="configuration-inline-title"><div><h3>Scheduler</h3></div><Form.Item name={['scheduler', 'enabled']} valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item></div>
     <div className="configuration-form-grid">
       <Form.Item name={['scheduler', 'interval']} label="执行间隔" rules={[{ required: true }]}><Input className="mono" placeholder="30s" /></Form.Item>
-      <Form.Item name={['scheduler', 'callback_base_url']} label="回调基地址" rules={[{ required: true }, { validator: validateHTTPURL }]} extra="代码托管平台与 Agent Runner 回访 coordinator 使用的对外地址。"><Input className="mono" placeholder="http://127.0.0.1:8080" /></Form.Item>
-      <Form.Item name={['scheduler', 'workspace_root']} label="工作区根目录" rules={[{ required: true }]} extra="通常与 Agent Runner 的共享工作区保持一致。"><Input className="mono" placeholder="D:/workspaces" /></Form.Item>
+      <Form.Item name={['scheduler', 'callback_base_url']} label="MCP 结果回调地址" rules={[{ required: true }, { validator: validateHTTPURL }]} extra="填写 Runner 内 Agent 可访问的完整 MCP 地址，包含 /mcp，例如 http://sdlc-gateway:80/mcp。GitHub 等平台的 Webhook 接收地址独立配置。"><Input className="mono" placeholder="http://sdlc-gateway:80/mcp" /></Form.Item>
     </div>
     <div className="configuration-limit-grid">{limits.map(([name, label]) => <Form.Item key={name} name={['scheduler', name]} label={`${label}上限`} rules={[{ required: true }]}><InputNumber min={0} precision={0} /></Form.Item>)}</div>
   </div>
@@ -262,7 +264,7 @@ function SummaryStep({ form, fieldErrors }: { form: FormInstance<ConfigurationFo
   const values = Form.useWatch([], form) as ConfigurationFormValues | undefined
   return <div className="configuration-summary">
     <h2>保存完整配置并重启</h2>
-    <p>新版本会原子写入 SQLite。当前进程不会热替换已有 Client；收到重启请求后先返回响应，再执行优雅关闭。</p>
+    <p>保存时会在数据库中新增一版运行配置。当前进程不会热替换已有 Client；重启后使用新版本。Runner 的实际工作目录由部署配置管理，不随此表单保存而改变。</p>
     <div className="configuration-summary-grid">
       <div><span>Agent Runner</span><strong>{values?.agent_runner?.model ? `${values.agent_runner.model} / ${values.agent_runner.service_url}` : '未填写'}</strong></div>
       <div><span>Scheduler</span><strong>{values?.scheduler?.enabled ? `每 ${values.scheduler.interval}` : '停用'}</strong></div>
@@ -291,7 +293,7 @@ function toFormValues(view: ConfigurationView): ConfigurationFormValues {
   }
 }
 
-function toUpdateRequest(values: ConfigurationFormValues): ConfigurationUpdateRequest {
+function toUpdateRequest(values: ConfigurationFormValues, expectedRevision: number): ConfigurationUpdateRequest {
   const { task_timeout_minutes, ...agentRunner } = values.agent_runner
   return {
     config: {
@@ -302,6 +304,7 @@ function toUpdateRequest(values: ConfigurationFormValues): ConfigurationUpdateRe
       scheduler: values.scheduler,
     },
     secrets: values.secrets || {},
+    expected_revision: expectedRevision,
   }
 }
 

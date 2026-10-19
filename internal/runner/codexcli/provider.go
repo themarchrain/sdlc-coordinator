@@ -69,7 +69,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		return nil, err
 	}
 
-	runtimeRoot, err := os.MkdirTemp("", "agent-runner-codex-")
+	runtimeRoot, err := os.MkdirTemp(request.WorkspacePath, ".agent-runner-codex-")
 	if err != nil {
 		return nil, fmt.Errorf("create isolated codex home: %w", err)
 	}

@@ -28,7 +28,7 @@ func TestBuildDeveloperWorkspaceRequestDerivesRepositoryURLFromRegisteredRow(t *
 	}
 	run := &model.Run{RunID: "run-developer-url", TaskID: task.TaskID, WorkerRole: "DeveloperWorker"}
 	request, err := buildDeveloperWorkspaceRequest(context.Background(), task, run,
-		ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()})
+		ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()})
 	if err != nil {
 		t.Fatalf("build developer workspace request: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestBuildReviewerWorkspaceRequestDerivesRepositoryURLFromRegisteredRow(t *t
 	}
 	run := &model.Run{RunID: "run-reviewer-url", TaskID: task.TaskID, WorkerRole: "ReviewerWorker"}
 	request, err := buildReviewerWorkspaceRequest(context.Background(), task, run,
-		ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()})
+		ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()})
 	if err != nil {
 		t.Fatalf("build reviewer workspace request: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestBuildDeveloperWorkspaceRequestReworkIgnoresEventRepositoryURL(t *testin
 	}
 	run := &model.Run{RunID: "run-rework-url", TaskID: task.TaskID, WorkerRole: "DeveloperWorker"}
 	request, err := buildDeveloperWorkspaceRequest(context.Background(), task, run,
-		ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()})
+		ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()})
 	if err != nil {
 		t.Fatalf("build rework workspace request: %v", err)
 	}

@@ -73,37 +73,6 @@ func TestLoginRateLimitBackstopPerUsername(t *testing.T) {
 	}
 }
 
-// ===== 限速表驱逐策略（最旧时间戳逐键驱逐，替代全表重置） =====
-
-func TestLoginRateLimiterEvictsOldestKeyWhenFull(t *testing.T) {
-	limiter := newLoginRateLimiter(time.Hour, 3, 2)
-	base := time.Now()
-	// 三个键取严格递增时间戳：驱逐按「最新失败时间最旧」裁决，并列时
-	// 取决于 map 随机迭代序（语义正确但不可断言），测试必须避开并列。
-	limiter.now = func() time.Time { return base }
-	limiter.record("key-old")
-	limiter.now = func() time.Time { return base.Add(30 * time.Second) }
-	limiter.record("key-new")
-	// 时间前进后打满：最旧的 key-old 应被逐出，key-new 保留。
-	limiter.now = func() time.Time { return base.Add(time.Minute) }
-	limiter.record("key-newest")
-	limiter.mu.Lock()
-	_, oldExists := limiter.failures["key-old"]
-	_, newExists := limiter.failures["key-new"]
-	_, newestExists := limiter.failures["key-newest"]
-	size := len(limiter.failures)
-	limiter.mu.Unlock()
-	if oldExists {
-		t.Fatal("oldest key should have been evicted")
-	}
-	if !newExists || !newestExists {
-		t.Fatalf("newer keys must survive eviction, got new=%v newest=%v", newExists, newestExists)
-	}
-	if size > 2 {
-		t.Fatalf("limiter exceeded cap: %d keys", size)
-	}
-}
-
 // ===== 注册链补偿（入会失败 → 退名额 + 删孤儿账号） =====
 
 func TestRegistrationCompensationRemovesUserAndRefundsInvite(t *testing.T) {

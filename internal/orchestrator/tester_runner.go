@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,12 +19,13 @@ import (
 // 只读检出(固定到任务上下文冻结的头部 SHA),回传走 MCP 的 submit_tester_result
 // 工具,红绿证据由 TesterContract 校验落库。
 type TesterRunnerCoordinator struct {
-	tasks     TaskRepository
-	runs      RunRepository
-	preparer  ReviewerWorkspacePreparer
-	submitter ReviewerResultSubmitter
-	core      *AgentRunnerCoordinator
-	channel   *ResultChannelCoordinator
+	tasks      TaskRepository
+	runs       RunRepository
+	preparer   ReviewerWorkspacePreparer
+	submitter  ReviewerResultSubmitter
+	core       *AgentRunnerCoordinator
+	channel    *ResultChannelCoordinator
+	bundleSink TaskBundlePublisher
 	// runnerProviderLookup 是组织段执行选择（CLI 与推理强度）的动态来源
 	// （派发时现取）；nil 或字段为空串 = 沿用系统默认。
 	runnerProviderLookup func(context.Context) RunnerSelection
@@ -64,6 +64,10 @@ func (c *TesterRunnerCoordinator) SetTenantRunnerRouter(router TenantRunnerRoute
 	c.core.setTenantRunnerRouter(router)
 }
 
+func (c *TesterRunnerCoordinator) SetTaskBundlePublisher(publisher TaskBundlePublisher) {
+	c.bundleSink = publisher
+}
+
 // SetRunnerProviderLookup 在装配期接入组织段执行选择（派发时现取，
 // 保存即热生效）；lookup 为 nil 或字段返回空串时保留系统默认值。
 func (c *TesterRunnerCoordinator) SetRunnerProviderLookup(lookup func(context.Context) RunnerSelection) {
@@ -74,6 +78,9 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
 	}
+	if c.bundleSink == nil {
+		return nil, errors.New("runner task bundle publisher is required")
+	}
 	if err := validateTesterRunnerTask(request.Task, request.Run); err != nil {
 		return nil, err
 	}
@@ -81,7 +88,7 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 	if err != nil {
 		return nil, err
 	}
-	runRoot := filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
+	runRoot := strings.TrimSpace(request.Run.RunnerWorkspacePath)
 	// 组织段执行选择覆盖请求 Provider 的 Name/Effort 与派发超时；run 已钉住
 	// 取值时钉住值优先，与 reviewer/developer 同一口径。
 	providerConfig, taskTimeout := resolveRunnerExecution(ctx, c.runnerProviderLookup, request.Provider, request.Timeout, request.Run)
@@ -95,24 +102,41 @@ func (c *TesterRunnerCoordinator) Start(ctx context.Context, request TesterRunne
 		TimeoutSeconds: int64(taskTimeout / time.Second),
 		Provider:       providerConfig,
 	}
-	if existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest); err != nil {
+	existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest)
+	if err != nil {
 		return nil, err
-	} else if found {
+	}
+	if found && existing.Status != model.AgentExecutionStatusDispatching {
 		return existing, nil
 	}
-	manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
-	if err != nil {
-		return nil, fmt.Errorf("prepare tester workspace: %w", err)
-	}
-	if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "TesterWorker" {
-		return nil, errors.New("tester workspace manifest is not ready for current task and run")
-	}
-	bundle, err := workers.BuildTesterRunnerTaskBundle(request.Task, request.Run)
-	if err != nil {
-		return nil, fmt.Errorf("build tester task bundle: %w", err)
-	}
-	if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
-		return nil, fmt.Errorf("write tester task bundle: %w", err)
+	// 派发意图尚未收敛（dispatching）：工作区与任务包在上一次派发时已就绪，
+	// 跳过重准备直接进 Start 按原端点对账，避免覆盖在途 Agent 的工作区。
+	if !found {
+		// 准备之前先解析并钉住 run 归属端点：准备、投递、执行、清理全链
+		// 按同一端点寻址。
+		if _, err := c.core.resolveAndPinEndpoint(ctx, request.Task, request.Run); err != nil {
+			return nil, err
+		}
+		manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tester workspace: %w", err)
+		}
+		if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "TesterWorker" {
+			return nil, errors.New("tester workspace manifest is not ready for current task and run")
+		}
+		bundle, err := workers.BuildTesterRunnerTaskBundle(request.Task, request.Run)
+		if err != nil {
+			return nil, fmt.Errorf("build tester task bundle: %w", err)
+		}
+		workspacePath, err := c.deliverTaskBundle(ctx, request.Task, request.Run, bundle)
+		if err != nil {
+			return nil, err
+		}
+		executionRequest.WorkspacePath = workspacePath
+		if err := c.runs.PinRunnerWorkspacePathIfEmpty(ctx, request.Run.RunID, workspacePath); err != nil {
+			return nil, fmt.Errorf("pin tester runner workspace path: %w", err)
+		}
+		request.Run.RunnerWorkspacePath = workspacePath
 	}
 
 	pinRunnerSelectionOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort, taskTimeout)
@@ -202,4 +226,19 @@ func normalizeTesterWorkspaceRequest(request TesterRunnerStartRequest) (workspac
 	result.Project = request.Task.TargetRepo
 	result.WorkerRole = "TesterWorker"
 	return result, nil
+}
+
+func (c *TesterRunnerCoordinator) deliverTaskBundle(ctx context.Context, task *model.Task, run *model.Run, bundle agent.TaskBundle) (string, error) {
+	files, err := agent.RenderTaskBundle(bundle)
+	if err != nil {
+		return "", fmt.Errorf("render task bundle: %w", err)
+	}
+	workspacePath, err := c.bundleSink.PublishTaskBundle(ctx, task.TaskID, run.RunID, files)
+	if err != nil {
+		return "", fmt.Errorf("publish task bundle: %w", err)
+	}
+	if strings.TrimSpace(workspacePath) == "" {
+		return "", errors.New("runner did not report the run workspace path for the task bundle")
+	}
+	return workspacePath, nil
 }

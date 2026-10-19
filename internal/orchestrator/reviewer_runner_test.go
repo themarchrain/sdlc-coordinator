@@ -218,12 +218,15 @@ func newReviewerRunnerFixture(t *testing.T) reviewerRunnerFixture {
 	if err := runs.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
-	preparer := &fakeReviewerWorkspacePreparer{}
+	root := t.TempDir()
+	preparer := &fakeReviewerWorkspacePreparer{root: root}
 	runnerClient := &fakeReviewerRunnerClient{}
 	submitter := &recordingResultSubmitter{}
+	coordinator := NewReviewerRunnerCoordinator(tasks, runs, executions, preparer, runnerClient, submitter)
+	coordinator.SetTaskBundlePublisher(fixtureRunnerWorkspace{root: root})
 	return reviewerRunnerFixture{
-		root: t.TempDir(), task: task, run: run, tasks: tasks, runs: runs, preparer: preparer, runner: runnerClient, submitter: submitter,
-		coordinator: NewReviewerRunnerCoordinator(tasks, runs, executions, preparer, runnerClient, submitter),
+		root: root, task: task, run: run, tasks: tasks, runs: runs, preparer: preparer, runner: runnerClient, submitter: submitter,
+		coordinator: coordinator,
 	}
 }
 
@@ -240,11 +243,14 @@ func (f reviewerRunnerFixture) startRequest() ReviewerRunnerStartRequest {
 	}
 }
 
-type fakeReviewerWorkspacePreparer struct{ calls int }
+type fakeReviewerWorkspacePreparer struct {
+	calls int
+	root  string
+}
 
 func (f *fakeReviewerWorkspacePreparer) Prepare(_ context.Context, request workspace.ReviewerRequest) (*workspace.Manifest, error) {
 	f.calls++
-	root := filepath.Join(request.WorkspaceRoot, "runs", request.RunID)
+	root := filepath.Join(f.root, "runs", request.RunID)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}

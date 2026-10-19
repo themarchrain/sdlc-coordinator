@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -56,16 +58,16 @@ func (c *AgentRunnerCoordinator) Existing(ctx context.Context, runID string, req
 	if err := c.validateDependencies(); err != nil {
 		return nil, false, err
 	}
-	expectedHash, err := runner.RequestHash(request)
-	if err != nil {
-		return nil, false, fmt.Errorf("build runner request identity: %w", err)
-	}
 	existing, err := c.executions.GetByRunID(ctx, runID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
+	}
+	expectedHash, err := runner.RequestHash(request)
+	if err != nil {
+		return nil, false, fmt.Errorf("build runner request identity: %w", err)
 	}
 	if err := validateStoredExecution(existing, runID, expectedHash); err != nil {
 		return nil, false, err
@@ -166,44 +168,156 @@ func (c *AgentRunnerCoordinator) attemptForTask(ctx context.Context, task *model
 	return c.router.AttemptForTask(ctx, task)
 }
 
+// resolveAndPinEndpoint 在准备之前解析并钉住 run 归属端点：准备、任务包
+// 投递、执行、commit/push、清理全链按同一端点寻址——独立卷下别的 runner
+// 既没有该 run 的仓库也没有 Agent 的修改。已有钉住值直接沿用（崩溃恢复/
+// 重建路径不换 runner）；单端点直连形态返回空串（默认端点语义）。条件写
+// 后重读以库内值为准（并发方可能已钉住）。
+func (c *AgentRunnerCoordinator) resolveAndPinEndpoint(ctx context.Context, task *model.Task, run *model.Run) (string, error) {
+	if run == nil {
+		return "", nil
+	}
+	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" {
+		return pinned, nil
+	}
+	if c.router == nil {
+		return "", nil
+	}
+	attempt, err := c.attemptForTask(ctx, task)
+	if err != nil {
+		return "", err
+	}
+	endpoint := strings.TrimSpace(attempt.Endpoint)
+	if endpoint == "" {
+		return "", nil
+	}
+	if err := c.runs.PinRunnerEndpointIfEmpty(ctx, run.RunID, endpoint); err != nil {
+		return "", fmt.Errorf("pin runner endpoint for run %s: %w", run.RunID, err)
+	}
+	refreshed, err := c.runs.GetByRunID(ctx, run.RunID)
+	if err != nil {
+		return "", fmt.Errorf("reload run %s after pinning endpoint: %w", run.RunID, err)
+	}
+	run.RunnerEndpoint = strings.TrimSpace(refreshed.RunnerEndpoint)
+	return run.RunnerEndpoint, nil
+}
+
+// errDispatchOutcomeUnknown 报告远端派发结果不确定（Create 歧义失败且
+// 无法按原端点回读）：意图行保持待对账，不得判失败重派新执行。
+var errDispatchOutcomeUnknown = errors.New("dispatch outcome unknown")
+
+func runnerCreateDefinitelyRejected(err error) bool {
+	return runnerHTTPStatus(err, http.StatusBadRequest) || runnerHTTPStatus(err, http.StatusUnprocessableEntity)
+}
+
 // createOnPool 在端点池上派发执行：每轮先 Create，失败后同端点 Get 崩溃恢复
-// （既有语义）；Get 返回 404（确定性未建）才轮换下一端点，歧义失败（传输层
-// 错误等）按既有失败语义终止，池耗尽返回首个 Create 错误。返回实际承接执行
-// 的端点，供 projection 做观测亲和。
-func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt RunnerAttempt, run *model.Run, expectedHash string, request runner.CreateExecutionRequest) (*runner.Execution, string, error) {
+// （既有语义）；仅 Create 明确返回请求校验 400/422 且 Get 返回 404 时，才
+// 能确认未接纳并轮换下一端点。传输错误、5xx 和其他歧义响应都保持 pending。
+// 池耗尽返回首个 Create 错误。返回实际承接执行
+// 的端点，供 projection 做观测亲和；definite 报告失败是否为全部端点确定性
+// 未接纳——只有它才允许上层按失败处理（判失败/重试），否则结果不确定。
+//
+// 每次轮换到新端点前先经 repin 把新目标持久化（old→new 条件写）：Create 被
+// 远端接受后本进程若在投影回写前退出，接管方按库里记录的端点对账——不先落
+// 新目标时接管方会回到旧端点重发同 run，两个 runner 各起一个执行（同 run
+// ID 的幂等域只在各 runner 本地）。repin 失败（写库失败/条件不满足）即终止
+// 轮换并保持不确定语义，不允许远端已接受而库里仍指向旧端点的窗口存在。
+func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt RunnerAttempt, run *model.Run, expectedHash string, request runner.CreateExecutionRequest, persistedEndpoint string, repin func(context.Context, string, string) error) (*runner.Execution, string, bool, error) {
 	firstErr := error(nil)
 	for {
 		remote, createErr := attempt.Client.Create(ctx, request)
 		if createErr == nil {
-			return remote, attempt.Endpoint, nil
+			return remote, attempt.Endpoint, true, nil
 		}
 		if firstErr == nil {
 			firstErr = createErr
 		}
 		recovered, getErr := attempt.Client.Get(ctx, run.RunID)
 		if getErr == nil {
-			return recovered, attempt.Endpoint, nil
+			return recovered, attempt.Endpoint, true, nil
 		}
 		if !runnerNotFound(getErr) {
-			return nil, "", fmt.Errorf("create runner execution: %w", firstErr)
+			// 结果不确定：不轮换、不判失败，交上层保持意图待对账。
+			return nil, "", false, fmt.Errorf("%w: create runner execution: %v", errDispatchOutcomeUnknown, firstErr)
+		}
+		if !runnerCreateDefinitelyRejected(createErr) {
+			return nil, "", false, fmt.Errorf("%w: create runner execution: %v; execution read-back returned 404 on %q", errDispatchOutcomeUnknown, firstErr, attempt.Endpoint)
 		}
 		next, ok := attempt.Next()
 		if !ok {
-			return nil, "", fmt.Errorf("create runner execution: %w", firstErr)
+			return nil, "", true, fmt.Errorf("create runner execution: %w", firstErr)
 		}
+		if repin != nil {
+			if err := repin(ctx, persistedEndpoint, next.Endpoint); err != nil {
+				// 新目标未能持久化：绝不换端点，保持不确定语义让接管方
+				// 按既有记录对账。
+				return nil, "", false, fmt.Errorf("%w: persist fallback runner endpoint %q: %v", errDispatchOutcomeUnknown, next.Endpoint, err)
+			}
+		}
+		persistedEndpoint = next.Endpoint
 		attempt = next
 	}
 }
 
-// executionClient 返回观测执行的客户端：优先按 projection 记录的端点钉住
-// （池亲和），无记录或路由未知时回退默认客户端。
-func (c *AgentRunnerCoordinator) executionClient(stored *model.AgentExecution) ReviewerRunnerClient {
-	if c.router != nil && stored != nil {
-		if pinned, ok := c.router.ClientForEndpoint(stored.RunnerEndpoint); ok {
-			return pinned
-		}
+func (c *AgentRunnerCoordinator) persistIntent(ctx context.Context, run *model.Run, request runner.CreateExecutionRequest, endpoint, expectedHash string) (*model.AgentExecution, error) {
+	now := c.now().UTC()
+	intent := &model.AgentExecution{
+		RunID: run.RunID, ExecutionID: run.RunID, Provider: request.Provider.Name,
+		ProviderConfigRevision: request.Provider.Revision, ProviderModel: request.Provider.Model,
+		ProviderEffort: request.Provider.Effort, RunnerEndpoint: endpoint,
+		Status: model.AgentExecutionStatusDispatching, RequestHash: expectedHash, LastObservedAt: &now,
 	}
-	return c.runner
+	if err := c.executions.Create(ctx, intent); err != nil {
+		stored, lookupErr := c.executions.GetByRunID(ctx, run.RunID)
+		if lookupErr == nil {
+			return stored, nil
+		}
+		return nil, fmt.Errorf("persist dispatch intent for run %s: %w", run.RunID, err)
+	}
+	return intent, nil
+}
+
+// settleIntentFailure 把确定性未接纳的意图行落为 failed（可查询原因），
+// 供任务失败路径照常重试（此时确无远端执行在跑）。
+func (c *AgentRunnerCoordinator) settleIntentFailure(ctx context.Context, intent *model.AgentExecution, cause error) {
+	now := c.now().UTC()
+	intent.Status = model.AgentExecutionStatusFailed
+	intent.ErrorMessage = cause.Error()
+	intent.FinishedAt = &now
+	if err := c.executions.Update(ctx, intent); err != nil {
+		log.Printf("orchestrator: settle dispatch intent for run %s: %v", intent.RunID, err)
+	}
+}
+
+// projectRemoteIntoIntent 把远端执行投影进既有意图行（保留主键、创建时间与
+// 端点亲和），再交给调用方。
+func (c *AgentRunnerCoordinator) projectRemoteIntoIntent(ctx context.Context, stored *model.AgentExecution, remote *runner.Execution, lastEventSeq int64) (*model.AgentExecution, error) {
+	projection, err := c.project(remote, stored.ProviderConfigRevision, lastEventSeq, stored.ProviderModel, stored.ProviderEffort)
+	if err != nil {
+		return nil, err
+	}
+	projection.ID = stored.ID
+	projection.CreatedAt = stored.CreatedAt
+	projection.RunnerEndpoint = stored.RunnerEndpoint
+	if err := c.executions.Update(ctx, projection); err != nil {
+		return nil, fmt.Errorf("persist dispatch projection for run %s: %w", stored.RunID, err)
+	}
+	return projection, nil
+}
+
+func (c *AgentRunnerCoordinator) reconcileIntent(ctx context.Context, stored *model.AgentExecution) (*model.AgentExecution, error) {
+	client := c.executionClient(stored)
+	remote, getErr := client.Get(ctx, stored.ExecutionID)
+	if getErr == nil {
+		if err := validateRemoteExecution(remote, stored.ExecutionID, stored.RequestHash); err != nil {
+			return nil, err
+		}
+		return c.projectRemoteIntoIntent(ctx, stored, remote, stored.LastEventSeq)
+	}
+	if !runnerNotFound(getErr) {
+		return nil, fmt.Errorf("%w: read back execution %s on %q: %v", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint, getErr)
+	}
+	return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
 }
 
 func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, run *model.Run, request runner.CreateExecutionRequest) (*model.AgentExecution, error) {
@@ -221,8 +335,12 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	if err != nil {
 		return nil, err
 	}
-	if found {
+	if found && existing.Status != model.AgentExecutionStatusDispatching {
 		return existing, nil
+	}
+	if found {
+		// 意图已落库、远端结果未定：按原目标端点收敛。
+		return c.reconcileIntent(ctx, existing)
 	}
 	if c.ingressIssuer != nil && c.ingressEndpoint != "" {
 		token, err := c.ingressIssuer.IssueRunToken(task.TaskID, run.RunID, task.Role, time.Duration(request.TimeoutSeconds)*time.Second)
@@ -231,30 +349,90 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 		}
 		request.ResultSubmission = &runner.ResultSubmissionChannel{EndpointURL: c.ingressEndpoint, BearerToken: token}
 	}
-	attempt, err := c.attemptForTask(ctx, task)
+	var attempt RunnerAttempt
+	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" {
+		// 本 run 已钉住归属端点（准备/任务包投递已按它发生）：派发必须命中
+		// 同一端点，绝不轮换——独立卷下别的 runner 没有这份工作区与任务包。
+		attempt = c.attemptOnRecordedEndpoint(RunnerAttempt{Client: c.runner}, pinned)
+	} else {
+		attempt, err = c.attemptForTask(ctx, task)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// 先落目标再调用：意图行写入成功后才做有副作用的远端 Create；崩溃在
+	// 两者之间时，接管方按该端点回读/重发，不换 Runner、不产生第二个执行。
+	intent, err := c.persistIntent(ctx, run, request, attempt.Endpoint, expectedHash)
 	if err != nil {
 		return nil, err
 	}
-	remote, endpoint, err := c.createOnPool(ctx, attempt, run, expectedHash, request)
+	if intent.Status != model.AgentExecutionStatusDispatching {
+		// 并发方已收敛同一 run：按幂等回放返回既有投影。
+		if err := validateStoredExecution(intent, run.RunID, expectedHash); err != nil {
+			return nil, err
+		}
+		return intent, nil
+	}
+	if intent.RunnerEndpoint != attempt.Endpoint {
+		// 采纳并发方记录的目标端点（不换 Runner）。
+		attempt = c.attemptOnRecordedEndpoint(attempt, intent.RunnerEndpoint)
+	}
+	// 每次端点推进先在库里持久化新目标：Create 被接受后本进程退出时，接管
+	// 方按库内端点对账；不先落目标会让接管方回到旧端点重发同 run（两个
+	// runner 各起一个执行）。条件写按旧记录值防覆盖并发方的更新。
+	repoPin := func(pinCtx context.Context, from, to string) error {
+		return c.executions.UpdateRunnerEndpointIfUnchanged(pinCtx, run.RunID, from, to)
+	}
+	remote, endpoint, definite, err := c.createOnPool(ctx, attempt, run, expectedHash, request, intent.RunnerEndpoint, repoPin)
 	if err != nil {
+		if !definite {
+			// 结果不确定：保持意图待对账（轮询按原端点收敛），本函数按
+			// 已受理返回意图行，不判失败、不重派新执行。
+			return intent, nil
+		}
+		c.settleIntentFailure(ctx, intent, err)
 		return nil, err
 	}
 	if err := validateRemoteExecution(remote, run.RunID, expectedHash); err != nil {
+		c.settleIntentFailure(ctx, intent, err)
 		return nil, err
 	}
-	projection, err := c.project(remote, request.Provider.Revision, 0, request.Provider.Model, request.Provider.Effort)
+	intent.RunnerEndpoint = endpoint
+	projection, err := c.projectRemoteIntoIntent(ctx, intent, remote, 0)
 	if err != nil {
 		return nil, err
 	}
-	projection.RunnerEndpoint = endpoint
-	if err := c.executions.Create(ctx, projection); err != nil {
-		stored, lookupErr := c.executions.GetByRunID(ctx, run.RunID)
-		if lookupErr == nil && validateStoredExecution(stored, run.RunID, expectedHash) == nil {
-			return stored, nil
-		}
-		return nil, err
-	}
 	return projection, nil
+}
+
+// attemptOnRecordedEndpoint 把尝试改钉到已记录的端点：有池客户端用池客户端，
+// 否则回退默认直连；不含 Next（收敛路径禁止轮换）。
+func (c *AgentRunnerCoordinator) attemptOnRecordedEndpoint(attempt RunnerAttempt, endpoint string) RunnerAttempt {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return attempt
+	}
+	if endpoint == attempt.Endpoint {
+		attempt.next = nil
+		return attempt
+	}
+	if c.router != nil {
+		if client, ok := c.router.ClientForEndpoint(endpoint); ok {
+			return RunnerAttempt{Client: client, Endpoint: endpoint}
+		}
+	}
+	return RunnerAttempt{Client: c.runner, Endpoint: endpoint}
+}
+
+// executionClient 返回观测执行的客户端：优先按 projection 记录的端点钉住
+// （池亲和），无记录或路由未知时回退默认客户端。
+func (c *AgentRunnerCoordinator) executionClient(stored *model.AgentExecution) ReviewerRunnerClient {
+	if c.router != nil && stored != nil {
+		if pinned, ok := c.router.ClientForEndpoint(stored.RunnerEndpoint); ok {
+			return pinned
+		}
+	}
+	return c.runner
 }
 
 func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*AgentRunnerObservation, error) {
@@ -269,7 +447,24 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if err != nil {
 		return nil, err
 	}
+	if err := c.executions.TouchLastObservedAt(ctx, runID, c.now().UTC()); err != nil {
+		return nil, err
+	}
 	client := c.executionClient(stored)
+	if stored.Status == model.AgentExecutionStatusDispatching {
+		remote, getErr := client.Get(ctx, stored.ExecutionID)
+		if runnerNotFound(getErr) {
+			return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
+		}
+		if getErr != nil {
+			return nil, fmt.Errorf("read back dispatching execution %s: %w", stored.ExecutionID, getErr)
+		}
+		converged, err := c.projectRemoteIntoIntent(ctx, stored, remote, stored.LastEventSeq)
+		if err != nil {
+			return nil, err
+		}
+		stored = converged
+	}
 	events, err := client.Events(ctx, stored.ExecutionID, stored.LastEventSeq)
 	if err != nil {
 		return nil, fmt.Errorf("list runner execution events: %w", err)

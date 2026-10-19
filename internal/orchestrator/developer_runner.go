@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,6 +31,7 @@ type DeveloperRunnerCoordinator struct {
 	runs        RunRepository
 	preparer    DeveloperWorkspacePreparer
 	finalizer   DeveloperGitFinalizer
+	bundleSink  TaskBundlePublisher
 	checkpoints DeveloperDeliveryCheckpoints
 	submitter   ReviewerResultSubmitter
 	core        *AgentRunnerCoordinator
@@ -93,9 +93,22 @@ func (c *DeveloperRunnerCoordinator) SetDeveloperDeliveryCheckpoints(checkpoints
 	c.channel.SetDeveloperDeliveryCheckpoints(checkpoints)
 }
 
+func (c *DeveloperRunnerCoordinator) SetTaskBundlePublisher(publisher TaskBundlePublisher) {
+	c.bundleSink = publisher
+}
+
+// SetDeliveryExecutionRight 在装配期接入交付执行权端口：文本通道的交付
+// （reconcile → 通道内 commit/push）与 MCP 通道共用同一 run 级执行权。
+func (c *DeveloperRunnerCoordinator) SetDeliveryExecutionRight(leases WorkItemLeasePort) {
+	c.channel.SetDeliveryExecutionRight(leases)
+}
+
 func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request DeveloperRunnerStartRequest) (*model.AgentExecution, error) {
 	if err := c.validateDependencies(); err != nil {
 		return nil, err
+	}
+	if c.bundleSink == nil {
+		return nil, errors.New("runner task bundle publisher is required")
 	}
 	if err := validateDeveloperRunnerTask(request.Task, request.Run); err != nil {
 		return nil, err
@@ -104,7 +117,7 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 	if err != nil {
 		return nil, err
 	}
-	runRoot := filepath.Join(workspaceRequest.WorkspaceRoot, "runs", request.Run.RunID)
+	runRoot := strings.TrimSpace(request.Run.RunnerWorkspacePath)
 	// 组织段执行选择覆盖请求 Provider 的 Name/Effort 与派发超时（值拷贝，
 	// 其余字段保持系统值）；全部派发路径（派发/投影重建）都经本入口汇聚。
 	// run 已钉住取值时（恢复/重建路径）钉住值优先，配置热切换不改变在途
@@ -115,37 +128,69 @@ func (c *DeveloperRunnerCoordinator) Start(ctx context.Context, request Develope
 		WorkspacePath: runRoot, PromptFile: agent.PromptFileName, SchemaFile: agent.ResultSchemaFileName,
 		TimeoutSeconds: int64(taskTimeout / time.Second), Provider: providerConfig,
 	}
-	if existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest); err != nil {
+	existing, found, err := c.core.Existing(ctx, request.Run.RunID, executionRequest)
+	if err != nil {
 		return nil, err
-	} else if found {
+	}
+	if found && existing.Status != model.AgentExecutionStatusDispatching {
 		return existing, nil
 	}
-	manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
-	if err != nil {
-		return nil, fmt.Errorf("prepare developer workspace: %w", err)
-	}
-	if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "DeveloperWorker" {
-		return nil, errors.New("developer workspace manifest is not ready for current task and run")
-	}
-	// 固定基线:prepare 成功后、交给 Agent 之前,把初始 HEAD 与任务/仓/分支
-	// 绑定钉进 Coordinator 私有的租户库检查点。基线失败即中止派发(Agent
-	// 会话尚未开始,零成本);没有基线的 run,后续交付一律 fail-closed。
-	if err := c.checkpoints.RecordBaseline(ctx, &model.DeveloperDeliveryCheckpoint{
-		TaskID: request.Task.TaskID, RunID: request.Run.RunID, TaskType: request.Task.Type,
-		RepositoryURL: workspaceRequest.RepositoryURL, DeliveryBranch: workspaceRequest.DeliveryBranch,
-		BaselineSHA: strings.ToLower(strings.TrimSpace(manifest.Repository.InitialHeadSHA)),
-	}); err != nil {
-		return nil, fmt.Errorf("record developer delivery baseline: %w", err)
-	}
-	bundle, err := workers.BuildDeveloperRunnerTaskBundle(request.Task, request.Run)
-	if err != nil {
-		return nil, fmt.Errorf("build developer task bundle: %w", err)
-	}
-	if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
-		return nil, fmt.Errorf("write developer task bundle: %w", err)
+	// 派发意图尚未收敛（dispatching）：工作区与任务包在上一次派发时已就绪，
+	// 跳过重准备直接进 Start 按原端点对账，避免覆盖在途 Agent 的工作区。
+	if !found {
+		// 准备之前先解析并钉住 run 归属端点：准备、投递、执行、commit/push、
+		// 清理全链按同一端点寻址。
+		if _, err := c.core.resolveAndPinEndpoint(ctx, request.Task, request.Run); err != nil {
+			return nil, err
+		}
+		manifest, err := c.preparer.Prepare(ctx, workspaceRequest)
+		if err != nil {
+			return nil, fmt.Errorf("prepare developer workspace: %w", err)
+		}
+		if manifest == nil || manifest.Status != workspace.ManifestStatusReady || manifest.TaskID != request.Task.TaskID || manifest.RunID != request.Run.RunID || manifest.Role != "DeveloperWorker" {
+			return nil, errors.New("developer workspace manifest is not ready for current task and run")
+		}
+		if err := c.checkpoints.RecordBaseline(ctx, &model.DeveloperDeliveryCheckpoint{
+			TaskID: request.Task.TaskID, RunID: request.Run.RunID, TaskType: request.Task.Type,
+			RepositoryURL: workspaceRequest.RepositoryURL, DeliveryBranch: workspaceRequest.DeliveryBranch,
+			BaselineSHA: strings.ToLower(strings.TrimSpace(manifest.Repository.InitialHeadSHA)),
+		}); err != nil {
+			return nil, fmt.Errorf("record developer delivery baseline: %w", err)
+		}
+		bundle, err := workers.BuildDeveloperRunnerTaskBundle(request.Task, request.Run)
+		if err != nil {
+			return nil, fmt.Errorf("build developer task bundle: %w", err)
+		}
+		workspacePath, err := c.deliverTaskBundle(ctx, request.Task, request.Run, bundle)
+		if err != nil {
+			return nil, err
+		}
+		// Runner 返回的工作区路径是执行请求的唯一权威来源；钉回 run 行供
+		// 崩溃恢复路径按同一路径重建请求（请求哈希覆盖该字段，值不稳会
+		// 让重放对不上远端既有执行）。
+		executionRequest.WorkspacePath = workspacePath
+		if err := c.runs.PinRunnerWorkspacePathIfEmpty(ctx, request.Run.RunID, workspacePath); err != nil {
+			return nil, fmt.Errorf("pin developer runner workspace path: %w", err)
+		}
+		request.Run.RunnerWorkspacePath = workspacePath
 	}
 	pinRunnerSelectionOnRun(ctx, c.runs, request.Run, providerConfig.Name, providerConfig.Effort, taskTimeout)
 	return c.core.Start(ctx, request.Task, request.Run, executionRequest)
+}
+
+func (c *DeveloperRunnerCoordinator) deliverTaskBundle(ctx context.Context, task *model.Task, run *model.Run, bundle agent.TaskBundle) (string, error) {
+	files, err := agent.RenderTaskBundle(bundle)
+	if err != nil {
+		return "", fmt.Errorf("render developer task bundle: %w", err)
+	}
+	workspacePath, err := c.bundleSink.PublishTaskBundle(ctx, task.TaskID, run.RunID, files)
+	if err != nil {
+		return "", fmt.Errorf("publish developer task bundle: %w", err)
+	}
+	if strings.TrimSpace(workspacePath) == "" {
+		return "", errors.New("runner did not report the run workspace path for the task bundle")
+	}
+	return workspacePath, nil
 }
 
 func (c *DeveloperRunnerCoordinator) Reconcile(ctx context.Context, runID string) (*DeveloperRunnerReconcileResult, error) {
@@ -273,7 +318,7 @@ func buildDeveloperWorkspaceRequest(ctx context.Context, task *model.Task, run *
 	request := DeveloperRunnerStartRequest{
 		Task: task, Run: run,
 		Workspace: workspace.DeveloperRequest{
-			WorkspaceRoot: settings.WorkspaceRoot, RepositoryURL: cloneURL, TargetBranch: repo.Branch,
+			RepositoryURL: cloneURL, TargetBranch: repo.Branch,
 			DeliveryBranch: model.DeliveryBranch(task), Credential: gitCredentialFrom(repoRow),
 			// 提交身份取注册仓行原值(可为空,prepare 侧降级内置身份),不
 			// 信任 Agent 输出或事件载荷里的任何身份字段。

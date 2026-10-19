@@ -13,8 +13,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// 启动校验（fail-fast）：控制面 runner 指派存在非法形态（同端点跨
-// 租户）时，New/NewReady 必须拒绝启动，与 ErrControlPlaneNotConfigured 同风格。
+// 启动校验（fail-fast）：控制面 runner 指派存在非法形态（孤儿租户引用）
+// 时，New/NewReady 必须拒绝启动，与 ErrControlPlaneNotConfigured 同风格。
+// 同端点跨租户已由控制面唯一索引在写入层拒绝（不可构造），守卫保留该类
+// 校验仅作纵深防御，此处以可直接落库的孤儿租户指派钉住守卫路径。
 func TestNewReadyRejectsStartupOnInvalidRunnerAssignments(t *testing.T) {
 	settings := testControlPlaneSettings(t)
 	seedInvalidRunnerAssignments(t, settings)
@@ -30,7 +32,7 @@ func TestNewReadyRejectsStartupOnInvalidRunnerAssignments(t *testing.T) {
 	})
 	cfg := config.Config{HTTPAddr: ":0", ControlPlane: settings, TenantDataDir: t.TempDir()}
 
-	_, err = New(cfg, zap.NewNop(), db)
+	_, err = New(withTestControlPlane(t, cfg), zap.NewNop(), db)
 	if err == nil {
 		t.Fatalf("expected startup rejection on invalid runner assignments")
 	}
@@ -63,10 +65,8 @@ func seedInvalidRunnerAssignments(t *testing.T, settings config.ControlPlaneSett
 			t.Fatalf("create tenant %s: %v", tenant.Slug, err)
 		}
 	}
-	// 同一端点指派给两个租户：卷防线二前提被破坏，必须拒绝启动。
-	for _, tenantID := range []uint{1, 2} {
-		if err := repository.ReplaceRunnerAssignments(ctx, tenantID, []string{"http://shared-runner:8081"}); err != nil {
-			t.Fatalf("seed assignments for tenant %d: %v", tenantID, err)
-		}
+	// 指派引用不存在的租户（孤儿行）：启动守卫必须拒绝启动。
+	if err := repository.ReplaceRunnerAssignments(ctx, 999, []string{"http://shared-runner:8081"}); err != nil {
+		t.Fatalf("seed orphan assignment: %v", err)
 	}
 }

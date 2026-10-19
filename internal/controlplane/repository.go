@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repository 封装控制面库全部 gorm 访问；控制面库是独立 sqlite 单文件。
@@ -18,9 +19,21 @@ func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 func (repository *Repository) Migrate() error {
 	if err := repository.db.AutoMigrate(
 		&User{}, &Tenant{}, &Membership{}, &InviteCode{},
-		&RunnerAssignment{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
+		&RunnerAssignment{}, &RunnerPoolCursor{}, &AuditLog{}, &Session{}, &RepoRouteIndex{},
+		&LoginFailure{}, &LoginFailureCapacityGuard{},
 	); err != nil {
 		return fmt.Errorf("migrate control plane: %w", err)
+	}
+	// v5 收敛：AutoMigrate 只增不删，v4 复合唯一索引会残留并伪装成仍
+	// 有效的约束面；端点独占约束以 idx_runner_assignments_endpoint 单一
+	// 承载，旧索引显式清除（幂等：不存在即跳过）。
+	if repository.db.Migrator().HasIndex(&RunnerAssignment{}, "idx_runner_assignments_tenant_endpoint") {
+		if err := repository.db.Migrator().DropIndex(&RunnerAssignment{}, "idx_runner_assignments_tenant_endpoint"); err != nil {
+			return fmt.Errorf("drop legacy runner assignment index: %w", err)
+		}
+	}
+	if err := repository.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&LoginFailureCapacityGuard{ID: 1}).Error; err != nil {
+		return fmt.Errorf("initialize login failure capacity guard: %w", err)
 	}
 	return nil
 }
@@ -110,6 +123,31 @@ func (repository *Repository) CreateUser(ctx context.Context, user *User) error 
 		return fmt.Errorf("create user: %w", err)
 	}
 	return nil
+}
+
+// CreateUserIfAbsent 建号但不与并发赢家冲突：唯一键命中时静默让位并返回
+// created=false（多实例同时首启种子场景）。
+func (repository *Repository) CreateUserIfAbsent(ctx context.Context, user *User) (bool, error) {
+	result := repository.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(user)
+	if result.Error != nil {
+		return false, fmt.Errorf("create user if absent: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (repository *Repository) GetUserByUsernameForUpdate(ctx context.Context, username string) (*User, error) {
+	var user User
+	query := repository.db.WithContext(ctx)
+	if repository.db.Dialector.Name() == "mysql" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Where("username = ?", username).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get user by username for update: %w", err)
+	}
+	return &user, nil
 }
 
 // DeleteUser 硬删刚创建的孤儿账号（注册补偿专用）。
@@ -246,7 +284,7 @@ func (repository *Repository) ListTenantSummaries(ctx context.Context) ([]Tenant
 	var summaries []TenantSummary
 	if err := repository.db.WithContext(ctx).
 		Table("tenants").
-		Select("tenants.id AS id, tenants.slug AS slug, tenants.display_name AS display_name, tenants.status AS status, tenants.created_at AS created_at, COUNT(memberships.id) AS member_count").
+		Select("tenants.id AS id, tenants.slug AS slug, tenants.display_name AS display_name, tenants.status AS status, tenants.db_locator AS dm_locator, tenants.created_at AS created_at, COUNT(memberships.id) AS member_count").
 		Joins("LEFT JOIN memberships ON memberships.tenant_id = tenants.id").
 		Group("tenants.id").
 		Order("tenants.id ASC").
@@ -254,6 +292,17 @@ func (repository *Repository) ListTenantSummaries(ctx context.Context) ([]Tenant
 		return nil, fmt.Errorf("list tenant summaries: %w", err)
 	}
 	return summaries, nil
+}
+
+// SetTenantDMLocator 回写数据面定位串（开通/自愈完成标记）：条件更新按
+// 主键，仅此列；不做整行覆盖。
+func (repository *Repository) SetTenantDMLocator(ctx context.Context, tenantID uint, locator string) error {
+	if err := repository.db.WithContext(ctx).Model(&Tenant{}).
+		Where("id = ?", tenantID).
+		UpdateColumn("db_locator", locator).Error; err != nil {
+		return fmt.Errorf("set tenant db locator: %w", err)
+	}
+	return nil
 }
 
 // ListAuditLogs 按过滤条件分页返回审计（id 倒序），并给出总数。
@@ -289,6 +338,41 @@ func (repository *Repository) ListRunnerAssignments(ctx context.Context, tenantI
 	return assignments, nil
 }
 
+func (repository *Repository) ClaimRunnerPool(ctx context.Context, tenantID uint) ([]RunnerAssignment, uint64, error) {
+	var assignments []RunnerAssignment
+	var slot uint64
+	err := repository.withLockedRunnerPoolCursor(ctx, tenantID, func(tx *gorm.DB, cursor RunnerPoolCursor) error {
+		if err := tx.Where("tenant_id = ?", tenantID).Order("endpoint_url ASC").Find(&assignments).Error; err != nil {
+			return fmt.Errorf("list runner assignments: %w", err)
+		}
+		slot = cursor.NextSlot
+		if err := tx.Model(&RunnerPoolCursor{}).
+			Where("tenant_id = ?", tenantID).
+			UpdateColumn("next_slot", gorm.Expr("next_slot + 1")).Error; err != nil {
+			return fmt.Errorf("advance runner pool cursor: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("claim runner pool: %w", err)
+	}
+	return assignments, slot, nil
+}
+
+func (repository *Repository) withLockedRunnerPoolCursor(ctx context.Context, tenantID uint, fn func(*gorm.DB, RunnerPoolCursor) error) error {
+	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		cursor := RunnerPoolCursor{TenantID: tenantID}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&cursor).Error; err != nil {
+			return fmt.Errorf("initialize runner pool cursor: %w", err)
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ?", tenantID).Take(&cursor).Error; err != nil {
+			return fmt.Errorf("lock runner pool cursor: %w", err)
+		}
+		return fn(tx, cursor)
+	})
+}
+
 // ListAllRunnerAssignments 跨租户全量列举指派行（启动校验消费端：需要
 // 全表形态判断，租户池路由按租户走 ListRunnerAssignments）。
 func (repository *Repository) ListAllRunnerAssignments(ctx context.Context) ([]RunnerAssignment, error) {
@@ -302,7 +386,7 @@ func (repository *Repository) ListAllRunnerAssignments(ctx context.Context) ([]R
 
 // ReplaceRunnerAssignments 事务内整表替换。
 func (repository *Repository) ReplaceRunnerAssignments(ctx context.Context, tenantID uint, endpoints []string) error {
-	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return repository.withLockedRunnerPoolCursor(ctx, tenantID, func(tx *gorm.DB, _ RunnerPoolCursor) error {
 		if err := tx.Where("tenant_id = ?", tenantID).Delete(&RunnerAssignment{}).Error; err != nil {
 			return fmt.Errorf("clear runner assignments: %w", err)
 		}
@@ -430,4 +514,193 @@ func (repository *Repository) DeleteExpiredSessions(ctx context.Context, now tim
 		return 0, fmt.Errorf("delete expired sessions: %w", result.Error)
 	}
 	return result.RowsAffected, nil
+}
+
+// CountRecentLoginFailures 统计键在窗口内的失败行数；MySQL 上窗口边界按
+// 数据库时钟（NOW(6)）判定，跨实例时钟偏移免疫；SQLite 按参数时间判定。
+func (repository *Repository) CountRecentLoginFailures(ctx context.Context, key string, window time.Duration) (int64, error) {
+	var count int64
+	query := repository.db.WithContext(ctx).Model(&LoginFailure{}).Where("`key` = ? AND `pending` = ?", key, false)
+	if repository.db.Dialector.Name() == "mysql" {
+		query = query.Where("failed_at > DATE_SUB(NOW(6), INTERVAL ? MICROSECOND)", window.Microseconds())
+	} else {
+		query = query.Where("failed_at > ?", time.Now().Add(-window))
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count recent login failures: %w", err)
+	}
+	return count, nil
+}
+
+var ErrLoginFailureCapacity = errors.New("login failure capacity reached")
+
+func (repository *Repository) ReserveLoginFailureSlots(ctx context.Context, window time.Duration, slots int) ([]uint, error) {
+	if slots <= 0 || slots > loginFailureCapacityLimit {
+		return nil, ErrLoginFailureCapacity
+	}
+	var ids []uint
+	capacityReached := false
+	err := repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var guard LoginFailureCapacityGuard
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
+			return fmt.Errorf("lock login failure capacity guard: %w", err)
+		}
+		for batch := 0; batch < (loginFailureCapacityLimit+loginFailureBatchLimit-1)/loginFailureBatchLimit; batch++ {
+			deleted, err := deleteExpiredLoginFailuresBounded(tx, window, loginFailureBatchLimit)
+			if err != nil {
+				return err
+			}
+			if deleted < loginFailureBatchLimit {
+				break
+			}
+		}
+		var count int64
+		if err := tx.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("count login failures for capacity: %w", err)
+		}
+		if count+int64(slots) > loginFailureCapacityLimit {
+			capacityReached = true
+			return nil
+		}
+		reservedAt := time.Now()
+		if tx.Dialector.Name() == "mysql" {
+			if err := tx.Raw("SELECT NOW(6)").Scan(&reservedAt).Error; err != nil {
+				return fmt.Errorf("read database time for login failure reservation: %w", err)
+			}
+		}
+		rows := make([]LoginFailure, slots)
+		for i := range rows {
+			rows[i] = LoginFailure{Key: "", FailedAt: reservedAt, Pending: true}
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return fmt.Errorf("reserve login failure capacity: %w", err)
+		}
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if capacityReached {
+		return nil, ErrLoginFailureCapacity
+	}
+	return ids, nil
+}
+
+func (repository *Repository) CompleteLoginFailureReservation(ctx context.Context, ids []uint, keys []string, failedAt time.Time) error {
+	if len(ids) != len(keys) {
+		return fmt.Errorf("complete login failure reservation: slot count mismatch")
+	}
+	err := repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		persistedAt := any(failedAt)
+		if tx.Dialector.Name() == "mysql" {
+			persistedAt = gorm.Expr("NOW(6)")
+		}
+		for i, id := range ids {
+			result := tx.Model(&LoginFailure{}).Where("id = ? AND pending = ?", id, true).
+				Updates(map[string]any{"key": keys[i], "failed_at": persistedAt, "pending": false})
+			if result.Error != nil {
+				return fmt.Errorf("complete login failure reservation: %w", result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("complete login failure reservation: reservation missing")
+			}
+		}
+		return nil
+	})
+	return err
+}
+
+func (repository *Repository) ReleaseLoginFailureReservation(ctx context.Context, ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := repository.db.WithContext(ctx).Where("id IN ? AND pending = ?", ids, true).Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("release login failure reservation: %w", err)
+	}
+	return nil
+}
+
+// RecordLoginFailure 追加一条失败记录。
+func (repository *Repository) RecordLoginFailure(ctx context.Context, key string, failedAt time.Time, window time.Duration) error {
+	ids, err := repository.ReserveLoginFailureSlots(ctx, window, 1)
+	if err != nil {
+		return fmt.Errorf("record login failure: %w", err)
+	}
+	if err := repository.CompleteLoginFailureReservation(ctx, ids, []string{key}, failedAt); err != nil {
+		_ = repository.ReleaseLoginFailureReservation(context.Background(), ids)
+		return fmt.Errorf("record login failure: %w", err)
+	}
+	return nil
+}
+
+// DeleteLoginFailures 清空键的全部失败记录（成功登录重置）。
+func (repository *Repository) DeleteLoginFailures(ctx context.Context, key string) error {
+	if err := repository.db.WithContext(ctx).Where("`key` = ?", key).Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("delete login failures: %w", err)
+	}
+	return nil
+}
+
+// DeleteExpiredLoginFailuresBounded 每次最多删除 limit 条过期行并返回删除数。
+// MySQL 使用库内时钟，与限流窗口判定保持一致；每批是独立 DELETE。
+func (repository *Repository) DeleteExpiredLoginFailuresBounded(ctx context.Context, window time.Duration, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = loginFailureBatchLimit
+	}
+	return deleteExpiredLoginFailuresBounded(repository.db.WithContext(ctx), window, limit)
+}
+
+func deleteExpiredLoginFailuresBounded(db *gorm.DB, window time.Duration, limit int) (int64, error) {
+	if db.Dialector.Name() == "mysql" {
+		result := db.Exec("DELETE FROM `login_failures` WHERE `failed_at` <= DATE_SUB(NOW(6), INTERVAL ? MICROSECOND) ORDER BY `failed_at` ASC, `id` ASC LIMIT ?", window.Microseconds(), limit)
+		if result.Error != nil {
+			return 0, fmt.Errorf("delete expired login failures bounded: %w", result.Error)
+		}
+		return result.RowsAffected, nil
+	}
+	subquery := db.Model(&LoginFailure{}).
+		Select("id").
+		Where("failed_at <= ?", time.Now().Add(-window)).
+		Order("failed_at ASC").
+		Order("id ASC").
+		Limit(limit)
+	result := db.
+		Where("id IN (?)", subquery).
+		Delete(&LoginFailure{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("delete expired login failures bounded: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+// CapKeyLoginFailures 把单个键的失败行裁剪到上限（保留最新 limit 行）：
+// blocked 判定只需"窗口内行数是否达到上限"，多余历史行对判定无影响；
+// 单键上限让匿名来源用不同用户名放大总行数时，任一键不无界堆积。
+func (repository *Repository) CapKeyLoginFailures(ctx context.Context, key string, limit int) error {
+	if limit <= 0 {
+		return nil
+	}
+	var count int64
+	if err := repository.db.WithContext(ctx).Model(&LoginFailure{}).
+		Where("`key` = ?", key).Count(&count).Error; err != nil {
+		return fmt.Errorf("count login failures for key cap: %w", err)
+	}
+	if count <= int64(limit) {
+		return nil
+	}
+	// 保留最新 limit 行：删除更早的行。
+	subquery := repository.db.Model(&LoginFailure{}).
+		Select("id").
+		Where("`key` = ?", key).
+		Order("failed_at DESC").
+		Limit(limit)
+	if err := repository.db.WithContext(ctx).
+		Where("`key` = ? AND id NOT IN (?)", key, subquery).
+		Delete(&LoginFailure{}).Error; err != nil {
+		return fmt.Errorf("cap login failures for key: %w", err)
+	}
+	return nil
 }

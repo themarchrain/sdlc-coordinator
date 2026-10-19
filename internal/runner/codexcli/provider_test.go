@@ -94,6 +94,12 @@ func TestProviderBuildsIsolatedResponsesCommandAndReturnsStructuredOutput(t *tes
 	if environment["CODEX_HOME"] == "" || environment["CODEX_HOME"] == `C:\Users\Administrator\.codex` {
 		t.Fatalf("Codex home was not isolated: %#v", environment)
 	}
+	for _, path := range []string{environment["CODEX_HOME"], argumentValue(command.spec.Args, "--output-last-message")} {
+		relative, err := filepath.Rel(workspaceRoot, path)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			t.Fatalf("Codex runtime path %q is outside the run workspace", path)
+		}
+	}
 	if _, exists := environment["GITLAB_TOKEN"]; exists {
 		t.Fatalf("unapproved environment leaked into Codex: %#v", environment)
 	}

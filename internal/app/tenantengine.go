@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/events"
 	handlers "sdlc-coordinator/internal/http/handlers"
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/orgconfig"
@@ -23,7 +25,6 @@ import (
 	"sdlc-coordinator/internal/runnerpool"
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
-	"sdlc-coordinator/internal/workspace"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -48,6 +49,7 @@ type engineShared struct {
 type tenantEngine struct {
 	tenantID     uint
 	db           *gorm.DB
+	store        *tenantdb.Store
 	logger       *zap.Logger
 	orgConfig    *orgconfig.Provider
 	orch         *orchestrator.Orchestrator
@@ -120,8 +122,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		providerHeaders[name] = value
 	}
 	runnerSettings := orchestrator.ReviewerRunnerSettings{
-		WorkspaceRoot: shared.cfg.AgentRunner.WorkspaceRoot,
-		TaskTimeout:   shared.cfg.AgentRunner.TaskTimeout,
+		TaskTimeout: shared.cfg.AgentRunner.TaskTimeout,
 		Provider: runner.ProviderConfig{
 			Name: shared.cfg.AgentRunner.Provider, Revision: int64(shared.cfg.AgentRunner.ProviderConfigRevision),
 			BaseURL: shared.cfg.AgentRunner.ProviderBaseURL, APIKey: shared.cfg.AgentRunner.APIKey,
@@ -133,26 +134,44 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
 		return orch.SubmitResult(ctx, request)
 	})
+	endpointForRun := func(ctx context.Context, runID string) (string, error) {
+		run, err := runRepo.GetByRunID(ctx, runID)
+		if err != nil {
+			return "", fmt.Errorf("resolve runner endpoint for run %s: %w", runID, err)
+		}
+		return strings.TrimRight(strings.TrimSpace(run.RunnerEndpoint), "/"), nil
+	}
+	remoteWorkspace := agentrunner.NewRoutedRemoteWorkspace(
+		shared.cfg.AgentRunner.ServiceURL, shared.cfg.AgentRunner.InternalToken, tenantID, nil, endpointForRun,
+	)
+	reviewerPreparer := agentrunner.NewRemoteReadOnlyPreparer(remoteWorkspace)
+	developerPreparer := agentrunner.NewRemoteDeveloperPreparer(remoteWorkspace)
+	deliveryFinalizer := remoteWorkspace
+	opts = append(opts, orchestrator.WithRunWorkspaceCleaner(remoteWorkspace))
 	reviewerRunnerCoordinator := orchestrator.NewReviewerRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), shared.defaultRunner,
+		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
 	)
 	developerRunnerCoordinator := orchestrator.NewDeveloperRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewDeveloperPreparer(), workspace.NewDeveloperFinalizer(), shared.defaultRunner,
+		taskRepo, runRepo, agentExecutionRepo, developerPreparer, deliveryFinalizer, shared.defaultRunner,
 		orchSubmitter,
 		runnerSettings,
 	)
+	reviewerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
+	developerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
 	// 交付检查点(租户库):派发时钉基线,commit 与 push 之间写交付 SHA,
 	// 是"提交由 Coordinator 创建"的唯一归属凭据;Agent 不可写租户库。
 	deliveryCheckpoints := repository.NewDeveloperDeliveryCheckpointRepository(db)
 	developerRunnerCoordinator.SetDeveloperDeliveryCheckpoints(deliveryCheckpoints)
+	developerRunnerCoordinator.SetDeliveryExecutionRight(repository.NewWorkItemLeaseRepository(db))
 	// 验证任务与 reviewer 共用同一只读工作区 preparer:两者都是按冻结头部
 	// SHA 的只读检出,差别只在角色门禁与回传工具;tester pool 路由随核心
 	// coordinator 注入(装配于 NewReady 前,构造后接入安全)。
 	testerRunnerCoordinator := orchestrator.NewTesterRunnerCoordinator(
-		taskRepo, runRepo, agentExecutionRepo, workspace.NewReviewerPreparer(), shared.defaultRunner,
+		taskRepo, runRepo, agentExecutionRepo, reviewerPreparer, shared.defaultRunner,
 		orchSubmitter,
 	)
+	testerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
 	opts = append(opts,
 		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
@@ -162,7 +181,10 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchestrator.WithAutoMergeEnabled(tenantAutoMergeEnabledLookup(orgConfig, shared.logger, tenantID)),
 		orchestrator.WithMergeGateClients(orchestrator.DefaultMergeGateClientFactory),
 		orchestrator.WithAgentExecutionLookup(agentExecutionRepo),
-		orchestrator.WithRunnerArtifactStore(shared.defaultRunner),
+		orchestrator.WithRunnerArtifactStore(remoteWorkspace),
+		// 写回/合并门禁的跨实例执行权:双协调器对同一写回、同一验证任务的
+		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
+		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),
 		orchestrator.WithLogger(shared.logger),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎
@@ -176,11 +198,14 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		}, time.Now())
 	})
 	mcpChannel := orchestrator.NewResultChannelCoordinator(
-		workspace.NewDeveloperFinalizer(),
+		deliveryFinalizer,
 		orchSubmitter,
 		runnerSettings, "mcp",
 	)
 	mcpChannel.SetDeveloperDeliveryCheckpoints(deliveryCheckpoints)
+	// 交付执行权（run 级租约）：MCP 与文本两个通道的 commit/push 前都经它
+	// 竞争同一处理权，保证跨实例只有一次可信交付。
+	mcpChannel.SetDeliveryExecutionRight(repository.NewWorkItemLeaseRepository(db))
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
 	processor := events.NewProcessor(inboundEventRepo, orch)
@@ -190,6 +215,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		requirements.NewStore(db), repoStore,
 		requirements.NewProviderClientFactory(nil),
 	)
+	// 需求发布的跨实例执行权:双协调器的 syncer 不得为同一需求各建一个
+	// 远端 issue(与写回执行权同库同语义)。
+	requirementsService.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db), instance.ID())
 	// 租户 runner 池路由：本引擎任务恒解析为本引擎租户；未指派端点的租户
 	// 由池路由回退共享默认池。
 	tenantRunnerRouter := runnerpool.NewRouter(
@@ -229,7 +257,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 type enginePool struct {
 	mu       sync.Mutex
 	engines  map[uint]*tenantEngine
-	resolver *tenantdb.SqliteFileResolver
+	resolver tenantdb.UnmanagedResolver
 	control  *controlplane.Service
 	index    *controlplane.Repository
 	shared   engineShared
@@ -237,7 +265,7 @@ type enginePool struct {
 }
 
 // newEnginePool 准备租户引擎的惰性构造；引擎随首次访问逐个建立。
-func newEnginePool(resolver *tenantdb.SqliteFileResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
+func newEnginePool(resolver tenantdb.UnmanagedResolver, control *controlplane.Service, shared engineShared, logger *zap.Logger) *enginePool {
 	return &enginePool{
 		engines:  map[uint]*tenantEngine{},
 		resolver: resolver,
@@ -289,6 +317,7 @@ func (p *enginePool) forTenantID(ctx context.Context, tenantID uint) *tenantEngi
 		p.logger.Warn("build tenant engine failed", zap.Uint("tenant_id", tenantID), zap.Error(err))
 		return nil
 	}
+	engine.store = store
 	p.engines[tenantID] = engine
 	return engine
 }
@@ -302,7 +331,9 @@ func (p *enginePool) CloseTenantEngines() {
 		if engine == nil || engine.db == nil {
 			continue
 		}
-		if sqlDB, err := engine.db.DB(); err == nil {
+		if engine.store != nil {
+			_ = engine.store.Close()
+		} else if sqlDB, err := engine.db.DB(); err == nil {
 			_ = sqlDB.Close()
 		}
 		delete(p.engines, id)

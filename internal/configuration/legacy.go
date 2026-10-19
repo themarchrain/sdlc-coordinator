@@ -18,8 +18,8 @@ func FromLegacyConfig(legacy config.Config) (RuntimeConfig, error) {
 
 	runtimeConfig := RuntimeConfig{
 		AgentRunner: AgentRunnerConfig{
-			ServiceURL: legacy.AgentRunner.ServiceURL, WorkspaceRoot: legacy.AgentRunner.WorkspaceRoot,
-			Provider: legacy.AgentRunner.Provider, ProviderBaseURL: legacy.AgentRunner.ProviderBaseURL,
+			ServiceURL: legacy.AgentRunner.ServiceURL,
+			Provider:   legacy.AgentRunner.Provider, ProviderBaseURL: legacy.AgentRunner.ProviderBaseURL,
 			APIKey: legacy.AgentRunner.APIKey, CustomHeadersJSON: customHeadersJSON,
 			Model: legacy.AgentRunner.Model, Effort: legacy.AgentRunner.Effort, TaskTimeout: durationString(legacy.AgentRunner.TaskTimeout),
 		},
@@ -27,7 +27,6 @@ func FromLegacyConfig(legacy config.Config) (RuntimeConfig, error) {
 			Enabled:             legacy.Scheduler.Enabled,
 			Interval:            durationString(legacy.Scheduler.Interval),
 			CallbackBaseURL:     legacy.Scheduler.TickRequest.CallbackBaseURL,
-			WorkspaceRoot:       legacy.Scheduler.TickRequest.WorkspaceRoot,
 			DispatchLimit:       legacy.Scheduler.TickRequest.DispatchLimit,
 			PollLimit:           legacy.Scheduler.TickRequest.PollLimit,
 			ReconciliationLimit: legacy.Scheduler.TickRequest.ReconciliationLimit,

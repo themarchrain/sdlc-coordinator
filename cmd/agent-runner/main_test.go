@@ -31,16 +31,22 @@ func TestLoadConfigUsesRunnerDefaults(t *testing.T) {
 	if config.LogLevel != "info" || config.LogDir != "logs/agent-runner" {
 		t.Fatalf("unexpected runner logging defaults: %#v", config)
 	}
+	if config.WorkspaceRoot != filepath.Join(config.DataRoot, "workspaces") || config.InternalToken != "" || config.AuthorizationURL != "" {
+		t.Fatalf("unexpected workspace defaults: %#v", config)
+	}
 }
 
 func TestLoadConfigReadsExplicitRunnerSettings(t *testing.T) {
 	values := map[string]string{
-		"AGENT_RUNNER_HTTP_ADDR":     "127.0.0.1:19081",
-		"AGENT_RUNNER_DATA_ROOT":     "/tmp/runner-data",
-		"AGENT_RUNNER_CLAUDE_BINARY": "/home/runner/.local/bin/claude",
-		"AGENT_RUNNER_CODEX_BINARY":  "/home/runner/.local/bin/codex",
-		"AGENT_RUNNER_LOG_LEVEL":     "warn",
-		"AGENT_RUNNER_LOG_DIR":       "/var/log/agent-runner",
+		"AGENT_RUNNER_HTTP_ADDR":         "127.0.0.1:19081",
+		"AGENT_RUNNER_DATA_ROOT":         "/tmp/runner-data",
+		"AGENT_RUNNER_CLAUDE_BINARY":     "/home/runner/.local/bin/claude",
+		"AGENT_RUNNER_CODEX_BINARY":      "/home/runner/.local/bin/codex",
+		"AGENT_RUNNER_LOG_LEVEL":         "warn",
+		"AGENT_RUNNER_LOG_DIR":           "/var/log/agent-runner",
+		"AGENT_RUNNER_WORKSPACE_ROOT":    " /tmp/workspaces ",
+		"AGENT_RUNNER_INTERNAL_TOKEN":    " internal-token ",
+		"AGENT_RUNNER_AUTHORIZATION_URL": " http://coordinator/internal/runner-authorization ",
 	}
 	config := loadConfig(func(name string) string { return values[name] })
 	if config.HTTPAddr != "127.0.0.1:19081" || config.DataRoot != "/tmp/runner-data" {
@@ -51,6 +57,9 @@ func TestLoadConfigReadsExplicitRunnerSettings(t *testing.T) {
 	}
 	if config.LogLevel != "warn" || config.LogDir != "/var/log/agent-runner" {
 		t.Fatalf("unexpected runner logging settings: %#v", config)
+	}
+	if config.WorkspaceRoot != "/tmp/workspaces" || config.InternalToken != "internal-token" || config.AuthorizationURL != "http://coordinator/internal/runner-authorization" {
+		t.Fatalf("unexpected workspace settings: %#v", config)
 	}
 }
 
@@ -92,6 +101,7 @@ func TestLoadConfigIgnoresCoordinatorLoggingSettings(t *testing.T) {
 }
 
 func TestRunReportsLoggerInitializationFailure(t *testing.T) {
+	t.Setenv("AGENT_RUNNER_WORKSPACE_ROOT", "")
 	occupied := filepath.Join(t.TempDir(), "occupied")
 	if err := os.WriteFile(occupied, []byte("occupied"), 0o600); err != nil {
 		t.Fatal(err)
@@ -109,6 +119,7 @@ func TestRunReportsLoggerInitializationFailure(t *testing.T) {
 }
 
 func TestRunReportsServeFailureOnBothChannels(t *testing.T) {
+	t.Setenv("AGENT_RUNNER_WORKSPACE_ROOT", "")
 	logDir := filepath.Join(t.TempDir(), "logs")
 	t.Setenv("AGENT_RUNNER_HTTP_ADDR", "127.0.0.1:-1")
 	t.Setenv("AGENT_RUNNER_DATA_ROOT", t.TempDir())
@@ -131,6 +142,7 @@ func TestRunReportsServeFailureOnBothChannels(t *testing.T) {
 }
 
 func TestRunServesHealthAndWarnsWhenDrainTimesOut(t *testing.T) {
+	t.Setenv("AGENT_RUNNER_WORKSPACE_ROOT", "")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
@@ -295,8 +307,9 @@ func TestRunnerProcessExitCodes(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			caseEnv, logDir := testCase.setup(t)
 			overrides := map[string]string{
-				"AGENT_RUNNER_TEST_HELPER": "1",
-				"AGENT_RUNNER_DATA_ROOT":   t.TempDir(),
+				"AGENT_RUNNER_TEST_HELPER":    "1",
+				"AGENT_RUNNER_DATA_ROOT":      t.TempDir(),
+				"AGENT_RUNNER_WORKSPACE_ROOT": "",
 			}
 			for name, value := range caseEnv {
 				overrides[name] = value

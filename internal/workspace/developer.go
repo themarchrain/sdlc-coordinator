@@ -14,7 +14,9 @@ import (
 )
 
 type DeveloperRequest struct {
-	WorkspaceRoot   string
+	WorkspaceRoot string
+	// PrivateRunRoot is enabled by the Runner operation service's isolated CLI mode.
+	PrivateRunRoot  bool
 	TaskID          string
 	RunID           string
 	TaskType        string
@@ -116,8 +118,8 @@ func (p *DeveloperPreparer) Prepare(ctx context.Context, request DeveloperReques
 	if err := writeManifestAtomic(filepath.Join(stagingRoot, ManifestFileName), manifest); err != nil {
 		return nil, err
 	}
-	if err := relaxSharedWorkspacePermissions(stagingRoot); err != nil {
-		return nil, fmt.Errorf("relax developer workspace permissions for shared runtime: %w", err)
+	if err := prepareWorkspacePermissions(stagingRoot, req.PrivateRunRoot); err != nil {
+		return nil, fmt.Errorf("set developer workspace permissions: %w", err)
 	}
 	if err := os.Rename(stagingRoot, runRoot); err != nil {
 		existing, reuseErr := p.reuseExistingWorkspace(ctx, runRoot, req)
@@ -156,9 +158,8 @@ func (p *DeveloperPreparer) reuseExistingWorkspace(ctx context.Context, runRoot 
 		if _, err := p.git.Run(ctx, repoRoot, nil, "merge-base", "--is-ancestor", manifest.Repository.InitialHeadSHA, "HEAD"); err != nil {
 			return nil, fmt.Errorf("%w: %s", ErrWorkspaceConflict, runRoot)
 		}
-		// 复用可能是权限修复前发布的旧现场(0700/0600),一并放宽,否则 runner 依旧不可读。
-		if err := relaxSharedWorkspacePermissions(runRoot); err != nil {
-			return nil, fmt.Errorf("relax developer workspace permissions for shared runtime: %w", err)
+		if err := prepareWorkspacePermissions(runRoot, req.PrivateRunRoot); err != nil {
+			return nil, fmt.Errorf("set developer workspace permissions: %w", err)
 		}
 		return manifest, nil
 	}

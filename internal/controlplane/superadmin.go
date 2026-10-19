@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/store"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -18,6 +20,7 @@ type TenantSummary struct {
 	Slug        string
 	DisplayName string
 	Status      string
+	DMLocator   string
 	MemberCount int64
 	CreatedAt   time.Time
 }
@@ -42,6 +45,11 @@ const (
 	defaultAuditPageSize   = 20
 	maxAuditPageSize       = 100
 )
+
+// SetTenantDMLocator 回写数据面定位串（数据面开通/自愈完成标记）。
+func (service *Service) SetTenantDMLocator(ctx context.Context, tenantID uint, locator string) error {
+	return service.repo(ctx).SetTenantDMLocator(ctx, tenantID, locator)
+}
 
 // ListTenants 返回全部组织与成员计数（超管后台列表）。
 func (service *Service) ListTenants(ctx context.Context) ([]TenantSummary, error) {
@@ -244,6 +252,10 @@ func (service *Service) ListAllRunnerAssignments(ctx context.Context) ([]RunnerA
 	return service.repo(ctx).ListAllRunnerAssignments(ctx)
 }
 
+func (service *Service) ClaimRunnerPool(ctx context.Context, tenantID uint) ([]RunnerAssignment, uint64, error) {
+	return service.repo(ctx).ClaimRunnerPool(ctx, tenantID)
+}
+
 // ReplaceRunnerAssignments 整表替换组织 runner 端点列表：仅接受绝对
 // http/https URL（含 host，与消费端启动校验同口径），去重、上限 20 条；
 // 写 runner_assignments.updated 审计。
@@ -265,7 +277,7 @@ func (service *Service) ReplaceRunnerAssignments(ctx context.Context, actor *Act
 	if len(cleaned) > maxRunnerAssignments {
 		return ErrInvalidInput
 	}
-	return service.inTx(ctx, func(ctx context.Context) error {
+	err := service.inTx(ctx, func(ctx context.Context) error {
 		if _, err := service.repo(ctx).GetTenant(ctx, tenantID); err != nil {
 			return err
 		}
@@ -275,6 +287,12 @@ func (service *Service) ReplaceRunnerAssignments(ctx context.Context, actor *Act
 		return service.writeAudit(ctx, actor, tenantID, "runner_assignments.updated",
 			fmt.Sprintf("count=%d endpoints=%s", len(cleaned), strings.Join(cleaned, ",")))
 	})
+	if store.IsDuplicateKey(err) {
+		// 双 %w：哨兵与底层重复键错误都保持可判（handlers 层 errors.Is
+		// 认哨兵、日志/上层 IsDuplicateKey 认驱动码）。
+		return fmt.Errorf("%w: %w", ErrRunnerEndpointAssigned, err)
+	}
+	return err
 }
 
 // ListTenantInviteCodes 超管视角的组织邀请码列表（租户级吊销管理）。

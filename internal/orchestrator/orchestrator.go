@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"sdlc-coordinator/internal/adapters/codehost"
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/results"
@@ -19,6 +22,28 @@ import (
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/workspace"
 )
+
+// ErrConcurrentTaskAdvance 表示任务状态在推进过程中被并发方改变且目标状态
+// 不一致：调用方不得用旧快照续写，应重新读取并按当前状态裁决。
+var ErrConcurrentTaskAdvance = errors.New("task advanced concurrently")
+
+// RunWorkspaceCleaner 通过 Runner 操作接口清理指定任务的 run 工作区。
+type RunWorkspaceCleaner interface {
+	RemoveRunWorkspace(ctx context.Context, taskID, runID string) error
+}
+
+// TaskBundlePublisher 把任务包发送给 Runner，并返回 Runner 的工作区路径。
+type TaskBundlePublisher interface {
+	PublishTaskBundle(ctx context.Context, taskID, runID string, files map[string][]byte) (string, error)
+}
+
+// WorkItemLeasePort 是跨实例执行权租约的窄端口（租户库实现）：抢占是原子
+// 单语句，Verify/Release 带 owner+generation 条件。
+type WorkItemLeasePort interface {
+	Acquire(ctx context.Context, scope, owner, operationID string, ttl time.Duration) (model.WorkItemLease, bool, error)
+	Verify(ctx context.Context, scope, owner string, generation uint64) (bool, error)
+	Release(ctx context.Context, scope, owner string, generation uint64) (bool, error)
+}
 
 type TaskRepository interface {
 	Create(context.Context, *model.Task) error
@@ -40,6 +65,18 @@ type TaskRepository interface {
 	MarkHumanRequiredIfDispatchable(context.Context, string, string) error
 	BlockRunAndRequireHuman(context.Context, string, string, time.Time) error
 	ParkUnbound(context.Context, string) error
+	AdvanceGuarded(context.Context, *model.Task, model.TaskStatus) (bool, error)
+	// AdvanceGuardedForCurrentRun 以 expected 状态未变且 current_run_id
+	// 仍为 runID 为条件推进：run 被接管/重派时 0 行，迟到失败不推进当前
+	// 任务（失败回写路径的读-写窗口栅栏）。
+	AdvanceGuardedForCurrentRun(ctx context.Context, task *model.Task, expected model.TaskStatus, runID string) (bool, error)
+	UpdateLastErrorIfStatus(context.Context, string, model.TaskStatus, string) (bool, error)
+	// RecoverExpiredGuarded 原子回收租约过期的任务：双实例同时回收同一
+	// 过期任务时恰好一个赢家，attempt_count 在数据库侧原子 +1。
+	RecoverExpiredGuarded(ctx context.Context, taskID string, next model.TaskStatus, lastError string, now time.Time) (bool, error)
+	// RestoreWaitingParentGuarded 把仍在 waiting_upstream 的父任务原子恢复
+	// 为 pending：双实例同时解除同一父任务的依赖链时恰好一个赢家。
+	RestoreWaitingParentGuarded(ctx context.Context, taskID string) (bool, error)
 }
 
 type RunRepository interface {
@@ -48,11 +85,20 @@ type RunRepository interface {
 	UpdateProviderIfEmpty(context.Context, string, string) error
 	UpdateEffortIfEmpty(context.Context, string, string) error
 	UpdateTaskTimeoutIfEmpty(context.Context, string, int64) error
+	UpdateDispatchProjection(context.Context, string, string, string, string) error
 	UpdateFailedIfInFlight(context.Context, string, string, time.Time) (bool, error)
+	// PinRunnerEndpointIfEmpty / PinRunnerWorkspacePathIfEmpty 钉住 run 归属
+	// 端点与 Runner 侧工作区路径（列级条件写；空值语义 = 尚未钉住）。
+	PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error
+	PinRunnerWorkspacePathIfEmpty(ctx context.Context, runID, path string) error
+	// MarkArtifactsPurgingIfUnclean 抢占 run 的清理归属（跨实例栅栏；
+	// staleBefore 之前的哨兵可被接管）。
+	MarkArtifactsPurgingIfUnclean(ctx context.Context, runID, claimID string, now, staleBefore time.Time) (bool, error)
+	CompleteArtifactsPurging(ctx context.Context, runID, claimID string, now time.Time) (bool, error)
 	GetByRunID(context.Context, string) (*model.Run, error)
 	ListRunning(context.Context, int) ([]model.Run, error)
 	ListTerminalWithActiveExecution(context.Context, int) ([]model.Run, error)
-	ListSucceededForArtifactCleanup(context.Context, time.Time, int) ([]model.Run, error)
+	ListSucceededForArtifactCleanup(context.Context, time.Time, time.Time, int) ([]model.Run, error)
 }
 
 type ArtifactRepository interface {
@@ -79,6 +125,15 @@ type EffectRepository interface {
 	ListStaleRunning(context.Context, interface{}, int) ([]model.Effect, error)
 	ListByRunID(context.Context, string) ([]model.Effect, error)
 	UpsertByDedupeKey(context.Context, *model.Effect) error
+	// Claim 原子抢占执行权：pending 恒可抢，running 超 staleWindow 可接管；
+	// won=false 表示执行权在别处。Complete/RequeueIfRunning 带 attempt 代次
+	// 栅栏，被接管的旧持有方回写 0 行。FailStaleRunning/SkipIfPending 是恢复
+	// 与作废路径的条件终态回写（不改 attempt 计数）。
+	Claim(ctx context.Context, dedupeKey string, staleWindow time.Duration) (*model.Effect, bool, error)
+	Complete(ctx context.Context, dedupeKey string, attempt int, status model.EffectStatus, responseJSON, errorMessage string) (bool, error)
+	RequeueIfRunning(ctx context.Context, dedupeKey string, attempt int) (bool, error)
+	FailStaleRunning(ctx context.Context, dedupeKey string, staleWindow time.Duration, errorMessage string) (bool, error)
+	SkipIfPending(ctx context.Context, dedupeKey string, errorMessage string) (bool, error)
 }
 
 type EffectExecutor interface {
@@ -87,6 +142,9 @@ type EffectExecutor interface {
 
 type WritebackRepository interface {
 	Update(context.Context, *model.Writeback) error
+	// UpdateGuardedIfStatus 以期望状态为条件写回对账结果：迟到的 absent
+	// 观察不得把已成功状态回退成 pending（并发前移时 0 行）。
+	UpdateGuardedIfStatus(ctx context.Context, writeback *model.Writeback, expected model.WritebackStatus) (bool, error)
 	GetByDedupeKey(context.Context, string) (*model.Writeback, error)
 	GetSucceededMergeRequest(context.Context, string, int) (*model.Writeback, error)
 	GetLatestSucceededReviewerComment(context.Context, string, int) (*model.Writeback, error)
@@ -117,6 +175,8 @@ type Orchestrator struct {
 	tickMu                         sync.Mutex
 	mergeGateMu                    sync.Mutex
 	mergeGateCursor                uint
+	workItemLeases                 WorkItemLeasePort
+	workItemLeaseOwner             string
 	tasks                          TaskRepository
 	runs                           RunRepository
 	artifacts                      ArtifactRepository
@@ -145,6 +205,7 @@ type Orchestrator struct {
 	mergeGateClients               func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error)
 	agentExecutions                AgentExecutionLookup
 	runnerArtifacts                RunnerArtifactStore
+	runWorkspaceCleaner            RunWorkspaceCleaner
 	stateMachine                   *StateMachine
 	policy                         Policy
 	now                            func() time.Time
@@ -175,8 +236,7 @@ type RunnerArtifactStore interface {
 }
 
 type ReviewerRunnerSettings struct {
-	WorkspaceRoot string
-	Provider      runner.ProviderConfig
+	Provider runner.ProviderConfig
 	// ResolveRepository 按任务解析注册仓行:workspace clone/push URL 与 git 凭据的
 	// 唯一权威源(URL 由仓行 CloneURL 派生、凭据取同一行的每仓 Token,单次查询双消费);
 	// 任务未绑定注册仓时返回 ErrRepositoryNotBound。
@@ -329,10 +389,70 @@ func WithResultIngress(issuer RunTokenIssuer, endpointURL string) Option {
 	}
 }
 
+// WithRunWorkspaceCleaner 接入 run 工作区清理端口（远端工作区形态注入
+// Runner 受控清理；缺省保留本机文件系统删除）。
+func WithRunWorkspaceCleaner(cleaner RunWorkspaceCleaner) Option {
+	return func(o *Orchestrator) { o.runWorkspaceCleaner = cleaner }
+}
+
 func WithRunnerArtifactStore(store RunnerArtifactStore) Option {
 	return func(o *Orchestrator) {
 		o.runnerArtifacts = store
 	}
+}
+
+// WithWorkItemLeases 装配跨实例工作项租约端口（租户库 work_item_leases 实现）。
+// 未装配时 writeback/merge gate 保持单实例语义；多实例部署必须装配，否则
+// 两台协调器会对同一写回/同一验证任务各自执行远端副作用。同一进程内装配
+// 多个编排器（单机多租户引擎）时用 WithWorkItemLeaseOwner 区分租约身份。
+func WithWorkItemLeases(leases WorkItemLeasePort) Option {
+	return func(o *Orchestrator) {
+		o.workItemLeases = leases
+	}
+}
+
+// WithWorkItemLeaseOwner 覆盖租约 owner：默认 instance.ID()（进程身份）。
+// 同一进程并发多个引擎/编排器实例时,各实例必须持不同 owner,否则同 owner
+// 的第二次 Acquire 会被当作重入续期直接获胜,失去互斥。
+func WithWorkItemLeaseOwner(owner string) Option {
+	return func(o *Orchestrator) {
+		o.workItemLeaseOwner = owner
+	}
+}
+
+// workItemLeaseIdentity 返回本编排器的租约 owner 身份。
+func (o *Orchestrator) workItemLeaseIdentity() string {
+	if o.workItemLeaseOwner != "" {
+		return o.workItemLeaseOwner
+	}
+	return instance.ID()
+}
+
+// acquireWorkItemLease 按工作项抢跨实例执行权；端口未装配时恒获胜（单实例
+// 部署语义不变）。owner 绑定实例身份+链路，失败留待租期到期自然回收。
+func (o *Orchestrator) acquireWorkItemLease(ctx context.Context, scope, operation string, ttl time.Duration) (model.WorkItemLease, bool, error) {
+	if o.workItemLeases == nil {
+		return model.WorkItemLease{}, true, nil
+	}
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return model.WorkItemLease{}, false, fmt.Errorf("generate work item lease owner: %w", err)
+	}
+	owner := o.workItemLeaseIdentity() + ":" + operation
+	if len(owner) > 47 {
+		owner = owner[:47]
+	}
+	return o.workItemLeases.Acquire(ctx, scope, owner+":"+hex.EncodeToString(nonce[:]), operation, ttl)
+}
+
+// releaseWorkItemLease 尽力释放执行权（失败留待租期到期自然回收）。
+func (o *Orchestrator) releaseWorkItemLease(lease model.WorkItemLease) {
+	if o.workItemLeases == nil || lease.Scope == "" {
+		return
+	}
+	releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = o.workItemLeases.Release(releaseCtx, lease.Scope, lease.Owner, lease.Generation)
 }
 
 func WithArtifactRepository(artifacts ArtifactRepository) Option {
@@ -592,7 +712,10 @@ func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Ta
 	advanced, err := o.AdvanceTask(ctx, task.TaskID, nextTaskStatus)
 	if err == nil {
 		advanced.LastError = cause.Error()
-		_ = o.tasks.Update(ctx, advanced)
+		if _, updateErr := o.tasks.UpdateLastErrorIfStatus(ctx, advanced.TaskID, advanced.Status, cause.Error()); updateErr != nil {
+			o.logger.Error("record dispatch failure: update task last error failed",
+				zap.String("task_id", advanced.TaskID), zap.Error(updateErr))
+		}
 		o.materializeTesterStopIMEffect(ctx, advanced, cause.Error())
 	}
 }
@@ -610,8 +733,22 @@ func (o *Orchestrator) AdvanceTask(ctx context.Context, taskID string, next mode
 
 	o.policy.Apply(task, previous, next, o.now())
 
-	if err := o.tasks.Update(ctx, task); err != nil {
+	applied, err := o.tasks.AdvanceGuarded(ctx, task, previous)
+	if err != nil {
 		return nil, fmt.Errorf("advance task %s: %w", taskID, err)
+	}
+	if !applied {
+		// 并发推进（另一实例或人工操作先改了状态）：按库内当前状态裁决。
+		// 目标状态已达 → 幂等成功；否则显式失败，调用方不得用旧快照续写。
+		current, reloadErr := o.tasks.GetByTaskID(ctx, taskID)
+		if reloadErr != nil {
+			return nil, fmt.Errorf("advance task %s: reload after concurrent advance: %w", taskID, reloadErr)
+		}
+		if current.Status == next {
+			return current, nil
+		}
+		return nil, fmt.Errorf("%w: task %s moved %s -> %s while advancing to %s",
+			ErrConcurrentTaskAdvance, taskID, previous, current.Status, next)
 	}
 
 	return task, nil
@@ -793,20 +930,30 @@ func (o *Orchestrator) RecoverTask(ctx context.Context, taskID string) (*model.T
 		return task, nil
 	}
 
-	previous := task.Status
-	if err := o.stateMachine.Transition(task, next); err != nil {
-		return nil, err
-	}
-	o.policy.Apply(task, previous, next, o.now())
-	task.LastError = "lease expired; task recovered by coordinator"
+	// 恢复通知绑定刚失败的这次尝试（恢复前的 attempt 值与过期 run），与
+	// 既有 dedupe key 语义一致；先留恢复前快照再原子回收。
+	notify := *task
+	notify.Status = next
 
-	if err := o.tasks.Update(ctx, task); err != nil {
+	// 原子回收:条件 UPDATE 带"仍在 claimed/running 且租约已过期"栅栏,
+	// attempt_count 在数据库侧 +1。双实例同时回收同一过期任务时恰好一个
+	// 赢家;败者按库内最新状态返回,不重复物化恢复通知,不回滚胜者写入。
+	applied, err := o.tasks.RecoverExpiredGuarded(ctx, taskID, next, "lease expired; task recovered by coordinator", o.now())
+	if err != nil {
 		return nil, fmt.Errorf("recover task %s: %w", taskID, err)
 	}
-	if task.Status == model.TaskStatusRetryPending {
-		o.materializeLeaseRecoveryIMEffect(ctx, task)
-	} else if task.Status == model.TaskStatusHumanRequired {
-		o.materializeLeaseHumanRequiredIMEffect(ctx, task)
+	if !applied {
+		return o.tasks.GetByTaskID(ctx, taskID)
+	}
+
+	task, err = o.tasks.GetByTaskID(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("recover task %s: reload after guarded update: %w", taskID, err)
+	}
+	if notify.Status == model.TaskStatusRetryPending {
+		o.materializeLeaseRecoveryIMEffect(ctx, &notify)
+	} else if notify.Status == model.TaskStatusHumanRequired {
+		o.materializeLeaseHumanRequiredIMEffect(ctx, &notify)
 	}
 
 	return task, nil
@@ -855,18 +1002,25 @@ func (o *Orchestrator) StartRun(ctx context.Context, taskID string, run *model.R
 	if err != nil {
 		return nil, nil, err
 	}
+	if task.Status != model.TaskStatusClaimed || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
+		return nil, nil, repository.ErrTaskNotClaimable
+	}
 
 	if err := o.runs.Create(ctx, run); err != nil {
 		return nil, nil, fmt.Errorf("create run %s: %w", run.RunID, err)
 	}
 
-	task, err = o.AdvanceTask(ctx, taskID, model.TaskStatusRunning)
-	if err != nil {
+	previous := task.Status
+	if err := o.stateMachine.Transition(task, model.TaskStatusRunning); err != nil {
 		return nil, nil, err
 	}
-	task.CurrentRunID = &run.RunID
-	if err := o.tasks.Update(ctx, task); err != nil {
-		return nil, nil, fmt.Errorf("attach run to task %s: %w", taskID, err)
+	o.policy.Apply(task, previous, model.TaskStatusRunning, o.now())
+	applied, err := o.tasks.AdvanceGuardedForCurrentRun(ctx, task, previous, run.RunID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("start run %s: %w", run.RunID, err)
+	}
+	if !applied {
+		return nil, nil, repository.ErrTaskNotClaimable
 	}
 
 	run.Status = model.RunStatusRunning
@@ -874,6 +1028,13 @@ func (o *Orchestrator) StartRun(ctx context.Context, taskID string, run *model.R
 	run.StartedAt = &startedAt
 	if err := o.runs.Update(ctx, run); err != nil {
 		return nil, nil, fmt.Errorf("update run %s: %w", run.RunID, err)
+	}
+	task, err = o.tasks.GetByTaskID(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if task.Status != model.TaskStatusRunning || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
+		return nil, nil, repository.ErrTaskNotClaimable
 	}
 
 	return run, task, nil

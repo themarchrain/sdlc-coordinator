@@ -308,7 +308,6 @@ export interface ConnectorConfigurationUpdate {
 export interface EditableRuntimeConfiguration {
   agent_runner: {
     service_url: string
-    workspace_root: string
     provider: 'codex-cli' | 'claude-cli'
     provider_base_url: string
     model: string
@@ -319,7 +318,6 @@ export interface EditableRuntimeConfiguration {
     enabled: boolean
     interval: string
     callback_base_url: string
-    workspace_root: string
     dispatch_limit: number
     poll_limit: number
     reconciliation_limit: number
@@ -387,6 +385,7 @@ export interface TenantConfigurationUpdateRequest {
 }
 
 export interface ConfigurationView {
+  revision: number
   config: EditableRuntimeConfiguration
   secrets: ConfigurationSecretStatus
 }
@@ -401,6 +400,7 @@ export interface ConfigurationSecretChanges {
 export interface ConfigurationUpdateRequest {
   config: EditableRuntimeConfiguration
   secrets?: ConfigurationSecretChanges
+  expected_revision: number
 }
 
 export interface ConfigurationValidationResult {

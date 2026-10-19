@@ -44,6 +44,43 @@ func (resolver *SqliteFileResolver) Main() *Store {
 	return resolver.main
 }
 
+// EnsureDatabase 建目录并返回文件 locator（SQLite 的文件在首次打开时创建，
+// 与既有 Handle 语义一致）。
+func (resolver *SqliteFileResolver) EnsureDatabase(_ context.Context, tenantID uint) (string, error) {
+	if tenantID == 0 {
+		return "", ErrInvalidTenantID
+	}
+	if resolver == nil || resolver.root == "" {
+		return "", fmt.Errorf("tenant data dir is not configured: %w", ErrInvalidTenantID)
+	}
+	if err := os.MkdirAll(resolver.tenantDir(tenantID), 0o755); err != nil {
+		return "", fmt.Errorf("create tenant data dir: %w", err)
+	}
+	return resolver.Locator(tenantID), nil
+}
+
+// DiscardFailedProvision 清理开通失败的半成品目录（登记行由外层事务回滚兜底）。
+func (resolver *SqliteFileResolver) DiscardFailedProvision(tenantID uint) {
+	if resolver == nil || tenantID == 0 {
+		return
+	}
+	resolver.Invalidate(tenantID)
+	_ = os.RemoveAll(resolver.tenantDir(tenantID))
+}
+
+// IsProvisioned SQLite 形态恒为真：Handle 首开会建目录与库文件，历史
+// locator 前缀（file:/sqlite://）与空值都能自愈，无需补开通。
+func (resolver *SqliteFileResolver) IsProvisioned(string) bool { return true }
+
+// Locator 返回 tenantID 对应的文件 locator（file:<dir>/db.sqlite）。
+func (resolver *SqliteFileResolver) Locator(tenantID uint) string {
+	return "file:" + filepath.ToSlash(filepath.Join(resolver.tenantDir(tenantID), "db.sqlite"))
+}
+
+func (resolver *SqliteFileResolver) tenantDir(tenantID uint) string {
+	return filepath.Join(resolver.root, strconv.FormatUint(uint64(tenantID), 10))
+}
+
 func (resolver *SqliteFileResolver) Handle(_ context.Context, tenantID uint) (*Store, error) {
 	if tenantID == 0 {
 		return nil, ErrInvalidTenantID
@@ -73,7 +110,7 @@ func (resolver *SqliteFileResolver) Handle(_ context.Context, tenantID uint) (*S
 		}
 	}()
 
-	dir := filepath.Join(resolver.root, strconv.FormatUint(uint64(tenantID), 10))
+	dir := resolver.tenantDir(tenantID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create tenant data dir: %w", err)
 	}
@@ -108,7 +145,7 @@ func (resolver *SqliteFileResolver) OpenUnmanaged(tenantID uint) (*Store, error)
 	if resolver == nil || resolver.root == "" {
 		return nil, fmt.Errorf("tenant data dir is not configured: %w", ErrInvalidTenantID)
 	}
-	dir := filepath.Join(resolver.root, strconv.FormatUint(uint64(tenantID), 10))
+	dir := resolver.tenantDir(tenantID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create tenant data dir: %w", err)
 	}
@@ -204,7 +241,5 @@ func closeStore(store *Store) {
 	if store == nil || store.DB == nil {
 		return
 	}
-	if sqlDB, err := store.DB.DB(); err == nil {
-		_ = sqlDB.Close()
-	}
+	_ = store.Close()
 }

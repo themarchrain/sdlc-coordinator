@@ -63,7 +63,6 @@ func TestLoadSchedulerInvalidValuesFallBackToSafeDefaults(t *testing.T) {
 
 func TestLoadAgentRunnerLegacyEnvironment(t *testing.T) {
 	t.Setenv("AGENT_RUNNER_SERVICE_URL", "http://runner.internal:8081")
-	t.Setenv("AGENT_RUNNER_WORKSPACE_ROOT", "/srv/workspaces")
 	t.Setenv("CLAUDE_PROVIDER_BASE_URL", "https://gateway.example")
 	t.Setenv("CLAUDE_PROVIDER_API_KEY", "runner-key")
 	t.Setenv("CLAUDE_PROVIDER_CUSTOM_HEADERS_JSON", `{"X-Tenant":"example-tenant"}`)
@@ -72,7 +71,7 @@ func TestLoadAgentRunnerLegacyEnvironment(t *testing.T) {
 	t.Setenv("AGENT_RUNNER_TASK_TIMEOUT", "45m")
 
 	settings := Load().AgentRunner
-	if settings.ServiceURL != "http://runner.internal:8081" || settings.WorkspaceRoot != "/srv/workspaces" || settings.APIKey != "runner-key" {
+	if settings.ServiceURL != "http://runner.internal:8081" || settings.APIKey != "runner-key" {
 		t.Fatalf("unexpected agent runner environment: %#v", settings)
 	}
 	if settings.CustomHeaders["X-Tenant"] != "example-tenant" || settings.Model != "model-a" || settings.Effort != "xhigh" {

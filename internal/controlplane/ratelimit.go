@@ -1,112 +1,124 @@
 package controlplane
 
 import (
-	"sync"
+	"context"
 	"time"
 )
 
 const (
-	defaultRateLimitWindow      = 15 * time.Minute
-	defaultRateLimitMaxFailures = 10
-	// defaultRateLimitMaxKeys 限制失败表条目数：键为「用户名+IP」，
-	// 无上限时可被伪造请求撑爆内存；超限先清过期，仍满则整体重置。
-	defaultRateLimitMaxKeys = 4096
+	defaultRateLimitWindow           = 15 * time.Minute
+	defaultRateLimitMaxFailures      = 10
+	defaultLoginFailureSweepInterval = time.Minute
+	loginFailureBatchLimit           = 1000
+	loginFailureSweepBatchLimit      = 10
+	loginFailureCapacityLimit        = 4096
 )
 
-// loginRateLimiter 按「用户名+IP」组合做滑动窗口失败计数：
-// 窗口内失败达到上限即拒绝（含正确密码），成功登录清零。进程内实现，单实例
-// 形态下与部署形态一致；多实例部署时以控制面库承载是后续演进。
-type loginRateLimiter struct {
-	mu          sync.Mutex
-	window      time.Duration
-	maxFailures int
-	maxKeys     int
-	failures    map[string][]time.Time
-	now         func() time.Time
+// LoginFailure 是登录限流的共享存储行：键为用户名+IP 或纯用户名,
+// 每个限流键每次失败一行。行存控制面库，双实例共享同一失败配额（轮流访问不能
+// 扩大原配额）；窗口判定和 MySQL 清理都用库内时钟（NOW(6)），不受实例时钟偏移影响。
+type LoginFailure struct {
+	ID       uint      `gorm:"primaryKey"`
+	Key      string    `gorm:"index:idx_login_failures_key_time,priority:1;not null;size:255"`
+	FailedAt time.Time `gorm:"index:idx_login_failures_key_time,priority:2;index:idx_login_failures_failed_at;not null"`
+	Pending  bool      `gorm:"not null;default:false;index"`
 }
 
-func newLoginRateLimiter(window time.Duration, maxFailures, maxKeys int) *loginRateLimiter {
-	if maxKeys < 1 {
-		maxKeys = defaultRateLimitMaxKeys
-	}
+type LoginFailureCapacityGuard struct {
+	ID uint `gorm:"primaryKey"`
+}
+
+func (LoginFailureCapacityGuard) TableName() string { return "login_failure_capacity_guards" }
+
+// loginRateLimiter 按用户名+IP 组合做滑动窗口失败计数:窗口内失败达到
+// 上限即拒绝（含正确密码），成功登录清零。计数落控制面库，多实例部署共享
+// 同一配额；记账和周期清理都会回收窗口外旧行。
+type loginRateLimiter struct {
+	repository  *Repository
+	window      time.Duration
+	maxFailures int
+}
+
+func newLoginRateLimiter(repository *Repository, window time.Duration, maxFailures int) *loginRateLimiter {
 	return &loginRateLimiter{
+		repository:  repository,
 		window:      window,
 		maxFailures: maxFailures,
-		maxKeys:     maxKeys,
-		failures:    map[string][]time.Time{},
-		now:         time.Now,
 	}
 }
 
 func (limiter *loginRateLimiter) blocked(key string) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	limiter.pruneLocked(key)
-	return len(limiter.failures[key]) >= limiter.maxFailures
+	count, err := limiter.repository.CountRecentLoginFailures(context.Background(), key, limiter.window)
+	if err != nil {
+		// 读失败 fail-closed：锁死比放行安全（放行=爆破窗口）。
+		return true
+	}
+	return count >= int64(limiter.maxFailures)
+}
+
+// loginFailureKeyCap 是单键失败行的保留上限:超过 maxFailures 后 blocked
+// 恒真,多余历史行对判定无影响;裁剪保留最新行,攻击者对单键高频失败时
+// 表行数有界。
+func loginFailureKeyCap(maxFailures int) int {
+	if maxFailures <= 0 {
+		return defaultRateLimitMaxFailures * 2
+	}
+	return maxFailures * 2
 }
 
 func (limiter *loginRateLimiter) record(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	if _, exists := limiter.failures[key]; !exists && len(limiter.failures) >= limiter.maxKeys {
-		// 容量淘汰：按「最新失败时间最旧」的键逐个驱逐，避免
-		// 全表重置把受害者正在累积的锁定计数一并冲刷掉。
-		for len(limiter.failures) >= limiter.maxKeys {
-			if !limiter.evictOldestLocked() {
-				break
-			}
-		}
+	now := time.Now()
+	if err := limiter.repository.RecordLoginFailure(context.Background(), key, now, limiter.window); err != nil {
+		// 记账失败不阻断登录错误路径:下一轮失败重试记账,最坏情况是
+		// 攻击者少计一次;不因限流器故障把凭据错误误报成 500。
+		return
 	}
-	limiter.failures[key] = append(limiter.failures[key], limiter.now())
+	limiter.cleanupRecord(key)
+}
+
+func (limiter *loginRateLimiter) cleanupRecord(key string) {
+	// 容量治理两件套（都带界）:窗口外旧行分批删除（单批上限约束持锁时间,
+	// 清理条件走 failed_at 索引）;单键行数裁剪（匿名来源可用不同键放大总
+	// 行数,单键上限保证任一键不无界堆积）。
+	_, _ = limiter.repository.DeleteExpiredLoginFailuresBounded(context.Background(), limiter.window, loginFailureBatchLimit)
+	_ = limiter.repository.CapKeyLoginFailures(context.Background(), key, loginFailureKeyCap(limiter.maxFailures))
 }
 
 func (limiter *loginRateLimiter) reset(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	delete(limiter.failures, key)
+	_ = limiter.repository.DeleteLoginFailures(context.Background(), key)
 }
 
 func (limiter *loginRateLimiter) prune(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	limiter.pruneLocked(key)
+	// DB 后端的窗口过期在读取时按库内时间过滤,无需显式清理。
 }
 
-// evictOldestLocked 删除「最新失败时间最旧」的一个键；调用方须已持锁。
-// 返回是否发生了驱逐（表为空时返回 false 防死循环）。
-func (limiter *loginRateLimiter) evictOldestLocked() bool {
-	oldestKey := ""
-	var oldestAt time.Time
-	for key, stamps := range limiter.failures {
-		if len(stamps) == 0 {
-			oldestKey = key
-			break
-		}
-		latest := stamps[len(stamps)-1]
-		if oldestKey == "" || latest.Before(oldestAt) {
-			oldestKey = key
-			oldestAt = latest
-		}
-	}
-	if oldestKey == "" {
-		return false
-	}
-	delete(limiter.failures, oldestKey)
-	return true
+// RunLoginFailureJanitor 周期性清理过期登录失败行；启动时先清一批。
+func (service *Service) RunLoginFailureJanitor(ctx context.Context) {
+	service.runLoginFailureJanitor(ctx, defaultLoginFailureSweepInterval)
 }
 
-// pruneLocked 清理单键的过期窗口记录；调用方须已持锁。
-func (limiter *loginRateLimiter) pruneLocked(key string) {
-	cutoff := limiter.now().Add(-limiter.window)
-	kept := limiter.failures[key][:0]
-	for _, at := range limiter.failures[key] {
-		if at.After(cutoff) {
-			kept = append(kept, at)
+func (service *Service) runLoginFailureJanitor(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = defaultLoginFailureSweepInterval
+	}
+	service.sweepExpiredLoginFailures(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			service.sweepExpiredLoginFailures(ctx)
 		}
 	}
-	if len(kept) == 0 {
-		delete(limiter.failures, key)
-		return
+}
+
+func (service *Service) sweepExpiredLoginFailures(ctx context.Context) {
+	for batch := 0; batch < loginFailureSweepBatchLimit; batch++ {
+		deleted, err := service.repository.DeleteExpiredLoginFailuresBounded(ctx, service.rateLimiter.window, loginFailureBatchLimit)
+		if err != nil || deleted < loginFailureBatchLimit {
+			return
+		}
 	}
-	limiter.failures[key] = kept
 }

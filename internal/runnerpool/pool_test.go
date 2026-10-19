@@ -3,6 +3,7 @@ package runnerpool
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"sdlc-coordinator/internal/controlplane"
@@ -16,27 +17,45 @@ import (
 // 租户回退默认池（单 runner 存量部署行为等价）。
 
 type fakePoolLookup struct {
+	mu    sync.Mutex
 	pools map[uint][]controlplane.RunnerAssignment
+	slots map[uint]uint64
 	err   error
 }
 
-func (f *fakePoolLookup) ListRunnerAssignments(_ context.Context, tenantID uint) ([]controlplane.RunnerAssignment, error) {
+func (f *fakePoolLookup) ClaimRunnerPool(_ context.Context, tenantID uint) ([]controlplane.RunnerAssignment, uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.err != nil {
-		return nil, f.err
+		return nil, 0, f.err
 	}
-	return f.pools[tenantID], nil
+	if f.slots == nil {
+		f.slots = make(map[uint]uint64)
+	}
+	slot := f.slots[tenantID]
+	f.slots[tenantID]++
+	return append([]controlplane.RunnerAssignment(nil), f.pools[tenantID]...), slot, nil
 }
 
 type fakePoolSource struct {
+	mu    sync.Mutex
 	pools map[uint][]string
+	slots map[uint]uint64
 	err   error
 }
 
-func (f *fakePoolSource) Endpoints(_ context.Context, tenantID uint) ([]string, error) {
+func (f *fakePoolSource) ClaimPool(_ context.Context, tenantID uint) ([]string, uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.err != nil {
-		return nil, f.err
+		return nil, 0, f.err
 	}
-	return f.pools[tenantID], nil
+	if f.slots == nil {
+		f.slots = make(map[uint]uint64)
+	}
+	slot := f.slots[tenantID]
+	f.slots[tenantID]++
+	return append([]string(nil), f.pools[tenantID]...), slot, nil
 }
 
 type fakeTaskTenants struct {
@@ -104,6 +123,35 @@ func TestRouterRoundRobinsWithinTenantPool(t *testing.T) {
 	}
 }
 
+func TestRoutersShareTenantPoolCursor(t *testing.T) {
+	source := &fakePoolSource{pools: map[uint][]string{7: {"http://runner-a", "http://runner-b"}}}
+	first := newTestRouter(&fakeTaskTenants{tenant: 7}, source)
+	second := newTestRouter(&fakeTaskTenants{tenant: 7}, source)
+	for _, item := range []struct {
+		router *Router
+		want   string
+	}{{first, "http://runner-a"}, {second, "http://runner-b"}} {
+		attempt, err := item.router.AttemptForTask(context.Background(), &model.Task{TaskID: "task"})
+		if err != nil || attempt.Endpoint != item.want {
+			t.Fatalf("shared pool slot selected %q, want %q, err=%v", attempt.Endpoint, item.want, err)
+		}
+	}
+}
+
+// 默认池是单端点常量：派发不该为它开游标事务。
+func TestDefaultPoolDoesNotClaimCursor(t *testing.T) {
+	lookup := &fakePoolLookup{}
+	source := NewControlPlanePoolSource(lookup, []string{"http://default-runner"})
+	if _, slot, err := source.ClaimPool(context.Background(), 0); err != nil || slot != 0 {
+		t.Fatalf("no-tenant claim = slot %d, err %v", slot, err)
+	}
+	lookup.mu.Lock()
+	defer lookup.mu.Unlock()
+	if len(lookup.slots) != 0 {
+		t.Fatalf("default pool dispatch consumed cursor slots: %v", lookup.slots)
+	}
+}
+
 func TestRouterKeepsTenantPoolsDisjoint(t *testing.T) {
 	source := &fakePoolSource{pools: map[uint][]string{
 		7: {"http://runner-a7", "http://runner-b7"},
@@ -149,6 +197,22 @@ func TestRouterAttemptNextWalksRemainingEndpoints(t *testing.T) {
 	}
 	if _, ok := third.Next(); ok {
 		t.Fatalf("pool should be exhausted after all endpoints")
+	}
+}
+
+func TestRouterAttemptWrapsAfterLastEndpoint(t *testing.T) {
+	source := &fakePoolSource{pools: map[uint][]string{7: {"http://a", "http://b"}}, slots: map[uint]uint64{7: 1}}
+	router := newTestRouter(&fakeTaskTenants{tenant: 7}, source)
+	attempt, err := router.AttemptForTask(context.Background(), &model.Task{TaskID: "task"})
+	if err != nil || attempt.Endpoint != "http://b" {
+		t.Fatalf("first attempt = %q, err=%v", attempt.Endpoint, err)
+	}
+	next, ok := attempt.Next()
+	if !ok || next.Endpoint != "http://a" {
+		t.Fatalf("fallback attempt = %q, ok=%v", next.Endpoint, ok)
+	}
+	if _, ok := next.Next(); ok {
+		t.Fatal("pool traversal must stop after each endpoint is tried once")
 	}
 }
 
@@ -199,25 +263,25 @@ func TestControlPlanePoolSourceFallsBackToDefaultPool(t *testing.T) {
 		},
 	}, []string{"http://default-runner"})
 
-	endpoints, err := source.Endpoints(context.Background(), 0)
-	if err != nil || len(endpoints) != 1 || endpoints[0] != "http://default-runner" {
-		t.Fatalf("no-tenant dispatch must use default pool: %v %v", endpoints, err)
+	endpoints, slot, err := source.ClaimPool(context.Background(), 0)
+	if err != nil || slot != 0 || len(endpoints) != 1 || endpoints[0] != "http://default-runner" {
+		t.Fatalf("no-tenant dispatch must use default pool: %v %d %v", endpoints, slot, err)
 	}
-	endpoints, err = source.Endpoints(context.Background(), 9)
-	if err != nil || len(endpoints) != 1 || endpoints[0] != "http://default-runner" {
-		t.Fatalf("unassigned tenant must use default pool: %v %v", endpoints, err)
+	endpoints, slot, err = source.ClaimPool(context.Background(), 9)
+	if err != nil || slot != 0 || len(endpoints) != 1 || endpoints[0] != "http://default-runner" {
+		t.Fatalf("unassigned tenant must use default pool: %v %d %v", endpoints, slot, err)
 	}
-	endpoints, err = source.Endpoints(context.Background(), 7)
+	endpoints, _, err = source.ClaimPool(context.Background(), 7)
 	if err != nil || len(endpoints) != 2 || endpoints[0] != "http://second" || endpoints[1] != "http://first" {
 		t.Fatalf("assigned tenant must use control plane rows in order: %v %v", endpoints, err)
 	}
 	endpoints[0] = "mutated"
-	again, err := source.Endpoints(context.Background(), 7)
+	again, _, err := source.ClaimPool(context.Background(), 7)
 	if err != nil || again[0] != "http://second" {
 		t.Fatalf("pool source must hand out copies: %v %v", again, err)
 	}
 	source = NewControlPlanePoolSource(&fakePoolLookup{err: errors.New("db down")}, []string{"http://default-runner"})
-	if _, err := source.Endpoints(context.Background(), 7); err == nil {
+	if _, _, err := source.ClaimPool(context.Background(), 7); err == nil {
 		t.Fatalf("lookup failure must surface")
 	}
 }

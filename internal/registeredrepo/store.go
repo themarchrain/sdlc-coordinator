@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 
+	"sdlc-coordinator/internal/store"
+
 	"gorm.io/gorm"
 )
 
@@ -28,17 +30,27 @@ func (s *Store) Migrate() error {
 		return fmt.Errorf("migrate registered repositories: %w", err)
 	}
 	// 唯一性由 provider 作用域索引承担(EnsureIdentityIndexes)。
-	// 下列索引名是改列名前的字面名;SQLite RENAME COLUMN 不改索引名,须按旧名 drop。
 	for _, name := range []string{
 		"idx_registered_repositories_path_with_namespace",
 		"idx_registered_repositories_gitlab_project_id",
 		"uidx_registered_repos_project",
 	} {
-		if err := s.db.Exec("DROP INDEX IF EXISTS " + name).Error; err != nil {
+		if err := s.dropIndexIfExists(name); err != nil {
 			return fmt.Errorf("drop legacy index %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// dropIndexIfExists 按方言拆除遗留索引名（SQLite 直落 DDL;MySQL 先探测）。
+func (s *Store) dropIndexIfExists(name string) error {
+	if s.db.Dialector.Name() == "mysql" {
+		if !s.db.Migrator().HasIndex(&RegisteredRepository{}, name) {
+			return nil
+		}
+		return s.db.Migrator().DropIndex(&RegisteredRepository{}, name)
+	}
+	return s.db.Exec("DROP INDEX IF EXISTS " + name).Error
 }
 
 // renameLegacyIdentityColumns 把 GitLab 时代命名的身份列一次性改名(SQLite
@@ -70,13 +82,24 @@ func (s *Store) renameLegacyIdentityColumns() error {
 }
 
 // tableColumns 返回 registered_repositories 现存列名集合(迁移探测用)。
+// SQLite 走 pragma,MySQL 走 information_schema。
 func (s *Store) tableColumns() (map[string]bool, error) {
+	columns := map[string]bool{}
+	if s.db.Dialector.Name() == "mysql" {
+		var names []string
+		if err := s.db.Raw("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'registered_repositories'").Scan(&names).Error; err != nil {
+			return nil, fmt.Errorf("inspect registered_repositories columns: %w", err)
+		}
+		for _, name := range names {
+			columns[name] = true
+		}
+		return columns, nil
+	}
 	rows, err := s.db.Raw("pragma table_info(registered_repositories)").Rows()
 	if err != nil {
 		return nil, fmt.Errorf("inspect registered_repositories columns: %w", err)
 	}
 	defer rows.Close()
-	columns := map[string]bool{}
 	for rows.Next() {
 		var cid, notNull, pk int
 		var name, kind string
@@ -91,15 +114,52 @@ func (s *Store) tableColumns() (map[string]bool, error) {
 
 // EnsureIdentityIndexes 建 provider 作用域唯一索引:path 与数字 project id 只在
 // 同平台内唯一,跨平台同 path、同 project id 是合法共存(防串仓的结构前提)。
-// project 索引使用新名(provider 前缀语义),避免与 Migrate 会 drop 的旧
-// 单列索引同名而被反复 drop/rebuild。
 func (s *Store) EnsureIdentityIndexes() error {
+	if s.db.Dialector.Name() == "mysql" {
+		return s.ensureIdentityIndexesMySQL()
+	}
 	for _, ddl := range []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS uidx_registered_repos_path ON registered_repositories(provider, path_with_namespace) WHERE path_with_namespace <> ''",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uidx_registered_repos_provider_project ON registered_repositories(provider, codehost_project_id) WHERE codehost_project_id <> ''",
 	} {
 		if err := s.db.Exec(ddl).Error; err != nil {
 			return fmt.Errorf("create provider-scoped identity index: %w", err)
+		}
+	}
+	return nil
+}
+
+// ensureIdentityIndexesMySQL 用生成列等价实现空值不参与唯一性的两个身份索引。
+func (s *Store) ensureIdentityIndexesMySQL() error {
+	steps := []struct {
+		keyColumn string
+		keyDDL    string
+		indexName string
+		indexDDL  string
+	}{
+		{
+			keyColumn: "identity_path_key",
+			keyDDL:    "ALTER TABLE registered_repositories ADD COLUMN identity_path_key varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS (NULLIF(path_with_namespace, '')) STORED",
+			indexName: "uidx_registered_repos_path",
+			indexDDL:  "CREATE UNIQUE INDEX uidx_registered_repos_path ON registered_repositories(provider, identity_path_key)",
+		},
+		{
+			keyColumn: "identity_project_key",
+			keyDDL:    "ALTER TABLE registered_repositories ADD COLUMN identity_project_key varchar(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS (NULLIF(codehost_project_id, '')) STORED",
+			indexName: "uidx_registered_repos_provider_project",
+			indexDDL:  "CREATE UNIQUE INDEX uidx_registered_repos_provider_project ON registered_repositories(provider, identity_project_key)",
+		},
+	}
+	for _, step := range steps {
+		if !s.db.Migrator().HasColumn(&RegisteredRepository{}, step.keyColumn) {
+			if err := s.db.Exec(step.keyDDL).Error; err != nil {
+				return fmt.Errorf("create identity key column %s: %w", step.keyColumn, err)
+			}
+		}
+		if !s.db.Migrator().HasIndex(&RegisteredRepository{}, step.indexName) {
+			if err := s.db.Exec(step.indexDDL).Error; err != nil {
+				return fmt.Errorf("create provider-scoped identity index %s: %w", step.indexName, err)
+			}
 		}
 	}
 	return nil
@@ -135,7 +195,8 @@ func (s *Store) Create(ctx context.Context, repo *RegisteredRepository) error {
 		return fmt.Errorf("invalid repository status")
 	}
 	if err := s.db.WithContext(ctx).Create(repo).Error; err != nil {
-		return fmt.Errorf("create registered repository: %s", redactSecrets(err.Error(), repo.Token, repo.WebhookSecret))
+		// 脱敏展示但保留错误链：调用方按驱动错误码分类（重复键等）。
+		return store.RedactError("create registered repository: "+err.Error(), err, repo.Token, repo.WebhookSecret)
 	}
 	return nil
 }
@@ -148,7 +209,7 @@ func (s *Store) Update(ctx context.Context, repo *RegisteredRepository) error {
 		return fmt.Errorf("invalid repository status")
 	}
 	if err := s.db.WithContext(ctx).Save(repo).Error; err != nil {
-		return fmt.Errorf("update registered repository: %s", redactSecrets(err.Error(), repo.Token, repo.WebhookSecret))
+		return store.RedactError("update registered repository: "+err.Error(), err, repo.Token, repo.WebhookSecret)
 	}
 	return nil
 }
@@ -171,8 +232,6 @@ func (s *Store) GetByProjectID(ctx context.Context, provider, projectID string) 
 	return s.first(ctx, "provider = ? AND codehost_project_id = ?", strings.ToLower(strings.TrimSpace(provider)), strings.TrimSpace(projectID))
 }
 
-// GetByPath 精确匹配优先;未命中时按 COLLATE NOCASE 兜底一次(R-P3-4:平台规范
-// 路径回写前的窗口内,投递大小写不一致仍可命中),兜底保持 provider 作用域。
 func (s *Store) GetByPath(ctx context.Context, provider, path string) (*RegisteredRepository, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	path = strings.TrimSpace(path)
@@ -180,7 +239,7 @@ func (s *Store) GetByPath(ctx context.Context, provider, path string) (*Register
 	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
 		return repo, err
 	}
-	return s.first(ctx, "provider = ? AND path_with_namespace = ? COLLATE NOCASE", provider, path)
+	return s.first(ctx, "provider = ? AND LOWER(path_with_namespace) = LOWER(?)", provider, path)
 }
 
 // WebhookSecretByPath 返回注册仓的按仓 webhook secret(验签专用查找键为

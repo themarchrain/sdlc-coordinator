@@ -1,0 +1,387 @@
+package controlplane
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"sdlc-coordinator/internal/store"
+	"sdlc-coordinator/internal/store/storetest"
+)
+
+// newSharedRateLimitServices 打开同一控制面库的两个 Service（模拟两台协调器）。
+func newSharedRateLimitServices(t *testing.T, dsn string, maxFailures int) []*Service {
+	t.Helper()
+	services := make([]*Service, 2)
+	for i := range services {
+		db, err := store.Open(dsn)
+		if err != nil {
+			t.Fatalf("open instance %d: %v", i, err)
+		}
+		t.Cleanup(func() {
+			if sqlDB, err := db.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
+		})
+		repository := NewRepository(db)
+		if err := repository.Migrate(); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+		services[i] = NewService(repository, WithRateLimit(time.Hour, maxFailures))
+	}
+	return services
+}
+
+// TestLoginRateLimitSharedAcrossServices 两个 Service 打开同一控制面库（模拟
+// 两台协调器）：实例 A 累积的失败计数对实例 B 可见,轮流攻击不能扩大原配额。
+func TestLoginRateLimitSharedAcrossServices(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_shared")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	seedRateLimitUser(t, services[0], "ratelimit-user", "rate-shared")
+
+	ctx := context.Background()
+	// 实例 A 打满 3 次失败配额。
+	for i := 0; i < 3; i++ {
+		if _, err := services[0].Login(ctx, "ratelimit-user", "wrong-password", "10.1.1.1"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("attempt %d: expected invalid credentials, got %v", i, err)
+		}
+	}
+	// 实例 A 已被锁。
+	if _, err := services[0].Login(ctx, "ratelimit-user", "test-password", "10.1.1.1"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("instance A must be rate limited after its own failures, got %v", err)
+	}
+	// 实例 B 轮流访问:共享配额已耗尽,同样被锁——不能扩大原失败配额。
+	if _, err := services[1].Login(ctx, "ratelimit-user", "test-password", "10.1.1.1"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("instance B must see the shared failure budget, got %v", err)
+	}
+}
+
+// TestLoginRateLimitResetPropagatesAcrossServices 实例 A 成功登录的重置对
+// 实例 B 生效:重置后 B 可正常登录。
+func TestLoginRateLimitResetPropagatesAcrossServices(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_reset")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	seedRateLimitUser(t, services[0], "ratelimit-user", "rate-reset")
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := services[0].Login(ctx, "ratelimit-user", "wrong-password", "10.2.2.2"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("failure %d: %v", i, err)
+		}
+	}
+	// 实例 A 成功登录:重置共享计数。
+	if _, err := services[0].Login(ctx, "ratelimit-user", "test-password", "10.2.2.2"); err != nil {
+		t.Fatalf("successful login: %v", err)
+	}
+	// 实例 B 视角:计数已清,正常登录不再受历史失败拖累。
+	if _, err := services[1].Login(ctx, "ratelimit-user", "test-password", "10.2.2.2"); err != nil {
+		t.Fatalf("instance B login after A's reset: %v", err)
+	}
+}
+
+// TestLoginRateLimitWindowExpiresViaDBTime 滑动窗口按库内时间过期:窗口外的
+// 失败记录不再计入配额(与租约同款库时钟语义,跨实例时钟偏移免疫)。
+func TestLoginRateLimitWindowExpiresViaDBTime(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_window")
+	services := newSharedRateLimitServices(t, dsn, 2)
+	seedRateLimitUser(t, services[0], "ratelimit-user", "rate-window")
+	db, err := store.Open(dsn)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	service := services[0]
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := service.Login(ctx, "ratelimit-user", "wrong-password", "10.3.3.3"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("failure %d: %v", i, err)
+		}
+	}
+	if _, err := service.Login(ctx, "ratelimit-user", "test-password", "10.3.3.3"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("must be locked at quota, got %v", err)
+	}
+	// 用数据库时钟把失败记录拨出窗口:锁定解除。
+	if err := db.Exec("UPDATE login_failures SET failed_at = DATE_SUB(NOW(6), INTERVAL 2 HOUR)").Error; err != nil {
+		t.Fatalf("backdate failures: %v", err)
+	}
+	if _, err := service.Login(ctx, "ratelimit-user", "test-password", "10.3.3.3"); err != nil {
+		t.Fatalf("login must succeed after window expiry, got %v", err)
+	}
+}
+
+// TestLoginRateLimitSQLiteSemanticsMatchMySQL SQLite 后端(单机形态)与 MySQL
+// 的共享限流语义一致:配额/锁定/键隔离行为不漂移。
+func TestLoginRateLimitSQLiteSemanticsMatchMySQL(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "rate-sqlite.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	repository := NewRepository(db)
+	if err := repository.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	service := NewService(repository, WithRateLimit(time.Hour, 2))
+	seedRateLimitUser(t, service, "ratelimit-user", "rate-sqlite")
+	seedRateLimitUser(t, service, "other-ratelimit-user", "rate-sqlite-2")
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := service.Login(ctx, "ratelimit-user", "wrong-password", "10.4.4.4"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("failure %d: %v", i, err)
+		}
+	}
+	if _, err := service.Login(ctx, "ratelimit-user", "test-password", "10.4.4.4"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("must be locked at quota, got %v", err)
+	}
+	// 键隔离:其他用户名不受影响。
+	if _, err := service.Login(ctx, "other-ratelimit-user", "test-password", "10.4.4.4"); err != nil {
+		t.Fatalf("other key must be unaffected: %v", err)
+	}
+}
+
+func TestLoginFailureJanitorDrainsExpiredRowsAfterTrafficStops(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "rate-cleanup.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	repository := NewRepository(db)
+	if err := repository.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	rows := make([]LoginFailure, loginFailureBatchLimit*10+17)
+	for i := range rows {
+		rows[i] = LoginFailure{Key: "stopped-traffic", FailedAt: time.Now().Add(-2 * time.Hour)}
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("seed expired login failures: %v", err)
+	}
+	service := NewService(repository)
+	service.sweepExpiredLoginFailures(context.Background())
+	var remaining int64
+	if err := db.Model(&LoginFailure{}).Count(&remaining).Error; err != nil {
+		t.Fatalf("count after one cleanup sweep: %v", err)
+	}
+	if remaining != 17 {
+		t.Fatalf("one sweep should process ten bounded batches and leave 17 rows, found %d", remaining)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		service.runLoginFailureJanitor(ctx, 10*time.Millisecond)
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var count int64
+		if err := db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+			cancel()
+			<-finished
+			t.Fatalf("count login failures: %v", err)
+		}
+		if count == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-finished
+			t.Fatalf("janitor left %d expired rows after traffic stopped", count)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-finished
+}
+
+func TestBoundedLoginFailureCleanupConcurrentOnMySQL(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_cleanup")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	rows := make([]LoginFailure, loginFailureBatchLimit*2+17)
+	for i := range rows {
+		rows[i] = LoginFailure{Key: "stopped-traffic", FailedAt: time.Now().Add(-2 * time.Hour)}
+	}
+	if err := services[0].repository.db.Create(&rows).Error; err != nil {
+		t.Fatalf("seed expired login failures: %v", err)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(services))
+	for _, service := range services {
+		wg.Add(1)
+		go func(service *Service) {
+			defer wg.Done()
+			_, err := service.repository.DeleteExpiredLoginFailuresBounded(context.Background(), time.Hour, loginFailureBatchLimit)
+			errs <- err
+		}(service)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent bounded cleanup: %v", err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := services[i%len(services)].repository.DeleteExpiredLoginFailuresBounded(context.Background(), time.Hour, loginFailureBatchLimit); err != nil {
+			t.Fatalf("cleanup batch %d: %v", i, err)
+		}
+	}
+	var count int64
+	if err := services[0].repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count login failures: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected concurrent bounded cleanup and follow-up batches to drain rows, found %d", count)
+	}
+}
+
+// seedRateLimitUser 建一个带组织 membership 的登录可用账号；slug 每测试
+// 唯一避免撞名。
+func seedRateLimitUser(t *testing.T, service *Service, username, slug string) {
+	t.Helper()
+	tenantID, _ := seedTenantWithAdmin(t, service, slug)
+	user, err := service.CreateUser(context.Background(), username, "test-password")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := service.AddMembership(context.Background(), &testActor, tenantID, user.ID, RoleMember); err != nil {
+		t.Fatalf("add membership: %v", err)
+	}
+}
+
+func TestLoginFailureCapacityRejectsBeforeCompareAndReopensAfterExpiry(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_capacity")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	service := services[0]
+	seedLoginFailureCapacityRows(t, service.repository, loginFailureCapacityLimit, time.Now())
+	comparisons := 0
+	service.comparePasswords = func(_, _ []byte) error {
+		comparisons++
+		return errors.New("comparison should not run at capacity")
+	}
+	if _, err := service.Login(context.Background(), "capacity-user", "password", "192.0.2.1"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("login at total capacity must fail closed, got %v", err)
+	}
+	if comparisons != 0 {
+		t.Fatalf("password comparison ran at capacity: %d", comparisons)
+	}
+	var count int64
+	if err := service.repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count at capacity: %v", err)
+	}
+	if count != loginFailureCapacityLimit {
+		t.Fatalf("capacity check changed active failure rows: got %d", count)
+	}
+	if !service.rateLimiter.blocked("capacity-locked|192.0.2.10") {
+		t.Fatal("capacity check must preserve an existing locked key")
+	}
+	if err := service.repository.db.Exec("UPDATE login_failures SET failed_at = DATE_SUB(NOW(6), INTERVAL 2 HOUR)").Error; err != nil {
+		t.Fatalf("expire capacity rows: %v", err)
+	}
+	service.comparePasswords = func(_, _ []byte) error {
+		comparisons++
+		return errors.New("mismatch")
+	}
+	if _, err := service.Login(context.Background(), "after-expiry", "password", "192.0.2.2"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("login after expiry should reach comparison, got %v", err)
+	}
+	if comparisons != 1 {
+		t.Fatalf("comparison after expiry count = %d, want 1", comparisons)
+	}
+	if err := service.repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count after expiry: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expired rows should be reclaimed and one failed attempt should add two rows, got %d", count)
+	}
+}
+
+func TestLoginFailureCapacityAdmissionsAreSerializedAcrossMySQLServices(t *testing.T) {
+	admin := storetest.RequireMySQL(t)
+	dsn := storetest.NewDatabase(t, admin, "rate_capacity_race")
+	services := newSharedRateLimitServices(t, dsn, 3)
+	seedLoginFailureCapacityRows(t, services[0].repository, loginFailureCapacityLimit-2, time.Now())
+	for _, service := range services {
+		service.comparePasswords = func(_, _ []byte) error { return errors.New("mismatch") }
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 12)
+	for i := 0; i < cap(errs); i++ {
+		service := services[i%len(services)]
+		wg.Add(1)
+		go func(i int, service *Service) {
+			defer wg.Done()
+			_, err := service.Login(context.Background(), fmt.Sprintf("unique-%d", i), "password", "198.51.100.1")
+			errs <- err
+		}(i, service)
+	}
+	wg.Wait()
+	close(errs)
+	invalid, limited := 0, 0
+	for err := range errs {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
+			invalid++
+		case errors.Is(err, ErrRateLimited):
+			limited++
+		default:
+			t.Fatalf("unexpected login result: %v", err)
+		}
+	}
+	if invalid != 1 || limited != 11 {
+		t.Fatalf("admissions = %d invalid, %d limited; want exactly 1 admitted", invalid, limited)
+	}
+	var count int64
+	if err := services[0].repository.db.Model(&LoginFailure{}).Count(&count).Error; err != nil {
+		t.Fatalf("count after concurrent attempts: %v", err)
+	}
+	if count != loginFailureCapacityLimit {
+		t.Fatalf("concurrent admissions exceeded or missed capacity: got %d, want %d", count, loginFailureCapacityLimit)
+	}
+}
+
+func seedLoginFailureCapacityRows(t *testing.T, repository *Repository, count int, failedAt time.Time) {
+	t.Helper()
+	seeded := 0
+	for count > 0 {
+		batchSize := count
+		if batchSize > 500 {
+			batchSize = 500
+		}
+		rows := make([]LoginFailure, batchSize)
+		for i := range rows {
+			key := fmt.Sprintf("seed-%d", seeded+i)
+			if seeded+i < 3 {
+				key = "capacity-locked|192.0.2.10"
+			}
+			rows[i] = LoginFailure{Key: key, FailedAt: failedAt}
+		}
+		if err := repository.db.Create(&rows).Error; err != nil {
+			t.Fatalf("seed login failures: %v", err)
+		}
+		seeded += batchSize
+		count -= batchSize
+	}
+}

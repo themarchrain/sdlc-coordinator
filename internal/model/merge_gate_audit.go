@@ -7,16 +7,16 @@ import "time"
 // 回落也是;每验证任务至多尝试一次,由 task_id 唯一约束承担防重。
 type MergeGateAudit struct {
 	ID              uint   `gorm:"primaryKey"`
-	AuditID         string `gorm:"uniqueIndex;not null"`
-	TaskID          string `gorm:"index;not null;uniqueIndex:idx_merge_gate_task"`
-	RunID           string `gorm:"index"`
-	RepositoryID    string `gorm:"index;not null"`
+	AuditID         string `gorm:"uniqueIndex;not null;size:128"`
+	TaskID          string `gorm:"index;not null;uniqueIndex:idx_merge_gate_task;size:128"`
+	RunID           string `gorm:"index;size:128"`
+	RepositoryID    string `gorm:"index;not null;size:128"`
 	ProjectPath     string
 	MergeRequestIID int
 	HeadSHA         string
 	// Decision 取值 merged / fallback:merged=平台接受合并,fallback=任一
 	// 环缺失或平台拒绝而回落人工,原因逐项写在 ReasonsJSON。
-	Decision        string `gorm:"index"`
+	Decision        string `gorm:"index;size:32"`
 	ReasonsJSON     string `gorm:"type:text"`
 	MergedCommitSHA string
 	ActorKind       string

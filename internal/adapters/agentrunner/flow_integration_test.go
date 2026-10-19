@@ -19,6 +19,7 @@ import (
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/workers"
 	"sdlc-coordinator/internal/workspace"
+	"sdlc-coordinator/internal/workspaceproto"
 )
 
 func TestReviewerFlowFromPreparedWorkspaceToCanonicalResult(t *testing.T) {
@@ -31,29 +32,43 @@ func TestReviewerFlowFromPreparedWorkspaceToCanonicalResult(t *testing.T) {
 	}
 	run := &model.Run{RunID: "run-flow", TaskID: task.TaskID, WorkerRole: task.Role}
 	task.CurrentRunID = &run.RunID
-	manifest, err := workspace.NewReviewerPreparer().Prepare(context.Background(), workspace.ReviewerRequest{
-		WorkspaceRoot: root, TaskID: task.TaskID, RunID: run.RunID, Project: task.TargetRepo,
+	service, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": fileCheckingProvider{}})
+	if err != nil {
+		t.Fatalf("new runner service: %v", err)
+	}
+	ops, err := runner.NewWorkspaceOps(runner.WorkspaceOpsConfig{
+		DataRoot: t.TempDir(), WorkspaceRoot: root,
+		Authorize: func(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {
+			return workspaceproto.AuthorizationDecision{Authorized: true}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const internalToken = "flow-integration-token"
+	server := httptest.NewServer(runner.NewHTTPHandler(service, runner.WithWorkspaceOperations(ops, internalToken)))
+	defer server.Close()
+	client := agentrunner.NewClient(server.URL, server.Client())
+	remote := agentrunner.NewRemoteWorkspace(server.URL, internalToken, 1, server.Client())
+	manifest, err := agentrunner.NewRemoteReadOnlyPreparer(remote).Prepare(context.Background(), workspace.ReviewerRequest{
+		TaskID: task.TaskID, RunID: run.RunID, Project: task.TargetRepo,
 		RepositoryURL: origin, SourceBranch: "feature/review", TargetBranch: "master", HeadSHA: headSHA, RequestedReviewMode: "full",
 	})
 	if err != nil || manifest.Status != workspace.ManifestStatusReady {
 		t.Fatalf("prepare workspace: manifest=%#v err=%v", manifest, err)
 	}
-	runRoot := filepath.Join(root, "runs", run.RunID)
 	bundle, err := workers.BuildReviewerRunnerTaskBundle(task, run)
 	if err != nil {
 		t.Fatalf("build task bundle: %v", err)
 	}
-	if err := agent.WriteTaskBundle(runRoot, bundle); err != nil {
-		t.Fatalf("write task bundle: %v", err)
-	}
-
-	service, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": fileCheckingProvider{}})
+	files, err := agent.RenderTaskBundle(bundle)
 	if err != nil {
-		t.Fatalf("new runner service: %v", err)
+		t.Fatal(err)
 	}
-	server := httptest.NewServer(runner.NewHTTPHandler(service))
-	defer server.Close()
-	client := agentrunner.NewClient(server.URL, server.Client())
+	runRoot, err := remote.PublishTaskBundle(context.Background(), task.TaskID, run.RunID, files)
+	if err != nil {
+		t.Fatalf("publish task bundle: %v", err)
+	}
 	_, err = client.Create(context.Background(), runner.CreateExecutionRequest{
 		ExecutionID: run.RunID, TaskID: task.TaskID, Role: task.Role, WorkspacePath: runRoot,
 		PromptFile: agent.PromptFileName, SchemaFile: agent.ResultSchemaFileName,

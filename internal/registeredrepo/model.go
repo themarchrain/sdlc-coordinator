@@ -28,18 +28,18 @@ func ValidStatus(status RepositoryStatus) bool {
 
 type RegisteredRepository struct {
 	ID           uint   `gorm:"primaryKey"`
-	RepositoryID string `gorm:"column:repository_id;uniqueIndex;not null"`
+	RepositoryID string `gorm:"column:repository_id;uniqueIndex;not null;size:128"`
 	DisplayName  string `gorm:"column:display_name;not null"`
 	// Provider/BaseURL 是仓的平台身份锚点:消费链(验签/写回/探针/人员/需求)
 	// 一律按仓行解析。全局 codehost 配置只作为注册表单默认值与空列回填来源。
-	Provider string `gorm:"column:provider;index;not null;default:''"`
+	Provider string `gorm:"column:provider;index;not null;default:'';size:64"`
 	BaseURL  string `gorm:"column:base_url;type:text"`
 	// CodeHostProjectID 是平台侧数字对象 id(gitlab/gitea 的 project id、github
 	// repository id),身份锚点之一;换平台后旧值不可比,由服务层清空重探。
-	CodeHostProjectID string `gorm:"column:codehost_project_id"`
+	CodeHostProjectID string `gorm:"column:codehost_project_id;size:191"`
 	// PathWithNamespace 的唯一性由 provider 作用域索引承担
 	// (EnsureIdentityIndexes),跨平台同 path 是合法共存。
-	PathWithNamespace   string `gorm:"column:path_with_namespace;not null"`
+	PathWithNamespace   string `gorm:"column:path_with_namespace;not null;size:255"`
 	Token               string `gorm:"column:token;type:text"`
 	WebhookSecret       string `gorm:"column:webhook_secret;type:text"`
 	TokenScopeAttested  bool   `gorm:"column:token_scope_attested;not null;default:false"`
@@ -54,7 +54,7 @@ type RegisteredRepository struct {
 	// 公开 Git 提交元数据,不是凭据,与 Token 严格分域。
 	GitAuthorName          string           `gorm:"column:git_author_name;type:text"`
 	GitAuthorEmail         string           `gorm:"column:git_author_email;type:text"`
-	Status                 RepositoryStatus `gorm:"column:status;index;not null"`
+	Status                 RepositoryStatus `gorm:"column:status;index;not null;size:32"`
 	LastConfigurationError string           `gorm:"column:last_configuration_error;type:text"`
 	CreatedAt              time.Time
 	UpdatedAt              time.Time

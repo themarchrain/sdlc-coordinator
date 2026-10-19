@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"sdlc-coordinator/internal/store"
+
 	"gorm.io/gorm"
 )
 
@@ -14,11 +16,12 @@ import (
 // 索引只路由不鉴权：secret 留租户库仓行。
 type RepoRouteIndex struct {
 	ID                uint   `gorm:"primaryKey"`
-	Provider          string `gorm:"not null;uniqueIndex:idx_repo_route_identity"`
-	BaseURL           string `gorm:"not null;uniqueIndex:idx_repo_route_identity;type:text"`
-	PathWithNamespace string `gorm:"not null;uniqueIndex:idx_repo_route_identity;type:text"`
+	Provider          string `gorm:"not null;uniqueIndex:idx_repo_route_identity;size:64"`
+	BaseURL           string `gorm:"not null;uniqueIndex:idx_repo_route_identity;size:255"`
+	PathWithNamespace string `gorm:"not null;uniqueIndex:idx_repo_route_identity;size:255"`
 	TenantID          uint   `gorm:"not null;index"`
 	RepoFingerprint   string `gorm:"not null;default:''"`
+	Version           uint64 `gorm:"not null;default:1"`
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -36,7 +39,7 @@ var ErrRepoRouteNotFound = errors.New("repo route not found")
 
 // ErrRepoRouteIdentityClaimed 表示路由身份已被其他租户占用。索引行是
 // webhook 的租户路由锚点，静默换主等于把占用方的流量改道或打死，因此
-// 跨租户改写一律拒绝；确属漂移的修正走「先删后建」（见对账循环）。
+// 跨租户改写一律拒绝；确属漂移的修正由对账按快照版本条件更新。
 var ErrRepoRouteIdentityClaimed = errors.New("repo route identity claimed by another tenant")
 
 func (repository *Repository) UpsertRepoRouteIndex(ctx context.Context, row RepoRouteIndex) error {
@@ -50,15 +53,47 @@ func (repository *Repository) UpsertRepoRouteIndex(ctx context.Context, row Repo
 			}
 			row.ID = existing.ID
 			row.CreatedAt = existing.CreatedAt
-			return tx.Model(&RepoRouteIndex{}).Where("id = ?", existing.ID).Updates(map[string]any{
+			result := tx.Model(&RepoRouteIndex{}).Where("id = ? AND tenant_id = ?", existing.ID, row.TenantID).Updates(map[string]any{
 				"repo_fingerprint": row.RepoFingerprint,
-			}).Error
+				"version":          gorm.Expr("version + 1"),
+			})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return ErrRepoRouteIdentityClaimed
+			}
+			return nil
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return tx.Create(&row).Error
 		}
 		return err
 	})
+}
+
+func (repository *Repository) UpsertRepoRouteIndexGuarded(ctx context.Context, row RepoRouteIndex, expected *RepoRouteIndex) (bool, error) {
+	if expected == nil {
+		result := repository.db.WithContext(ctx).Create(&row)
+		if store.IsDuplicateKey(result.Error) {
+			return false, nil
+		}
+		return result.RowsAffected == 1, result.Error
+	}
+	result := repository.db.WithContext(ctx).Model(&RepoRouteIndex{}).
+		Where("id = ? AND version = ?", expected.ID, expected.Version).
+		Updates(map[string]any{
+			"tenant_id": row.TenantID, "repo_fingerprint": row.RepoFingerprint,
+			"version": gorm.Expr("version + 1"),
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
+func (repository *Repository) DeleteRepoRouteIndexGuarded(ctx context.Context, expected RepoRouteIndex) (bool, error) {
+	result := repository.db.WithContext(ctx).
+		Where("id = ? AND version = ?", expected.ID, expected.Version).
+		Delete(&RepoRouteIndex{})
+	return result.RowsAffected == 1, result.Error
 }
 
 func (repository *Repository) GetRepoRouteIndex(ctx context.Context, identity RepoRouteIdentity) (*RepoRouteIndex, error) {

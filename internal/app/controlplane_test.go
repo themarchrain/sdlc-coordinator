@@ -34,7 +34,7 @@ func TestNewReadyWiresControlPlaneAndSeedsSuperAdmin(t *testing.T) {
 			SuperAdminPassword: "test-seed-password",
 		},
 	}
-	application, err := NewReady(cfg, zap.NewNop(), openAppTestDB(t), nil, nil)
+	application, err := NewReady(withTestControlPlane(t, cfg), zap.NewNop(), openAppTestDB(t), nil, nil)
 	if err != nil {
 		t.Fatalf("new ready app: %v", err)
 	}
@@ -49,7 +49,10 @@ func TestNewReadyWiresControlPlaneAndSeedsSuperAdmin(t *testing.T) {
 }
 
 func TestNewReadyRejectsMissingControlPlaneDSN(t *testing.T) {
-	_, err := NewReady(config.Config{HTTPAddr: ":0"}, zap.NewNop(), openAppTestDB(t), nil, nil)
+	_, err := NewReady(config.Config{
+		HTTPAddr: ":0", AgentRunner: config.AgentRunnerSettings{InternalToken: "app-test-internal-token"},
+		ResultChannelSecret: strings.Repeat("01", 32),
+	}, zap.NewNop(), openAppTestDB(t), nil, nil)
 	if err == nil {
 		t.Fatal("expected missing CONTROL_PLANE_DSN to fail startup")
 	}
@@ -65,7 +68,8 @@ func TestNewReadyRejectsMissingSuperAdminSeed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	_, err = NewReady(config.Config{
-		HTTPAddr: ":0",
+		HTTPAddr: ":0", AgentRunner: config.AgentRunnerSettings{InternalToken: "app-test-internal-token"},
+		ResultChannelSecret: strings.Repeat("01", 32),
 		ControlPlane: config.ControlPlaneSettings{
 			DSN: "file:" + filepath.Join(dir, "control-plane.db") + "?_busy_timeout=1000",
 		},

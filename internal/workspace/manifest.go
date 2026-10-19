@@ -36,7 +36,9 @@ type GitCredential struct {
 }
 
 type ReviewerRequest struct {
-	WorkspaceRoot       string
+	WorkspaceRoot string
+	// PrivateRunRoot is enabled by the Runner operation service's isolated CLI mode.
+	PrivateRunRoot      bool
 	TaskID              string
 	RunID               string
 	Project             string
@@ -78,6 +80,10 @@ type Manifest struct {
 	TaskType   string             `json:"task_type,omitempty"`
 	Repository RepositoryManifest `json:"repository"`
 	PreparedAt time.Time          `json:"prepared_at"`
+	// RunnerWorkspacePath 是 Runner 侧 run 工作区路径（远端 prepare 返回值）：
+	// 独立文件系统下两侧路径不共享，执行请求必须用该路径；本机形态为空
+	// （调用方沿用协调器本地计算值）。
+	RunnerWorkspacePath string `json:"runner_workspace_path,omitempty"`
 }
 
 func validateReviewerRequest(req ReviewerRequest) (ReviewerRequest, error) {

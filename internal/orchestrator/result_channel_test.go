@@ -3,11 +3,14 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"io"
+	"net/url"
 	"strings"
 	"testing"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/results"
+	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/workspace"
 )
 
@@ -36,7 +39,7 @@ func newResultChannelFixture(role string) resultChannelFixture {
 		BaselineSHA: "baseline-sha",
 	}}
 	submitter := &recordingResultSubmitter{}
-	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{WorkspaceRoot: "D:/tmp/ws", ResolveRepository: stubRunnerRepository()}, "mcp")
+	core := NewResultChannelCoordinator(finalizer, submitter, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}, "mcp")
 	core.SetDeveloperDeliveryCheckpoints(checkpoints)
 	return resultChannelFixture{task: task, run: run, finalizer: finalizer, checkpoints: checkpoints, submitter: submitter, core: core}
 }
@@ -294,5 +297,60 @@ func TestResultChannelRejectsNullLiteralsInsideRequiredFields(t *testing.T) {
 	}
 	if f.submitter.calls != 0 {
 		t.Fatalf("rejected results must not reach the submitter, calls=%d", f.submitter.calls)
+	}
+}
+
+// TestResultChannelClassifiesInfrastructureFailuresAsChannelFailed 审查 #10 的
+// 回归：Runner 返回 503/容量类基础设施错误时，交付失败必须归传输桶
+// （ChannelFailed），不得进入可矫正的 rejectedOutcome——否则 MCP 处理器会
+// 记 rejection 并扣 Agent 的矫正次数，平台故障被误报成参数问题。
+func TestResultChannelClassifiesInfrastructureFailuresAsChannelFailed(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{name: "runner_5xx_unavailable", err: &runner.HTTPError{Method: "POST", Path: "/internal/workspace/commit", StatusCode: 503, Body: "channel closed"}},
+		{name: "runner_fence_rejected", err: &runner.HTTPError{Method: "POST", Path: "/internal/workspace/commit", StatusCode: 403, Body: `{"error":{"code":"not_authorized"}}`}},
+		{name: "runner_operation_in_flight", err: &runner.HTTPError{Method: "POST", Path: "/internal/workspace/commit", StatusCode: 409, Body: `{"error":{"code":"operation_in_flight"}}`}},
+		{name: "runner_capacity_exhausted", err: runner.ErrTooManyOperations},
+		{name: "runner_not_accepting", err: runner.ErrServiceNotAccepting},
+		{name: "context_deadline", err: context.DeadlineExceeded},
+		{name: "connection_refused", err: &url.Error{Op: "Post", URL: "http://runner/internal/workspace/commit", Err: errors.New("connection refused")}},
+		{name: "response_truncated", err: io.ErrUnexpectedEOF},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			f := newResultChannelFixture("DeveloperWorker")
+			f.finalizer.commitErr = testCase.err
+			outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+			if err != nil {
+				t.Fatalf("submit agent result: %v", err)
+			}
+			if outcome.Decision != ChannelFailed || outcome.Stage != ChannelStageFinalize {
+				t.Fatalf("infrastructure failure must be classified as ChannelFailed: %#v", outcome)
+			}
+			if len(outcome.Problems) != 0 {
+				t.Fatalf("infrastructure failure must not produce agent-correction problems: %#v", outcome.Problems)
+			}
+		})
+	}
+}
+
+// TestResultChannelKeepsBusinessConflictsCorrectable 业务性冲突（如远端漂移）
+// 仍走可矫正通道：分类放宽不得把业务冲突吞进传输桶。
+func TestResultChannelKeepsBusinessConflictsCorrectable(t *testing.T) {
+	for _, failure := range []error{
+		workspace.ErrDeveloperDeliveryConflict,
+		&runner.HTTPError{Method: "POST", Path: "/internal/workspace/commit", StatusCode: 409, Body: `{"error":{"code":"delivery_conflict"}}`},
+	} {
+		f := newResultChannelFixture("DeveloperWorker")
+		f.finalizer.commitErr = failure
+		outcome, err := f.core.SubmitAgentResult(context.Background(), f.task, f.run, results.SubmitDeveloperResultTool, developerChangeReadyPayload())
+		if err != nil {
+			t.Fatalf("submit agent result: %v", err)
+		}
+		if outcome.Decision != ChannelRejected || len(outcome.Problems) == 0 {
+			t.Fatalf("business delivery conflicts must stay correctable: %#v", outcome)
+		}
 	}
 }

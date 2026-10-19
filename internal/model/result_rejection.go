@@ -8,8 +8,8 @@ import "time"
 // run_id); bounded by the correction attempt cap.
 type ResultSubmissionRejection struct {
 	ID           uint      `gorm:"primaryKey"`
-	RunID        string    `gorm:"index;not null"`
-	TaskID       string    `gorm:"index;not null"`
+	RunID        string    `gorm:"index;not null;size:128"`
+	TaskID       string    `gorm:"index;not null;size:128"`
 	ToolName     string    `gorm:"not null"`
 	Role         string    `gorm:"not null"`
 	ProblemsJSON string    `gorm:"type:text;not null"`

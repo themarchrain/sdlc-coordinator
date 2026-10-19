@@ -3,9 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +15,7 @@ import (
 	"sdlc-coordinator/internal/events"
 	api "sdlc-coordinator/internal/http"
 	handlers "sdlc-coordinator/internal/http/handlers"
+	"sdlc-coordinator/internal/instance"
 	"sdlc-coordinator/internal/model"
 	agentobservability "sdlc-coordinator/internal/observability/agent"
 	"sdlc-coordinator/internal/orchestrator"
@@ -29,6 +27,7 @@ import (
 	"sdlc-coordinator/internal/runnerpool"
 	"sdlc-coordinator/internal/scheduler"
 	"sdlc-coordinator/internal/store"
+	storerepository "sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
 	"sdlc-coordinator/internal/tenantmigration"
 
@@ -67,16 +66,17 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	// 平台库只承载控制面与运行配置，不建业务表：业务引擎只存在于租户库
 	//（存量部署的平台库旧业务表原地保留，legacy 迁移按需读取）。
 
-	// 真分库装配：接口不变，Handle 解析到
-	// <TENANT_DATA_DIR>/<tenantID>/db.sqlite；Main() 保持平台库句柄。
 	tenantDataDir := cfg.TenantDataDir
 	if strings.TrimSpace(tenantDataDir) == "" {
 		tenantDataDir = config.DefaultTenantDataDir
 	}
 	platformStore := &tenantdb.Store{DB: db}
-	tenantStores := tenantdb.NewSqliteFileResolver(platformStore, tenantDataDir, 0)
-	// 启动中途失败时释放已打开的租户句柄（未关闭的 sqlite 文件句柄会阻塞
-	// 外层对数据目录的清理）；成功装配后句柄归 App 所有，不再回收。
+	tenantStores, err := newTenantResolver(db, cfg, platformStore, tenantDataDir)
+	if err != nil {
+		return nil, err
+	}
+	// 启动中途失败时释放已打开的租户句柄（未关闭的句柄会阻塞外层清理）；
+	// 成功装配后句柄归 App 所有，不再回收。
 	closeTenantStores := true
 	defer func() {
 		if closeTenantStores {
@@ -84,12 +84,15 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		}
 	}()
 
-	// MCP 结果回传通道签名密钥仅存内存（重启即失效，在途 agent 落入文本
-	// 降级通道）；endpoint 取协调器对外可达地址（scheduler.callback_base_url），
-	// 缺省未配置时通道保持关闭（纯文本模式）。
-	resultTokenSecret, err := resulttoken.NewSecret()
+	if strings.TrimSpace(cfg.AgentRunner.InternalToken) == "" {
+		return nil, fmt.Errorf("runner workspace operations require AGENT_RUNNER_INTERNAL_TOKEN")
+	}
+	if strings.TrimSpace(cfg.ResultChannelSecret) == "" {
+		return nil, fmt.Errorf("result callbacks require RESULT_CHANNEL_SECRET (32 bytes of hex)")
+	}
+	resultTokenSecret, err := resolveResultChannelSecret(cfg.ResultChannelSecret)
 	if err != nil {
-		return nil, fmt.Errorf("generate result channel secret: %w", err)
+		return nil, err
 	}
 	// 控制面与 ready/bootstrap 共用装配：DSN 与种子超管缺失时显式失败。
 	controlPlaneService, err := newControlPlane(cfg.ControlPlane, logger)
@@ -109,7 +112,7 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if legacyMigrated && logger != nil {
 		logger.Info("legacy platform database copied into the default tenant (slug=tenant-one)")
 	}
-	controlPlaneService.SetTenantProvisioner(&tenantStoreProvisioner{resolver: tenantStores, root: tenantDataDir})
+	controlPlaneService.SetTenantProvisioner(&tenantStoreProvisioner{resolver: tenantStores})
 	if err := migrateTenantStores(context.Background(), controlPlaneService, tenantStores); err != nil {
 		return nil, err
 	}
@@ -144,6 +147,9 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 		requirements.NewStore(db), registeredrepo.NewStore(db),
 		requirements.NewProviderClientFactory(nil),
 	)
+	requirementsService.WithWorkItemLeaseFactory(func(db *gorm.DB) requirements.WorkItemLeasePort {
+		return storerepository.NewWorkItemLeaseRepository(db)
+	}, instance.ID())
 	connectorService := connectors.NewService(connectors.NewConnectorRepository(db), connectors.NewHTTPClient())
 	mcpHandler := handlers.NewMCPHandler(
 		nil, resultTokenSecret, nil, nil, nil,
@@ -182,6 +188,12 @@ func NewReady(cfg config.Config, logger *zap.Logger, db *gorm.DB, configurationS
 	if configurationService != nil {
 		routerOptions = append(routerOptions, api.WithConfigurationService(configurationService, shutdown))
 	}
+	// Runner 受控工作区操作的当前授权确认入口：任一副本基于共享库裁决
+	//（run 是否仍是任务当前 run、任务是否可交付、清理是否指向在途工作区）。
+	routerOptions = append(routerOptions, api.WithRunnerAuthorization(handlers.NewRunnerAuthorizationHandler(
+		&tenantRunnerAuthorizer{control: controlPlaneService, resolver: tenantStores},
+		cfg.AgentRunner.InternalToken,
+	)))
 	// webhook 默认处理器只是路由注册载体：生产恒注入 EngineViewFactory，
 	// 每个请求按 (provider, path) 路由到所属租户引擎视图（factory 优先且
 	// 绝不回落构造期默认——空壳 processor 永不被调用）。
@@ -223,7 +235,10 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 	if err != nil {
 		return nil, err
 	}
-	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
+	tenantStores, err := newTenantResolver(db, config.Config{DatabaseDSN: bootstrap.DatabaseDSN}, &tenantdb.Store{DB: db}, config.DefaultTenantDataDir)
+	if err != nil {
+		return nil, err
+	}
 	bootstrapRouterOptions := []any{
 		api.WithRuntimeLogger(logger),
 		api.WithConfigurationService(configurationService, shutdown),
@@ -252,44 +267,77 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 }
 
 // migrateBusinessStore 对一个业务库执行全部业务域迁移（平台库与租户库同一
-// 清单；AutoMigrate 幂等）。
+// 清单；AutoMigrate 幂等）。整个迁移在跨实例迁移锁内执行并记录 schema 版本
+// （MySQL；SQLite 单写者直落），多副本同时启动/冷建引擎不会并发执行 DDL。
 func migrateBusinessStore(db *gorm.DB) error {
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}, &model.MergeGateAudit{}, &model.DeveloperDeliveryCheckpoint{}); err != nil {
-		return err
-	}
-	repoStore := registeredrepo.NewStore(db)
-	if err := repoStore.Migrate(); err != nil {
-		return err
-	}
-	// 防串仓唯一索引随建表一并建立：平台库调用点拆除后，这里是索引唯一的
-	// 生产建立点，漏掉则新装租户库只剩路由索引预检一层防线。
-	if err := repoStore.EnsureIdentityIndexes(); err != nil {
-		return err
-	}
-	if err := requirements.NewStore(db).Migrate(); err != nil {
-		return err
-	}
-	if err := people.NewRepository(db).Migrate(); err != nil {
-		return err
-	}
-	return orgconfig.NewStore(db).Migrate()
+	return store.MigrateGuarded(context.Background(), db, "business", func() error {
+		if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}, &model.MergeGateAudit{}, &model.DeveloperDeliveryCheckpoint{}, &model.WorkItemLease{}); err != nil {
+			return err
+		}
+		repoStore := registeredrepo.NewStore(db)
+		if err := repoStore.Migrate(); err != nil {
+			return err
+		}
+		// 防串仓唯一索引随建表一并建立：平台库调用点拆除后，这里是索引唯一的
+		// 生产建立点，漏掉则新装租户库只剩路由索引预检一层防线。
+		if err := repoStore.EnsureIdentityIndexes(); err != nil {
+			return err
+		}
+		if err := requirements.NewStore(db).Migrate(); err != nil {
+			return err
+		}
+		if err := people.NewRepository(db).Migrate(); err != nil {
+			return err
+		}
+		return orgconfig.NewStore(db).Migrate()
+	})
 }
 
-// migrateTenantStores 启动时遍历控制面租户，逐库打开并迁移。
-// 任一租户失败 → 中止启动并列出失败租户。
-func migrateTenantStores(ctx context.Context, service *controlplane.Service, resolver tenantdb.Resolver) error {
+// newTenantResolver 按平台库方言选择租户数据面形态：MySQL → 每租户独立库
+// （平台 DSN 派生，库名由租户 ID 确定性生成）；SQLite → 本地文件（单机开发）。
+func newTenantResolver(db *gorm.DB, cfg config.Config, main *tenantdb.Store, tenantDataDir string) (tenantdb.UnmanagedResolver, error) {
+	if db.Dialector.Name() != store.DriverMySQL {
+		return tenantdb.NewSqliteFileResolver(main, tenantDataDir, 0), nil
+	}
+	spec, err := store.ParseDSN(cfg.DatabaseDSN)
+	if err != nil {
+		return nil, fmt.Errorf("parse platform dsn for tenant resolution: %w", err)
+	}
+	resolver, err := tenantdb.NewMySQLDatabaseResolver(main, spec, 0)
+	if err != nil {
+		return nil, err
+	}
+	return resolver, nil
+}
+
+// migrateTenantStores 启动时遍历控制面租户：先补开通未就绪的数据面（开通
+// 中断的补偿路径），再逐库迁移。任一租户失败 → 中止启动并列出失败租户。
+func migrateTenantStores(ctx context.Context, service *controlplane.Service, resolver tenantdb.UnmanagedResolver) error {
 	tenants, err := service.ListTenants(ctx)
 	if err != nil {
 		return fmt.Errorf("load tenants for migration: %w", err)
 	}
 	var failures []string
 	for _, tenant := range tenants {
-		store, err := resolver.Handle(ctx, tenant.ID)
-		if err != nil {
+		if tenant.Status == controlplane.TenantStatusDisabled {
+			continue
+		}
+		if err := ensureTenantDataPlane(ctx, service, resolver, tenant); err != nil {
 			failures = append(failures, tenant.Slug+": "+err.Error())
 			continue
 		}
-		if err := migrateBusinessStore(store.DB); err != nil {
+		handle, err := resolver.Handle(ctx, tenant.ID)
+		if err != nil {
+			if store.IsUnknownDatabase(err) {
+				// 已标记开通但库不存在：不静默重建（可能是运维删除），
+				// 交人工处置。
+				failures = append(failures, tenant.Slug+": tenant database is missing although the tenant is marked provisioned")
+			} else {
+				failures = append(failures, tenant.Slug+": "+err.Error())
+			}
+			continue
+		}
+		if err := migrateBusinessStore(handle.DB); err != nil {
 			resolver.Invalidate(tenant.ID)
 			failures = append(failures, tenant.Slug+": "+err.Error())
 		}
@@ -300,27 +348,59 @@ func migrateTenantStores(ctx context.Context, service *controlplane.Service, res
 	return nil
 }
 
-// tenantStoreProvisioner 把控制面建组织同事务地开通到租户数据面：建目录建库
-// → 迁移 → 回写实际 db_locator；失败清理半成品目录（登记行由事务回滚兜底）。
+func ensureTenantDataPlane(ctx context.Context, service *controlplane.Service, resolver tenantdb.UnmanagedResolver, tenant controlplane.TenantSummary) error {
+	if resolver.IsProvisioned(tenant.DMLocator) {
+		return nil
+	}
+	locator, err := resolver.EnsureDatabase(ctx, tenant.ID)
+	if err != nil {
+		return fmt.Errorf("ensure tenant database: %w", err)
+	}
+	handle, err := resolver.OpenUnmanaged(tenant.ID)
+	if err != nil {
+		resolver.DiscardFailedProvision(tenant.ID)
+		return fmt.Errorf("open tenant database: %w", err)
+	}
+	defer closeTenantHandle(handle)
+	if err := migrateBusinessStore(handle.DB); err != nil {
+		resolver.DiscardFailedProvision(tenant.ID)
+		return fmt.Errorf("migrate tenant database: %w", err)
+	}
+	if err := service.SetTenantDMLocator(ctx, tenant.ID, locator); err != nil {
+		resolver.DiscardFailedProvision(tenant.ID)
+		return fmt.Errorf("record tenant db locator: %w", err)
+	}
+	return nil
+}
+
 type tenantStoreProvisioner struct {
-	resolver *tenantdb.SqliteFileResolver
-	root     string
+	resolver tenantdb.UnmanagedResolver
 }
 
 func (p *tenantStoreProvisioner) ProvisionTenant(ctx context.Context, tenant *controlplane.Tenant) error {
-	tenantDir := filepath.Join(p.root, strconv.FormatUint(uint64(tenant.ID), 10))
-	store, err := p.resolver.Handle(ctx, tenant.ID)
+	locator, err := p.resolver.EnsureDatabase(ctx, tenant.ID)
 	if err != nil {
-		_ = os.RemoveAll(tenantDir)
+		return fmt.Errorf("ensure tenant store: %w", err)
+	}
+	handle, err := p.resolver.OpenUnmanaged(tenant.ID)
+	if err != nil {
+		p.resolver.DiscardFailedProvision(tenant.ID)
 		return fmt.Errorf("open tenant store: %w", err)
 	}
-	if err := migrateBusinessStore(store.DB); err != nil {
-		p.resolver.Invalidate(tenant.ID)
-		_ = os.RemoveAll(tenantDir)
+	defer closeTenantHandle(handle)
+	if err := migrateBusinessStore(handle.DB); err != nil {
+		p.resolver.DiscardFailedProvision(tenant.ID)
 		return fmt.Errorf("migrate tenant store: %w", err)
 	}
-	tenant.DMLocator = "file:" + filepath.ToSlash(filepath.Join(tenantDir, "db.sqlite"))
+	tenant.DMLocator = locator
 	return nil
+}
+
+func closeTenantHandle(handle *tenantdb.Store) {
+	if handle == nil || handle.DB == nil {
+		return
+	}
+	_ = handle.Close()
 }
 
 // validateRunnerAssignments 在启动时校验控制面 runner 指派形态：同端点跨
@@ -373,9 +453,10 @@ func runnerRepositoryResolver(store *registeredrepo.Store) func(context.Context,
 
 // newPeopleDirectory 构造人员目录与三平台全量的身份 lookup:查询目标由请求
 // 自带的作用域(provider/base_url,按仓行解析)决定,装配层不再单选平台。
+// 迁移走受控入口:冷建引擎会在请求路径重复触发本函数,MySQL 上需跨实例串行。
 func newPeopleDirectory(db *gorm.DB) (*people.Service, people.IdentityLookup, error) {
 	repository := people.NewRepository(db)
-	if err := repository.Migrate(); err != nil {
+	if err := store.MigrateGuarded(context.Background(), db, "people", repository.Migrate); err != nil {
 		return nil, nil, err
 	}
 	return people.NewService(repository), people.NewMultiProviderLookupClient(nil), nil
@@ -410,7 +491,25 @@ func (d peopleMentionDirectory) ResolveMentionNames(ctx context.Context, reposit
 }
 
 // newControlPlane 打开控制面库、迁移并种子超管。DSN 或种子缺失时返回
-// config.ErrControlPlaneNotConfigured，不再退内存库。
+// config.ErrControlPlaneNotConfigured，不再退内存库。迁移走跨实例受控入口
+// （多副本同时启动串行执行 DDL 并记录 schema 版本）。
+// resolveResultChannelSecret 解析结果通道签名密钥：部署级 hex 密钥配置时
+// 使用之（跨实例跨重启稳定），否则进程内存随机。
+func resolveResultChannelSecret(deploymentSecret string) ([]byte, error) {
+	if strings.TrimSpace(deploymentSecret) != "" {
+		secret, err := resulttoken.SecretFromHex(deploymentSecret)
+		if err != nil {
+			return nil, err
+		}
+		return secret, nil
+	}
+	secret, err := resulttoken.NewSecret()
+	if err != nil {
+		return nil, fmt.Errorf("generate result channel secret: %w", err)
+	}
+	return secret, nil
+}
+
 func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (*controlplane.Service, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
@@ -420,7 +519,7 @@ func newControlPlane(settings config.ControlPlaneSettings, logger *zap.Logger) (
 		return nil, fmt.Errorf("open control plane database: %w", err)
 	}
 	repository := controlplane.NewRepository(db)
-	if err := repository.Migrate(); err != nil {
+	if err := store.MigrateGuarded(context.Background(), db, "controlplane", repository.Migrate); err != nil {
 		return nil, err
 	}
 	service := controlplane.NewService(repository)
@@ -448,6 +547,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.ControlPlane != nil {
 		go a.ControlPlane.RunSessionJanitor(runCtx)
+		go a.ControlPlane.RunLoginFailureJanitor(runCtx)
 	}
 	go a.runRepoIndexReconciler(runCtx)
 

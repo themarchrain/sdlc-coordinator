@@ -36,7 +36,7 @@ const (
 // （people 三元组）正交，禁止合并。Role 区分全局超管与普通账号。
 type User struct {
 	ID                 uint   `gorm:"primaryKey"`
-	Username           string `gorm:"not null;uniqueIndex"`
+	Username           string `gorm:"not null;uniqueIndex;size:128"`
 	PasswordHash       string `gorm:"not null"`
 	Role               string `gorm:"not null;default:user"`
 	MustChangePassword bool   `gorm:"not null;default:false"`
@@ -50,9 +50,9 @@ func (User) TableName() string { return "users" }
 // TenantStoreResolver 消费，本阶段仅落串不建文件）。
 type Tenant struct {
 	ID          uint   `gorm:"primaryKey"`
-	Slug        string `gorm:"not null;uniqueIndex"`
+	Slug        string `gorm:"not null;uniqueIndex;size:128"`
 	DisplayName string `gorm:"not null"`
-	Status      string `gorm:"not null;default:active;index"`
+	Status      string `gorm:"not null;default:active;index;size:32"`
 	DMLocator   string `gorm:"column:db_locator"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -76,7 +76,7 @@ func (Membership) TableName() string { return "memberships" }
 type InviteCode struct {
 	ID        uint      `gorm:"primaryKey"`
 	TenantID  uint      `gorm:"not null;index"`
-	CodeHash  string    `gorm:"not null;uniqueIndex"`
+	CodeHash  string    `gorm:"not null;uniqueIndex;size:128"`
 	Role      string    `gorm:"not null;default:member"`
 	ExpiresAt time.Time `gorm:"not null;index"`
 	MaxUses   int       `gorm:"not null"`
@@ -92,12 +92,19 @@ func (InviteCode) TableName() string { return "invite_codes" }
 // 本阶段仅提供模型与超管 list/replace 端点，派发消费归后续租户化改造。
 type RunnerAssignment struct {
 	ID          uint   `gorm:"primaryKey"`
-	TenantID    uint   `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint"`
-	EndpointURL string `gorm:"not null;uniqueIndex:idx_runner_assignments_tenant_endpoint"`
+	TenantID    uint   `gorm:"not null;index"`
+	EndpointURL string `gorm:"not null;uniqueIndex:idx_runner_assignments_endpoint;size:512"`
 	CreatedAt   time.Time
 }
 
 func (RunnerAssignment) TableName() string { return "runner_assignments" }
+
+type RunnerPoolCursor struct {
+	TenantID uint   `gorm:"primaryKey;autoIncrement:false"`
+	NextSlot uint64 `gorm:"not null;default:0"`
+}
+
+func (RunnerPoolCursor) TableName() string { return "runner_pool_cursors" }
 
 // AuditLog 记录超管动作与支持访问等控制面留痕。
 type AuditLog struct {
@@ -105,7 +112,7 @@ type AuditLog struct {
 	ActorUserID   *uint
 	ActorUsername string    `gorm:"not null;default:''"`
 	TenantID      *uint     `gorm:"index"`
-	Action        string    `gorm:"not null;index"`
+	Action        string    `gorm:"not null;index;size:64"`
 	Detail        string    `gorm:"not null;default:''"`
 	SourceIP      string    `gorm:"not null;default:''"`
 	CreatedAt     time.Time `gorm:"index"`
@@ -117,7 +124,7 @@ func (AuditLog) TableName() string { return "audit_log" }
 // active_tenant，进入组织上下文走支持访问（SupportTenantID + 理由，进退均写审计）。
 type Session struct {
 	ID               uint   `gorm:"primaryKey"`
-	TokenHash        string `gorm:"not null;uniqueIndex"`
+	TokenHash        string `gorm:"not null;uniqueIndex;size:128"`
 	UserID           uint   `gorm:"not null;index"`
 	ActiveTenantID   *uint
 	Role             string `gorm:"not null"`

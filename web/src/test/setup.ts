@@ -1,9 +1,16 @@
 import '@testing-library/jest-dom/vitest'
 import '../styles/index.css'
-import { cleanup } from '@testing-library/react'
+import { act, cleanup } from '@testing-library/react'
+import { message, notification } from 'antd'
 import { afterEach } from 'vitest'
 
-afterEach(cleanup)
+afterEach(async () => {
+  await act(async () => {
+    message.destroy()
+    notification.destroy()
+  })
+  cleanup()
+})
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 
@@ -28,6 +29,50 @@ func (r *AgentExecutionRepository) Create(ctx context.Context, execution *model.
 func (r *AgentExecutionRepository) Update(ctx context.Context, execution *model.AgentExecution) error {
 	if err := r.db.WithContext(ctx).Save(execution).Error; err != nil {
 		return fmt.Errorf("update agent execution: %w", err)
+	}
+	return nil
+}
+
+func (r *AgentExecutionRepository) TouchLastObservedAt(ctx context.Context, runID string, at time.Time) error {
+	if err := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND status IN ?", runID, []model.AgentExecutionStatus{
+			model.AgentExecutionStatusDispatching, model.AgentExecutionStatusAccepted,
+			model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning,
+		}).Update("last_observed_at", at).Error; err != nil {
+		return fmt.Errorf("touch agent execution observation for run %s: %w", runID, err)
+	}
+	return nil
+}
+
+func (r *AgentExecutionRepository) SettleUnacceptedIfDispatching(ctx context.Context, runID string, now time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND status = ?", runID, model.AgentExecutionStatusDispatching).
+		Updates(map[string]any{
+			"status":           model.AgentExecutionStatusInterrupted,
+			"error_code":       "dispatch_not_accepted_after_run_terminal",
+			"error_message":    "run finalized before runner accepted the execution",
+			"finished_at":      now,
+			"last_observed_at": now,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("settle unaccepted execution for run %s: %w", runID, result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// UpdateRunnerEndpointIfUnchanged 以旧端点值为条件推进端点列（列级条件写，
+// 不整行覆盖）。fallback 轮换在远端 Create 之前调用：新目标必须先落库，
+// 接管方才不会按旧端点重发同一 run 造成双执行。0 行且库内已是他方更新时
+// 由调用方按不确定语义处理（保持待对账，不换端点）。
+func (r *AgentExecutionRepository) UpdateRunnerEndpointIfUnchanged(ctx context.Context, runID, fromEndpoint, toEndpoint string) error {
+	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND runner_endpoint = ?", runID, fromEndpoint).
+		Update("runner_endpoint", toEndpoint)
+	if result.Error != nil {
+		return fmt.Errorf("update runner endpoint for run %s: %w", runID, result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("runner endpoint for run %s was changed concurrently (expected %q)", runID, fromEndpoint)
 	}
 	return nil
 }
