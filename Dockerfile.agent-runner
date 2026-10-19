@@ -14,14 +14,12 @@ RUN go test ./cmd/agent-runner-cli-launcher -count=1 \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/agent-runner ./cmd/agent-runner \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/agent-runner-cli-launcher ./cmd/agent-runner-cli-launcher
 
-# git/bash/python 走 apk；go 复用 builder 阶段 /usr/local/go。
-# agent 工具（codex 必投，claude/node/jdk/maven 可选）走投放目录——有则构建、无则跳过。
-# python 3.12 由 alpine:3.21 基座提供；go 1.25.x 免二次投放。
-FROM alpine:3.21
+FROM alpine:3.24
 
 ARG GOPROXY=https://proxy.golang.org,direct
 
 RUN apk add --no-cache tzdata ca-certificates bash git curl unzip xz jq procps python3 py3-pip su-exec gcompat libcap-utils \
+    'nodejs~24' npm 'pnpm~11' openjdk8 openjdk17-jdk openjdk21-jdk 'maven~3.9' \
     && git config --system --add safe.directory "*" \
     && adduser -D -u 10001 -s /bin/bash runner \
     && addgroup -S -g 10002 agent \
@@ -34,18 +32,21 @@ COPY --from=builder /out/agent-runner-cli-launcher /usr/local/bin/agent-runner-c
 COPY --from=builder /usr/local/go /usr/local/go
 COPY deploy/agent-runner-entrypoint.sh /usr/local/bin/agent-runner-entrypoint
 COPY deploy/agent-runner-runtime /opt/vendor
+COPY deploy/agent-runner-maven-settings.xml /usr/share/java/maven-3/conf/settings.xml
+COPY deploy/tests/runner-toolchains.sh /usr/local/bin/check-runner-toolchains
 
-# 未投放的组件目录不进 PATH 语义（查找自动落空），JAVA_HOME 同理——可选组件
-# 存在时即开箱可用，不存在时零影响。claude 只投 musl 变体（原生兼容）；gcompat
-# 供 node / jdk / maven 的 glibc 形态在 musl 上尝试运行（不保证全部可用）。
-# GOPROXY 供 agent 在容器内执行 go mod download / go test 时拉依赖。
 ENV TZ=Asia/Shanghai \
     SHELL=/bin/bash \
-    JAVA_HOME=/opt/jdk \
-    PATH=/usr/local/go/bin:/opt/codex/bin:/opt/claude/bin:/opt/node/bin:/opt/jdk/bin:/opt/maven/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    JAVA8_HOME=/usr/lib/jvm/java-1.8-openjdk \
+    JAVA17_HOME=/usr/lib/jvm/java-17-openjdk \
+    JAVA21_HOME=/usr/lib/jvm/java-21-openjdk \
+    JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
+    PATH=/usr/local/go/bin:/opt/codex/bin:/opt/claude/bin:/usr/lib/jvm/java-21-openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    MAVEN_OPTS="-Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav" \
     AGENT_RUNNER_HTTP_ADDR=:8081 \
     AGENT_RUNNER_DATA_ROOT=/app/runner-data \
     AGENT_RUNNER_WORKSPACE_ROOT=/app/workspaces \
+    AGENT_RUNNER_CACHE_ROOT=/app/dependency-cache \
     AGENT_RUNNER_CLI_LAUNCHER=/usr/local/bin/agent-runner-cli-launcher \
     AGENT_RUNNER_CODEX_BINARY=/opt/codex/bin/codex \
     AGENT_RUNNER_LOG_DIR=/app/logs/agent-runner \
@@ -58,8 +59,7 @@ RUN sed -i '1i agent_runner_original_path=$PATH' /etc/profile \
     && ln -s /usr/local/go/bin/go /usr/local/bin/go \
     && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 
-# 必备项校验失败即构建失败；可选组件（claude/node/jdk/maven）失败仅告警。
-RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/vendor/materialize.sh \
+RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /usr/local/bin/check-runner-toolchains /opt/vendor/materialize.sh \
     && /opt/vendor/materialize.sh /opt/vendor \
     && rm -rf /opt/vendor \
     && chown root:runner /usr/local/bin/agent-runner-cli-launcher \
@@ -72,6 +72,9 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/ven
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setuid \
     && mkdir -p /app/runner-data /app/workspaces /app/logs/agent-runner \
     && chown runner:runner /app/runner-data /app/workspaces /app/logs/agent-runner \
+    && mkdir -p /app/dependency-cache \
+    && chown agent:agent /app/dependency-cache \
+    && chmod 0700 /app/dependency-cache \
     && test -x /opt/codex/bin/codex \
     && command -v su-exec \
     && /opt/codex/bin/codex --version \
@@ -84,16 +87,17 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /opt/ven
          su-exec runner env PATH="/agent-runner-path-check:$PATH" AGENT_RUNNER_EXPECTED_PATH="/agent-runner-path-check:$PATH" "$shell" -lc 'test "$PATH" = "$AGENT_RUNNER_EXPECTED_PATH"' || exit 1; \
        done \
     && su-exec runner env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/sh -c 'go version && gofmt -h && test "$(go env GOROOT)" = /usr/local/go' \
-    && python3 --version | grep -q 'Python 3\.1[2-9]' \
+    && python3 --version \
     && pip3 --version \
     && bash --version \
     && su-exec runner /bin/true \
     && su-exec runner /usr/local/bin/agent-runner-cli-launcher --check \
     && su-exec agent /bin/sh -c '! test -x /usr/local/bin/agent-runner-cli-launcher' \
     && if [ -x /opt/claude/bin/claude ]; then /opt/claude/bin/claude --version || echo "WARNING: claude present but failed to run"; else echo "claude: not vendored, skipped"; fi \
-    && if [ -x /opt/node/bin/node ]; then node -v || echo "WARNING: node present but failed to run"; else echo "node: not vendored, skipped"; fi \
-    && if [ -x /opt/jdk/bin/java ]; then java -version || echo "WARNING: jdk present but failed to run"; else echo "jdk: not vendored, skipped"; fi \
-    && if [ -x /opt/maven/bin/mvn ]; then mvn -version || echo "WARNING: maven present but failed to run"; else echo "maven: not vendored, skipped"; fi
+    && toolcheck_home=$(mktemp -d) \
+    && chown agent:agent "$toolcheck_home" \
+    && su-exec agent env HOME="$toolcheck_home" /usr/local/bin/check-runner-toolchains \
+    && rm -rf "$toolcheck_home"
 
 EXPOSE 8081
 
