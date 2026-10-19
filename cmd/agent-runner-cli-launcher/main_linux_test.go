@@ -592,6 +592,9 @@ func modeOf(t *testing.T, path string) os.FileMode {
 }
 
 func TestRecoverRunWorkspacesRejectsMissingAndSymlinkedRoots(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("changing workspace ownership requires root")
+	}
 	root := t.TempDir()
 	missing := filepath.Join(root, "missing")
 	if err := recoverRunWorkspaces(missing, filepath.Join(t.TempDir(), "lock")); err == nil {
