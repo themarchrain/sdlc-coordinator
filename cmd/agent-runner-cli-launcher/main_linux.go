@@ -90,12 +90,17 @@ func launch(args []string) (int, error) {
 	if err := stopLingeringAgentProcesses(); err != nil {
 		return 1, fmt.Errorf("clear previous Agent processes: %w", err)
 	}
+	home, err := os.MkdirTemp(runRoot, ".agent-home-")
+	if err != nil {
+		return 1, fmt.Errorf("create private Agent home: %w", err)
+	}
+	defer os.RemoveAll(home)
 	if err := chownTree(runRoot, agentUID, agentGID); err != nil {
 		restoreErr := restoreRunWorkspace(runRoot)
 		return 1, errors.Join(fmt.Errorf("give agent ownership of run workspace: %w", err), restoreErr)
 	}
 
-	code, runErr := runAsAgent(runRoot, binary, commandArgs[1:], signals)
+	code, runErr := runAsAgent(runRoot, home, binary, commandArgs[1:], signals)
 	if err := stopLingeringAgentProcesses(); err != nil {
 		return 1, errors.Join(runErr, fmt.Errorf("stop remaining Agent processes: %w", err))
 	}
@@ -174,7 +179,7 @@ func resolveAllowedBinary(binary string) (string, error) {
 	return "", fmt.Errorf("CLI executable %q is not allowed", resolved)
 }
 
-func runAsAgent(workspace, binary string, args []string, signals <-chan os.Signal) (int, error) {
+func runAsAgent(workspace, home, binary string, args []string, signals <-chan os.Signal) (int, error) {
 	select {
 	case <-signals:
 		return 1, errors.New("launcher interrupted before starting Agent CLI")
@@ -182,6 +187,7 @@ func runAsAgent(workspace, binary string, args []string, signals <-chan os.Signa
 	}
 	command := exec.Command(binary, args...)
 	command.Dir = workspace
+	command.Env = agentEnvironment(home)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
@@ -227,6 +233,27 @@ func runAsAgent(workspace, binary string, args []string, signals <-chan os.Signa
 		}
 	}
 	return 1, fmt.Errorf("wait for CLI: %w", waitErr)
+}
+
+func agentEnvironment(home string) []string {
+	overrides := map[string]string{
+		"HOME": home, "USER": "agent", "LOGNAME": "agent",
+		"XDG_CACHE_HOME": filepath.Join(home, ".cache"),
+		"GOCACHE":        filepath.Join(home, ".cache", "go-build"),
+		"GOPATH":         filepath.Join(home, "go"),
+		"GOMODCACHE":     filepath.Join(home, "go", "pkg", "mod"),
+	}
+	environment := make([]string, 0, len(os.Environ())+len(overrides))
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if _, replaced := overrides[name]; !replaced {
+			environment = append(environment, entry)
+		}
+	}
+	for name, value := range overrides {
+		environment = append(environment, name+"="+value)
+	}
+	return environment
 }
 
 func acquireAgentRunLock(path string, signals <-chan os.Signal) (*os.File, error) {

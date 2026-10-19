@@ -4,12 +4,124 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestLaunchProvidesWritablePrivateHomeForAgentTools(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("launching as the Agent user requires root")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("Go is required for the Agent compilation check")
+	}
+	base, err := os.MkdirTemp("", "agent-home-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	if err := os.Chmod(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runnerHome := filepath.Join(base, "runner-home")
+	if err := os.Mkdir(runnerHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(runnerHome, runnerUID, runnerGID); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{
+		"HOME": runnerHome, "USER": "runner", "LOGNAME": "runner",
+		"XDG_CACHE_HOME": filepath.Join(runnerHome, ".cache"),
+		"GOCACHE":        filepath.Join(runnerHome, ".cache", "go-build"),
+		"GOPATH":         filepath.Join(runnerHome, "go"),
+		"GOMODCACHE":     filepath.Join(runnerHome, "go", "pkg", "mod"),
+		"GO111MODULE":    "on", "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local", "GOWORK": "off",
+		"COORDINATOR_RUN_TOKEN": "fixture-token",
+	} {
+		t.Setenv(name, value)
+	}
+	previousBinaries := allowedBinaries
+	shellPath, err := exec.LookPath("sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shellData, err := os.ReadFile(shellPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell := filepath.Join(base, "sh")
+	if err := os.WriteFile(shell, shellData, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	allowedBinaries = []string{shell}
+	t.Cleanup(func() { allowedBinaries = previousBinaries })
+	if err := os.MkdirAll(filepath.Dir(agentRunLockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workspaceRoot := filepath.Join(base, "workspaces")
+	for _, tc := range []struct {
+		name string
+		code int
+	}{
+		{name: "success"},
+		{name: "failure", code: 42},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runRoot := filepath.Join(workspaceRoot, "runs", tc.name)
+			module := filepath.Join(runRoot, "repos", "smoke")
+			if err := os.MkdirAll(module, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, content := range map[string]string{
+				"go.mod":        "module smoke\n\ngo 1.22\n",
+				"smoke.go":      "package smoke\nfunc sum(a, b int) int { return a + b }\n",
+				"smoke_test.go": "package smoke\nimport \"testing\"\nfunc TestSum(t *testing.T) { if sum(2, 3) != 5 { t.Fatal(\"wrong sum\") } }\n",
+			} {
+				if err := os.WriteFile(filepath.Join(module, name), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			script := `set -eu
+printf '%s\n' "$HOME" > agent-home.path
+if [ "$1" = success ]; then (cd repos/smoke && go test -count=1 ./...); fi
+test "$(id -u)" = 10002
+test "$(id -g)" = 10002
+test "$USER" = agent
+test "$LOGNAME" = agent
+test "$COORDINATOR_RUN_TOKEN" = fixture-token
+test "$(stat -c %a "$HOME")" = 700
+case "$HOME" in "$PWD"/*) ;; *) exit 1 ;; esac
+for directory in "$HOME" "$XDG_CACHE_HOME" "$GOCACHE" "$GOPATH" "$GOMODCACHE"; do
+    case "$directory" in "$HOME"|"$HOME"/*) ;; *) exit 1 ;; esac
+    mkdir -p "$directory"
+    printf check > "$directory/write-check"
+done
+exit "$2"
+`
+			code, err := launch([]string{"--workspace-root", workspaceRoot, "--workspace", runRoot, "--", shell, "-c", script, "agent-home-check", tc.name, strconv.Itoa(tc.code)})
+			if err != nil || code != tc.code {
+				t.Fatalf("Agent tool execution = %d, %v; want %d, nil", code, err, tc.code)
+			}
+			data, err := os.ReadFile(filepath.Join(runRoot, "agent-home.path"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(strings.TrimSpace(string(data))); !os.IsNotExist(err) {
+				t.Fatalf("Agent home must be removed after execution: %v", err)
+			}
+			assertOwner(t, runRoot, runnerUID, runnerGID)
+			if modeOf(t, runRoot) != 0o700 {
+				t.Fatal("completed run workspace must remain private to Runner")
+			}
+		})
+	}
+}
 
 func TestResolveRunWorkspaceRequiresDirectRealRunDirectory(t *testing.T) {
 	root := t.TempDir()
