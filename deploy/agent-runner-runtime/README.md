@@ -1,17 +1,19 @@
 # Agent Runner 投放目录
 
-构建 `sdlc-agent-runner` **不会**从网上下载任何 agent 工具。codex 官方包放到本目录后，Dockerfile 只 `COPY` 再展开。目录相对仓库根：`deploy/agent-runner-runtime/`。大包不要提交 Git（已 gitignore），只提交本 README、`materialize.sh` 和各子目录的 `.gitkeep`。
+Codex 官方包放到本目录后，Dockerfile 只 `COPY` 再展开，不在构建时下载 Agent CLI。开发工具链通过 Alpine 软件仓库在构建时安装，需要访问软件源。目录相对仓库根为 `deploy/agent-runner-runtime/`。大包不要提交 Git，只提交本 README、`materialize.sh` 和各子目录的 `.gitkeep`。
 
 ## 镜像运行时来源
 
 | 工具 | 来源 | 说明 |
 |---|---|---|
 | codex | **本目录投放** `codex-package/` | **必投**；musl 静态二进制，alpine 原生兼容 |
-| claude / node / jdk / maven | **本目录投放**（全部可选） | **有则构建、无则跳过**；目录为空或缺席仅告警，不影响构建。claude 只投 **musl 变体**（见下节），其余工具照旧 |
+| claude | **本目录投放**（可选） | 只投 musl 变体；目录为空或缺席时跳过 |
 | go 1.25 | 镜像内复制自 builder 阶段 | 不投放；`GOPROXY` 默认 `proxy.golang.org` |
-| python 3.12 / git / bash / su-exec / gcompat | alpine:3.21 apk | gcompat 供 node / jdk / maven 的 glibc 形态在 musl 上尝试运行（不再服务 claude） |
+| JDK 8 / 17 / 21 | Alpine 3.24 apk | 默认使用 21，通过 JAVA8_HOME、JAVA17_HOME、JAVA21_HOME 选择版本 |
+| Node.js 24 / npm / pnpm 11 / Maven 3.9 | Alpine 3.24 apk | 构建时必装，不再从投放目录覆盖 |
+| Python / pip / git / bash / su-exec | Alpine 3.24 apk | Python 支持项目虚拟环境 |
 
-可选投放子目录形态与 codex 相同：**已解压的树**（含 `bin/`）或 **一个** tar（`.tar` / `.tar.gz` / `.tar.xz`）。node/jdk/maven 为 glibc 目标时同样受 gcompat 兜底约束（不保证全部可用）。Go 项目联调 node/jdk/maven 通常全部留空。
+Claude 投放子目录形态与 Codex 相同：已解压的树（含 `bin/`）或一个 tar（`.tar` / `.tar.gz` / `.tar.xz`）。旧 node、jdk、maven 投放目录不再读取。
 
 ## 可选子目录：`claude/`（musl 变体为唯一投放形态）
 
