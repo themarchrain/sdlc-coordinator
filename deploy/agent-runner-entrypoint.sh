@@ -12,6 +12,8 @@ chown -h runner:runner /app/runner-data /app/workspaces /app/runner-data/operati
 chmod 0700 /app/runner-data/operations
 
 cache_root="${AGENT_RUNNER_CACHE_ROOT:-/app/dependency-cache}"
+cache_root="$(printf '%s' "$cache_root" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+[ -n "$cache_root" ] || cache_root=/app/dependency-cache
 mkdir -p "$cache_root"
 chown -h agent:agent "$cache_root"
 chmod 0700 "$cache_root"
