@@ -25,6 +25,108 @@
 - `docs/` — 公共架构说明与部署集成指南
 - `.local/` — 工作笔记和本地密钥；已被 Git 忽略
 
+## 架构
+
+以下拓扑对应 [多实例部署样例](./deploy/multi-instance/README.md)：两个 Coordinator 共享 MySQL，并调用两个独立的 Agent Runner。根目录的 `docker-compose.yml` 使用单个 Coordinator、SQLite 和单个 Runner。
+
+### 部署拓扑
+
+拓扑图展示入口、调度和存储关系。结果回传与代码托管平台写回见下方时序图。
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 280
+---
+flowchart TB
+    user["管理员 / 操作人员"]
+    codehost["代码托管平台<br/>GitHub / GitLab / Gitea"]
+    lb["nginx 负载均衡<br/>管理界面 / Webhook<br/>MCP 结果入口"]
+
+    subgraph control ["控制平面：Coordinator"]
+        direction LR
+        ca["Coordinator A<br/>事件接入 / 调度<br/>结果对账"]
+        cb["Coordinator B<br/>事件接入 / 调度<br/>结果对账"]
+    end
+
+    db[("共享 MySQL<br/>平台库 / 控制面库 / 租户库<br/>Task / Run / 租约 / 配置")]
+
+    subgraph execution ["执行平面：Agent Runner"]
+        direction LR
+        subgraph runner_a ["Runner A"]
+            ra["HTTP API<br/>Codex / Claude CLI"]
+            va[("A 独立存储<br/>工作区 / 执行记录<br/>依赖缓存")]
+            ra --- va
+        end
+        subgraph runner_b ["Runner B"]
+            rb["HTTP API<br/>Codex / Claude CLI"]
+            vb[("B 独立存储<br/>工作区 / 执行记录<br/>依赖缓存")]
+            rb --- vb
+        end
+    end
+
+    user -->|管理界面 / API| lb
+    codehost -->|Webhook 事件| lb
+    lb --> ca
+    lb --> cb
+    ca <-->|状态 / 租约| db
+    cb <-->|状态 / 租约| db
+    ca -->|工作区 / 执行 API| ra
+    ca --> rb
+    cb --> ra
+    cb -->|工作区 / 执行 API| rb
+
+    classDef controlNode fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef runnerNode fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef storageNode fill:#dcfce7,stroke:#16a34a,color:#0f172a
+    class lb,ca,cb controlNode
+    class ra,rb runnerNode
+    class db,va,vb storageNode
+```
+
+- **Coordinator 保存权威状态**：每个实例运行 TesterWorker、DeveloperWorker 和 ReviewerWorker 的调度逻辑。实例通过共享数据库中的租约竞争执行权，并负责重试、恢复和结果校验。
+- **Runner 执行任务**：Coordinator 按租户的 Runner 池选择端点并直接调用 HTTP API。Runner 启动 CLI，CLI 调用配置的模型服务并在工作区执行测试、编码或审查。
+- **Runner 存储相互隔离**：每个 Runner 使用自己的工作区、执行记录和缓存存储。同一 Runner 内的任务可复用依赖缓存；Coordinator 通过 HTTP 管理工作区。
+- **Coordinator 控制外部写入**：Issue、PR/MR、标签和评论由代码托管适配器写回。Developer 的 Git 提交与推送由 Coordinator 通过 Runner 的受控工作区接口完成。
+
+### 一次任务的执行与回传
+
+图中的 Coordinator 表示当前负责该步骤的实例，Runner 表示本次运行选中的端点。Webhook 和 MCP 请求在多实例部署中经过负载均衡；两个结果通道进入同一套校验与幂等接收逻辑。
+
+```mermaid
+---
+config:
+  sequence:
+    wrap: true
+---
+sequenceDiagram
+    autonumber
+    participant H as 代码托管平台
+    participant C as Coordinator
+    participant D as 共享数据库
+    participant R as Agent Runner
+    participant A as Codex / Claude CLI
+
+    H->>C: Webhook 事件
+    C->>D: 保存事件、创建或去重任务
+    C->>D: 认领任务、取得租约、记录 Run
+    C->>R: HTTP 准备工作区并创建执行
+    R->>A: 注入任务上下文并启动 CLI
+    A->>A: 调用模型<br/>执行仓库工具
+    alt MCP 结果通道
+        A->>C: 经 /mcp 提交结构化结果
+    else CLI 最终消息通道
+        A-->>R: 返回最终结果
+        C->>R: HTTP 查询执行状态与结果
+        R-->>C: 返回执行记录与最终结果
+    end
+    Note over C,R: Coordinator 校验结果；Developer 交付还需受控提交与推送
+    C->>D: 保存已接收结果并推进任务状态
+    C->>H: 经适配器写回 Issue / PR / MR / 标签 / 评论
+    C->>R: HTTP 清理工作区（按生命周期策略）
+```
+
 更多部署资料：
 
 - [GitHub 仓库集成（中文）](./docs/github-repository-integration.zh-CN.md)

@@ -27,6 +27,108 @@ It assigns coding agents to repository work, keeps the official task/run state, 
 - `docs/` — public architecture notes and deployment integration guides
 - `.local/` — working notes and local secrets; gitignored
 
+## Architecture
+
+This topology follows the [multi-instance deployment example](./deploy/multi-instance/README.md). Two Coordinators share MySQL and call two independent Agent Runners. The root `docker-compose.yml` uses one Coordinator, SQLite, and one Runner.
+
+### Deployment topology
+
+The topology shows ingress, dispatch, and storage connections. The sequence diagram below shows result submission and code-host writebacks.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 280
+---
+flowchart TB
+    user["Administrators / Operators"]
+    codehost["Code host<br/>GitHub / GitLab / Gitea"]
+    lb["nginx load balancer<br/>Admin UI / Webhook<br/>MCP result ingress"]
+
+    subgraph control ["Control plane: Coordinator"]
+        direction LR
+        ca["Coordinator A<br/>Event ingress / Dispatch<br/>Reconciliation"]
+        cb["Coordinator B<br/>Event ingress / Dispatch<br/>Reconciliation"]
+    end
+
+    db[("Shared MySQL<br/>Platform / Control plane<br/>Tenant databases<br/>Task / Run / Leases / Configuration")]
+
+    subgraph execution ["Execution plane: Agent Runner"]
+        direction LR
+        subgraph runner_a ["Runner A"]
+            ra["HTTP API<br/>Codex / Claude CLI"]
+            va[("A: Separate storage<br/>Workspaces / Execution records<br/>Dependency caches")]
+            ra --- va
+        end
+        subgraph runner_b ["Runner B"]
+            rb["HTTP API<br/>Codex / Claude CLI"]
+            vb[("B: Separate storage<br/>Workspaces / Execution records<br/>Dependency caches")]
+            rb --- vb
+        end
+    end
+
+    user -->|Admin UI / API| lb
+    codehost -->|Webhook events| lb
+    lb --> ca
+    lb --> cb
+    ca <-->|State / Leases| db
+    cb <-->|State / Leases| db
+    ca -->|Workspace / Execution API| ra
+    ca --> rb
+    cb --> ra
+    cb -->|Workspace / Execution API| rb
+
+    classDef controlNode fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    classDef runnerNode fill:#ffedd5,stroke:#ea580c,color:#0f172a
+    classDef storageNode fill:#dcfce7,stroke:#16a34a,color:#0f172a
+    class lb,ca,cb controlNode
+    class ra,rb runnerNode
+    class db,va,vb storageNode
+```
+
+- **The Coordinator keeps authoritative state**: Each instance runs dispatch logic for TesterWorker, DeveloperWorker, and ReviewerWorker. Instances acquire execution rights through database leases. They also retry tasks, recover runs, and validate results.
+- **The Runner executes tasks**: The Coordinator selects an endpoint from the tenant's Runner pool and calls its HTTP API directly. The Runner starts a CLI. The CLI calls the configured model service and runs tests, coding tasks, or reviews in the workspace.
+- **Each Runner has separate storage**: Each Runner uses its own workspace, execution-record, and cache storage. Tasks on the same Runner can reuse dependency caches. The Coordinator manages workspaces through HTTP.
+- **The Coordinator controls external writes**: Code-host adapters write back Issues, PRs/MRs, labels, and comments. The Coordinator commits and pushes Developer changes through the Runner's controlled workspace API.
+
+### Task execution and result submission
+
+The Coordinator participant represents the instance responsible for the current step. The Runner participant represents the endpoint selected for this run. Webhook and MCP requests pass through the load balancer in the multi-instance deployment. Both result channels use the same validation and idempotent acceptance logic.
+
+```mermaid
+---
+config:
+  sequence:
+    wrap: true
+---
+sequenceDiagram
+    autonumber
+    participant H as Code host
+    participant C as Coordinator
+    participant D as Shared database
+    participant R as Agent Runner
+    participant A as Codex / Claude CLI
+
+    H->>C: Webhook event
+    C->>D: Persist event<br/>Create or deduplicate task
+    C->>D: Claim task and lease<br/>Record Run
+    C->>R: Prepare workspace and create execution (HTTP)
+    R->>A: Inject task context and start the CLI
+    A->>A: Call the model<br/>Run repository tools
+    alt MCP result channel
+        A->>C: Submit structured result through /mcp
+    else CLI final-message channel
+        A-->>R: Return the final result
+        C->>R: Query execution status and result (HTTP)
+        R-->>C: Execution records and final result
+    end
+    Note over C,R: Coordinator validates results<br/>Developer delivery requires controlled commit and push
+    C->>D: Persist accepted result<br/>Advance task state
+    C->>H: Adapter writeback<br/>Issue / PR / MR / labels / comments
+    C->>R: Clean up workspace (HTTP, lifecycle policy)
+```
+
 Additional deployment documentation:
 
 - [GitHub Repository Integration (English)](./docs/github-repository-integration.en.md)
