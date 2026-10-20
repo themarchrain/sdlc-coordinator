@@ -1,68 +1,82 @@
 # sdlc-coordinator
 
-Control plane for the software development life cycle (SDLC).
+[English](./README.en.md) | 简体中文
 
-It assigns coding agents to repository work, keeps the official task/run state, and writes results back to your code host. It is not an agent runtime.
+面向软件开发生命周期（SDLC）的控制平面。它把仓库工作分配给编码代理，保存任务与运行状态的权威记录，并将结果写回代码托管平台。Coordinator 不是 Agent 运行时；Agent Runner 是独立的执行平面。
 
-## Stack
+## 核心能力
+
+- 发现、认领、去重、租约、重试和恢复仓库工作项。
+- 将代码托管平台事件与产物保存为结构化记录。
+- 通过 Agent Runner 启动执行、注入上下文、对账结果并支持恢复。
+- 提供嵌入式管理界面，用于查看运行状态和治理配置。
+
+## 技术栈
 
 - Go + Gin + Gorm + Zap
-- SQLite (`github.com/glebarez/sqlite`)
-- Admin UI: React 18 + TypeScript + Vite + Ant Design (`web/`)
+- SQLite（`github.com/glebarez/sqlite`）
+- 管理界面：React 18 + TypeScript + Vite + Ant Design（`web/`）
 
-## Layout
+## 项目结构
 
-- `cmd/coordinator` — control plane
-- `cmd/agent-runner` — execution plane
-- `web/` — admin console, embedded into the coordinator binary
-- `docs/` — public architecture notes (add as needed)
-- `.local/` — working notes and local secrets; gitignored
+- `cmd/coordinator` — 控制平面
+- `cmd/agent-runner` — 执行平面
+- `web/` — 管理控制台，构建产物嵌入 Coordinator 二进制
+- `docs/` — 公共架构说明与部署集成指南
+- `.local/` — 工作笔记和本地密钥；已被 Git 忽略
 
-## Run
+更多部署资料：
 
-Build the coordinator image with `build.sh`. Compose expects an external Docker network:
+- [GitHub 仓库集成（中文）](./docs/github-repository-integration.zh-CN.md)
+- [GitHub Repository Integration (English)](./docs/github-repository-integration.en.md)
+- [多实例部署说明](./deploy/multi-instance/README.md)
+- [Agent Runner 投放目录](./deploy/agent-runner-runtime/README.md)
+
+## 运行
+
+使用 `build.sh` 构建 Coordinator 镜像。Compose 需要一个已存在的外部 Docker 网络：
 
 ```bash
 docker network create sdlc-net
 ```
 
-Then start from `docker-compose.yml`. The Agent Runner image uses Alpine 3.24 with Go 1.25, JDK 8/17/21, Node.js 24, npm, pnpm 11, Maven 3.9, Python and pip. JDK 21 is the default. Codex is required under `deploy/agent-runner-runtime/`; Claude remains optional. Development tools are installed during the image build.
+然后从 `docker-compose.yml` 启动。Agent Runner 镜像基于 Alpine 3.24，包含 Go 1.25、JDK 8/17/21、Node.js 24、npm、pnpm 11、Maven 3.9、Python 和 pip。默认 JDK 是 21。Codex 必须投放到 `deploy/agent-runner-runtime/`；Claude 仍为可选依赖。开发工具链在镜像构建阶段安装。
 
-Set `RESULT_CHANNEL_SECRET` to a stable 64-character hex string and `AGENT_RUNNER_INTERNAL_TOKEN` to the same nonempty token on the coordinator and Runner. These deployment credentials are required and are not stored in runtime configuration snapshots. Multiple coordinators must share the result-channel secret.
+设置 `RESULT_CHANNEL_SECRET` 为稳定的 64 位十六进制字符串，并在 Coordinator 与 Runner 上设置相同的非空 `AGENT_RUNNER_INTERNAL_TOKEN`。这些部署凭据是必需的，不会保存到运行时配置快照中。多个 Coordinator 必须共享同一个结果通道密钥。
 
-The coordinator prepares, delivers, and cleans up workspaces through the Runner HTTP API, including on a single host with SQLite. Only the Runner mounts the workspace directory. Its `AGENT_RUNNER_WORKSPACE_ROOT` environment variable selects the root; changing it requires updating the deployment and recreating the Runner container. The admin configuration API and runtime snapshots contain no workspace-root settings.
+Coordinator 通过 Runner HTTP API 准备、投递和清理工作区；即使使用 SQLite 的单主机部署也采用这一方式。只有 Runner 挂载工作区目录。`AGENT_RUNNER_WORKSPACE_ROOT` 选择工作区根目录；修改它需要同步更新部署并重建 Runner 容器。管理配置 API 和运行时快照不包含工作区根目录设置。
 
-Each Runner keeps dependency caches under `AGENT_RUNNER_CACHE_ROOT` (default `/app/dependency-cache`). Compose mounts `./dependency-cache` there. Tasks on that Runner share Go module/build caches, npm cache, pnpm store and metadata cache, pip cache and the Maven local repository. Reuse the same mount when replacing the container. Separate Runner instances must use separate cache directories or volumes. Agent HOME remains temporary; project installations such as `node_modules` and Python virtual environments stay in the workspace.
+每个 Runner 把依赖缓存保存在 `AGENT_RUNNER_CACHE_ROOT`（默认 `/app/dependency-cache`）。Compose 将 `./dependency-cache` 挂载到该路径。同一 Runner 上的任务共享 Go 模块与构建缓存、npm 缓存、pnpm store 和元数据缓存、pip 缓存以及 Maven 本地仓库。替换容器时，请继续复用同一个挂载。独立的 Runner 实例必须使用各自独立的缓存目录或卷。Agent HOME 仍是临时的；`node_modules`、Python 虚拟环境等项目级安装会保留在工作区内。
 
-The entrypoint gives the cache root to Agent UID/GID `10002:10002`. Existing contents must be writable by that identity; startup does not recursively change the whole cache. To reclaim cache space, stop that Runner first and clear only its cache storage. The Maven local repository can retain locally installed artifacts. Private dependencies in these caches are also shared within this Runner's trust boundary.
+entrypoint 会把缓存根目录授予 Agent UID/GID `10002:10002`。现有内容必须可被该身份写入；启动时不会递归修改整个缓存的所有权。如需回收缓存空间，先停止对应 Runner，再只清理其缓存存储。Maven 本地仓库可能保留本地安装的构件。这些缓存中的私有依赖也只应在该 Runner 的信任边界内共享。
 
-Use `JAVA8_HOME`, `JAVA17_HOME` or `JAVA21_HOME` to select another installed JDK for a command, for example:
+使用 `JAVA8_HOME`、`JAVA17_HOME` 或 `JAVA21_HOME` 为命令选择其他已安装的 JDK，例如：
 
 ```sh
 JAVA_HOME="$JAVA8_HOME" PATH="$JAVA8_HOME/bin:$PATH" mvn test
 ```
 
-Admin UI: `http://<host>:<port>/admin`
+管理界面地址：`http://<host>:<port>/admin`
 
-The first super admin is seeded from `CONTROL_PLANE_SUPERADMIN_USERNAME` / `CONTROL_PLANE_SUPERADMIN_PASSWORD` environment variables at startup; startup refuses to run without `CONTROL_PLANE_DSN` and these credentials. Do not expose this service to the public internet.
+首个超级管理员在启动时由 `CONTROL_PLANE_SUPERADMIN_USERNAME` 和 `CONTROL_PLANE_SUPERADMIN_PASSWORD` 环境变量创建。启动时缺少 `CONTROL_PLANE_DSN` 或上述凭据会直接失败。请勿将该服务暴露到公共互联网。
 
-## Tests
+## 测试
 
 ```bash
 go test ./...
 cd web && npm ci && npm test -- --run && npm run typecheck && npm run build
 ```
 
-GitHub Actions runs the same checks on `main` and pull requests.
+GitHub Actions 会在 `main` 分支和拉取请求上执行相同的检查。
 
-The Runner image build also runs `deploy/tests/runner-toolchains.sh` as Agent UID 10002. To check cache reuse with fixed test dependencies, run the following on a Docker host. The test submits execution requests through both Codex and Claude Providers, including the launcher and Agent identity switch. It creates and removes its own containers and volumes, downloads dependencies on the first pass, then replaces the container with networking disabled:
+Runner 镜像构建还会以 Agent UID 10002 运行 `deploy/tests/runner-toolchains.sh`。如需用固定的测试依赖检查缓存复用，请在 Docker 宿主机上执行以下命令。该测试通过 Codex 和 Claude Provider 提交执行请求，覆盖 launcher 和 Agent 身份切换。它会创建并移除自己的容器和卷，首轮下载依赖，随后替换容器并禁用网络：
 
 ```sh
 deploy/tests/runner-cache.sh sdlc-agent-runner:YOUR_TAG
 ```
 
-Set `TEST_GOPROXY` if the Docker host requires another Go module proxy. Set `TEST_CACHE_ROOT` to verify a custom cache mount; the default is `/app/dependency-cache`. `RUNNER_CACHE_TEST_OUTPUT` selects the evidence directory. The test replaces both model CLIs with fixed scripts and does not call a model.
+如果 Docker 宿主机需要其他 Go 模块代理，设置 `TEST_GOPROXY`。设置 `TEST_CACHE_ROOT` 可验证自定义缓存挂载；默认值是 `/app/dependency-cache`。`RUNNER_CACHE_TEST_OUTPUT` 选择证据输出目录。测试会用固定脚本替换两个模型 CLI，因此不会调用模型。
 
-## License
+## 许可证
 
-Apache License 2.0. See [LICENSE](./LICENSE).
+Apache License 2.0。详见 [LICENSE](./LICENSE)。
