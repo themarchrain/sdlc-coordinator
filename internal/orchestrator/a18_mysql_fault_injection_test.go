@@ -64,15 +64,26 @@ func TestA18MySQLDeadlockErrorIsRetryable(t *testing.T) {
 		t.Fatalf("seed lock rows: %v", err)
 	}
 
-	txFirst := first.Begin()
-	txSecond := second.Begin()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+	txFirst := first.WithContext(ctx).Begin()
+	txSecond := second.WithContext(ctx).Begin()
+	var waiting chan error
+	t.Cleanup(func() {
+		_ = txSecond.Rollback().Error
+		cancel()
+		if waiting != nil {
+			select {
+			case <-waiting:
+			case <-time.After(5 * time.Second):
+				t.Error("first transaction query did not stop after cancellation")
+			}
+		}
+		_ = txFirst.Rollback().Error
+	})
 	if txFirst.Error != nil || txSecond.Error != nil {
 		t.Fatalf("begin transactions: first=%v second=%v", txFirst.Error, txSecond.Error)
 	}
-	t.Cleanup(func() {
-		_ = txFirst.Rollback().Error
-		_ = txSecond.Rollback().Error
-	})
 	if err := txFirst.Exec("UPDATE a18_lock_rows SET value = value + 1 WHERE id = 1").Error; err != nil {
 		t.Fatalf("first transaction lock row 1: %v", err)
 	}
@@ -83,30 +94,51 @@ func TestA18MySQLDeadlockErrorIsRetryable(t *testing.T) {
 	if err := txFirst.Raw("SELECT CONNECTION_ID()").Scan(&connectionID).Error; err != nil {
 		t.Fatalf("read first transaction connection id: %v", err)
 	}
-	waiting := make(chan error, 1)
-	started := make(chan struct{})
+	var blockerID int64
+	if err := txSecond.Raw("SELECT CONNECTION_ID()").Scan(&blockerID).Error; err != nil {
+		t.Fatalf("read second transaction connection id: %v", err)
+	}
+	var cachedWaits int64
+	if err := admin.Raw("SELECT COUNT(*) FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = ? AND trx_state = 'LOCK WAIT'", connectionID).Scan(&cachedWaits).Error; err != nil {
+		t.Fatalf("prime transaction snapshot before lock wait: %v", err)
+	}
+	t.Logf("primed INNODB_TRX before lock wait: connection=%d waits=%d", connectionID, cachedWaits)
+	waiting = make(chan error, 1)
 	go func() {
-		close(started)
 		waiting <- txFirst.Exec("UPDATE a18_lock_rows SET value = value + 1 WHERE id = 2").Error
+		close(waiting)
 	}()
-	<-started
-	deadline := time.Now().Add(5 * time.Second)
+	observeCtx, stopObserving := context.WithTimeout(ctx, 5*time.Second)
+	defer stopObserving()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		var count int64
-		err := admin.Raw("SELECT COUNT(*) FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = ? AND trx_state = 'LOCK WAIT'", connectionID).Scan(&count).Error
+		err := admin.WithContext(observeCtx).Raw(`SELECT COUNT(*)
+FROM performance_schema.data_lock_waits w
+JOIN performance_schema.threads requesting ON requesting.THREAD_ID = w.REQUESTING_THREAD_ID
+JOIN performance_schema.threads blocking ON blocking.THREAD_ID = w.BLOCKING_THREAD_ID
+WHERE requesting.PROCESSLIST_ID = ? AND blocking.PROCESSLIST_ID = ?`, connectionID, blockerID).Scan(&count).Error
 		if err != nil {
-			t.Fatalf("observe lock wait: %v", err)
+			t.Fatalf("observe MySQL lock wait %d -> %d: %v", connectionID, blockerID, err)
 		}
 		if count > 0 {
 			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("first transaction never entered a MySQL lock wait")
+		select {
+		case <-observeCtx.Done():
+			t.Fatalf("MySQL lock wait %d -> %d not observed: waits=%d: %v", connectionID, blockerID, count, observeCtx.Err())
+		case <-ticker.C:
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	secondErr := txSecond.Exec("UPDATE a18_lock_rows SET value = value + 1 WHERE id = 1").Error
-	firstErr := <-waiting
+	_ = txSecond.Rollback().Error
+	var firstErr error
+	select {
+	case firstErr = <-waiting:
+	case <-ctx.Done():
+		t.Fatalf("first transaction query did not finish after deadlock injection: %v", ctx.Err())
+	}
 	deadlockErr := secondErr
 	if deadlockErr == nil {
 		deadlockErr = firstErr
