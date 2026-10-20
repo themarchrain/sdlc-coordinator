@@ -3,12 +3,27 @@
 package runner
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
+
+func (o *WorkspaceOps) ensureDeliveryWorkspaceAccess(ctx context.Context, runID string) error {
+	launcher := strings.TrimSpace(os.Getenv(cliIsolationEnv))
+	if launcher == "" {
+		return nil
+	}
+	command := exec.CommandContext(ctx, launcher, "--share-workspace", o.workspaceRoot, filepath.Join(o.workspaceRoot, "runs", runID))
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("grant Runner delivery workspace access: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
 
 func secureOperationsDirectory(path string) error {
 	return secureRunnerOwnedDirectory(path, 0o700)

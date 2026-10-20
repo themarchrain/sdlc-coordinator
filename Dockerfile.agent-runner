@@ -4,6 +4,8 @@ ARG GOPROXY=https://proxy.golang.org,direct
 
 WORKDIR /build
 
+RUN apk add --no-cache git libcap-utils
+
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -64,9 +66,10 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /usr/loc
     && rm -rf /opt/vendor \
     && chown root:runner /usr/local/bin/agent-runner-cli-launcher \
     && chmod 0750 /usr/local/bin/agent-runner-cli-launcher \
-    && setcap cap_chown,cap_dac_override,cap_kill,cap_setgid,cap_setuid=ep /usr/local/bin/agent-runner-cli-launcher \
+    && setcap cap_chown,cap_dac_override,cap_fowner,cap_kill,cap_setgid,cap_setuid=ep /usr/local/bin/agent-runner-cli-launcher \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_chown \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_dac_override \
+    && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_fowner \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_kill \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setgid \
     && getcap /usr/local/bin/agent-runner-cli-launcher | grep -q cap_setuid \
