@@ -55,13 +55,13 @@ cd web && npm ci && npm test -- --run && npm run typecheck && npm run build
 
 GitHub Actions runs the same checks on `main` and pull requests.
 
-The Runner image build also runs `deploy/tests/runner-toolchains.sh` as Agent UID 10002. To check cache reuse with fixed test dependencies, run the following on a Docker host. The test creates and removes its own containers and volumes, downloads dependencies on the first pass, then replaces the container with networking disabled:
+The Runner image build also runs `deploy/tests/runner-toolchains.sh` as Agent UID 10002. To check cache reuse with fixed test dependencies, run the following on a Docker host. The test submits execution requests through both Codex and Claude Providers, including the launcher and Agent identity switch. It creates and removes its own containers and volumes, downloads dependencies on the first pass, then replaces the container with networking disabled:
 
 ```sh
 deploy/tests/runner-cache.sh sdlc-agent-runner:YOUR_TAG
 ```
 
-Set `TEST_GOPROXY` if the Docker host requires another Go module proxy. `RUNNER_CACHE_TEST_OUTPUT` selects the evidence directory. The test replaces Codex with a fixed script and does not call a model.
+Set `TEST_GOPROXY` if the Docker host requires another Go module proxy. Set `TEST_CACHE_ROOT` to verify a custom cache mount; the default is `/app/dependency-cache`. `RUNNER_CACHE_TEST_OUTPUT` selects the evidence directory. The test replaces both model CLIs with fixed scripts and does not call a model.
 
 ## License
 

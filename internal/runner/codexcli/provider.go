@@ -255,6 +255,8 @@ func safeTaskFile(root, name string) (string, error) {
 func allowedBaseEnvironment(current []string) []string {
 	allowed := map[string]struct{}{
 		"PATH": {}, "HOME": {}, "USER": {}, "LANG": {}, "LC_ALL": {}, "TMPDIR": {}, "SHELL": {},
+		"AGENT_RUNNER_CACHE_ROOT": {}, "GOPROXY": {}, "MAVEN_OPTS": {},
+		"JAVA_HOME": {}, "JAVA8_HOME": {}, "JAVA17_HOME": {}, "JAVA21_HOME": {},
 		"SYSTEMROOT": {}, "COMSPEC": {}, "PATHEXT": {}, "TEMP": {}, "TMP": {}, "USERPROFILE": {},
 		"APPDATA": {}, "LOCALAPPDATA": {}, "PROGRAMFILES": {}, "PROGRAMFILES(X86)": {},
 	}

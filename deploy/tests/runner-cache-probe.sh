@@ -3,11 +3,25 @@ set -eu
 
 phase=$1
 root=$AGENT_RUNNER_CACHE_ROOT
+printf 'cache root=%s expected=%s\n' "$root" "$(cat expected-cache-root)"
+test "$root" = "$(cat expected-cache-root)"
+test "$GOPROXY" = "$(cat expected-goproxy)"
 test "$(id -u)" = 10002
 test "$(id -g)" = 10002
 test ! -r /app/runner-data/operations
 test ! -x /usr/local/bin/agent-runner-cli-launcher
+test -z "${AGENT_RUNNER_INTERNAL_TOKEN:-}"
+test -z "${CONTROL_PLANE_DSN:-}"
+test -z "${GITLAB_TOKEN:-}"
+test "$JAVA_HOME" = "$JAVA21_HOME"
+case "$MAVEN_OPTS" in *file-lock*file-gav*) ;; *) exit 1 ;; esac
 printf '%s\n' "$HOME" > home.path
+/usr/local/bin/check-runner-toolchains
+for shell in /bin/sh /bin/bash; do
+    for mode in -c -lc; do
+        "$shell" "$mode" 'set -eu; test "$AGENT_RUNNER_CACHE_ROOT" = "$(cat expected-cache-root)"; test "$GOPROXY" = "$(cat expected-goproxy)"; test -n "$JAVA8_HOME"; test -n "$JAVA17_HOME"; test -n "$JAVA21_HOME"; test "$JAVA_HOME" = "$JAVA21_HOME"; test -n "$MAVEN_OPTS"'
+    done
+done
 mkdir -p projects
 cd projects
 
@@ -46,6 +60,16 @@ offline=
 if [ "$phase" != seed ]; then offline=-o; fi
 mvn -B $offline org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get -Dartifact=org.apache.commons:commons-lang3:3.17.0 -Dtransitive=false > maven.log 2>&1
 test -s "$root/maven/org/apache/commons/commons-lang3/3.17.0/commons-lang3-3.17.0.jar"
+test ! -e "$HOME/go/pkg/mod"
+test ! -e "$HOME/.npm"
+test ! -e "$HOME/.cache/pip"
+test ! -e "$HOME/.m2/repository"
+if [ "$root" != /app/dependency-cache ]; then
+    test ! -e /app/dependency-cache/go/pkg/mod/github.com/google/uuid@v1.3.0
+    test ! -e /app/dependency-cache/npm/_cacache
+    test ! -e /app/dependency-cache/pnpm/v11
+    test ! -e /app/dependency-cache/maven/org/apache/commons/commons-lang3/3.17.0/commons-lang3-3.17.0.jar
+fi
 if [ "$phase" = seed ]; then
     test ! -e "$root/maven/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar"
     mvn -X -B org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get -Dartifact=org.apache.commons:commons-math3:3.6.1 -Dtransitive=false > concurrent-a.log 2>&1 &
