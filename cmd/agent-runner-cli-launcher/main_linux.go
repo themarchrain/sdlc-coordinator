@@ -28,6 +28,13 @@ const (
 var allowedBinaries = []string{"/opt/codex/bin/codex", "/opt/claude/bin/claude"}
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "--share-workspace" {
+		if err := shareRunWorkspace(os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--check" {
 		if err := checkPrivileges(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -40,7 +47,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		if err := recoverRunWorkspaces(os.Args[2], agentRunLockPath); err != nil {
+		if err := withWorkspaceAccessLock(func() error { return recoverRunWorkspaces(os.Args[2], agentRunLockPath) }); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -95,8 +102,8 @@ func launch(args []string) (int, error) {
 		return 1, fmt.Errorf("create private Agent home: %w", err)
 	}
 	defer os.RemoveAll(home)
-	if err := chownTree(runRoot, agentUID, agentGID); err != nil {
-		restoreErr := restoreRunWorkspace(runRoot)
+	if err := withWorkspaceAccessLock(func() error { return chownTree(runRoot, agentUID, agentGID) }); err != nil {
+		restoreErr := withWorkspaceAccessLock(func() error { return restoreRunWorkspace(runRoot) })
 		return 1, errors.Join(fmt.Errorf("give agent ownership of run workspace: %w", err), restoreErr)
 	}
 
@@ -104,7 +111,7 @@ func launch(args []string) (int, error) {
 	if err := stopLingeringAgentProcesses(); err != nil {
 		return 1, errors.Join(runErr, fmt.Errorf("stop remaining Agent processes: %w", err))
 	}
-	restoreErr := restoreRunWorkspace(runRoot)
+	restoreErr := withWorkspaceAccessLock(func() error { return restoreRunWorkspace(runRoot) })
 	if restoreErr != nil {
 		return 1, errors.Join(runErr, fmt.Errorf("return run workspace to runner: %w", restoreErr))
 	}
@@ -373,6 +380,11 @@ func recoverRunWorkspaceTrees(workspaceRoot string) error {
 		if err != nil {
 			return fmt.Errorf("recover run workspace %q: %w", entry.Name(), err)
 		}
+		for _, path := range workspacePaths {
+			if path.hardLinked {
+				return fmt.Errorf("hard-linked file is not allowed in a recoverable workspace: %q", path.path)
+			}
+		}
 		paths = append(paths, workspacePaths...)
 	}
 	return restoreRunnerWorkspaceOwnership(paths)
@@ -383,6 +395,9 @@ type recoveryEntry struct {
 	mode         os.FileMode
 	runRoot      bool
 	preserveMode bool
+	hardLinked   bool
+	device       uint64
+	inode        uint64
 }
 
 func inspectRunWorkspaceTree(runRoot string, expectedDev uint64) ([]recoveryEntry, error) {
@@ -403,13 +418,10 @@ func inspectRunWorkspaceTree(runRoot string, expectedDev uint64) ([]recoveryEntr
 		if !ok || stat.Dev != expectedDev {
 			return fmt.Errorf("workspace entry is on an unexpected filesystem: %q", path)
 		}
-		if !((int(stat.Uid) == runnerUID && int(stat.Gid) == runnerGID) || (int(stat.Uid) == agentUID && int(stat.Gid) == agentGID)) {
+		if !((int(stat.Uid) == runnerUID && int(stat.Gid) == runnerGID) || (int(stat.Uid) == agentUID && (int(stat.Gid) == agentGID || int(stat.Gid) == runnerGID))) {
 			return fmt.Errorf("workspace entry %q has an untrusted owner %d:%d", path, stat.Uid, stat.Gid)
 		}
-		if info.Mode().IsRegular() && stat.Nlink != 1 {
-			return fmt.Errorf("hard-linked file is not allowed in a recoverable workspace: %q", path)
-		}
-		paths = append(paths, recoveryEntry{path: path, mode: info.Mode(), runRoot: filepath.Clean(path) == filepath.Clean(runRoot), preserveMode: preserveMode})
+		paths = append(paths, recoveryEntry{path: path, mode: info.Mode(), runRoot: filepath.Clean(path) == filepath.Clean(runRoot), preserveMode: preserveMode, hardLinked: info.Mode().IsRegular() && stat.Nlink != 1, device: stat.Dev, inode: stat.Ino})
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("preflight workspace tree: %w", err)
@@ -573,13 +585,9 @@ func chownTree(root string, uid, gid int) error {
 }
 
 func restoreRunWorkspace(root string) error {
-	if err := chownTree(root, runnerUID, runnerGID); err != nil {
-		return err
-	}
-	if err := os.Chmod(root, 0o700); err != nil {
-		return fmt.Errorf("restrict idle run workspace root: %w", err)
-	}
-	return nil
+	ownerErr := chownTree(root, runnerUID, runnerGID)
+	modeErr := os.Chmod(root, 0o700)
+	return errors.Join(ownerErr, modeErr)
 }
 
 func checkPrivileges() error {
@@ -607,9 +615,9 @@ func checkPrivileges() error {
 			noNewPrivileges = strings.TrimSpace(value)
 		}
 	}
-	required := uint64(1<<0 | 1<<1 | 1<<5 | 1<<6 | 1<<7)
+	required := uint64(1<<0 | 1<<1 | 1<<3 | 1<<5 | 1<<6 | 1<<7)
 	if effective&required != required {
-		return errors.New("CLI launcher lacks CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_KILL, CAP_SETGID, or CAP_SETUID; check container capability bounds")
+		return errors.New("CLI launcher lacks CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_FOWNER, CAP_KILL, CAP_SETGID, or CAP_SETUID; check container capability bounds")
 	}
 	if noNewPrivileges != "0" {
 		return errors.New("CLI launcher cannot gain file capabilities with no-new-privileges enabled")

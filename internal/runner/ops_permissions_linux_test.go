@@ -6,11 +6,55 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
 
 const testCLILauncherPath = "/usr/local/bin/agent-runner-cli-launcher"
+
+func TestWorkspaceDeliveryRequiresLauncherAccessBeforeGit(t *testing.T) {
+	for _, kind := range []string{"commit", "push"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Setenv(cliIsolationEnv, "")
+			origin, baseline := createSeedOrigin(t)
+			ops, dataRoot := newWorkspaceOpsForTest(t, 0)
+			if _, err := ops.PrepareWorkspace(context.Background(), developerPrepareRequest(origin, "run-access", "prepare-access")); err != nil {
+				t.Fatal(err)
+			}
+			repo := filepath.Join(dataRoot, "workspaces", "runs", "run-access", "repo")
+			if err := os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			commit := developerCommitRequest(origin, "run-access", "commit-access", "fix: access fixture", baseline)
+			var commitSHA string
+			if kind == "push" {
+				result, err := ops.CommitWorkspace(context.Background(), commit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				commitSHA = result.CommitSHA
+			}
+			launcher := filepath.Join(t.TempDir(), "launcher")
+			if err := os.WriteFile(launcher, []byte("#!/bin/sh\nprintf delivery-access-blocked >&2\nexit 23\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(cliIsolationEnv, launcher)
+			var err error
+			if kind == "commit" {
+				_, err = ops.CommitWorkspace(context.Background(), commit)
+			} else {
+				_, err = ops.PushWorkspace(context.Background(), developerPushRequest(origin, "run-access", "push-access", commitSHA, baseline))
+			}
+			if err == nil || !strings.Contains(err.Error(), "delivery-access-blocked") {
+				t.Fatalf("%s must stop before Git when workspace access fails: %v", kind, err)
+			}
+			if kind == "commit" && strings.TrimSpace(runGitIn(t, repo, "rev-parse", "HEAD")) != baseline {
+				t.Fatal("commit ran despite the access failure")
+			}
+		})
+	}
+}
 
 func TestNewServiceTightensExistingExecutionsDirectory(t *testing.T) {
 	dataRoot := t.TempDir()

@@ -299,6 +299,9 @@ func (o *WorkspaceOps) CommitWorkspace(ctx context.Context, request workspacepro
 	}
 	result, _, err := runWorkspaceOp(ctx, o, workspaceproto.KindDeveloperCommit, request.OperationID, request.TenantID, request.TaskID, request.RunID, hash, []string{request.Credential.Token},
 		func(ctx context.Context) (workspaceproto.CommitResult, error) {
+			if err := o.ensureDeliveryWorkspaceAccess(ctx, request.RunID); err != nil {
+				return workspaceproto.CommitResult{}, err
+			}
 			commitResult, err := o.finalizer.CommitDelivery(ctx, workspace.DeveloperCommitRequest{
 				WorkspaceRoot: o.workspaceRoot, TaskID: request.TaskID, RunID: request.RunID, TaskType: request.TaskType,
 				CommitMessage: request.Message, GitAuthorName: request.AuthorName, GitAuthorEmail: request.AuthorEmail,
@@ -321,6 +324,9 @@ func (o *WorkspaceOps) PushWorkspace(ctx context.Context, request workspaceproto
 	}
 	result, _, err := runWorkspaceOp(ctx, o, workspaceproto.KindDeveloperPush, request.OperationID, request.TenantID, request.TaskID, request.RunID, hash, []string{request.Credential.Token},
 		func(ctx context.Context) (workspaceproto.PushResult, error) {
+			if err := o.ensureDeliveryWorkspaceAccess(ctx, request.RunID); err != nil {
+				return workspaceproto.PushResult{}, err
+			}
 			delivery, err := o.finalizer.PushDelivery(ctx, workspace.DeveloperPushRequest{
 				WorkspaceRoot: o.workspaceRoot, TaskID: request.TaskID, RunID: request.RunID, TaskType: request.TaskType,
 				RepositoryURL: request.RepositoryURL, TargetBranch: request.TargetBranch,
