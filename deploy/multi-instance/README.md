@@ -56,6 +56,13 @@ Runner 的工作区操作接口；同机部署也不需要共享目录。多个 
 系统配置中的 MCP 结果回调地址应填写 Agent 可访问的完整 `/mcp` URL；代码托管平台
 的公网 Webhook 接收地址独立配置。
 
+每个 Runner 的依赖缓存根为 `AGENT_RUNNER_CACHE_ROOT`，样例统一使用容器路径
+`/app/dependency-cache`。runner-a、runner-b 分别挂载 `runner-a-cache`、
+`runner-b-cache`，不共享缓存卷。同一 Runner 的任务共享缓存，容器替换后复用原卷。
+临时 HOME、项目 node_modules 和虚拟环境不作为全局缓存保存。
+Runner 镜像自带 JDK 8/17/21（默认 21）、Node.js 24、npm、pnpm、Maven、Go 和 Python。
+如需检查跨容器缓存复用，执行仓库内 `deploy/tests/runner-cache.sh <image>`。
+
 ## 启动
 
 1. 构建镜像（仓库根）：

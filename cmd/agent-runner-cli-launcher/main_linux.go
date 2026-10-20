@@ -236,12 +236,24 @@ func runAsAgent(workspace, home, binary string, args []string, signals <-chan os
 }
 
 func agentEnvironment(home string) []string {
+	cacheRoot := strings.TrimSpace(os.Getenv("AGENT_RUNNER_CACHE_ROOT"))
+	if cacheRoot == "" {
+		cacheRoot = "/app/dependency-cache"
+	}
 	overrides := map[string]string{
 		"HOME": home, "USER": "agent", "LOGNAME": "agent",
-		"XDG_CACHE_HOME": filepath.Join(home, ".cache"),
-		"GOCACHE":        filepath.Join(home, ".cache", "go-build"),
-		"GOPATH":         filepath.Join(home, "go"),
-		"GOMODCACHE":     filepath.Join(home, "go", "pkg", "mod"),
+		"XDG_CACHE_HOME":          filepath.Join(home, ".cache"),
+		"AGENT_RUNNER_CACHE_ROOT": cacheRoot,
+		"GOCACHE":                 filepath.Join(cacheRoot, "go-build"),
+		"GOPATH":                  filepath.Join(cacheRoot, "go"),
+		"GOMODCACHE":              filepath.Join(cacheRoot, "go", "pkg", "mod"),
+		"npm_config_cache":        filepath.Join(cacheRoot, "npm"),
+		"NPM_CONFIG_CACHE":        filepath.Join(cacheRoot, "npm"),
+		"pnpm_config_store_dir":   filepath.Join(cacheRoot, "pnpm"),
+		"PNPM_CONFIG_STORE_DIR":   filepath.Join(cacheRoot, "pnpm"),
+		"pnpm_config_cache_dir":   filepath.Join(cacheRoot, "pnpm-cache"),
+		"PNPM_CONFIG_CACHE_DIR":   filepath.Join(cacheRoot, "pnpm-cache"),
+		"PIP_CACHE_DIR":           filepath.Join(cacheRoot, "pip"),
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))
 	for _, entry := range os.Environ() {

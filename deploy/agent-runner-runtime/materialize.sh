@@ -2,9 +2,7 @@
 set -eu
 
 # Materialize vendored agent tools from /opt/vendor into /opt/*.
-# Semantics: presence is presence, absence is absence — codex is required,
-# claude / node / jdk / maven are optional (skip when their dir is empty).
-# go / python / git are provided by apk inside the image, not this directory.
+# Codex is required; Claude is optional. Development tools come from the image.
 # Each component dir is either an unpacked tree (with bin/) or a single tar.
 
 vendor_root="${1:-/opt/vendor}"
@@ -66,11 +64,8 @@ materialize() {
 
 materialize codex-package /opt/codex 1
 materialize claude /opt/claude 0
-materialize node /opt/node 0
-materialize jdk /opt/jdk 0
-materialize maven /opt/maven 0
 
-for name in codex claude node jdk maven; do
+for name in codex claude; do
 	dir="/opt/${name}"
 	[ -d "${dir}" ] || continue
 	chmod -R a+rX "${dir}"

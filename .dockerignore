@@ -13,6 +13,7 @@ docs
 data
 logs
 runner-data
+dependency-cache
 runner-logs
 workspaces
 web/node_modules

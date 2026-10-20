@@ -200,6 +200,11 @@ func TestNewWiresReviewerDispatchToConfiguredAgentRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runner service: %v", err)
 	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		runnerService.Shutdown(ctx)
+	}()
 	ops, err := runner.NewWorkspaceOps(runner.WorkspaceOpsConfig{
 		DataRoot: t.TempDir(), WorkspaceRoot: t.TempDir(),
 		Authorize: func(context.Context, workspaceproto.AuthorizationRequest) (workspaceproto.AuthorizationDecision, error) {

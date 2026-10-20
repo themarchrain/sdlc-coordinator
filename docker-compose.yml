@@ -43,6 +43,7 @@ services:
       AGENT_RUNNER_HTTP_ADDR: ":8081"
       AGENT_RUNNER_DATA_ROOT: /app/runner-data
       AGENT_RUNNER_WORKSPACE_ROOT: /app/workspaces
+      AGENT_RUNNER_CACHE_ROOT: /app/dependency-cache
       AGENT_RUNNER_INTERNAL_TOKEN: "${AGENT_RUNNER_INTERNAL_TOKEN:?set AGENT_RUNNER_INTERNAL_TOKEN}"
       AGENT_RUNNER_AUTHORIZATION_URL: http://coordinator:8080/internal/runner-authorization
       AGENT_RUNNER_CODEX_BINARY: /opt/codex/bin/codex
@@ -51,6 +52,7 @@ services:
     volumes:
       - ./workspaces:/app/workspaces
       - ./runner-data:/app/runner-data
+      - ./dependency-cache:/app/dependency-cache
       - ./runner-logs:/app/logs/agent-runner
     healthcheck:
       # alpine 基底无 curl；busybox wget 即可。
