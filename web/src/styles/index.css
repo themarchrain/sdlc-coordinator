@@ -1,6 +1,23 @@
 @tailwind components;
 @tailwind utilities;
 
+.task-state-panel { min-width: 0; }
+.task-state-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.task-state-current { color: var(--primary); font-size: 12px; font-weight: 600; }
+.task-state-description { margin: 8px 0 12px; color: var(--mute); font-size: 12px; line-height: 1.7; }
+.task-state-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface-detail); }
+.task-state-scroll svg { display: block; width: 100%; min-width: 720px; }
+.task-state-edge { fill: none; stroke: var(--mute); stroke-width: 1.4; stroke-linejoin: round; opacity: .8; }
+.task-state-arrow { fill: var(--mute); }
+.task-state-node rect { fill: var(--canvas-card); stroke: var(--hairline-strong); stroke-width: 1.2; }
+.task-state-node-label { fill: var(--ink); font-size: 14px; font-weight: 600; }
+.task-state-node-code { fill: var(--mute); font: 11px var(--font-mono); }
+.task-state-node--current rect { fill: var(--surface-tint); stroke: var(--primary); stroke-width: 2.5; }
+.task-state-node--current .task-state-node-label, .task-state-node-current { fill: var(--primary); }
+.task-state-node-current { font-size: 10px; font-weight: 600; }
+.task-detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.task-detail-toolbar time { color: var(--mute); font-size: 12px; }
+
 /* ============================================================
    default 令牌的安全回退块：任何未定义 data-theme 的环境
    （含测试）都拿到 develop 现行值。显式主题块在

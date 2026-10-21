@@ -1,0 +1,36 @@
+{
+  "nodes": [
+    { "id": "pending", "label": "待派发", "x": 24, "y": 36 },
+    { "id": "claimed", "label": "已领取", "x": 214, "y": 36 },
+    { "id": "running", "label": "运行中", "x": 404, "y": 36 },
+    { "id": "finalizing", "label": "结果收口中", "x": 594, "y": 36 },
+    { "id": "retry_pending", "label": "等待重试", "x": 214, "y": 204 },
+    { "id": "human_required", "label": "需要人工", "x": 24, "y": 204 },
+    { "id": "waiting_upstream", "label": "等待上游", "x": 404, "y": 204 },
+    { "id": "waiting_merge", "label": "等待合并", "x": 594, "y": 204 },
+    { "id": "succeeded", "label": "已成功", "x": 404, "y": 372 },
+    { "id": "blocked", "label": "已阻塞", "x": 594, "y": 372 }
+  ],
+  "edges": [
+    { "from": "pending", "to": "claimed", "path": "M174 68 H208" },
+    { "from": "claimed", "to": "running", "path": "M364 68 H398" },
+    { "from": "running", "to": "finalizing", "path": "M554 68 H588" },
+    { "from": "claimed", "to": "retry_pending", "path": "M289 100 V198" },
+    { "from": "claimed", "to": "human_required", "path": "M254 100 V148 H99 V198" },
+    { "from": "running", "to": "retry_pending", "path": "M429 100 V132 H329 V198" },
+    { "from": "running", "to": "human_required", "path": "M454 100 V164 H139 V198" },
+    { "from": "running", "to": "waiting_upstream", "path": "M479 100 V198" },
+    { "from": "running", "to": "waiting_merge", "path": "M504 100 V148 H634 V198" },
+    { "from": "running", "to": "succeeded", "path": "M554 84 H572 V332 H479 V366" },
+    { "from": "running", "to": "blocked", "path": "M554 92 H580 V348 H634 V366" },
+    { "from": "finalizing", "to": "retry_pending", "path": "M619 100 V116 H354 V198" },
+    { "from": "finalizing", "to": "human_required", "path": "M644 100 V180 H164 V198" },
+    { "from": "finalizing", "to": "waiting_upstream", "path": "M669 100 V164 H519 V198" },
+    { "from": "finalizing", "to": "waiting_merge", "path": "M694 100 V198" },
+    { "from": "finalizing", "to": "succeeded", "path": "M744 60 H780 V458 H519 V442" },
+    { "from": "finalizing", "to": "blocked", "path": "M744 84 H764 V404 H750" },
+    { "from": "retry_pending", "to": "claimed", "path": "M239 204 V188 H194 V84 H208" },
+    { "from": "waiting_upstream", "to": "pending", "path": "M429 268 V298 H8 V84 H18" },
+    { "from": "human_required", "to": "pending", "path": "M59 204 V106" }
+  ]
+}
