@@ -56,7 +56,11 @@ func openMySQL(spec Spec) (*gorm.DB, error) {
 	if spec.budget != nil {
 		return openBudgetedMySQL(spec)
 	}
-	db, err := gorm.Open(gormmysql.Open(spec.DriverDSN), &gorm.Config{
+	precision := 6
+	db, err := gorm.Open(gormmysql.New(gormmysql.Config{
+		DSN:                      spec.DriverDSN,
+		DefaultDatetimePrecision: &precision,
+	}), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
 	if err != nil {
@@ -90,9 +94,11 @@ func openBudgetedMySQL(spec Spec) (*gorm.DB, error) {
 
 	// Neither version discovery nor automatic ping may wait on the shared budget
 	// without the caller's context. The first actual operation checks connectivity.
+	precision := 6
 	db, err := gorm.Open(gormmysql.New(gormmysql.Config{
 		Conn:                      sqlDB,
 		SkipInitializeWithVersion: true,
+		DefaultDatetimePrecision:  &precision,
 	}), &gorm.Config{
 		Logger:               gormlogger.Default.LogMode(gormlogger.Silent),
 		DisableAutomaticPing: true,
