@@ -44,6 +44,44 @@ func TestStartRunAtomicConcurrentClaims(t *testing.T) {
 			if err := first.Create(task).Error; err != nil {
 				t.Fatal(err)
 			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			locked, releaseClaim := make(chan int64, 1), make(chan struct{})
+			defer func() {
+				select {
+				case <-releaseClaim:
+				default:
+					close(releaseClaim)
+				}
+			}()
+			var observer *gorm.DB
+			var connectionIDs [2]int64
+			if backend == "mysql" {
+				observer, _ = mysqlLockSession(t, storetest.RequireMySQL(t))
+				for i, db := range []*gorm.DB{first, second} {
+					sqlDB, err := db.DB()
+					if err != nil {
+						t.Fatal(err)
+					}
+					sqlDB.SetMaxOpenConns(1)
+					sqlDB.SetMaxIdleConns(1)
+					if err := db.Raw("SELECT CONNECTION_ID()").Scan(&connectionIDs[i]).Error; err != nil {
+						t.Fatal(err)
+					}
+					if err := db.Callback().Create().Before("gorm:create").Register("hold_claim_before_run", func(tx *gorm.DB) {
+						if tx.Statement.Table == "runs" {
+							locked <- connectionIDs[i]
+							select {
+							case <-releaseClaim:
+							case <-ctx.Done():
+								tx.AddError(ctx.Err())
+							}
+						}
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			ready := make(chan struct{}, 2)
 			release := make(chan struct{})
 			type startResult struct {
@@ -60,13 +98,27 @@ func TestStartRunAtomicConcurrentClaims(t *testing.T) {
 					<-release
 					now := time.Now().UTC()
 					run := &model.Run{RunID: fmt.Sprintf("run-%d", i), WorkerRole: task.Role}
-					current, err := NewTaskRepository(db).StartRunAtomic(context.Background(), task.TaskID, run, now.Add(time.Hour), now)
+					current, err := NewTaskRepository(db).StartRunAtomic(ctx, task.TaskID, run, now.Add(time.Hour), now)
 					results <- startResult{current, err}
 				}(i, db)
 			}
 			<-ready
 			<-ready
 			close(release)
+			if backend == "mysql" {
+				var winner int64
+				select {
+				case winner = <-locked:
+				case <-ctx.Done():
+					t.Fatal("neither start reached its Task lock")
+				}
+				loser := connectionIDs[0]
+				if loser == winner {
+					loser = connectionIDs[1]
+				}
+				waitMySQLLockWait(t, ctx, observer, loser, winner)
+				close(releaseClaim)
+			}
 			wg.Wait()
 			close(results)
 			wins := 0

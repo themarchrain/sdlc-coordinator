@@ -15,6 +15,7 @@ import (
 
 func TestMySQLStopAndStartArbitration(t *testing.T) {
 	admin := storetest.RequireMySQL(t)
+	observer, _ := mysqlLockSession(t, admin)
 	for _, stopFirst := range []bool{true, false} {
 		name := "start_first"
 		if stopFirst {
@@ -22,21 +23,8 @@ func TestMySQLStopAndStartArbitration(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			dsn := storetest.NewDatabase(t, admin, "stop_start")
-			first, err := store.Open(dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
-			second, err := store.Open(dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				for _, db := range []*gorm.DB{first, second} {
-					if sqlDB, err := db.DB(); err == nil {
-						_ = sqlDB.Close()
-					}
-				}
-			})
+			first, firstID := mysqlLockSession(t, dsn)
+			second, secondID := mysqlLockSession(t, dsn)
 			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}); err != nil {
 				t.Fatal(err)
 			}
@@ -95,21 +83,19 @@ func TestMySQLStopAndStartArbitration(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("first transaction did not reach its write barrier")
 			}
-			attempting := make(chan struct{})
 			go func() {
-				close(attempting)
 				if stopFirst {
 					secondResult <- start(second)
 				} else {
 					secondResult <- stop(second)
 				}
 			}()
-			<-attempting
+			waitMySQLLockWait(t, ctx, observer, secondID, firstID)
 			close(release)
 			if err := <-firstResult; err != nil {
 				t.Fatal(err)
 			}
-			err = <-secondResult
+			err := <-secondResult
 			if stopFirst && !errors.Is(err, ErrTaskNotClaimable) {
 				t.Fatalf("start crossed stop: %v", err)
 			}
@@ -132,6 +118,7 @@ func TestMySQLStopAndStartArbitration(t *testing.T) {
 
 func TestMySQLStopAndRunnerRepinArbitration(t *testing.T) {
 	admin := storetest.RequireMySQL(t)
+	observer, _ := mysqlLockSession(t, admin)
 	for _, stopFirst := range []bool{true, false} {
 		name := "repin_first"
 		if stopFirst {
@@ -139,21 +126,8 @@ func TestMySQLStopAndRunnerRepinArbitration(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			dsn := storetest.NewDatabase(t, admin, "stop_repin")
-			first, err := store.Open(dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
-			second, err := store.Open(dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				for _, db := range []*gorm.DB{first, second} {
-					if sqlDB, err := db.DB(); err == nil {
-						_ = sqlDB.Close()
-					}
-				}
-			})
+			first, firstID := mysqlLockSession(t, dsn)
+			second, secondID := mysqlLockSession(t, dsn)
 			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}); err != nil {
 				t.Fatal(err)
 			}
@@ -204,21 +178,19 @@ func TestMySQLStopAndRunnerRepinArbitration(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("first transaction did not reach endpoint barrier")
 			}
-			attempting := make(chan struct{})
 			go func() {
-				close(attempting)
 				if stopFirst {
 					secondResult <- repin(second)
 				} else {
 					secondResult <- stop(second)
 				}
 			}()
-			<-attempting
+			waitMySQLLockWait(t, ctx, observer, secondID, firstID)
 			close(release)
 			if err := <-firstResult; err != nil {
 				t.Fatal(err)
 			}
-			err = <-secondResult
+			err := <-secondResult
 			if stopFirst && !errors.Is(err, ErrTaskNotClaimable) {
 				t.Fatalf("repin crossed stop: %v", err)
 			}

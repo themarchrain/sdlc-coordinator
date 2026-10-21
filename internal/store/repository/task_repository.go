@@ -9,6 +9,7 @@ import (
 	"sdlc-coordinator/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TaskRepository struct {
@@ -347,14 +348,13 @@ func (r *TaskRepository) FinalizeRework(ctx context.Context, dedupeKey string, n
 		return nil, fmt.Errorf("finalize merge request rework: unsupported status %s", next)
 	}
 
+	target, err := r.GetByDedupeKey(ctx, dedupeKey)
+	if err != nil {
+		return nil, fmt.Errorf("finalize merge request rework: %w", err)
+	}
 	var finalized model.Task
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("dedupe_key = ?", dedupeKey).First(&finalized).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return ErrNotFound
-			}
-			return err
-		}
+	err = withLockedTask(ctx, r.db, target.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
+		finalized = *task
 		if finalized.Type != model.TaskTypeReworkMergeRequest || finalized.Role != "DeveloperWorker" {
 			return ErrTaskNotClaimable
 		}
@@ -389,9 +389,21 @@ func (r *TaskRepository) FinalizeRework(ctx context.Context, dedupeKey string, n
 // 只终态化 run，不动 task。task 状态白名单与 orchestrator 状态机迁入
 // human_required 的允许来源保持一致。
 func (r *TaskRepository) BlockRunAndRequireHuman(ctx context.Context, runID, message string, completedAt time.Time) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var target model.Run
+	if err := r.db.WithContext(ctx).Where("run_id = ?", runID).First(&target).Error; err != nil {
+		return stopLookupError(err)
+	}
+	switch target.Status {
+	case model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked:
+		return nil
+	}
+	return withLockedTask(ctx, r.db, target.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
+		query := tx.Where("run_id = ? AND task_id = ?", runID, task.TaskID)
+		if tx.Dialector.Name() == "mysql" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
 		var run model.Run
-		if err := tx.Where("run_id = ?", runID).First(&run).Error; err != nil {
+		if err := query.First(&run).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return ErrNotFound
 			}
@@ -414,13 +426,6 @@ func (r *TaskRepository) BlockRunAndRequireHuman(ctx context.Context, runID, mes
 		if result.RowsAffected == 0 {
 			return ErrTaskNotClaimable
 		}
-		var task model.Task
-		if err := tx.Where("task_id = ?", run.TaskID).First(&task).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return ErrNotFound
-			}
-			return err
-		}
 		if task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
 			return nil
 		}
@@ -432,7 +437,7 @@ func (r *TaskRepository) BlockRunAndRequireHuman(ctx context.Context, runID, mes
 		task.Status = model.TaskStatusHumanRequired
 		task.LeaseUntil = nil
 		task.LastError = message
-		return tx.Save(&task).Error
+		return tx.Save(task).Error
 	})
 }
 
