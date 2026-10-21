@@ -56,6 +56,7 @@ type TaskRepository interface {
 	// ListDispatchableAfter pages after (UpdatedAt, ID), bounded by throughID when nonzero.
 	ListDispatchableAfter(context.Context, *model.Task, int, uint) ([]model.Task, error)
 	Claim(context.Context, string, string, time.Time) error
+	StartRunAtomic(context.Context, string, *model.Run, time.Time, time.Time) (*model.Task, error)
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)
 	ListByDeliveryBranch(context.Context, string) ([]model.Task, error)
@@ -998,38 +999,12 @@ func (o *Orchestrator) StartRun(ctx context.Context, taskID string, run *model.R
 	}
 	run.TaskID = taskID
 
-	task, err := o.ClaimTask(ctx, taskID, run.RunID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if task.Status != model.TaskStatusClaimed || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
-		return nil, nil, repository.ErrTaskNotClaimable
-	}
-
-	if err := o.runs.Create(ctx, run); err != nil {
-		return nil, nil, fmt.Errorf("create run %s: %w", run.RunID, err)
-	}
-
-	previous := task.Status
-	if err := o.stateMachine.Transition(task, model.TaskStatusRunning); err != nil {
-		return nil, nil, err
-	}
-	o.policy.Apply(task, previous, model.TaskStatusRunning, o.now())
-	applied, err := o.tasks.AdvanceGuardedForCurrentRun(ctx, task, previous, run.RunID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("start run %s: %w", run.RunID, err)
-	}
-	if !applied {
-		return nil, nil, repository.ErrTaskNotClaimable
-	}
-
-	run.Status = model.RunStatusRunning
 	startedAt := o.now()
-	run.StartedAt = &startedAt
-	if err := o.runs.Update(ctx, run); err != nil {
-		return nil, nil, fmt.Errorf("update run %s: %w", run.RunID, err)
+	_, err := o.tasks.StartRunAtomic(ctx, taskID, run, o.policy.LeaseUntil(startedAt), startedAt)
+	if err != nil {
+		return nil, nil, err
 	}
-	task, err = o.tasks.GetByTaskID(ctx, taskID)
+	task, err := o.tasks.GetByTaskID(ctx, taskID)
 	if err != nil {
 		return nil, nil, err
 	}

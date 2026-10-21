@@ -16,55 +16,21 @@ import (
 
 type startRunTakeoverTasks struct {
 	TaskRepository
-	afterAdvance func()
+	afterStart func()
 }
 
-func (r *startRunTakeoverTasks) AdvanceGuarded(ctx context.Context, task *model.Task, expected model.TaskStatus) (bool, error) {
-	applied, err := r.TaskRepository.AdvanceGuarded(ctx, task, expected)
-	if applied && err == nil && r.afterAdvance != nil {
-		r.afterAdvance()
+func (r *startRunTakeoverTasks) StartRunAtomic(ctx context.Context, taskID string, run *model.Run, leaseUntil, startedAt time.Time) (*model.Task, error) {
+	task, err := r.TaskRepository.StartRunAtomic(ctx, taskID, run, leaseUntil, startedAt)
+	if err == nil && r.afterStart != nil {
+		r.afterStart()
 	}
-	return applied, err
-}
-
-func (r *startRunTakeoverTasks) AdvanceGuardedForCurrentRun(ctx context.Context, task *model.Task, expected model.TaskStatus, runID string) (bool, error) {
-	applied, err := r.TaskRepository.AdvanceGuardedForCurrentRun(ctx, task, expected, runID)
-	if applied && err == nil && r.afterAdvance != nil {
-		r.afterAdvance()
-	}
-	return applied, err
-}
-
-type startRunTakeoverRuns struct {
-	RunRepository
-	afterCreate func()
-	afterUpdate func()
-}
-
-func (r *startRunTakeoverRuns) Create(ctx context.Context, run *model.Run) error {
-	if err := r.RunRepository.Create(ctx, run); err != nil {
-		return err
-	}
-	if r.afterCreate != nil {
-		r.afterCreate()
-	}
-	return nil
-}
-
-func (r *startRunTakeoverRuns) Update(ctx context.Context, run *model.Run) error {
-	if err := r.RunRepository.Update(ctx, run); err != nil {
-		return err
-	}
-	if r.afterUpdate != nil {
-		r.afterUpdate()
-	}
-	return nil
+	return task, err
 }
 
 func TestDeveloperDispatchRejectsRunStartAfterTakeover(t *testing.T) {
 	for _, backend := range []string{"sqlite", "mysql"} {
 		t.Run(backend, func(t *testing.T) {
-			for _, point := range []string{"after_run_created", "replacement_claimed", "after_task_running", "after_run_running"} {
+			for _, point := range []string{"replacement_running", "replacement_claimed"} {
 				t.Run(point, func(t *testing.T) {
 					dsn := testDatabaseDSN(t)
 					if backend == "mysql" {
@@ -92,10 +58,9 @@ func TestDeveloperDispatchRejectsRunStartAfterTakeover(t *testing.T) {
 					tasks := repository.NewTaskRepository(first)
 					runs := repository.NewRunRepository(first)
 					wrappedTasks := &startRunTakeoverTasks{TaskRepository: tasks}
-					wrappedRuns := &startRunTakeoverRuns{RunRepository: runs}
 					runner := &fakeDeveloperRunnerCoordinator{}
 					now := time.Now().UTC()
-					old := New(wrappedTasks, wrappedRuns,
+					old := New(wrappedTasks, runs,
 						WithClock(func() time.Time { return now.Add(-time.Hour) }),
 						WithDeveloperRunner(runner, ReviewerRunnerSettings{ResolveRepository: stubRunnerRepository()}),
 					)
@@ -126,14 +91,7 @@ func TestDeveloperDispatchRejectsRunStartAfterTakeover(t *testing.T) {
 							t.Fatalf("start replacement attempt: %v", err)
 						}
 					}
-					switch point {
-					case "after_run_created", "replacement_claimed":
-						wrappedRuns.afterCreate = takeover
-					case "after_task_running":
-						wrappedTasks.afterAdvance = takeover
-					case "after_run_running":
-						wrappedRuns.afterUpdate = takeover
-					}
+					wrappedTasks.afterStart = takeover
 					result, dispatchErr := old.DispatchDeveloperTask(ctx, task.TaskID)
 					if takenOver == nil {
 						t.Fatal("replacement did not take over")
