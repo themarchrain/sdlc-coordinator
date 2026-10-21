@@ -70,3 +70,27 @@ func (r *TaskRepository) StartRunAtomic(ctx context.Context, taskID string, run 
 	*run = created
 	return current, nil
 }
+
+func withLockedCurrentRun(ctx context.Context, db *gorm.DB, runID string, apply func(*gorm.DB, *model.Run) error) error {
+	var target model.Run
+	if err := db.WithContext(ctx).Select("task_id").Where("run_id = ?", runID).First(&target).Error; err != nil {
+		return stopLookupError(err)
+	}
+	return withLockedTask(ctx, db, target.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
+		if task.Status == model.TaskStatusInterrupted || task.Status == model.TaskStatusSucceeded || task.CurrentRunID == nil || *task.CurrentRunID != runID {
+			return ErrTaskNotClaimable
+		}
+		query := tx.Where("run_id = ? AND task_id = ?", runID, task.TaskID)
+		if tx.Dialector.Name() == "mysql" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var run model.Run
+		if err := query.First(&run).Error; err != nil {
+			return stopLookupError(err)
+		}
+		if run.Status == model.RunStatusInterrupted {
+			return ErrTaskNotClaimable
+		}
+		return apply(tx, &run)
+	})
+}

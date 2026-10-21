@@ -271,7 +271,7 @@ func NewBootstrap(bootstrap config.BootstrapConfig, logger *zap.Logger, db *gorm
 // （MySQL；SQLite 单写者直落），多副本同时启动/冷建引擎不会并发执行 DDL。
 func migrateBusinessStore(db *gorm.DB) error {
 	return store.MigrateGuarded(context.Background(), db, "business", func() error {
-		if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}, &model.MergeGateAudit{}, &model.DeveloperDeliveryCheckpoint{}, &model.WorkItemLease{}); err != nil {
+		if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}, &model.Artifact{}, &model.Dependency{}, &model.Writeback{}, &model.Effect{}, &model.InboundEvent{}, &model.ResultSubmission{}, &model.ResultSubmissionRejection{}, &model.ConnectorInstance{}, &model.MergeGateAudit{}, &model.DeveloperDeliveryCheckpoint{}, &model.WorkItemLease{}, &model.StopRequest{}, &model.ActionAdmission{}); err != nil {
 			return err
 		}
 		repoStore := registeredrepo.NewStore(db)

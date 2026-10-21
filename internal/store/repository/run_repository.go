@@ -88,12 +88,14 @@ func (r *RunRepository) UpdateDispatchProjection(ctx context.Context, runID, ext
 // 准备、任务包投递、执行、commit/push、清理全链按同一端点寻址，崩溃恢复
 // 路径按钉住值重放，不换 runner。
 func (r *RunRepository) PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error {
-	if err := r.db.WithContext(ctx).Model(&model.Run{}).
-		Where("run_id = ? AND (runner_endpoint = '' OR runner_endpoint IS NULL)", runID).
-		Update("runner_endpoint", endpoint).Error; err != nil {
-		return fmt.Errorf("pin run runner endpoint: %w", err)
-	}
-	return nil
+	return withLockedCurrentRun(ctx, r.db, runID, func(tx *gorm.DB, _ *model.Run) error {
+		if err := tx.Model(&model.Run{}).
+			Where("run_id = ? AND (runner_endpoint = '' OR runner_endpoint IS NULL)", runID).
+			Update("runner_endpoint", endpoint).Error; err != nil {
+			return fmt.Errorf("pin run runner endpoint: %w", err)
+		}
+		return nil
+	})
 }
 
 // PinRunnerWorkspacePathIfEmpty 仅在 run 尚未记录 runner 工作区路径时写入

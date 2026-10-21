@@ -186,6 +186,7 @@ type Orchestrator struct {
 	writebacks                     WritebackRepository
 	dependencies                   DependencyRepository
 	resultSubmissions              ResultSubmissionRepository
+	stops                          StopRepositoryPort
 	codeHostResolver               CodeHostBackendResolver
 	mergeRequestReaderResolver     MergeRequestReaderResolver
 	reworkMergeRequestFetchTimeout time.Duration

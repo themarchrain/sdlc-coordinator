@@ -22,6 +22,8 @@ Task, current Run and current Execution stop requests must resolve to the same T
 
 Stopping a Task must preserve completed results, attempt counts, dedupe identity, logs and artifacts. Active Runs become `interrupted`; completed Runs retain their outcomes. A successful Task with a remaining execution requires execution cleanup without rewriting the successful delivery.
 
+An accepted submission that is still processing or can retry finalization uses the terminal `interrupted` state when its Task is stopped. Its original payload and hash are retained. A completed submission keeps its recorded outcome.
+
 Stop and dispatch must arbitrate in the same tenant database transaction boundary. Each external action must also check that decision before admission. If stop commits first, the action must not be sent. An action admitted first can still reach its destination; cancellation cannot retract an external request that was already admitted.
 
 Stopping work must not itself create a code-host comment or an IM notification. Durable cancellation on the original Runner must block a delayed Create request, including after restart. The Coordinator must track delivery of cancellation and actual exit independently.
