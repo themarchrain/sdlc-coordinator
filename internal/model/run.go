@@ -9,12 +9,13 @@ import (
 type RunStatus string
 
 const (
-	RunStatusPending    RunStatus = "pending"
-	RunStatusRunning    RunStatus = "running"
-	RunStatusFinalizing RunStatus = "finalizing"
-	RunStatusSucceeded  RunStatus = "succeeded"
-	RunStatusFailed     RunStatus = "failed"
-	RunStatusBlocked    RunStatus = "blocked"
+	RunStatusPending     RunStatus = "pending"
+	RunStatusRunning     RunStatus = "running"
+	RunStatusFinalizing  RunStatus = "finalizing"
+	RunStatusSucceeded   RunStatus = "succeeded"
+	RunStatusFailed      RunStatus = "failed"
+	RunStatusBlocked     RunStatus = "blocked"
+	RunStatusInterrupted RunStatus = "interrupted"
 )
 
 type Run struct {

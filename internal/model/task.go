@@ -19,6 +19,7 @@ const (
 	TaskStatusRetryPending    TaskStatus = "retry_pending"
 	TaskStatusBlocked         TaskStatus = "blocked"
 	TaskStatusHumanRequired   TaskStatus = "human_required"
+	TaskStatusInterrupted     TaskStatus = "interrupted"
 )
 
 type Task struct {

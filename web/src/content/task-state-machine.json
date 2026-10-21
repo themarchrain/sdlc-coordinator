@@ -9,7 +9,8 @@
     { "id": "waiting_upstream", "label": "等待上游", "x": 404, "y": 204 },
     { "id": "waiting_merge", "label": "等待合并", "x": 594, "y": 204 },
     { "id": "succeeded", "label": "已成功", "x": 404, "y": 372 },
-    { "id": "blocked", "label": "已阻塞", "x": 594, "y": 372 }
+    { "id": "blocked", "label": "已阻塞", "x": 594, "y": 372 },
+    { "id": "interrupted", "label": "已中断", "x": 24, "y": 540 }
   ],
   "edges": [
     { "from": "pending", "to": "claimed", "path": "M174 68 H208" },
@@ -31,6 +32,15 @@
     { "from": "finalizing", "to": "blocked", "path": "M744 84 H764 V404 H750" },
     { "from": "retry_pending", "to": "claimed", "path": "M239 204 V188 H194 V84 H208" },
     { "from": "waiting_upstream", "to": "pending", "path": "M429 268 V298 H8 V84 H18" },
-    { "from": "human_required", "to": "pending", "path": "M59 204 V106" }
+    { "from": "human_required", "to": "pending", "path": "M59 204 V106" },
+    { "from": "pending", "to": "interrupted", "kind": "manual_stop", "path": "M49 36 V-20 H820 V548 H180" },
+    { "from": "claimed", "to": "interrupted", "kind": "manual_stop", "path": "M239 36 V-32 H832 V554 H180" },
+    { "from": "running", "to": "interrupted", "kind": "manual_stop", "path": "M429 36 V-44 H844 V560 H180" },
+    { "from": "finalizing", "to": "interrupted", "kind": "manual_stop", "path": "M619 36 V-56 H856 V566 H180" },
+    { "from": "retry_pending", "to": "interrupted", "kind": "manual_stop", "path": "M214 240 H194 V-68 H868 V572 H180" },
+    { "from": "human_required", "to": "interrupted", "kind": "manual_stop", "path": "M24 240 H-24 V-80 H880 V578 H180" },
+    { "from": "waiting_upstream", "to": "interrupted", "kind": "manual_stop", "path": "M554 236 H574 V-92 H892 V584 H180" },
+    { "from": "waiting_merge", "to": "interrupted", "kind": "manual_stop", "path": "M744 236 H798 V-104 H904 V590 H180" },
+    { "from": "blocked", "to": "interrupted", "kind": "manual_stop", "path": "M744 404 H810 V-116 H916 V596 H180" }
   ]
 }

@@ -9,13 +9,32 @@ describe('TaskStateMachinePanel', () => {
     ['finalizing', '结果收口中'], ['retry_pending', '等待重试'],
     ['waiting_upstream', '等待上游'], ['waiting_merge', '等待合并'],
     ['human_required', '需要人工'], ['blocked', '已阻塞'], ['succeeded', '已成功'],
+    ['interrupted', '已中断'],
   ])('highlights only the current Task status %s', (status, label) => {
     const { container } = render(<TaskStateMachinePanel status={status} />)
 
     expect(screen.getByRole('img', { name: 'Task 状态机' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: `${label}（${status}），当前状态` })).toHaveAttribute('aria-current', 'true')
     expect(container.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
-    expect(container.querySelectorAll('path[marker-end]')).toHaveLength(20)
+    expect(container.querySelectorAll('path[marker-end]')).toHaveLength(29)
+  })
+
+  it('distinguishes manual stops and shows interruption as a terminal state', () => {
+    const { container } = render(<TaskStateMachinePanel status="interrupted" />)
+    const manualStops = container.querySelectorAll('.task-state-edge--manual-stop')
+
+    expect(screen.getByText(/虚线表示人工停止/)).toBeInTheDocument()
+    expect(manualStops).toHaveLength(9)
+    expect([...manualStops].map((path) => path.textContent)).toEqual(expect.arrayContaining([
+      'pending → interrupted（人工停止）', 'claimed → interrupted（人工停止）',
+      'running → interrupted（人工停止）', 'finalizing → interrupted（人工停止）',
+      'retry_pending → interrupted（人工停止）', 'waiting_upstream → interrupted（人工停止）',
+      'waiting_merge → interrupted（人工停止）', 'human_required → interrupted（人工停止）',
+      'blocked → interrupted（人工停止）',
+    ]))
+    for (const path of manualStops) expect(path).toHaveAttribute('stroke-dasharray', '6 4')
+    expect([...container.querySelectorAll('path[marker-end]')].some((path) => path.textContent?.startsWith('interrupted →'))).toBe(false)
+    expect([...manualStops].some((path) => path.textContent?.startsWith('succeeded →'))).toBe(false)
   })
 
   it('keeps unknown states visible without highlighting a known state', () => {
