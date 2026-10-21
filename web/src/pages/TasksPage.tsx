@@ -3,11 +3,12 @@ import { AutoComplete, Button, Descriptions, Drawer, Form, Input, Select, Space,
 import { useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
-import type { TaskSummary, TimelineEvent } from '../api/types'
+import type { TaskSummary } from '../api/types'
 import { patchSearchParams, repositoryFilter } from '../app/searchParams'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import { StatusTag } from '../components/StatusTag'
+import { TaskStateMachinePanel } from '../components/TaskStateMachinePanel'
 import { AuditJson, TaskContextDetail } from '../components/StructuredDetail'
 import type { TimelineSlots } from '../themes/types'
 import { useTheme } from '../theme/useTheme'
@@ -100,24 +101,20 @@ export function TasksPage() {
 
 function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void }) {
   const { theme } = useTheme()
-  const [detail, setDetail] = useState<Record<string, unknown>>()
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([])
-  const [error, setError] = useState<unknown>()
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!taskID) return
-    setLoading(true)
-    setError(undefined)
-    Promise.all([adminApi.getTask(taskID), adminApi.taskTimeline(taskID)])
-      .then(([task, events]) => { setDetail(task); setTimeline(events.items) })
-      .catch(setError)
-      .finally(() => setLoading(false))
-  }, [taskID])
+  const request = useRemote(async () => {
+    const [task, events] = await Promise.all([adminApi.getTask(taskID!), adminApi.taskTimeline(taskID!)])
+    return { taskID, task, timeline: events.items, loadedAt: new Date().toISOString() }
+  }, [taskID], Boolean(taskID))
+  const snapshot = request.data?.taskID === taskID ? request.data : undefined
+  const detail = snapshot?.task
 
   return (
     <Drawer title={<span className="mono">{taskID}</span>} width="min(860px, 100vw)" open={Boolean(taskID)} onClose={onClose} destroyOnClose>
-      {loading ? <LoadingState /> : error ? <ErrorState error={error} /> : detail ? (
+      <div className="task-detail-toolbar">
+        <Button size="small" onClick={request.reload}>刷新</Button>
+        {snapshot ? <time dateTime={snapshot.loadedAt}>读取于 {formatTime(snapshot.loadedAt)}</time> : null}
+      </div>
+      {request.loading || (!snapshot && !request.error && taskID) ? <LoadingState /> : request.error ? <ErrorState error={request.error} onRetry={request.reload} /> : detail && snapshot ? (
         <div className="drawer-stack">
           <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered items={[
             { key: 'status', label: '状态', children: <StatusTag status={String(detail.status || '')} /> },
@@ -128,8 +125,9 @@ function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void 
             { key: 'acceptance', label: '验收标准', span: { xs: 1, sm: 2 }, children: String(detail.acceptance_criteria || '—') },
             { key: 'error', label: '错误', span: { xs: 1, sm: 2 }, children: <span className="error-copy">{String(detail.last_error || '—')}</span> },
           ]} />
+          <TaskStateMachinePanel status={String(detail.status || '')} />
           <TaskContextDetail value={detail.context_json} />
-          <section><div className="section-label">生命周期</div><Timeline items={timeline.map((event) => ({
+          <section><div className="section-label">生命周期</div><Timeline items={snapshot.timeline.map((event) => ({
             color: timelineColor(event.status, theme.slots.timeline),
             children: <div className="timeline-entry"><div><strong>{event.title}</strong>{event.status ? <StatusTag status={event.status} /> : null}</div><p>{event.summary || '无补充摘要'}</p><time>{formatTime(event.occurred_at)}</time></div>,
           }))} /></section>

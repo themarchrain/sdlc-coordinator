@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -164,7 +164,7 @@ describe('TasksPage', () => {
 
     expect(await screen.findByText('Task 已创建')).toBeInTheDocument()
     expect(screen.getByText('Run 已结束')).toBeInTheDocument()
-    expect(screen.getByText('succeeded')).toBeInTheDocument()
+    expect(within(screen.getByText('Run 已结束').closest('.timeline-entry') as HTMLElement).getByText('succeeded')).toBeInTheDocument()
     expect(screen.queryByText('unknown')).not.toBeInTheDocument()
   })
 })
