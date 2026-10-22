@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
@@ -35,8 +36,8 @@ func TestCancellationMigrationUpgradesSchema7(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 8 {
-		t.Fatalf("schema = %d, want 8", version)
+	if version != store.SchemaVersion {
+		t.Fatalf("schema = %d, want %d", version, store.SchemaVersion)
 	}
 	if !db.Migrator().HasTable(&model.StopRequest{}) || !db.Migrator().HasTable(&model.ActionAdmission{}) {
 		t.Fatal("business migration omitted cancellation tables")
@@ -59,5 +60,36 @@ func TestCancellationMigrationUpgradesSchema7(t *testing.T) {
 	duplicate.ID, duplicate.AdmissionID = 0, "a2"
 	if err := db.Create(&duplicate).Error; err == nil {
 		t.Fatal("same action attempt admitted twice")
+	}
+}
+
+func TestCancellationMigrationAddsNonDeliveryProof(t *testing.T) {
+	db, err := store.Open("file:" + model.NewID("admission-upgrade") + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := store.Migrate(db, &store.SchemaMigration{}, &model.ActionAdmission{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn(&model.ActionAdmission{}, "not_sent_at"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("action_admissions").Create(map[string]any{"admission_id": "old-permit", "task_id": "old-task", "kind": "writeback", "action_key": "old-action", "attempt": 1, "lease_owner": "old-owner", "lease_generation": 7, "admitted_at": time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&store.SchemaMigration{Component: "business", Version: 8}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateBusinessStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if !db.Migrator().HasColumn(&model.ActionAdmission{}, "not_sent_at") {
+		t.Fatal("admission migration omitted durable non-delivery proof")
+	}
+	var previous model.ActionAdmission
+	if err := db.Where("admission_id = ?", "old-permit").First(&previous).Error; err != nil || previous.NotSentAt != nil || previous.LeaseOwner != "old-owner" || previous.LeaseGeneration != 7 {
+		t.Fatalf("migration invented non-delivery or changed history: %+v err=%v", previous, err)
 	}
 }

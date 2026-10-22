@@ -24,4 +24,5 @@ type ActionAdmission struct {
 	LeaseOwner      string     `gorm:"not null;size:128"`
 	LeaseGeneration uint64     `gorm:"not null"`
 	AdmittedAt      time.Time  `gorm:"not null"`
+	NotSentAt       *time.Time
 }

@@ -8,6 +8,7 @@ import (
 
 	effectsexec "sdlc-coordinator/internal/effects"
 	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/store/repository"
 )
 
 // staleEffectRunningTimeout 是效果停留 running 态的回收阈值:超过即视为执行方
@@ -85,8 +86,23 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 			AttemptCount: effect.AttemptCount,
 		}
 
-		responseJSON, err := o.effectExecutor.ExecuteEffect(ctx, &effect)
+		responseJSON, err := o.executeAdmittedEffect(ctx, &effect)
 		if err != nil {
+			if errors.Is(err, repository.ErrTaskInterrupted) || actionOutcomeUncertain(err) {
+				status, reason := model.EffectStatusSkipped, "task_interrupted"
+				if actionOutcomeUncertain(err) {
+					status, reason = model.EffectStatusDeliveryUnverified, err.Error()
+				}
+				applied, updateErr := o.effects.Complete(ctx, effect.DedupeKey, effect.AttemptCount, status, "", reason)
+				if updateErr != nil {
+					return nil, updateErr
+				}
+				if applied {
+					result.Status, result.ErrorMessage = status, reason
+					results = append(results, result)
+				}
+				continue
+			}
 			if errors.Is(err, ErrEffectExecutorDisabled) {
 				// 批次中途渠道被清除(与批首探测间存在窗口):本条退回
 				// 队列保持 pending,后续效果原样留待配置后重放。
@@ -176,7 +192,19 @@ func (o *Orchestrator) RecoverStaleEffects(ctx context.Context, limit int) ([]Ef
 	for i := range effects {
 		listed := effects[i]
 		errorMessage := "effect execution stalled; recovered by stale-running sweep"
-		applied, err := o.effects.FailStaleRunning(ctx, listed.DedupeKey, staleEffectRunningTimeout, errorMessage)
+		status := model.EffectStatusFailed
+		var applied bool
+		if o.actionAdmissions != nil {
+			guarded, ok := o.effects.(interface {
+				RecoverStaleDelivery(context.Context, string, int, time.Duration, string) (model.EffectStatus, bool, error)
+			})
+			if !ok {
+				return nil, ErrStopUnavailable
+			}
+			status, applied, err = guarded.RecoverStaleDelivery(ctx, listed.DedupeKey, listed.AttemptCount, staleEffectRunningTimeout, errorMessage)
+		} else {
+			applied, err = o.effects.FailStaleRunning(ctx, listed.DedupeKey, staleEffectRunningTimeout, errorMessage)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("recover stale effect %s: %w", listed.DedupeKey, err)
 		}
@@ -189,7 +217,7 @@ func (o *Orchestrator) RecoverStaleEffects(ctx context.Context, limit int) ([]Ef
 			Kind:         listed.Kind,
 			Target:       listed.Target,
 			Critical:     listed.Critical,
-			Status:       model.EffectStatusFailed,
+			Status:       status,
 			AttemptCount: listed.AttemptCount,
 			ErrorMessage: errorMessage,
 		})

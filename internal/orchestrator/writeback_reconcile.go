@@ -156,7 +156,7 @@ func (o *Orchestrator) reconcileOneWriteback(ctx context.Context, writeback *mod
 	default:
 		return result, fmt.Errorf("unsupported reconcile state %q", remote.State)
 	}
-	applied, err := o.writebacks.UpdateGuardedIfStatus(ctx, writeback, expected)
+	applied, err := o.updateReconciledWriteback(ctx, writeback, expected)
 	if err != nil {
 		return result, err
 	}
@@ -184,6 +184,9 @@ func (o *Orchestrator) escalateUnknownWriteback(ctx context.Context, writeback *
 	task, err := o.tasks.GetByTaskID(ctx, writeback.TaskID)
 	if err != nil {
 		return err
+	}
+	if task.Status == model.TaskStatusInterrupted {
+		return nil
 	}
 	if task.Status == model.TaskStatusRunning || task.Status == model.TaskStatusFinalizing {
 		previous := task.Status

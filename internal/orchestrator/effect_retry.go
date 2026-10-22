@@ -24,6 +24,15 @@ func (o *Orchestrator) RetryEffect(ctx context.Context, dedupeKey string) (*mode
 	if err != nil {
 		return nil, err
 	}
+	if o.actionAdmissions != nil {
+		guarded, ok := o.effects.(interface {
+			RetryStoppedAware(context.Context, string) (*model.Effect, error)
+		})
+		if !ok {
+			return nil, ErrStopUnavailable
+		}
+		return guarded.RetryStoppedAware(ctx, dedupeKey)
+	}
 	if effect.Status != model.EffectStatusFailed {
 		return nil, fmt.Errorf("%w: status %s", ErrEffectNotRetryable, effect.Status)
 	}

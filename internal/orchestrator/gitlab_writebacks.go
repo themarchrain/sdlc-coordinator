@@ -304,6 +304,8 @@ func (o *Orchestrator) applyOneCodeHostWriteback(ctx context.Context, desired *m
 	existing, err := o.writebacks.GetByDedupeKey(ctx, desired.DedupeKey)
 	if err == nil {
 		switch existing.Status {
+		case model.WritebackStatusSkipped:
+			return nil
 		case model.WritebackStatusSucceeded:
 			return o.materializeCodeHostWritebackArtifact(ctx, existing)
 		case model.WritebackStatusFailed:
@@ -347,8 +349,25 @@ func (o *Orchestrator) applyOneCodeHostWriteback(ctx context.Context, desired *m
 		return err
 	}
 
-	result, err := o.executeCodeHostWriteback(ctx, writeback)
+	result, err := o.executeCodeHostWriteback(ctx, writeback, lease)
 	if err != nil {
+		if errors.Is(err, repository.ErrActionLeaseLost) {
+			return fmt.Errorf("%w: %v", ErrWritebackRequiresReconciliation, err)
+		}
+		if errors.Is(err, repository.ErrTaskInterrupted) {
+			writeback.Status, writeback.ErrorMessage = model.WritebackStatusSkipped, "task_interrupted"
+			if updateErr := o.writebacks.Update(ctx, writeback); updateErr != nil {
+				return updateErr
+			}
+			return err
+		}
+		if actionOutcomeUncertain(err) {
+			writeback.Status, writeback.ErrorMessage = model.WritebackStatusUnknown, err.Error()
+			if updateErr := o.writebacks.Update(ctx, writeback); updateErr != nil {
+				return updateErr
+			}
+			return fmt.Errorf("%w: %v", ErrWritebackRequiresReconciliation, err)
+		}
 		writeback.Status = model.WritebackStatusFailed
 		if codehost.IsAmbiguousError(err) {
 			writeback.Status = model.WritebackStatusUnknown
@@ -382,7 +401,7 @@ type codeHostWritebackResult struct {
 	responseJSON string
 }
 
-func (o *Orchestrator) executeCodeHostWriteback(ctx context.Context, writeback *model.Writeback) (codeHostWritebackResult, error) {
+func (o *Orchestrator) executeCodeHostWriteback(ctx context.Context, writeback *model.Writeback, lease model.WorkItemLease) (codeHostWritebackResult, error) {
 	intent, err := decodeCodeHostWritebackIntent(writeback)
 	if err != nil {
 		return codeHostWritebackResult{}, err
@@ -391,7 +410,20 @@ func (o *Orchestrator) executeCodeHostWriteback(ctx context.Context, writeback *
 	if err != nil {
 		return codeHostWritebackResult{}, err
 	}
+	admission, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: writeback.TaskID, RunID: writeback.RunID, Kind: model.ActionWriteback, ActionKey: writeback.DedupeKey, Attempt: writeback.AttemptCount}, lease)
+	if err != nil {
+		return codeHostWritebackResult{}, err
+	}
+	result, err := o.sendCodeHostWriteback(ctx, writeback, intent, backend)
+	if codehost.IsTransientRejection(err) {
+		if proofErr := o.confirmActionNotSent(ctx, admission); proofErr != nil {
+			return codeHostWritebackResult{}, proofErr
+		}
+	}
+	return result, err
+}
 
+func (o *Orchestrator) sendCodeHostWriteback(ctx context.Context, writeback *model.Writeback, intent results.CodeHostWritebackIntent, backend codehost.Backend) (codeHostWritebackResult, error) {
 	switch writeback.Kind {
 	case CodeHostWritebackCreateIssue:
 		issue, err := backend.CreateIssue(ctx, writeback.ProjectID, codehost.CreateIssueRequest{

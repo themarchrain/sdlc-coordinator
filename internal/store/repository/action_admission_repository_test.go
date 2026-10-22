@@ -188,3 +188,26 @@ func TestAdmissionInsertRollback(t *testing.T) {
 		t.Fatalf("failed insert left a permit: %d err=%v", count, err)
 	}
 }
+
+func TestAdmissionNonDeliveryProofIsIdempotentAndFenced(t *testing.T) {
+	_, admissions, request := actionAdmissionFixture(t, model.ActionWriteback)
+	ctx := context.Background()
+	admission, err := admissions.AdmitAction(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := admissions.ConfirmNotSent(ctx, admission); err != nil {
+			t.Fatalf("non-delivery proof is not idempotent: %v", err)
+		}
+	}
+	stale := *admission
+	stale.LeaseOwner = "other-owner"
+	if err := admissions.ConfirmNotSent(ctx, &stale); !errors.Is(err, ErrActionLeaseLost) {
+		t.Fatalf("foreign owner changed admission outcome: %v", err)
+	}
+	request.Attempt++
+	if _, err := admissions.AdmitAction(ctx, request); err != nil {
+		t.Fatalf("confirmed non-delivery did not allow a new permit: %v", err)
+	}
+}

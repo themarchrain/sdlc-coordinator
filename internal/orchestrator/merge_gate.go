@@ -104,7 +104,7 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 			o.releaseWorkItemLease(lease)
 			continue
 		}
-		result := o.evaluateAutoMergeGate(ctx, task)
+		result := o.evaluateAutoMergeGate(ctx, task, lease)
 		o.releaseWorkItemLease(lease)
 		if result.Transient != nil {
 			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped 并留
@@ -159,7 +159,7 @@ func DefaultMergeGateClientFactory(repo *registeredrepo.RegisteredRepository) (c
 // evaluateAutoMergeGate 评估单条验证任务的证据合取。确定性失败(上下文不可
 // 读、血缘/仓行缺失、平台 4xx 拒绝、头部漂移)一律 fallback+审计,只有查询
 // 类瞬时故障才返回 Transient 留待下轮。
-func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Task) gateEvaluation {
+func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Task, lease model.WorkItemLease) gateEvaluation {
 	result := gateEvaluation{}
 	var taskContext struct {
 		ParentTaskID string `json:"parent_task_id"`
@@ -296,6 +296,15 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	}
 
 	// 防线三:合并调用再次断言头部,读合之间头部漂移由平台拒合。
+	runID := ""
+	if task.CurrentRunID != nil {
+		runID = *task.CurrentRunID
+	}
+	if _, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: task.TaskID, RunID: runID, Kind: model.ActionAutoMerge, ActionKey: task.TaskID, Attempt: 1}, lease); err != nil {
+		result.NotifyHuman = false
+		result.Transient = err
+		return result
+	}
 	mergeResult, err := merger.MergePullRequest(ctx, result.ProjectPath, result.MergeRequestIID, codehost.MergePullRequestRequest{
 		ExpectedHeadSHA: result.HeadSHA,
 	})

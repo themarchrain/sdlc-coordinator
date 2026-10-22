@@ -94,12 +94,18 @@ func (r *ActionAdmissionRepository) AdmitAction(ctx context.Context, request Act
 		var previous model.ActionAdmission
 		err := tx.Where("kind = ? AND action_key = ?", request.Kind, request.ActionKey).Order("attempt DESC").First(&previous).Error
 		if err == nil {
-			if previous.Attempt == request.Attempt {
+			if previous.Attempt >= request.Attempt {
 				return ErrActionAlreadyAdmitted
 			}
-			return ErrActionOutcomeUnknown
+			var unresolved int64
+			if err := tx.Model(&model.ActionAdmission{}).Where("kind = ? AND action_key = ? AND not_sent_at IS NULL", request.Kind, request.ActionKey).Count(&unresolved).Error; err != nil {
+				return err
+			}
+			if unresolved != 0 {
+				return ErrActionOutcomeUnknown
+			}
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		admission = &model.ActionAdmission{AdmissionID: model.NewID("admission"), TaskID: task.TaskID, RunID: request.RunID, Kind: request.Kind, ActionKey: request.ActionKey, Attempt: request.Attempt, LeaseOwner: lease.Owner, LeaseGeneration: lease.Generation, AdmittedAt: now}
@@ -109,6 +115,30 @@ func (r *ActionAdmissionRepository) AdmitAction(ctx context.Context, request Act
 		return nil, err
 	}
 	return admission, nil
+}
+
+func (r *ActionAdmissionRepository) ConfirmNotSent(ctx context.Context, admission *model.ActionAdmission) error {
+	return withLockedTask(ctx, r.db, admission.TaskID, func(tx *gorm.DB, _ *model.Task, now time.Time) error {
+		result := tx.Model(&model.ActionAdmission{}).
+			Where("admission_id = ? AND task_id = ? AND lease_owner = ? AND lease_generation = ? AND not_sent_at IS NULL", admission.AdmissionID, admission.TaskID, admission.LeaseOwner, admission.LeaseGeneration).
+			Update("not_sent_at", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			var existing model.ActionAdmission
+			if err := tx.Where("admission_id = ? AND task_id = ? AND lease_owner = ? AND lease_generation = ?", admission.AdmissionID, admission.TaskID, admission.LeaseOwner, admission.LeaseGeneration).First(&existing).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrActionLeaseLost
+				}
+				return err
+			}
+			if existing.NotSentAt == nil {
+				return ErrActionLeaseLost
+			}
+		}
+		return nil
+	})
 }
 
 func ActionAdmissionScope(request ActionAdmissionRequest) (string, error) {
