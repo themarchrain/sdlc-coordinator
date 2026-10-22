@@ -26,8 +26,12 @@ func (r *RunRepository) Create(ctx context.Context, run *model.Run) error {
 }
 
 func (r *RunRepository) Update(ctx context.Context, run *model.Run) error {
-	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
-		return fmt.Errorf("update run: %w", err)
+	result := r.db.WithContext(ctx).Model(&model.Run{}).Where("run_id = ? AND status <> ?", run.RunID, model.RunStatusInterrupted).Select("*").Omit("id", "run_id", "task_id", "created_at").Updates(run)
+	if result.Error != nil {
+		return fmt.Errorf("update run: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return ErrTaskInterrupted
 	}
 	return nil
 }

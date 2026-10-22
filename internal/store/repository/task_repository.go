@@ -28,7 +28,12 @@ func (r *TaskRepository) Create(ctx context.Context, task *model.Task) error {
 }
 
 func (r *TaskRepository) Update(ctx context.Context, task *model.Task) error {
-	if err := r.db.WithContext(ctx).Save(task).Error; err != nil {
+	if err := withLockedTask(ctx, r.db, task.TaskID, func(tx *gorm.DB, current *model.Task, _ time.Time) error {
+		if current.Status == model.TaskStatusInterrupted {
+			return ErrTaskInterrupted
+		}
+		return tx.Save(task).Error
+	}); err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}
 	return nil
@@ -355,6 +360,9 @@ func (r *TaskRepository) FinalizeRework(ctx context.Context, dedupeKey string, n
 	var finalized model.Task
 	err = withLockedTask(ctx, r.db, target.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
 		finalized = *task
+		if finalized.Status == model.TaskStatusInterrupted {
+			return ErrTaskInterrupted
+		}
 		if finalized.Type != model.TaskTypeReworkMergeRequest || finalized.Role != "DeveloperWorker" {
 			return ErrTaskNotClaimable
 		}

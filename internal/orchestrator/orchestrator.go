@@ -788,6 +788,9 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	if err != nil {
 		return nil, nil, err
 	}
+	if task.Status == model.TaskStatusInterrupted || run.Status == model.RunStatusInterrupted {
+		return nil, nil, repository.ErrTaskInterrupted
+	}
 	if isStaleRunForTask(task, run.RunID) {
 		return o.applyStaleRunResult(ctx, task, run, payload)
 	}
@@ -815,7 +818,17 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		return task, run, nil
 	}
 
-	expandedNextTasks, err := o.expandResultNextTasks(ctx, task, run, payload)
+	finalizer, atomicFinalization := o.tasks.(resultFinalizer)
+	if o.stops != nil && !atomicFinalization {
+		return nil, nil, errors.New("atomic result finalizer is required for task stops")
+	}
+	var expansions []repository.ResultTaskExpansion
+	var expandedNextTasks int
+	if atomicFinalization {
+		expansions, expandedNextTasks, err = o.prepareResultNextTasks(task, run, payload)
+	} else {
+		expandedNextTasks, err = o.expandResultNextTasks(ctx, task, run, payload)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -870,11 +883,17 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		run.ErrorMessage = payload.Summary
 	}
 
-	if err := o.tasks.Update(ctx, task); err != nil {
-		return nil, nil, fmt.Errorf("update result task %s: %w", payload.TaskID, err)
-	}
-	if err := o.runs.Update(ctx, run); err != nil {
-		return nil, nil, fmt.Errorf("update result run %s: %w", payload.RunID, err)
+	if atomicFinalization {
+		if err := finalizer.FinalizeResultAtomic(ctx, task, run, expansions, o.resultSubmissions != nil); err != nil {
+			return nil, nil, fmt.Errorf("finalize result %s: %w", payload.RunID, err)
+		}
+	} else {
+		if err := o.tasks.Update(ctx, task); err != nil {
+			return nil, nil, fmt.Errorf("update result task %s: %w", payload.TaskID, err)
+		}
+		if err := o.runs.Update(ctx, run); err != nil {
+			return nil, nil, fmt.Errorf("update result run %s: %w", payload.RunID, err)
+		}
 	}
 	if err := o.resolveDependenciesForResult(ctx, task, payload); err != nil {
 		return nil, nil, err

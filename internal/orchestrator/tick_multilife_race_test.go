@@ -205,6 +205,13 @@ func TestArtifactCleanupDualInstanceSinglePurge(t *testing.T) {
 
 	ctx := context.Background()
 	completed := time.Now().Add(-8 * 24 * time.Hour)
+	runID := "run-cleanup-race"
+	if err := repository.NewTaskRepository(seed).Create(ctx, &model.Task{
+		TaskID: "task-cleanup-race", DedupeKey: "task-cleanup-race", Type: "test", Role: "DeveloperWorker",
+		Status: model.TaskStatusSucceeded, CurrentRunID: &runID,
+	}); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
 	runRepo := repository.NewRunRepository(seed)
 	if err := runRepo.Create(ctx, &model.Run{
 		RunID: "run-cleanup-race", TaskID: "task-cleanup-race", WorkerRole: "DeveloperWorker",

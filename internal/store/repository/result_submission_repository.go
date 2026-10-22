@@ -9,6 +9,7 @@ import (
 	"sdlc-coordinator/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ResultSubmissionRepository struct {
@@ -27,9 +28,9 @@ func (r *ResultSubmissionRepository) Accept(ctx context.Context, submission *mod
 	submission.LeaseUntil = &leaseUntil
 	submission.AttemptCount = 1
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(submission).Error; err != nil {
-			return err
+	err := withLockedTask(ctx, r.db, submission.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
+		if task.Status == model.TaskStatusInterrupted {
+			return ErrTaskInterrupted
 		}
 		taskResult := tx.Model(&model.Task{}).
 			Where("task_id = ? AND current_run_id = ? AND status = ?", submission.TaskID, submission.RunID, model.TaskStatusRunning).
@@ -49,9 +50,9 @@ func (r *ResultSubmissionRepository) Accept(ctx context.Context, submission *mod
 		if runResult.RowsAffected != 1 {
 			return ErrResultNotAcceptable
 		}
-		return nil
+		return tx.Create(submission).Error
 	})
-	if err == nil || errors.Is(err, ErrResultNotAcceptable) {
+	if err == nil || errors.Is(err, ErrTaskInterrupted) {
 		return err
 	}
 	if _, lookupErr := r.GetByRunID(ctx, submission.RunID); lookupErr == nil {
@@ -83,7 +84,20 @@ func (r *ResultSubmissionRepository) GetBySubmissionID(ctx context.Context, subm
 }
 
 func (r *ResultSubmissionRepository) Update(ctx context.Context, submission *model.ResultSubmission) error {
-	if err := r.db.WithContext(ctx).Save(submission).Error; err != nil {
+	if submission.ID == 0 && submission.SubmissionID == "" {
+		return withLockedTask(ctx, r.db, submission.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
+			if task.Status == model.TaskStatusInterrupted {
+				return ErrTaskInterrupted
+			}
+			return tx.Create(submission).Error
+		})
+	}
+	if err := r.withLockedSubmission(ctx, submission.SubmissionID, func(tx *gorm.DB, task *model.Task, current *model.ResultSubmission) error {
+		if task.Status == model.TaskStatusInterrupted || current.Status == model.ResultSubmissionStatusInterrupted {
+			return ErrTaskInterrupted
+		}
+		return tx.Save(submission).Error
+	}); err != nil {
 		return fmt.Errorf("update result submission: %w", err)
 	}
 	return nil
@@ -141,15 +155,14 @@ func (r *ResultSubmissionRepository) FailFinalization(
 	maxAttempts int,
 ) (*model.ResultSubmission, bool, error) {
 	var exhausted bool
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var submission model.ResultSubmission
-		if err := tx.Where("submission_id = ?", submissionID).First(&submission).Error; err != nil {
-			return err
+	err := r.withLockedSubmission(ctx, submissionID, func(tx *gorm.DB, task *model.Task, submission *model.ResultSubmission) error {
+		if task.Status == model.TaskStatusInterrupted || submission.Status == model.ResultSubmissionStatusInterrupted || submission.Status == model.ResultSubmissionStatusSucceeded {
+			return nil
 		}
 		submission.Status = model.ResultSubmissionStatusFailed
 		submission.ErrorMessage = message
 		submission.LeaseUntil = nil
-		if err := tx.Save(&submission).Error; err != nil {
+		if err := tx.Save(submission).Error; err != nil {
 			return err
 		}
 		if submission.AttemptCount < maxAttempts {
@@ -196,10 +209,9 @@ func (r *ResultSubmissionRepository) FailFinalization(
 // (补偿 claim 时 +1,下限 0),仅记录错误信息。等待的终止由写回对账升级
 // (escalateUnknownWriteback 将 submission 置为 unknown)负责,保证有界。
 func (r *ResultSubmissionRepository) DeferReconciliationWait(ctx context.Context, submissionID, message string) (*model.ResultSubmission, error) {
-	var submission model.ResultSubmission
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("submission_id = ?", submissionID).First(&submission).Error; err != nil {
-			return err
+	err := r.withLockedSubmission(ctx, submissionID, func(tx *gorm.DB, task *model.Task, submission *model.ResultSubmission) error {
+		if task.Status == model.TaskStatusInterrupted || submission.Status == model.ResultSubmissionStatusInterrupted || submission.Status == model.ResultSubmissionStatusSucceeded {
+			return nil
 		}
 		submission.Status = model.ResultSubmissionStatusFailed
 		submission.ErrorMessage = message
@@ -207,11 +219,37 @@ func (r *ResultSubmissionRepository) DeferReconciliationWait(ctx context.Context
 		if submission.AttemptCount > 0 {
 			submission.AttemptCount--
 		}
-		return tx.Save(&submission).Error
+		return tx.Save(submission).Error
 	})
 	if err != nil {
 		return nil, fmt.Errorf("defer result finalization for reconciliation: %w", err)
 	}
 	updated, err := r.GetBySubmissionID(ctx, submissionID)
 	return updated, err
+}
+
+func (r *ResultSubmissionRepository) withLockedSubmission(ctx context.Context, submissionID string, apply func(*gorm.DB, *model.Task, *model.ResultSubmission) error) error {
+	target, err := r.GetBySubmissionID(ctx, submissionID)
+	if err != nil {
+		return err
+	}
+	return withLockedTask(ctx, r.db, target.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
+		query := tx.Where("run_id = ? AND task_id = ?", target.RunID, target.TaskID)
+		if tx.Dialector.Name() == "mysql" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var run model.Run
+		if err := query.First(&run).Error; err != nil {
+			return stopLookupError(err)
+		}
+		query = tx.Where("submission_id = ?", submissionID)
+		if tx.Dialector.Name() == "mysql" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var submission model.ResultSubmission
+		if err := query.First(&submission).Error; err != nil {
+			return stopLookupError(err)
+		}
+		return apply(tx, task, &submission)
+	})
 }
