@@ -64,12 +64,17 @@ type ChannelOutcome struct {
 const developerFinalizeTimeout = 3 * time.Minute
 
 type ResultChannelCoordinator struct {
+	admissions    ActionAdmissionPort
 	finalizer     DeveloperGitFinalizer
 	checkpoints   DeveloperDeliveryCheckpoints
 	submitter     ReviewerResultSubmitter
 	settings      ReviewerRunnerSettings
 	source        string
 	deliveryRight WorkItemLeasePort
+}
+
+func (c *ResultChannelCoordinator) SetActionAdmissions(admissions ActionAdmissionPort) {
+	c.admissions = admissions
 }
 
 func NewResultChannelCoordinator(
@@ -175,6 +180,9 @@ func (c *ResultChannelCoordinator) SubmitAgentResult(
 // 修正"提示），否则业务纠错预算被平台故障消耗。业务性冲突（如基线不符、
 // 无改动）仍走可矫正通道。
 func isInfrastructureDeliveryFailure(err error, ctx context.Context) bool {
+	if dispatchAdmissionDenied(err) || actionOutcomeUncertain(err) {
+		return true
+	}
 	if err == nil {
 		return false
 	}
@@ -291,7 +299,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
 					Err: errors.New("developer delivery right was lost before push")}, nil
 			}
-			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
+			delivery, err = c.pushAdmitted(finalizeCtx, workspace.DeveloperPushRequest{
 				TaskID: task.TaskID, RunID: run.RunID,
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,
@@ -303,7 +311,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 			// commit 与下方 push 共用外层 err:推送错误必须走 217 行的
 			// 结构化错误出口,不能在 else 块内被遮蔽吞掉。
 			var commit *workspace.DeveloperCommitResult
-			commit, err = c.finalizer.CommitDelivery(finalizeCtx, workspace.DeveloperCommitRequest{
+			commit, err = c.commitAdmitted(finalizeCtx, workspace.DeveloperCommitRequest{
 				TaskID: task.TaskID, RunID: run.RunID,
 				CommitMessage: inputValue.CommitMessage, GitAuthorName: workspaceRequest.GitAuthorName,
 				GitAuthorEmail: workspaceRequest.GitAuthorEmail,
@@ -332,7 +340,7 @@ func (c *ResultChannelCoordinator) submitDeveloperResult(
 				return ChannelOutcome{Decision: ChannelFailed, Stage: ChannelStageFinalize,
 					Err: errors.New("developer delivery right was lost before push")}, nil
 			}
-			delivery, err = c.finalizer.PushDelivery(finalizeCtx, workspace.DeveloperPushRequest{
+			delivery, err = c.pushAdmitted(finalizeCtx, workspace.DeveloperPushRequest{
 				TaskID: task.TaskID, RunID: run.RunID,
 				TaskType: task.Type, RepositoryURL: workspaceRequest.RepositoryURL,
 				TargetBranch: workspaceRequest.TargetBranch, DeliveryBranch: workspaceRequest.DeliveryBranch,

@@ -27,10 +27,22 @@ func (r *AgentExecutionRepository) Create(ctx context.Context, execution *model.
 }
 
 func (r *AgentExecutionRepository) Update(ctx context.Context, execution *model.AgentExecution) error {
-	if err := r.db.WithContext(ctx).Save(execution).Error; err != nil {
+	if err := r.db.WithContext(ctx).Omit("create_spec_json").Save(execution).Error; err != nil {
 		return fmt.Errorf("update agent execution: %w", err)
 	}
 	return nil
+}
+
+func (r *AgentExecutionRepository) CreateDispatchIntent(ctx context.Context, execution *model.AgentExecution) error {
+	return withLockedCurrentRun(ctx, r.db, execution.RunID, func(tx *gorm.DB, run *model.Run) error {
+		if run.Status != model.RunStatusRunning && run.Status != model.RunStatusFinalizing {
+			return ErrTaskNotClaimable
+		}
+		if run.RunnerEndpoint != "" && run.RunnerEndpoint != execution.RunnerEndpoint {
+			return ErrTaskNotClaimable
+		}
+		return tx.Create(execution).Error
+	})
 }
 
 func (r *AgentExecutionRepository) TouchLastObservedAt(ctx context.Context, runID string, at time.Time) error {

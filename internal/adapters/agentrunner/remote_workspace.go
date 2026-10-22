@@ -2,6 +2,7 @@ package agentrunner
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -197,6 +198,21 @@ func (w *RemoteWorkspace) CommitDelivery(ctx context.Context, request workspace.
 }
 
 // PushDelivery 实现 orchestrator.DeveloperGitFinalizer：固定 SHA 推送。
+func (w *RemoteWorkspace) ReadDeliveryOperation(ctx context.Context, runID, operationID string) (*workspaceproto.OperationRecord, error) {
+	client, err := w.clientFor(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	record, err := client.WorkspaceOperation(ctx, operationID)
+	if err != nil {
+		return nil, err
+	}
+	if record.TenantID != w.tenantID {
+		return nil, fmt.Errorf("workspace operation belongs to another tenant")
+	}
+	return record, nil
+}
+
 func (w *RemoteWorkspace) PushDelivery(ctx context.Context, request workspace.DeveloperPushRequest) (*workspace.DeveloperDelivery, error) {
 	client, err := w.clientFor(ctx, request.RunID)
 	if err != nil {

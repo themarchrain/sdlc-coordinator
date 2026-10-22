@@ -19,13 +19,15 @@ var (
 )
 
 type ActionAdmissionRequest struct {
-	TaskID          string
-	RunID           string
-	Kind            model.ActionKind
-	ActionKey       string
-	Attempt         int
-	LeaseOwner      string
-	LeaseGeneration uint64
+	TaskID           string
+	RunID            string
+	Kind             model.ActionKind
+	ActionKey        string
+	Attempt          int
+	LeaseOwner       string
+	LeaseGeneration  uint64
+	IdempotentReplay bool
+	RequestHash      string
 }
 
 type ActionAdmissionRepository struct{ db *gorm.DB }
@@ -94,6 +96,9 @@ func (r *ActionAdmissionRepository) AdmitAction(ctx context.Context, request Act
 		var previous model.ActionAdmission
 		err := tx.Where("kind = ? AND action_key = ?", request.Kind, request.ActionKey).Order("attempt DESC").First(&previous).Error
 		if err == nil {
+			if previous.TaskID != request.TaskID || previous.RunID != request.RunID {
+				return ErrInvalidActionAdmission
+			}
 			if previous.Attempt >= request.Attempt {
 				return ErrActionAlreadyAdmitted
 			}
@@ -101,20 +106,29 @@ func (r *ActionAdmissionRepository) AdmitAction(ctx context.Context, request Act
 			if err := tx.Model(&model.ActionAdmission{}).Where("kind = ? AND action_key = ? AND not_sent_at IS NULL", request.Kind, request.ActionKey).Count(&unresolved).Error; err != nil {
 				return err
 			}
-			if unresolved != 0 {
+			canReplay := request.IdempotentReplay && request.RequestHash != "" && request.RequestHash == previous.RequestHash && (request.Kind == model.ActionExecutionCreate || request.Kind == model.ActionGitCommit || request.Kind == model.ActionGitPush)
+			if unresolved != 0 && !canReplay {
 				return ErrActionOutcomeUnknown
 			}
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		admission = &model.ActionAdmission{AdmissionID: model.NewID("admission"), TaskID: task.TaskID, RunID: request.RunID, Kind: request.Kind, ActionKey: request.ActionKey, Attempt: request.Attempt, LeaseOwner: lease.Owner, LeaseGeneration: lease.Generation, AdmittedAt: now}
+		admission = &model.ActionAdmission{AdmissionID: model.NewID("admission"), TaskID: task.TaskID, RunID: request.RunID, Kind: request.Kind, ActionKey: request.ActionKey, Attempt: request.Attempt, LeaseOwner: lease.Owner, LeaseGeneration: lease.Generation, AdmittedAt: now, RequestHash: request.RequestHash}
 		return tx.Create(admission).Error
 	})
 	if err != nil {
 		return nil, err
 	}
 	return admission, nil
+}
+
+func (r *ActionAdmissionRepository) NextAttempt(ctx context.Context, kind model.ActionKind, key string) (int, error) {
+	var last int
+	if err := r.db.WithContext(ctx).Model(&model.ActionAdmission{}).Select("COALESCE(MAX(attempt), 0)").Where("kind = ? AND action_key = ?", kind, key).Scan(&last).Error; err != nil {
+		return 0, err
+	}
+	return last + 1, nil
 }
 
 func (r *ActionAdmissionRepository) ConfirmNotSent(ctx context.Context, admission *model.ActionAdmission) error {
