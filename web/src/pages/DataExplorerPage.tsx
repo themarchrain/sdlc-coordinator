@@ -34,7 +34,7 @@ interface EntityConfig {
 }
 
 const workerRoles = ['DeveloperWorker', 'TesterWorker', 'ReviewerWorker']
-const runStatuses = ['pending', 'running', 'finalizing', 'succeeded', 'failed', 'blocked']
+const runStatuses = ['pending', 'running', 'finalizing', 'succeeded', 'failed', 'blocked', 'interrupted']
 const dependencyStatuses = ['pending', 'ready', 'blocked', 'resolved']
 const writebackStatuses = ['pending', 'running', 'succeeded', 'failed', 'unknown']
 const effectStatuses = ['pending', 'running', 'succeeded', 'failed', 'skipped']
@@ -301,7 +301,7 @@ function formatTime(value: unknown) {
 
 function optionLabel(value: string) {
   return ({
-    pending: '待处理', received: '已接收', normalized: '已规范化', task_created: '已创建 Task', running: '运行中', finalizing: '结果收口中',
+    interrupted: '已中断', pending: '待处理', received: '已接收', normalized: '已规范化', task_created: '已创建 Task', running: '运行中', finalizing: '结果收口中',
     processing: '处理中', ready: '已就绪', resolved: '已解决', blocked: '已阻塞', unknown: '结果未知', succeeded: '已成功', failed: '已失败',
     ignored: '已忽略', skipped: '已跳过', develop_from_issue: 'Issue 开发', review_mr: 'MR 审查', rework_merge_request: 'MR 接续开发',
     verify_merge_request: 'MR 验证', DeveloperWorker: '开发', TesterWorker: '验证', ReviewerWorker: '审查',

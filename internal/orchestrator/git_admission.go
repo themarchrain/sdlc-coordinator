@@ -11,31 +11,31 @@ import (
 	"sdlc-coordinator/internal/workspaceproto"
 )
 
-func (c *ResultChannelCoordinator) admitGitAction(ctx context.Context, taskID, runID string, kind model.ActionKind, key, owner string, generation uint64, hash string) error {
+func (c *ResultChannelCoordinator) admitGitAction(ctx context.Context, taskID, runID string, kind model.ActionKind, key, owner string, generation uint64, hash string) (*model.ActionAdmission, error) {
 	if c.admissions == nil {
-		return nil
+		return nil, nil
 	}
 	allocator, ok := c.admissions.(interface {
 		NextAttempt(context.Context, model.ActionKind, string) (int, error)
 	})
 	if !ok {
-		return ErrStopUnavailable
+		return nil, ErrStopUnavailable
 	}
 	attempt, err := allocator.NextAttempt(ctx, kind, key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if attempt > 1 {
 		reader, ok := c.finalizer.(interface {
 			ReadDeliveryOperation(context.Context, string, string) (*workspaceproto.OperationRecord, error)
 		})
 		if !ok {
-			return repository.ErrActionOutcomeUnknown
+			return nil, repository.ErrActionOutcomeUnknown
 		}
 		record, readErr := reader.ReadDeliveryOperation(ctx, runID, key)
 		var httpErr *runner.HTTPError
 		if readErr != nil && !(errors.As(readErr, &httpErr) && httpErr.StatusCode == 404) {
-			return repository.ErrActionOutcomeUnknown
+			return nil, repository.ErrActionOutcomeUnknown
 		}
 		if readErr == nil {
 			expectedKind := workspaceproto.KindDeveloperCommit
@@ -43,12 +43,12 @@ func (c *ResultChannelCoordinator) admitGitAction(ctx context.Context, taskID, r
 				expectedKind = workspaceproto.KindDeveloperPush
 			}
 			if record == nil || record.OperationID != key || record.TaskID != taskID || record.RunID != runID || record.Kind != expectedKind {
-				return repository.ErrActionOutcomeUnknown
+				return nil, repository.ErrActionOutcomeUnknown
 			}
 		}
 	}
-	_, err = c.admissions.AdmitAction(ctx, ActionAdmissionRequest{TaskID: taskID, RunID: runID, Kind: kind, ActionKey: key, Attempt: attempt, LeaseOwner: owner, LeaseGeneration: generation, RequestHash: hash, IdempotentReplay: attempt > 1})
-	return err
+	admission, err := c.admissions.AdmitAction(ctx, ActionAdmissionRequest{TaskID: taskID, RunID: runID, Kind: kind, ActionKey: key, Attempt: attempt, LeaseOwner: owner, LeaseGeneration: generation, RequestHash: hash, IdempotentReplay: attempt > 1})
+	return admission, err
 }
 
 func (c *ResultChannelCoordinator) commitAdmitted(ctx context.Context, request workspace.DeveloperCommitRequest) (*workspace.DeveloperCommitResult, error) {
@@ -58,10 +58,18 @@ func (c *ResultChannelCoordinator) commitAdmitted(ctx context.Context, request w
 	if err != nil {
 		return nil, err
 	}
-	if err := c.admitGitAction(ctx, request.TaskID, request.RunID, model.ActionGitCommit, "commit-"+request.RunID, request.DeliveryOwner, request.DeliveryGeneration, hash); err != nil {
+	admission, err := c.admitGitAction(ctx, request.TaskID, request.RunID, model.ActionGitCommit, "commit-"+request.RunID, request.DeliveryOwner, request.DeliveryGeneration, hash)
+	if err != nil {
 		return nil, err
 	}
-	return c.finalizer.CommitDelivery(ctx, request)
+	result, err := c.finalizer.CommitDelivery(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.confirmGitCompleted(ctx, admission); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (c *ResultChannelCoordinator) pushAdmitted(ctx context.Context, request workspace.DeveloperPushRequest) (*workspace.DeveloperDelivery, error) {
@@ -71,8 +79,29 @@ func (c *ResultChannelCoordinator) pushAdmitted(ctx context.Context, request wor
 	if err != nil {
 		return nil, err
 	}
-	if err := c.admitGitAction(ctx, request.TaskID, request.RunID, model.ActionGitPush, "push-"+request.RunID, request.DeliveryOwner, request.DeliveryGeneration, hash); err != nil {
+	admission, err := c.admitGitAction(ctx, request.TaskID, request.RunID, model.ActionGitPush, "push-"+request.RunID, request.DeliveryOwner, request.DeliveryGeneration, hash)
+	if err != nil {
 		return nil, err
 	}
-	return c.finalizer.PushDelivery(ctx, request)
+	result, err := c.finalizer.PushDelivery(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.confirmGitCompleted(ctx, admission); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *ResultChannelCoordinator) confirmGitCompleted(ctx context.Context, admission *model.ActionAdmission) error {
+	if admission == nil {
+		return nil
+	}
+	receipts, ok := c.admissions.(interface {
+		ConfirmCompleted(context.Context, *model.ActionAdmission) error
+	})
+	if !ok {
+		return ErrStopUnavailable
+	}
+	return receipts.ConfirmCompleted(ctx, admission)
 }

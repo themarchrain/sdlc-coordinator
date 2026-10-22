@@ -14,7 +14,7 @@ import (
 
 // SchemaVersion 是本二进制期望的 schema 版本。变更 schema 的发布必须递增，
 // 并保证迁移函数幂等（多实例任意顺序启动都能收敛到同版本）。
-const SchemaVersion uint64 = 11
+const SchemaVersion uint64 = 12
 
 // migrationLockWaitSeconds 是等待跨实例迁移锁的上限；超过即报错退出，
 // 不允许无界等待（迁移是受控维护步骤）。

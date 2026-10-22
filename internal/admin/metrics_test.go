@@ -9,6 +9,12 @@ import (
 	"sdlc-coordinator/internal/model"
 )
 
+func TestInterruptedRunCountsAsCompleted(t *testing.T) {
+	if !isCompletedRunStatus(model.RunStatusInterrupted) {
+		t.Fatal("interrupted run excluded from completed sample")
+	}
+}
+
 func TestParseMetricsWindow(t *testing.T) {
 	for _, test := range []struct {
 		raw  string

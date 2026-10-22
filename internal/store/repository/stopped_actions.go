@@ -44,11 +44,12 @@ func (r *EffectRepository) RetryStoppedAware(ctx context.Context, key string) (*
 func (r *WritebackRepository) UpdateReconciledStoppedAware(ctx context.Context, writeback *model.Writeback, expected model.WritebackStatus) (bool, error) {
 	var applied bool
 	err := withLockedTask(ctx, r.db, writeback.TaskID, func(tx *gorm.DB, task *model.Task, _ time.Time) error {
-		if task.Status == model.TaskStatusInterrupted && writeback.Status == model.WritebackStatusPending {
-			writeback.Status, writeback.ErrorMessage = model.WritebackStatusSkipped, "task_interrupted"
-		} else if expected == model.WritebackStatusUnknown && writeback.Status == model.WritebackStatusPending {
+		if expected == model.WritebackStatusUnknown && writeback.Status == model.WritebackStatusPending {
 			writeback.Status, writeback.ErrorMessage = model.WritebackStatusUnknown, "remote absence observed; automatic resend disabled"
+		} else if task.Status == model.TaskStatusInterrupted && writeback.Status == model.WritebackStatusPending {
+			writeback.Status, writeback.ErrorMessage = model.WritebackStatusSkipped, "task_interrupted"
 		}
+
 		var err error
 		applied, err = NewWritebackRepository(tx).UpdateGuardedIfStatus(ctx, writeback, expected)
 		return err

@@ -197,6 +197,7 @@ func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, bef
 		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?) AND external_system = ?",
 			model.RunStatusSucceeded, "", before, staleBefore, "agent-runner").
 		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status = ? AND TRIM(COALESCE(ae.result_hash, '')) <> '' AND TRIM(COALESCE(ae.error_code, '')) = '' AND TRIM(COALESCE(ae.error_message, '')) = '')", model.AgentExecutionStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM stop_requests s WHERE s.run_id = runs.run_id)").
 		Where("EXISTS (SELECT 1 FROM result_submissions rs WHERE rs.run_id = runs.run_id AND rs.status = ? AND TRIM(COALESCE(rs.error_message, '')) = '')", model.ResultSubmissionStatusSucceeded).
 		Where("NOT EXISTS (SELECT 1 FROM writebacks wb WHERE wb.run_id = runs.run_id AND (wb.status IS NULL OR wb.status <> ?))", model.WritebackStatusSucceeded).
 		Where("NOT EXISTS (SELECT 1 FROM effects e WHERE e.run_id = runs.run_id AND (e.status IS NULL OR e.status NOT IN ?))", []model.EffectStatus{model.EffectStatusSucceeded, model.EffectStatusSkipped, model.EffectStatusDeliveryUnverified}).

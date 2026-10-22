@@ -91,13 +91,13 @@ func NewHTTPHandler(service *Service, options ...HTTPOption) http.Handler {
 		}
 		writeJSON(w, http.StatusAccepted, execution)
 	})
-	mux.HandleFunc("DELETE /api/v1/executions/{execution_id}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /api/v1/executions/{execution_id}", opts.authorizeInternal(func(w http.ResponseWriter, r *http.Request) {
 		if err := service.Delete(r.PathValue("execution_id")); err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	})
+	}))
 	return mux
 }
 

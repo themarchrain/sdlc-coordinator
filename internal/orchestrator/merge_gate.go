@@ -300,7 +300,8 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	if task.CurrentRunID != nil {
 		runID = *task.CurrentRunID
 	}
-	if _, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: task.TaskID, RunID: runID, Kind: model.ActionAutoMerge, ActionKey: task.TaskID, Attempt: 1}, lease); err != nil {
+	admission, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: task.TaskID, RunID: runID, Kind: model.ActionAutoMerge, ActionKey: task.TaskID, Attempt: 1}, lease)
+	if err != nil {
 		result.NotifyHuman = false
 		result.Transient = err
 		return result
@@ -318,12 +319,20 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 				result.Reasons = append(reasons, fmt.Sprintf("merge call was rejected but the platform reports the merge request merged at %s", result.MergedCommitSHA))
 				return result
 			}
+			if proofErr := o.confirmActionNotSent(ctx, admission); proofErr != nil {
+				result.Transient = proofErr
+				return result
+			}
 			return fallback(fmt.Sprintf("platform rejected the merge: %v", err))
 		}
 		result.Transient = fmt.Errorf("merge pull request: %w", err)
 		return result
 	}
 	if !mergeResult.Merged {
+		if proofErr := o.confirmActionNotSent(ctx, admission); proofErr != nil {
+			result.Transient = proofErr
+			return result
+		}
 		return fallback("platform returned an unmerged result")
 	}
 	result.Decision = MergeGateDecisionMerged

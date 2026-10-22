@@ -183,3 +183,45 @@ func TestCancellationPersistenceFailureCannotAcknowledge(t *testing.T) {
 		t.Fatalf("unpersisted cancellation acknowledged: %+v %v", ack, err)
 	}
 }
+
+func TestCancelledArtifactsRetainTombstoneAndCache(t *testing.T) {
+	root := t.TempDir()
+	p := &ignoresCancellationProvider{started: make(chan struct{}), release: make(chan struct{})}
+	service, err := runner.NewService(root, map[string]runner.Provider{"fake": p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := sampleRequest()
+	if _, err := service.Create(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	<-p.started
+	if _, err := service.CancelDurable(request.ExecutionID, runner.CancellationRequest{StopID: "stop", TaskID: request.TaskID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Delete(request.ExecutionID); !errors.Is(err, runner.ErrNotPurgeable) {
+		t.Fatalf("deleted active execution: %v", err)
+	}
+	close(p.release)
+	waitForStatus(t, service, request.ExecutionID, runner.StatusCancelled)
+	cache := filepath.Join(root, "shared-cache")
+	if err := os.WriteFile(cache, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Delete(request.ExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "executions", request.ExecutionID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("artifacts retained: %v", err)
+	}
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := runner.NewService(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.Create(context.Background(), request); !errors.Is(err, runner.ErrExecutionCancelled) {
+		t.Fatalf("tombstone lost: %v", err)
+	}
+}

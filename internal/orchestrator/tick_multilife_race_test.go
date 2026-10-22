@@ -199,7 +199,7 @@ func TestArtifactCleanupDualInstanceSinglePurge(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := store.Migrate(seed, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Artifact{}, &model.Writeback{}, &model.Effect{}); err != nil {
+	if err := store.Migrate(seed, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Artifact{}, &model.Writeback{}, &model.Effect{}, &model.StopRequest{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

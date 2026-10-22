@@ -123,7 +123,7 @@ func (r *StopRepository) FinishDelivery(ctx context.Context, id string, lease mo
 				return ErrInvalidStopRequest
 			}
 			values := map[string]any{"status": execution.Status, "result_hash": execution.ResultHash, "error_code": execution.ErrorCode, "error_message": execution.ErrorMessage, "started_at": execution.StartedAt, "finished_at": execution.FinishedAt, "last_observed_at": now, "updated_at": now}
-			if err := tx.Model(&model.AgentExecution{}).Where("execution_id = ? AND run_id = ?", stop.ExecutionID, stop.RunID).Updates(values).Error; err != nil {
+			if err := tx.Model(&model.AgentExecution{}).Where("execution_id = ? AND run_id = ?", stop.ExecutionID, stop.RunID).Where("status NOT IN ? OR status = ?", terminalExecutionStatuses(), execution.Status).Updates(values).Error; err != nil {
 				return err
 			}
 		}
@@ -143,7 +143,7 @@ func initializeStopDelivery(tx *gorm.DB, run *model.Run, execution *model.AgentE
 		if err := tx.Model(&model.ActionAdmission{}).Where("task_id = ? AND run_id = ? AND kind = ? AND not_sent_at IS NULL", stop.TaskID, run.RunID, model.ActionExecutionCreate).Count(&admitted).Error; err != nil {
 			return err
 		}
-		if admitted > 0 || run.ExternalSystem == "agent_runner" {
+		if admitted > 0 || run.ExternalSystem == "agent-runner" {
 			stop.ExecutionID, stop.RunnerEndpoint = run.RunID, run.RunnerEndpoint
 			if run.ExternalID != "" {
 				stop.ExecutionID = run.ExternalID

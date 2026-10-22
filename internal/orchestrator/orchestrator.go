@@ -1129,7 +1129,8 @@ func isTerminalRunStatus(status model.RunStatus) bool {
 	switch status {
 	case model.RunStatusSucceeded,
 		model.RunStatusFailed,
-		model.RunStatusBlocked:
+		model.RunStatusBlocked,
+		model.RunStatusInterrupted:
 		return true
 	default:
 		return false

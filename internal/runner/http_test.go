@@ -72,7 +72,7 @@ func TestHTTPHandlerDeletesSucceededExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	server := httptest.NewServer(runner.NewHTTPHandler(service))
+	server := httptest.NewServer(runner.NewHTTPHandler(service, runner.WithWorkspaceOperations(nil, "deployment")))
 	defer server.Close()
 
 	request := sampleRequest()
@@ -93,6 +93,7 @@ func TestHTTPHandlerDeletesSucceededExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deleteRequest.Header.Set("Authorization", "Bearer deployment")
 	response, err = http.DefaultClient.Do(deleteRequest)
 	if err != nil || response.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete succeeded execution: status=%v err=%v", statusCode(response), err)
@@ -103,6 +104,33 @@ func TestHTTPHandlerDeletesSucceededExecution(t *testing.T) {
 		t.Fatalf("repeat delete: status=%v err=%v", statusCode(response), err)
 	}
 	_ = response.Body.Close()
+}
+
+func TestHTTPArtifactDeletionRequiresInternalToken(t *testing.T) {
+	service, err := runner.NewService(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(runner.NewHTTPHandler(service, runner.WithWorkspaceOperations(nil, "deployment")))
+	defer server.Close()
+	for _, token := range []string{"", "wrong", "deployment"} {
+		request, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/v1/executions/absent", nil)
+		if token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := server.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := http.StatusUnauthorized
+		if token == "deployment" {
+			want = http.StatusNoContent
+		}
+		response.Body.Close()
+		if response.StatusCode != want {
+			t.Fatalf("token=%q status=%v want=%v", token, response.StatusCode, want)
+		}
+	}
 }
 
 func statusCode(response *http.Response) int {

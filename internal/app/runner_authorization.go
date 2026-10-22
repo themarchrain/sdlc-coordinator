@@ -99,6 +99,21 @@ func authorizeRunnerOperation(ctx context.Context, db *gorm.DB, request workspac
 		}
 		return workspaceproto.AuthorizationDecision{Authorized: true}, nil
 	case workspaceproto.KindCleanup:
+		stops := repository.NewStopRepository(db)
+		var stopCount int64
+		if err := db.WithContext(ctx).Model(&model.StopRequest{}).Where("run_id = ?", run.RunID).Count(&stopCount).Error; err != nil {
+			return workspaceproto.AuthorizationDecision{}, err
+		}
+		if stopCount != 0 || run.Status == model.RunStatusInterrupted || (current && task.Status == model.TaskStatusInterrupted) {
+			ready, err := stops.CleanupReady(ctx, run.RunID)
+			if err != nil {
+				return workspaceproto.AuthorizationDecision{}, err
+			}
+			if !ready {
+				return deny("stopped run has unresolved execution or external operations")
+			}
+			return workspaceproto.AuthorizationDecision{Authorized: true}, nil
+		}
 		// 清理只允许非在途工作区：run 已终态，或 run 已不再是当前 run
 		//（被接管/重试取代）。当前 run 仍在途时拒绝删除。
 		terminal := run.Status == model.RunStatusSucceeded || run.Status == model.RunStatusFailed || run.Status == model.RunStatusBlocked

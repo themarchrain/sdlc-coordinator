@@ -41,6 +41,15 @@ func (o *Orchestrator) cleanupExpiredArtifacts(ctx context.Context) []ArtifactCl
 		result := o.purgeSucceededRunArtifacts(ctx, run)
 		results = append(results, result)
 	}
+	if stops, ok := o.stops.(stoppedArtifactCleanupPort); ok {
+		stopped, err := stops.ListCleanupReady(ctx, now.Add(-artifactRetention), now.Add(-artifactPurgeLeaseWindow), artifactCleanupBatchSize)
+		if err != nil {
+			return append(results, ArtifactCleanupResult{Error: err.Error()})
+		}
+		for _, run := range stopped {
+			results = append(results, o.purgeStoppedRunArtifacts(ctx, stops, run))
+		}
+	}
 	return results
 }
 
@@ -106,17 +115,51 @@ func (o *Orchestrator) purgeSucceededRunArtifacts(ctx context.Context, run model
 	if !applied {
 		return result
 	}
+	return o.deleteRunArtifacts(ctx, run, result, claimID)
+}
+
+type stoppedArtifactCleanupPort interface {
+	ListCleanupReady(context.Context, time.Time, time.Time, int) ([]model.Run, error)
+	ClaimCleanup(context.Context, string, string, time.Time, time.Time) (bool, error)
+}
+
+func (o *Orchestrator) purgeStoppedRunArtifacts(ctx context.Context, stops stoppedArtifactCleanupPort, run model.Run) ArtifactCleanupResult {
+	result := ArtifactCleanupResult{RunID: run.RunID, ExecutionID: run.ExternalID}
+	execution, err := o.agentExecutions.GetByRunID(ctx, run.RunID)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		result.Error = err.Error()
+		return result
+	}
+	if execution != nil {
+		result.ExecutionID = execution.ExecutionID
+	}
+	now := o.now().UTC()
+	claimID := model.NewID("purge")
+	claimed, err := stops.ClaimCleanup(ctx, run.RunID, claimID, now, now.Add(-artifactPurgeLeaseWindow))
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if !claimed {
+		return result
+	}
+	return o.deleteRunArtifacts(ctx, run, result, claimID)
+}
+
+func (o *Orchestrator) deleteRunArtifacts(ctx context.Context, run model.Run, result ArtifactCleanupResult, claimID string) ArtifactCleanupResult {
 	if err := o.runWorkspaceCleaner.RemoveRunWorkspace(ctx, run.TaskID, run.RunID); err != nil {
 		result.Error = err.Error()
 		return result
 	}
 	var deleteErr error
-	if routed, ok := o.runnerArtifacts.(interface {
-		DeleteForRun(context.Context, string, string) error
-	}); ok {
-		deleteErr = routed.DeleteForRun(ctx, run.RunID, execution.ExecutionID)
-	} else {
-		deleteErr = o.runnerArtifacts.Delete(ctx, execution.ExecutionID)
+	if result.ExecutionID != "" {
+		if routed, ok := o.runnerArtifacts.(interface {
+			DeleteForRun(context.Context, string, string) error
+		}); ok {
+			deleteErr = routed.DeleteForRun(ctx, run.RunID, result.ExecutionID)
+		} else {
+			deleteErr = o.runnerArtifacts.Delete(ctx, result.ExecutionID)
+		}
 	}
 	if deleteErr != nil {
 		result.Error = deleteErr.Error()

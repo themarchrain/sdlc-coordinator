@@ -27,14 +27,16 @@ func (p *stopIntegrationProvider) Execute(ctx context.Context, _ runner.Provider
 }
 
 func TestTenantEngineStopUsesOriginalRunnerAndConverges(t *testing.T) {
-	tenantEngineStopIntegration(t, false)
+	for _, role := range []string{"DeveloperWorker", "TesterWorker", "ReviewerWorker"} {
+		t.Run(role, func(t *testing.T) { tenantEngineStopIntegration(t, false, role) })
+	}
 }
 
 func TestMySQLTwoCoordinatorsStopOriginalRunner(t *testing.T) {
-	tenantEngineStopIntegration(t, true)
+	tenantEngineStopIntegration(t, true, "DeveloperWorker")
 }
 
-func tenantEngineStopIntegration(t *testing.T, useMySQL bool) {
+func tenantEngineStopIntegration(t *testing.T, useMySQL bool, role string) {
 	provider := &stopIntegrationProvider{started: make(chan struct{})}
 	original, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": provider})
 	if err != nil {
@@ -42,7 +44,8 @@ func tenantEngineStopIntegration(t *testing.T, useMySQL bool) {
 	}
 	server := httptest.NewServer(runner.NewHTTPHandler(original, runner.WithWorkspaceOperations(nil, "test-token")))
 	defer server.Close()
-	wrong, err := runner.NewService(t.TempDir(), nil)
+	otherProvider := &stopIntegrationProvider{started: make(chan struct{})}
+	wrong, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": otherProvider})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,12 +64,22 @@ func tenantEngineStopIntegration(t *testing.T, useMySQL bool) {
 	if err := migrateBusinessStore(db); err != nil {
 		t.Fatal(err)
 	}
-	request := runner.CreateExecutionRequest{ExecutionID: "run-stop", TaskID: "task-stop", Role: "DeveloperWorker", WorkspacePath: t.TempDir(), PromptFile: "prompt.md", SchemaFile: "schema.json", Provider: runner.ProviderConfig{Name: "fake"}}
+	request := runner.CreateExecutionRequest{ExecutionID: "run-stop", TaskID: "task-stop", Role: role, WorkspacePath: t.TempDir(), PromptFile: "prompt.md", SchemaFile: "schema.json", Provider: runner.ProviderConfig{Name: "fake"}}
 	remote, err := original.Create(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	<-provider.started
+	if _, err := wrong.Create(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	<-otherProvider.started
+	defer func() {
+		_, _ = wrong.Cancel(request.ExecutionID)
+		waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		wrong.Shutdown(waitCtx)
+	}()
 	for _, row := range []any{&model.Task{TaskID: request.TaskID, DedupeKey: request.TaskID, Type: "develop_from_issue", Role: request.Role, Status: model.TaskStatusRunning, CurrentRunID: &request.ExecutionID}, &model.Run{RunID: request.ExecutionID, TaskID: request.TaskID, Status: model.RunStatusRunning, RunnerEndpoint: server.URL}, &model.AgentExecution{RunID: request.ExecutionID, ExecutionID: request.ExecutionID, RunnerEndpoint: server.URL, Provider: "fake", RequestHash: remote.RequestHash, Status: model.AgentExecutionStatusRunning}} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)
@@ -116,8 +129,8 @@ func tenantEngineStopIntegration(t *testing.T, useMySQL bool) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if _, err := wrong.Get(request.ExecutionID); err == nil {
-		t.Fatal("stop created work on fallback")
+	if other, err := wrong.Get(request.ExecutionID); err != nil || other.Status != runner.StatusRunning {
+		t.Fatalf("stop affected unrelated Runner execution: %+v %v", other, err)
 	}
 	ended, err := original.Get(request.ExecutionID)
 	if err != nil || ended.Status != runner.StatusCancelled {

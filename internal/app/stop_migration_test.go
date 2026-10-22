@@ -127,3 +127,31 @@ func TestCancellationMigrationPreservesUnknownConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCancellationMigrationPreservesUnknownGitCompletion(t *testing.T) {
+	db, err := store.Open("file:" + model.NewID("git_receipt_upgrade") + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	defer sqlDB.Close()
+	if err := store.Migrate(db, &store.SchemaMigration{}, &model.ActionAdmission{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn(&model.ActionAdmission{}, "completed_at"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("action_admissions").Create(map[string]any{"admission_id": "old-git", "task_id": "task", "run_id": "run", "kind": "git_push", "action_key": "push-run", "attempt": 1, "lease_owner": "original", "lease_generation": 3, "admitted_at": time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&store.SchemaMigration{Component: "business", Version: 11}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateBusinessStore(db); err != nil {
+		t.Fatal(err)
+	}
+	var got model.ActionAdmission
+	if err := db.Where("admission_id = ?", "old-git").First(&got).Error; err != nil || got.CompletedAt != nil || got.LeaseOwner != "original" {
+		t.Fatalf("invented completion: %+v %v", got, err)
+	}
+}

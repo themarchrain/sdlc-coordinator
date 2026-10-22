@@ -242,3 +242,35 @@ func TestStopRestartTakeover(t *testing.T) {
 		t.Fatalf("legacy confirmation was not rechecked: %+v", stored)
 	}
 }
+
+func TestStopRoundHasTotalNetworkBudget(t *testing.T) {
+	w, o, _ := reconcileStopWorld(t)
+	runID, taskID := "other-run", "other-task"
+	for _, row := range []any{&model.Task{TaskID: taskID, DedupeKey: taskID, Type: "test", Role: "TesterWorker", Status: model.TaskStatusRunning, CurrentRunID: &runID}, &model.Run{RunID: runID, TaskID: taskID, Status: model.RunStatusRunning}, &model.AgentExecution{RunID: runID, ExecutionID: runID, RunnerEndpoint: "runner-a", Status: model.AgentExecutionStatusRunning, Provider: "fake", RequestHash: "hash"}} {
+		if err := w.db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repository.NewStopRepository(w.db).Stop(context.Background(), repository.StopTarget{TaskID: taskID}, "admin", "", 3); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(ctx context.Context, _ string, _ runner.CancellationRequest) (*runner.CancellationAck, error) {
+			calls++
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := o.ReconcileStops(ctx, 20)
+	if err != nil || time.Since(start) > 6*time.Second || calls != 1 {
+		t.Fatalf("stop batch blocked scheduler: elapsed=%v calls=%d err=%v", time.Since(start), calls, err)
+	}
+	var confirmed int64
+	if err := w.db.Model(&model.StopRequest{}).Where("delivery_status = ?", model.StopDeliveryConfirmed).Count(&confirmed).Error; err != nil || confirmed != 0 {
+		t.Fatalf("false confirmation=%v %v", confirmed, err)
+	}
+}

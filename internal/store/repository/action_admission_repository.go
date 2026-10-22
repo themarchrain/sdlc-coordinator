@@ -32,6 +32,22 @@ type ActionAdmissionRequest struct {
 
 type ActionAdmissionRepository struct{ db *gorm.DB }
 
+func (r *ActionAdmissionRepository) ConfirmCompleted(ctx context.Context, admission *model.ActionAdmission) error {
+	if admission == nil || (admission.Kind != model.ActionGitCommit && admission.Kind != model.ActionGitPush) {
+		return ErrInvalidActionAdmission
+	}
+	return withLockedTask(ctx, r.db, admission.TaskID, func(tx *gorm.DB, _ *model.Task, now time.Time) error {
+		result := tx.Model(&model.ActionAdmission{}).Where("admission_id = ? AND task_id = ? AND run_id = ? AND kind = ? AND lease_owner = ? AND lease_generation = ? AND not_sent_at IS NULL", admission.AdmissionID, admission.TaskID, admission.RunID, admission.Kind, admission.LeaseOwner, admission.LeaseGeneration).Update("completed_at", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrActionLeaseLost
+		}
+		return nil
+	})
+}
+
 func NewActionAdmissionRepository(db *gorm.DB) *ActionAdmissionRepository {
 	return &ActionAdmissionRepository{db: db}
 }

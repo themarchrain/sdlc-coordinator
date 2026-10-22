@@ -54,7 +54,7 @@ func TestAgentExecutionRepositoryPersistsRunnerProjection(t *testing.T) {
 		t.Fatalf("update projection: %v", err)
 	}
 	updated, err := repo.GetByRunID(ctx, execution.RunID)
-	if err != nil || updated.ErrorCode != "provider_failed" || updated.ErrorMessage != "provider exited" {
+	if err != nil || updated.Status != model.AgentExecutionStatusSucceeded || updated.ErrorCode != "" || updated.ErrorMessage != "" {
 		t.Fatalf("unexpected updated projection: projection=%#v err=%v", updated, err)
 	}
 }

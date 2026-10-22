@@ -63,7 +63,7 @@ func TestStoppedUnknownAbsentDoesNotRequeue(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, _ := orch.writebacks.GetByDedupeKey(ctx, writeback.DedupeKey)
-	if stored.Status != model.WritebackStatusSkipped || backend.reconcileCalls != 1 || backend.createIssueCalls != 0 {
+	if stored.Status != model.WritebackStatusUnknown || backend.reconcileCalls != 1 || backend.createIssueCalls != 0 {
 		t.Fatalf("stopped absent outcome requeued: record=%+v reads=%d sends=%d", stored, backend.reconcileCalls, backend.createIssueCalls)
 	}
 }
@@ -184,5 +184,41 @@ func TestLostWritebackRightDoesNotPublishLateFailure(t *testing.T) {
 	stored, _ := orch.writebacks.GetByDedupeKey(context.Background(), writebacks[0].DedupeKey)
 	if stored.Status != model.WritebackStatusSucceeded || !errors.Is(err, ErrWritebackRequiresReconciliation) || backend.createIssueCalls != 0 {
 		t.Fatalf("stale worker overwrote winning outcome: status=%s calls=%d err=%v", stored.Status, backend.createIssueCalls, err)
+	}
+}
+
+func TestAutoMergeRejectionRecordsNonDeliveryProof(t *testing.T) {
+	db, orch, _, _ := externalAdmissionFixture(t)
+	if err := store.Migrate(db, &model.MergeGateAudit{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tasks := repository.NewTaskRepository(db)
+	artifacts := repository.NewArtifactRepository(db)
+	verifier := gateFixture(t, ctx, tasks, artifacts)
+	runID := "verify-run"
+	if err := db.Create(&model.Run{RunID: runID, TaskID: verifier.TaskID, WorkerRole: verifier.Role, Status: model.RunStatusSucceeded}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(verifier).Update("current_run_id", runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA, mergeErr: codehost.ErrMergeHeadMismatch}
+	orch.mergeAudits = repository.NewMergeGateAuditRepository(db)
+	orch.verificationArtifacts = artifacts
+	orch.autoMergeEnabled = func(context.Context) bool { return true }
+	orch.repositoryLookup = &gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{RepositoryID: fixtureRepositoryID, Provider: "github", PathWithNamespace: "group/project", Status: registeredrepo.StatusEnabled}}
+	orch.mergeGateClients = func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
+		return client, client, nil
+	}
+	if _, err := orch.RunAutoMergeGate(ctx, 20); err != nil {
+		t.Fatal(err)
+	}
+	if client.mergeCalls != 1 {
+		t.Fatalf("merge calls=%d", client.mergeCalls)
+	}
+	var admission model.ActionAdmission
+	if err := db.Where("task_id = ? AND kind = ?", verifier.TaskID, model.ActionAutoMerge).First(&admission).Error; err != nil || admission.NotSentAt == nil {
+		t.Fatalf("known rejected merge left unknown: %+v %v", admission, err)
 	}
 }

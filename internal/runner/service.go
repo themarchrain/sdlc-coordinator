@@ -365,14 +365,22 @@ func (s *Service) Delete(executionID string) error {
 	s.mu.Lock()
 	runtime := s.runtime[executionID]
 	if runtime != nil {
-		if runtime.execution.Status != StatusSucceeded {
+		_, stopped := s.cancellations[executionID]
+		if !runtime.exited || (runtime.execution.Status != StatusSucceeded && !(stopped && (runtime.execution.Status == StatusCancelled || runtime.execution.Status == StatusFailed))) {
 			s.mu.Unlock()
 			return ErrNotPurgeable
 		}
-		delete(s.runtime, executionID)
 		root := s.executionRoot(executionID)
 		s.mu.Unlock()
-		return os.RemoveAll(root)
+		if err := os.RemoveAll(root); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		if s.runtime[executionID] == runtime {
+			delete(s.runtime, executionID)
+		}
+		s.mu.Unlock()
+		return nil
 	}
 	root := s.executionRoot(executionID)
 	s.mu.Unlock()

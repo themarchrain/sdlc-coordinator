@@ -88,6 +88,9 @@ func (c *Client) Delete(ctx context.Context, executionID string) error {
 	if err != nil {
 		return err
 	}
+	if c.internalToken != "" {
+		request.Header.Set("Authorization", "Bearer "+c.internalToken)
+	}
 	response, err := c.http.Do(request)
 	if err != nil {
 		return err

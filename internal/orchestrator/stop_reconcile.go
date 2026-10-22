@@ -36,18 +36,23 @@ func (o *Orchestrator) ReconcileStops(ctx context.Context, limit int) error {
 	if err != nil {
 		return err
 	}
+	roundCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	for _, row := range rows {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := o.reconcileStop(ctx, repo, row); err != nil && !errors.Is(err, repository.ErrActionLeaseLost) && !errors.Is(err, repository.ErrActionAlreadyAdmitted) {
+		if roundCtx.Err() != nil {
+			break
+		}
+		if err := o.reconcileStop(ctx, roundCtx, repo, row); err != nil && !errors.Is(err, repository.ErrActionLeaseLost) && !errors.Is(err, repository.ErrActionAlreadyAdmitted) {
 			return err
 		}
 	}
 	return nil
 }
 
-func (o *Orchestrator) reconcileStop(ctx context.Context, repo stopDeliveryRepository, row model.StopRequest) error {
+func (o *Orchestrator) reconcileStop(ctx, roundCtx context.Context, repo stopDeliveryRepository, row model.StopRequest) error {
 	lease, won, err := o.acquireWorkItemLease(ctx, "stop:"+row.StopID, "stop-delivery", 15*time.Second)
 	if err != nil || !won {
 		return err
@@ -70,7 +75,7 @@ func (o *Orchestrator) reconcileStop(ctx context.Context, repo stopDeliveryRepos
 			err = ErrStopUnavailable
 		}
 		if err == nil {
-			requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			requestCtx, cancel := context.WithTimeout(roundCtx, 5*time.Second)
 			ack, err = client.CancelDurable(requestCtx, stop.ExecutionID, runner.CancellationRequest{StopID: stop.StopID, TaskID: stop.TaskID})
 			cancel()
 		}
