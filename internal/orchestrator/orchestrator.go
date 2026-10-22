@@ -173,6 +173,7 @@ type ResultSubmissionRepository interface {
 }
 
 type Orchestrator struct {
+	actionAdmissions               ActionAdmissionPort
 	tickMu                         sync.Mutex
 	mergeGateMu                    sync.Mutex
 	mergeGateCursor                uint
