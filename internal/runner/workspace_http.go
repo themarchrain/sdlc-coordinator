@@ -114,9 +114,19 @@ func registerWorkspaceRoutes(mux *http.ServeMux, options *httpOptions) {
 // 令牌不匹配 401（常量时间比较）；业务 token / Git 凭据不参与本层。
 func (o *httpOptions) authorize(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if o.workspaceOps == nil || o.internalToken == "" {
+		if o.workspaceOps == nil {
 			writeError(w, http.StatusServiceUnavailable, "channel_closed",
 				errors.New("runner internal workspace channel is not configured"))
+			return
+		}
+		o.authorizeInternal(next)(w, r)
+	}
+}
+
+func (o *httpOptions) authorizeInternal(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if o.internalToken == "" {
+			writeError(w, http.StatusServiceUnavailable, "channel_closed", errors.New("runner internal token is not configured"))
 			return
 		}
 		const bearerPrefix = "Bearer "

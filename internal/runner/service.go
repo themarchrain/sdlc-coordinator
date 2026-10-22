@@ -22,12 +22,13 @@ import (
 var executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 type Service struct {
-	mu        sync.Mutex
-	dataRoot  string
-	providers map[string]Provider
-	runtime   map[string]*executionRuntime
-	now       func() time.Time
-	logger    *zap.Logger
+	mu            sync.Mutex
+	dataRoot      string
+	providers     map[string]Provider
+	runtime       map[string]*executionRuntime
+	cancellations map[string]cancellationRecord
+	now           func() time.Time
+	logger        *zap.Logger
 }
 
 // Option 在构造期调整 Service 装配,只在 NewService 内应用一次。
@@ -50,6 +51,7 @@ type executionRuntime struct {
 	nextEventSeq int64
 	result       *Result
 	cancel       context.CancelFunc
+	exited       bool
 }
 
 func NewService(dataRoot string, providers map[string]Provider, options ...Option) (*Service, error) {
@@ -81,6 +83,9 @@ func NewService(dataRoot string, providers map[string]Provider, options ...Optio
 		// Nop 意味着漏传时丢的是日志不是行为。
 		service.logger = zap.NewNop()
 	}
+	if err := service.loadCancellations(); err != nil {
+		return nil, err
+	}
 	if err := service.loadDurableExecutions(); err != nil {
 		return nil, err
 	}
@@ -93,6 +98,13 @@ func (s *Service) Create(_ context.Context, request CreateExecutionRequest) (*Ex
 		return nil, err
 	}
 	s.mu.Lock()
+	if stop, ok := s.cancellations[normalized.ExecutionID]; ok {
+		s.mu.Unlock()
+		if stop.TaskID != normalized.TaskID {
+			return nil, ErrConflict
+		}
+		return nil, ErrExecutionCancelled
+	}
 	if existing, ok := s.runtime[normalized.ExecutionID]; ok {
 		if existing.execution.RequestHash != hash {
 			s.mu.Unlock()
@@ -139,6 +151,13 @@ func (s *Service) Create(_ context.Context, request CreateExecutionRequest) (*Ex
 }
 
 func (s *Service) run(ctx context.Context, provider Provider, runtime *executionRuntime) {
+	s.mu.Lock()
+	_, stopped := s.cancellations[runtime.execution.ExecutionID]
+	s.mu.Unlock()
+	if stopped {
+		s.finishFailure(runtime, StatusCancelled, "cancelled", "execution cancelled")
+		return
+	}
 	executionCtx := ctx
 	cancel := func() {}
 	if runtime.request.TimeoutSeconds > 0 {
@@ -182,12 +201,19 @@ func (s *Service) run(ctx context.Context, provider Provider, runtime *execution
 	structuredOutput := compactStructuredOutput(raw)
 	resultHash := hashBytes(structuredOutput)
 	result := &Result{ExecutionID: request.ExecutionID, ResultHash: resultHash, StructuredOutput: structuredOutput, CompletedAt: completedAt}
+	s.mu.Lock()
+	if _, stopped := s.cancellations[request.ExecutionID]; stopped {
+		s.mu.Unlock()
+		s.finishFailure(runtime, StatusCancelled, "cancelled", "execution cancelled")
+		return
+	}
 	if err := writeJSONAtomic(filepath.Join(s.executionRoot(request.ExecutionID), "structured-result.json"), result); err != nil {
+		s.mu.Unlock()
 		s.finishFailure(runtime, StatusFailed, "result_persistence_failed", err.Error())
 		return
 	}
-	s.mu.Lock()
 	runtime.result = result
+	runtime.exited = true
 	runtime.execution.ResultHash = resultHash
 	runtime.execution.Status = StatusSucceeded
 	runtime.execution.FinishedAt = &completedAt
@@ -210,6 +236,10 @@ func (s *Service) finishFailure(runtime *executionRuntime, status Status, code, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
+	if _, stopped := s.cancellations[runtime.execution.ExecutionID]; stopped {
+		status, code, message = StatusCancelled, "cancelled", "execution cancelled"
+	}
+	runtime.exited = true
 	runtime.execution.Status = status
 	runtime.execution.ErrorCode = code
 	runtime.execution.ErrorMessage = strings.TrimSpace(message)

@@ -125,6 +125,7 @@ func (s *Service) loadDurableExecution(directoryID string) (*executionRuntime, e
 	default:
 		return nil, fmt.Errorf("unsupported durable execution status %q", execution.Status)
 	}
+	runtime.exited = runtime.execution.Status != StatusInterrupted || runtime.execution.ErrorCode != "runner_restarted"
 	return runtime, nil
 }
 

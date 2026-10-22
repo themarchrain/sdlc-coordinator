@@ -13,6 +13,22 @@ func NewHTTPHandler(service *Service, options ...HTTPOption) http.Handler {
 	opts := newHTTPOptions(options)
 	mux := http.NewServeMux()
 	registerWorkspaceRoutes(mux, opts)
+	mux.HandleFunc("POST /internal/executions/{execution_id}/cancel", opts.authorizeInternal(func(w http.ResponseWriter, r *http.Request) {
+		var request CancellationRequest
+		if !decodeWorkspaceRequest(w, r, &request) {
+			return
+		}
+		ack, err := service.CancelDurable(r.PathValue("execution_id"), request)
+		if err != nil {
+			if errors.Is(err, ErrConflict) {
+				writeServiceError(w, err)
+			} else {
+				writeError(w, http.StatusServiceUnavailable, "cancel_not_persisted", err)
+			}
+			return
+		}
+		writeJSON(w, http.StatusAccepted, ack)
+	}))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
@@ -102,6 +118,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", err)
 	case errors.Is(err, ErrConflict):
 		writeError(w, http.StatusConflict, "request_conflict", err)
+	case errors.Is(err, ErrExecutionCancelled):
+		writeError(w, http.StatusConflict, "execution_cancelled", err)
 	case errors.Is(err, ErrNotPurgeable):
 		writeError(w, http.StatusConflict, "not_purgeable", err)
 	case errors.Is(err, ErrNotReady):
