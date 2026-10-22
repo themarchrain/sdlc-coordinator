@@ -25,7 +25,7 @@ func stoppedResultFixture(t *testing.T) (*gorm.DB, *Orchestrator, *model.Task, *
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}, &model.Dependency{}, &model.Artifact{}, &model.Effect{}); err != nil {
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}, &model.ActionAdmission{}, &model.Dependency{}, &model.Artifact{}, &model.Effect{}); err != nil {
 		t.Fatal(err)
 	}
 	runID := "run"

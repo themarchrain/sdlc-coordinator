@@ -1,0 +1,244 @@
+package orchestrator
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+	"time"
+
+	"sdlc-coordinator/internal/model"
+	"sdlc-coordinator/internal/runner"
+	"sdlc-coordinator/internal/store/repository"
+)
+
+type stopRunnerFunc func(context.Context, string, runner.CancellationRequest) (*runner.CancellationAck, error)
+
+func (f stopRunnerFunc) CancelDurable(ctx context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+	return f(ctx, id, r)
+}
+
+func reconcileStopWorld(t *testing.T) (*intentWorld, *Orchestrator, *model.StopRequest) {
+	t.Helper()
+	w := admissionIntentWorld(t)
+	hash, _ := runner.RequestHash(w.request)
+	if _, err := w.coord.persistIntent(context.Background(), w.run, w.request, "runner-a", hash); err != nil {
+		t.Fatal(err)
+	}
+	stops := repository.NewStopRepository(w.db)
+	decision, err := stops.Stop(context.Background(), repository.StopTarget{TaskID: w.task.TaskID}, "admin", "", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(w.tasks, w.runs, WithStopRepository(stops), WithWorkItemLeases(repository.NewWorkItemLeaseRepository(w.db)), WithAgentExecutionLookup(w.executions))
+	return w, o, decision.Stop
+}
+
+func TestStopUsesPinnedRunnerOnly(t *testing.T) {
+	w, o, stop := reconcileStopWorld(t)
+	calls := 0
+	o.stopRunnerResolver = func(endpoint string) (StopRunnerClient, error) {
+		if endpoint != "runner-a" {
+			t.Fatalf("unfixed target: %s", endpoint)
+		}
+		return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			calls++
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	if err := o.ReconcileStops(context.Background(), 20); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.StopRequest
+	if err := w.db.Where("stop_id = ?", stop.StopID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || stored.DeliveryStatus != model.StopDeliveryConfirmed || stored.ConfirmationKind != model.StopConfirmationCreateBlocked {
+		t.Fatalf("fixed cancellation not converged: calls=%d stop=%+v", calls, stored)
+	}
+	result, err := o.StopTask(context.Background(), w.task.TaskID, StopActor{UserID: "admin"}, "")
+	if err != nil || result.ExitConfirmed {
+		t.Fatalf("tombstone falsely claimed process exit: %+v %v", result, err)
+	}
+}
+
+func TestStopLostAckRetriesSameDecision(t *testing.T) {
+	w, o, stop := reconcileStopWorld(t)
+	calls := 0
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			calls++
+			if r.StopID != stop.StopID || id != stop.ExecutionID {
+				t.Fatal("retry changed identity")
+			}
+			if calls == 1 {
+				return nil, errors.New("ack lost")
+			}
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	for i := 0; i < 2; i++ {
+		if err := o.ReconcileStops(context.Background(), 20); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.db.Model(&model.StopRequest{}).Where("stop_id = ?", stop.StopID).Update("next_attempt_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stored model.StopRequest
+	w.db.Where("stop_id = ?", stop.StopID).First(&stored)
+	if calls != 2 || stored.ConfirmationKind != model.StopConfirmationCreateBlocked {
+		t.Fatalf("retry did not converge: calls=%d stop=%+v", calls, stored)
+	}
+}
+
+func TestLegacyRunner404IsNotConfirmation(t *testing.T) {
+	w, o, stop := reconcileStopWorld(t)
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(context.Context, string, runner.CancellationRequest) (*runner.CancellationAck, error) {
+			return nil, &runner.HTTPError{StatusCode: 404}
+		}), nil
+	}
+	if err := o.ReconcileStops(context.Background(), 20); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.StopRequest
+	w.db.Where("stop_id = ?", stop.StopID).First(&stored)
+	if stored.DeliveryStatus == model.StopDeliveryConfirmed || stored.ConfirmationKind != "" || stored.AttemptCount != 1 {
+		t.Fatalf("404 fabricated proof: %+v", stored)
+	}
+}
+
+func TestExitConfirmationRequiresMatchingRunnerEvidence(t *testing.T) {
+	for _, valid := range []bool{true, false} {
+		t.Run(fmt.Sprint(valid), func(t *testing.T) {
+			w, o, stop := reconcileStopWorld(t)
+			o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+				return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+					if !valid {
+						id = "wrong-execution"
+					}
+					return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true, ExecutionPresent: true, ExitConfirmed: true, Execution: &runner.Execution{ExecutionID: id, TaskID: r.TaskID, RequestHash: stopHash(w), Status: runner.StatusCancelled, FinishedAt: ptrTime(time.Now())}}, nil
+				}), nil
+			}
+			if err := o.ReconcileStops(context.Background(), 20); err != nil {
+				t.Fatal(err)
+			}
+			var stored model.StopRequest
+			w.db.Where("stop_id = ?", stop.StopID).First(&stored)
+			if (stored.ConfirmationKind == model.StopConfirmationExecutionExited) != valid {
+				t.Fatalf("bad evidence decision: %+v", stored)
+			}
+		})
+	}
+}
+
+func stopHash(w *intentWorld) string     { hash, _ := runner.RequestHash(w.request); return hash }
+func ptrTime(value time.Time) *time.Time { return &value }
+
+func TestStopTakeoverRejectsStaleAck(t *testing.T) {
+	w, o, stop := reconcileStopWorld(t)
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			if err := w.db.Model(&model.WorkItemLease{}).Where("scope = ?", "stop:"+stop.StopID).Update("lease_until", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+				t.Fatal(err)
+			}
+			_, won, err := repository.NewWorkItemLeaseRepository(w.db).Acquire(context.Background(), "stop:"+stop.StopID, "other-coordinator", "stop-delivery", time.Minute)
+			if err != nil || !won {
+				t.Fatalf("takeover: %v", err)
+			}
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	if err := o.ReconcileStops(context.Background(), 20); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.StopRequest
+	w.db.Where("stop_id = ?", stop.StopID).First(&stored)
+	if stored.ConfirmationKind != "" || stored.DeliveryStatus == model.StopDeliveryConfirmed {
+		t.Fatalf("stale owner wrote confirmation: %+v", stored)
+	}
+}
+
+func TestStopWakeSurvivesBrowserCancel(t *testing.T) {
+	w, o, _ := reconcileStopWorld(t)
+	called, release := make(chan struct{}), make(chan struct{})
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(ctx context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			close(called)
+			<-release
+			if ctx.Err() != nil {
+				t.Errorf("browser cancelled reconciliation: %v", ctx.Err())
+			}
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := o.StopTask(ctx, w.task.TaskID, StopActor{UserID: "admin"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("wake missing")
+	}
+	close(release)
+	o.stopWakeMu.Lock()
+	o.stopWakeMu.Unlock()
+}
+
+func TestStopBatchBounded(t *testing.T) {
+	w, o, _ := reconcileStopWorld(t)
+	for i := 0; i < 24; i++ {
+		runID, taskID := fmt.Sprintf("run-%d", i), fmt.Sprintf("task-%d", i)
+		for _, row := range []any{&model.Task{TaskID: taskID, DedupeKey: taskID, Type: "test", Role: "TesterWorker", Status: model.TaskStatusRunning, CurrentRunID: &runID}, &model.Run{RunID: runID, TaskID: taskID, Status: model.RunStatusRunning}, &model.AgentExecution{RunID: runID, ExecutionID: runID, RunnerEndpoint: "runner-a", Status: model.AgentExecutionStatusDispatching, Provider: "fake", RequestHash: "hash"}} {
+			if err := w.db.Create(row).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := repository.NewStopRepository(w.db).Stop(context.Background(), repository.StopTarget{TaskID: taskID}, "admin", "", 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := 0
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			calls++
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	if err := o.ReconcileStops(context.Background(), 100); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 20 {
+		t.Fatalf("batch unbounded or lost work: %d", calls)
+	}
+	if err := o.ReconcileStops(context.Background(), 20); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 25 {
+		t.Fatalf("remaining work lost: %d", calls)
+	}
+}
+
+func TestStopRestartTakeover(t *testing.T) {
+	w, o, stop := reconcileStopWorld(t)
+	if err := w.db.Model(&model.StopRequest{}).Where("stop_id = ?", stop.StopID).Updates(map[string]any{"delivery_status": model.StopDeliveryConfirmed, "confirmation_kind": "", "confirmed_at": time.Now().UTC(), "next_attempt_at": nil}).Error; err != nil {
+		t.Fatal(err)
+	}
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	if err := o.ReconcileStops(context.Background(), 20); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.StopRequest
+	w.db.Where("stop_id = ?", stop.StopID).First(&stored)
+	if stored.ConfirmationKind != model.StopConfirmationCreateBlocked {
+		t.Fatalf("legacy confirmation was not rechecked: %+v", stored)
+	}
+}

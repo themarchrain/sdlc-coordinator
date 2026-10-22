@@ -18,7 +18,7 @@ func TestStoppedGitAuthorizationDenied(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.StopRequest{}, &model.ResultSubmission{}, &model.WorkItemLease{}); err != nil {
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.StopRequest{}, &model.ActionAdmission{}, &model.ResultSubmission{}, &model.WorkItemLease{}); err != nil {
 		t.Fatal(err)
 	}
 	runID := "run"

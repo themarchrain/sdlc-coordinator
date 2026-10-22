@@ -92,6 +92,9 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 	}
 	defer o.tickMu.Unlock()
 	result := &TickResult{}
+	if err := o.ReconcileStops(ctx, 20); err != nil {
+		return nil, fmt.Errorf("reconcile task stops: %w", err)
+	}
 
 	pollRun := func(run model.Run) {
 		var runnerResult *ReviewerRunnerReconcileResult

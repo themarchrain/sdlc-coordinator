@@ -76,12 +76,8 @@ func (r *StopRepository) Stop(ctx context.Context, target StopTarget, requestedB
 		if task.CurrentRunID != nil {
 			stop.RunID = *task.CurrentRunID
 		}
-		if execution != nil {
-			stop.ExecutionID, stop.RunnerEndpoint = execution.ExecutionID, execution.RunnerEndpoint
-			if stop.RunnerEndpoint == "" && run != nil {
-				stop.RunnerEndpoint = run.RunnerEndpoint
-			}
-			stop.DeliveryStatus, stop.ConfirmedAt, stop.NextAttemptAt = model.StopDeliveryPending, nil, &now
+		if err := initializeStopDelivery(tx, run, execution, stop, now); err != nil {
+			return err
 		}
 		if err := tx.Create(stop).Error; err != nil {
 			return err

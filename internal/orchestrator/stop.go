@@ -14,21 +14,22 @@ var ErrStopUnavailable = errors.New("task stop unavailable")
 type StopActor struct{ UserID string }
 
 type StopResult struct {
-	StopID          string                     `json:"stop_id"`
-	Scope           model.StopScope            `json:"scope"`
-	TaskID          string                     `json:"task_id"`
-	RunID           string                     `json:"run_id,omitempty"`
-	ExecutionID     string                     `json:"execution_id,omitempty"`
-	TaskStatus      model.TaskStatus           `json:"task_status"`
-	RunStatus       model.RunStatus            `json:"run_status,omitempty"`
-	ExecutionStatus model.AgentExecutionStatus `json:"execution_status,omitempty"`
-	DeliveryStatus  model.StopDeliveryStatus   `json:"delivery_status"`
-	ExitConfirmed   bool                       `json:"exit_confirmed"`
-	RequestedBy     string                     `json:"requested_by"`
-	RequestedAt     time.Time                  `json:"requested_at"`
-	ReasonCode      string                     `json:"reason_code"`
-	Reason          string                     `json:"reason,omitempty"`
-	ConfirmedAt     *time.Time                 `json:"confirmed_at,omitempty"`
+	StopID           string                     `json:"stop_id"`
+	Scope            model.StopScope            `json:"scope"`
+	TaskID           string                     `json:"task_id"`
+	RunID            string                     `json:"run_id,omitempty"`
+	ExecutionID      string                     `json:"execution_id,omitempty"`
+	TaskStatus       model.TaskStatus           `json:"task_status"`
+	RunStatus        model.RunStatus            `json:"run_status,omitempty"`
+	ExecutionStatus  model.AgentExecutionStatus `json:"execution_status,omitempty"`
+	DeliveryStatus   model.StopDeliveryStatus   `json:"delivery_status"`
+	ExitConfirmed    bool                       `json:"exit_confirmed"`
+	ConfirmationKind model.StopConfirmationKind `json:"confirmation_kind,omitempty"`
+	RequestedBy      string                     `json:"requested_by"`
+	RequestedAt      time.Time                  `json:"requested_at"`
+	ReasonCode       string                     `json:"reason_code"`
+	Reason           string                     `json:"reason,omitempty"`
+	ConfirmedAt      *time.Time                 `json:"confirmed_at,omitempty"`
 }
 
 type StopRepositoryPort interface {
@@ -62,7 +63,7 @@ func (o *Orchestrator) stop(ctx context.Context, target repository.StopTarget, a
 	stop := decision.Stop
 	result := &StopResult{
 		StopID: stop.StopID, Scope: stop.Scope, TaskID: stop.TaskID, RunID: stop.RunID, ExecutionID: stop.ExecutionID,
-		TaskStatus: decision.Task.Status, DeliveryStatus: stop.DeliveryStatus, ExitConfirmed: stop.DeliveryStatus == model.StopDeliveryConfirmed,
+		TaskStatus: decision.Task.Status, DeliveryStatus: stop.DeliveryStatus, ExitConfirmed: stop.ConfirmationKind == model.StopConfirmationExecutionExited, ConfirmationKind: stop.ConfirmationKind,
 		RequestedBy: stop.RequestedBy, RequestedAt: stop.RequestedAt, ReasonCode: stop.ReasonCode, Reason: stop.Reason, ConfirmedAt: stop.ConfirmedAt,
 	}
 	if decision.Run != nil {
@@ -71,5 +72,6 @@ func (o *Orchestrator) stop(ctx context.Context, target repository.StopTarget, a
 	if decision.Execution != nil {
 		result.ExecutionStatus = decision.Execution.Status
 	}
+	o.WakeStopReconciliation()
 	return result, nil
 }

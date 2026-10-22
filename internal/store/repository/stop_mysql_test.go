@@ -25,7 +25,7 @@ func TestMySQLStopAndStartArbitration(t *testing.T) {
 			dsn := storetest.NewDatabase(t, admin, "stop_start")
 			first, firstID := mysqlLockSession(t, dsn)
 			second, secondID := mysqlLockSession(t, dsn)
-			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}); err != nil {
+			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}, &model.ActionAdmission{}); err != nil {
 				t.Fatal(err)
 			}
 			task := &model.Task{TaskID: "arbitrate", DedupeKey: "arbitrate", Type: "develop_from_issue", Role: "DeveloperWorker", Status: model.TaskStatusPending}
@@ -128,7 +128,7 @@ func TestMySQLStopAndRunnerRepinArbitration(t *testing.T) {
 			dsn := storetest.NewDatabase(t, admin, "stop_repin")
 			first, firstID := mysqlLockSession(t, dsn)
 			second, secondID := mysqlLockSession(t, dsn)
-			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}); err != nil {
+			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.StopRequest{}, &model.ActionAdmission{}); err != nil {
 				t.Fatal(err)
 			}
 			task := &model.Task{TaskID: "repin", DedupeKey: "repin", Type: "develop_from_issue", Role: "DeveloperWorker", Status: model.TaskStatusRunning}

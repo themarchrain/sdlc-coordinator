@@ -25,7 +25,7 @@ func TestMySQLStopAndResultFinalizationArbitration(t *testing.T) {
 			dsn := storetest.NewDatabase(t, admin, "stop_result")
 			first, firstID := mysqlLockSession(t, dsn)
 			second, secondID := mysqlLockSession(t, dsn)
-			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.StopRequest{}, &model.ResultSubmission{}, &model.Dependency{}); err != nil {
+			if err := store.Migrate(first, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.StopRequest{}, &model.ActionAdmission{}, &model.ResultSubmission{}, &model.Dependency{}); err != nil {
 				t.Fatal(err)
 			}
 			runID := "current"

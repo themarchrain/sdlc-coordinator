@@ -93,3 +93,37 @@ func TestCancellationMigrationAddsNonDeliveryProof(t *testing.T) {
 		t.Fatalf("migration invented non-delivery or changed history: %+v err=%v", previous, err)
 	}
 }
+
+func TestCancellationMigrationPreservesUnknownConfirmation(t *testing.T) {
+	db, err := store.Open("file:" + model.NewID("confirmation_upgrade") + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	defer sqlDB.Close()
+	if err := store.Migrate(db, &store.SchemaMigration{}, &model.StopRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn(&model.StopRequest{}, "confirmation_kind"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("stop_requests").Create(map[string]any{"stop_id": "old-stop", "dedupe_key": "task:old", "scope": "task", "task_id": "old", "requested_by": "admin", "requested_at": time.Now().UTC(), "reason_code": "manual_stop", "delivery_status": "confirmed", "attempt_count": 0}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&store.SchemaMigration{Component: "business", Version: 10}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateBusinessStore(db); err != nil {
+		t.Fatal(err)
+	}
+	var previous model.StopRequest
+	if err := db.Where("stop_id = ?", "old-stop").First(&previous).Error; err != nil {
+		t.Fatal(err)
+	}
+	if previous.ConfirmationKind != "" || previous.DeliveryStatus != model.StopDeliveryConfirmed {
+		t.Fatalf("migration fabricated exit: %+v", previous)
+	}
+	if err := migrateBusinessStore(db); err != nil {
+		t.Fatal(err)
+	}
+}

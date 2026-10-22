@@ -188,6 +188,8 @@ type Orchestrator struct {
 	dependencies                   DependencyRepository
 	resultSubmissions              ResultSubmissionRepository
 	stops                          StopRepositoryPort
+	stopRunnerResolver             func(string) (StopRunnerClient, error)
+	stopWakeMu                     sync.Mutex
 	codeHostResolver               CodeHostBackendResolver
 	mergeRequestReaderResolver     MergeRequestReaderResolver
 	reworkMergeRequestFetchTimeout time.Duration
