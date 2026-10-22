@@ -197,6 +197,9 @@ var adminAgentRows = []MatrixRow{
 }
 
 var adminOperationRows = []MatrixRow{
+	mr("POST", "/api/admin/tasks/:task_id/stop", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人工停止"),
+	mr("POST", "/api/admin/runs/:run_id/stop", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人工停止当前 Run"),
+	mr("POST", "/api/admin/agents/executions/executions/:execution_id/stop", ClassAdmin, support_only, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "人工停止当前 Execution"),
 	mr("GET", "/api/admin/scheduler/defaults", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin, mwPortalTenantAdmin, "operations 配置类；member 403"),
 	mr("POST", "/api/admin/scheduler/tick", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin+" + "+mwRuntimeGate, mwPortalTenantAdmin+" + "+mwRuntimeGate, "写操作；另挂 ConfigurationGate"),
 	mr("POST", "/api/admin/effects/:effect_id/retry", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin+" + "+mwRuntimeGate, mwPortalTenantAdmin+" + "+mwRuntimeGate, "任务写操作"),

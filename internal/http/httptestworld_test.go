@@ -48,7 +48,7 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 	gin.SetMode(gin.TestMode)
 	db := openHTTPTestDB(t)
 	if err := store.Migrate(db,
-		&model.Task{}, &model.Run{}, &model.Artifact{}, &model.Dependency{},
+		&model.StopRequest{}, &model.Task{}, &model.Run{}, &model.Artifact{}, &model.Dependency{},
 		&model.Writeback{}, &model.Effect{}, &model.InboundEvent{},
 		&model.ResultSubmission{}, &model.ResultSubmissionRejection{},
 		&model.ConnectorInstance{},

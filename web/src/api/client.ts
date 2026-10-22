@@ -1,4 +1,6 @@
 import type {
+  StopStatus,
+  StopTarget,
   AutomationMetrics,
   BatchIdentityLookupRequest,
   BatchIdentityLookupResult,
@@ -112,6 +114,10 @@ function jsonBody(value: unknown): string {
 }
 
 export const adminApi = {
+  stopTarget: (target: StopTarget, id: string) => {
+    const base = target === 'task' ? 'tasks' : target === 'run' ? 'runs' : 'agents/executions/executions'
+    return request<StopStatus>(`/api/admin/${base}/${encodeURIComponent(id)}/stop`, { method: 'POST', body: '{}' })
+  },
 	configurationStatus: (signal?: AbortSignal) => request<ConfigurationStatus>('/api/admin/configuration/status', { signal }),
 	configuration: (signal?: AbortSignal) => request<ConfigurationView>('/api/admin/configuration', { signal }),
 	validateConfiguration: (value: ConfigurationUpdateRequest) => request<ConfigurationValidationResult>('/api/admin/configuration/validate', { method: 'POST', body: jsonBody(value) }),

@@ -167,7 +167,7 @@ func newExecutionQueryTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}); err != nil {
+	if err := store.Migrate(db, &model.StopRequest{}, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db

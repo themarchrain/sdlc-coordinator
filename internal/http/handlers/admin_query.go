@@ -146,7 +146,20 @@ func (handler *AdminQueryHandler) GetTask(c *gin.Context) {
 		writeAdminError(c, http.StatusInternalServerError, "internal_error", "查询 Task 失败")
 		return
 	}
-	c.JSON(http.StatusOK, taskDetail(*task))
+	stop, err := handler.queriesFor(c).StopStatus(c.Request.Context(), repository.StopTarget{TaskID: task.TaskID})
+	if err != nil {
+		writeAdminQueryServiceError(c, err, "停止状态")
+		return
+	}
+	response := taskDetail(*task)
+	allowed, err := handler.queriesFor(c).CanStop(c.Request.Context(), repository.StopTarget{TaskID: task.TaskID})
+	if err != nil {
+		writeAdminQueryServiceError(c, err, "停止权限")
+		return
+	}
+	response["can_stop"] = allowed
+	response["stop"] = stop
+	c.JSON(http.StatusOK, response)
 }
 
 func (handler *AdminQueryHandler) ListRuns(c *gin.Context) {
@@ -163,7 +176,24 @@ func (handler *AdminQueryHandler) ListRuns(c *gin.Context) {
 
 func (handler *AdminQueryHandler) GetRun(c *gin.Context) {
 	entity, err := handler.queriesFor(c).GetRun(c.Request.Context(), c.Param("run_id"))
-	writeAdminQueryDetail(c, entity, err, runDetail, "Run")
+	if err != nil {
+		writeAdminQueryLookupError(c, err, "Run")
+		return
+	}
+	stop, err := handler.queriesFor(c).StopStatus(c.Request.Context(), repository.StopTarget{RunID: entity.RunID})
+	if err != nil {
+		writeAdminQueryServiceError(c, err, "停止状态")
+		return
+	}
+	response := runDetail(*entity)
+	allowed, err := handler.queriesFor(c).CanStop(c.Request.Context(), repository.StopTarget{RunID: entity.RunID})
+	if err != nil {
+		writeAdminQueryServiceError(c, err, "停止权限")
+		return
+	}
+	response["can_stop"] = allowed
+	response["stop"] = stop
+	c.JSON(http.StatusOK, response)
 }
 
 func (handler *AdminQueryHandler) ListArtifacts(c *gin.Context) {

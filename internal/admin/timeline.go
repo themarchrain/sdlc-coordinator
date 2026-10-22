@@ -70,6 +70,22 @@ func (service *QueryService) TaskTimeline(ctx context.Context, taskID string) ([
 		return nil, err
 	}
 
+	var stops []model.StopRequest
+	if err := service.db.WithContext(ctx).Where("task_id = ?", task.TaskID).Order("id ASC").Find(&stops).Error; err != nil {
+		return nil, err
+	}
+	for _, stop := range stops {
+		events = append(events, newTimelineEvent("stop-request:"+stop.StopID, stop.RequestedAt, "stop", "requested", "interrupted", "人工停止", stop.RequestedBy+"："+stop.Reason, "stop", stop.StopID))
+		if stop.ConfirmedAt != nil && stop.ConfirmationKind != "" {
+			label := "执行已退出"
+			if stop.ConfirmationKind == model.StopConfirmationNoRemoteTarget {
+				label = "无需取消执行"
+			} else if stop.ConfirmationKind == model.StopConfirmationCreateBlocked {
+				label = "未启动，已阻止启动"
+			}
+			events = append(events, newTimelineEvent("stop-confirmed:"+stop.StopID, *stop.ConfirmedAt, "stop", "confirmed", "confirmed", label, "", "stop", stop.StopID))
+		}
+	}
 	sort.Slice(events, func(i, j int) bool { return timelineEventLess(events[i], events[j]) })
 	return events, nil
 }
