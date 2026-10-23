@@ -77,6 +77,9 @@ func (s *Service) loadCancellations() error {
 	}
 	s.cancellations = map[string]cancellationRecord{}
 	for _, entry := range entries {
+		if !entry.IsDir() && (strings.EqualFold(entry.Name(), "desktop.ini") || strings.EqualFold(entry.Name(), "Thumbs.db") || entry.Name() == ".DS_Store") {
+			continue
+		}
 		if strings.HasSuffix(entry.Name(), ".tmp") {
 			continue
 		}

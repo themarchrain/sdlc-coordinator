@@ -17,7 +17,7 @@ func admissionIntentWorld(t *testing.T) *intentWorld {
 	w := newIntentWorld(t)
 	sqlDB, _ := w.db.DB()
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := store.Migrate(w.db, &model.StopRequest{}, &model.ResultSubmission{}, &model.WorkItemLease{}, &model.ActionAdmission{}); err != nil {
+	if err := store.Migrate(w.db, &model.StopRequest{}, &model.ResultSubmission{}, &model.WorkItemLease{}, &model.ActionAdmission{}, &model.Writeback{}); err != nil {
 		t.Fatal(err)
 	}
 	w.coord.SetActionAdmissions(repository.NewActionAdmissionRepository(w.db), repository.NewWorkItemLeaseRepository(w.db))

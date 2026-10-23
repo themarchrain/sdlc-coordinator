@@ -56,6 +56,9 @@ func (r *AgentExecutionRepository) CreateDispatchIntent(ctx context.Context, exe
 		if run.RunnerEndpoint != "" && run.RunnerEndpoint != execution.RunnerEndpoint {
 			return ErrTaskNotClaimable
 		}
+		if err := tx.Model(run).Updates(map[string]any{"external_system": "agent-runner", "external_id": execution.ExecutionID}).Error; err != nil {
+			return err
+		}
 		return tx.Create(execution).Error
 	})
 }

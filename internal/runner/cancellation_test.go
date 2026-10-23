@@ -225,3 +225,34 @@ func TestCancelledArtifactsRetainTombstoneAndCache(t *testing.T) {
 		t.Fatalf("tombstone lost: %v", err)
 	}
 }
+
+func TestCancellationDirectoryIgnoresOperatingSystemMetadata(t *testing.T) {
+	root := t.TempDir()
+	if _, err := runner.NewService(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"desktop.ini", "Thumbs.db", ".DS_Store"} {
+		if err := os.WriteFile(filepath.Join(root, "cancellations", name), []byte("metadata"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runner.NewService(root, nil); err != nil {
+		t.Fatalf("OS metadata disabled Runner: %v", err)
+	}
+}
+func TestCorruptCancellationAuthorityStillFailsClosed(t *testing.T) {
+	root := t.TempDir()
+	s, err := runner.NewService(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CancelDurable("run", runner.CancellationRequest{StopID: "stop", TaskID: "task"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cancellations", "run.json"), []byte("{broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.NewService(root, nil); err == nil {
+		t.Fatal("corrupt authority was ignored")
+	}
+}

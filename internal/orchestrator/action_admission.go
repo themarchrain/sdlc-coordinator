@@ -48,21 +48,21 @@ func (o *Orchestrator) confirmActionNotSent(ctx context.Context, admission *mode
 func (o *Orchestrator) executeAdmittedEffect(ctx context.Context, effect *model.Effect) (string, error) {
 	if o.actionAdmissions == nil {
 		if o.stops != nil {
-			return "", ErrStopUnavailable
+			return "", &effectAdmissionError{ErrStopUnavailable}
 		}
 		return o.effectExecutor.ExecuteEffect(ctx, effect)
 	}
 	lease, won, err := o.acquireWorkItemLease(ctx, "effect:"+effect.EffectID, "effect", 5*time.Minute)
 	if err != nil {
-		return "", err
+		return "", &effectAdmissionError{err}
 	}
 	if !won {
-		return "", repository.ErrActionLeaseLost
+		return "", &effectAdmissionError{repository.ErrActionLeaseLost}
 	}
 	defer o.releaseWorkItemLease(lease)
 	admission, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: effect.TaskID, RunID: effect.RunID, Kind: model.ActionIMMessage, ActionKey: effect.EffectID, Attempt: effect.AttemptCount}, lease)
 	if err != nil {
-		return "", err
+		return "", &effectAdmissionError{err}
 	}
 	response, err := o.effectExecutor.ExecuteEffect(ctx, effect)
 	if errors.Is(err, ErrEffectExecutorDisabled) {
@@ -91,3 +91,8 @@ func (o *Orchestrator) updateReconciledWriteback(ctx context.Context, writeback 
 	}
 	return o.writebacks.UpdateGuardedIfStatus(ctx, writeback, expected)
 }
+
+type effectAdmissionError struct{ cause error }
+
+func (e *effectAdmissionError) Error() string { return e.cause.Error() }
+func (e *effectAdmissionError) Unwrap() error { return e.cause }

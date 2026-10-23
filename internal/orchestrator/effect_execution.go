@@ -88,8 +88,11 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 
 		responseJSON, err := o.executeAdmittedEffect(ctx, &effect)
 		if err != nil {
-			if errors.Is(err, repository.ErrTaskInterrupted) || actionOutcomeUncertain(err) {
+			if errors.Is(err, repository.ErrTaskInterrupted) || errors.Is(err, repository.ErrStopNotCurrentRun) || actionOutcomeUncertain(err) {
 				status, reason := model.EffectStatusSkipped, "task_interrupted"
+				if errors.Is(err, repository.ErrStopNotCurrentRun) {
+					reason = "run_not_current"
+				}
 				if actionOutcomeUncertain(err) {
 					status, reason = model.EffectStatusDeliveryUnverified, err.Error()
 				}
@@ -102,6 +105,13 @@ func (o *Orchestrator) ExecutePendingEffects(ctx context.Context, limit int) ([]
 					results = append(results, result)
 				}
 				continue
+			}
+			var admissionErr *effectAdmissionError
+			if errors.As(err, &admissionErr) {
+				if _, requeueErr := o.effects.RequeueIfRunning(ctx, effect.DedupeKey, effect.AttemptCount); requeueErr != nil {
+					return nil, requeueErr
+				}
+				return nil, fmt.Errorf("admit effect %s: %w", effect.EffectID, err)
 			}
 			if errors.Is(err, ErrEffectExecutorDisabled) {
 				// 批次中途渠道被清除(与批首探测间存在窗口):本条退回

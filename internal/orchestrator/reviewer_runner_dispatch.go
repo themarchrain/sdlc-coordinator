@@ -82,7 +82,7 @@ func (o *Orchestrator) DispatchReviewerTask(ctx context.Context, taskID string) 
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, "", run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	workspaceRequest, err := buildReviewerWorkspaceRequest(ctx, task, run, o.reviewerRunnerSettings)
@@ -94,6 +94,9 @@ func (o *Orchestrator) DispatchReviewerTask(ctx context.Context, taskID string) 
 		Task: task, Run: run, Workspace: workspaceRequest, Provider: o.reviewerRunnerSettings.Provider, Timeout: o.reviewerRunnerSettings.TaskTimeout,
 	}); err != nil {
 		o.recordDispatchFailure(ctx, task, run, err)
+		return nil, err
+	}
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	return &DispatchResult{Task: task, Run: run}, nil

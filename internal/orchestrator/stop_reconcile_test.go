@@ -274,3 +274,89 @@ func TestStopRoundHasTotalNetworkBudget(t *testing.T) {
 		t.Fatalf("false confirmation=%v %v", confirmed, err)
 	}
 }
+
+func TestCreateBlockedClosesDispatchingProjection(t *testing.T) {
+	w, o, _ := reconcileStopWorld(t)
+	o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+		return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+			return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+		}), nil
+	}
+	if err := o.ReconcileStops(context.Background(), 20); err != nil {
+		t.Fatal(err)
+	}
+	got, err := w.executions.GetByRunID(context.Background(), w.run.RunID)
+	if err != nil || got.Status != model.AgentExecutionStatusInterrupted || got.ErrorCode != "create_blocked_by_stop" || got.FinishedAt == nil {
+		t.Fatalf("phantom execution: %+v %v", got, err)
+	}
+}
+
+type faultyStopDelivery struct {
+	*repository.StopRepository
+	id    string
+	block bool
+}
+
+type blockedStopList struct{ *repository.StopRepository }
+
+func (r *blockedStopList) ListPending(ctx context.Context, _ int) ([]model.StopRequest, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) > 1100*time.Millisecond {
+		return nil, errors.New("pending query lacks its one-second database budget")
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestStopPendingQueryHasDatabaseBudget(t *testing.T) {
+	w, o, _ := reconcileStopWorld(t)
+	o.stops = &blockedStopList{repository.NewStopRepository(w.db)}
+	if err := o.ReconcileStops(context.Background(), 20); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("query budget: %v", err)
+	}
+}
+
+func (r *faultyStopDelivery) BeginDelivery(ctx context.Context, id string, lease model.WorkItemLease) (*model.StopRequest, error) {
+	if id == r.id {
+		if r.block {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return nil, errors.New("temporary row failure")
+	}
+	return r.StopRepository.BeginDelivery(ctx, id, lease)
+}
+func TestStopRowDatabaseFailureDoesNotStarveOtherStops(t *testing.T) {
+	for _, block := range []bool{false, true} {
+		t.Run(fmt.Sprint(block), func(t *testing.T) {
+			w, o, first := reconcileStopWorld(t)
+			runID, taskID := "healthy-run", "healthy-task"
+			for _, row := range []any{&model.Task{TaskID: taskID, DedupeKey: taskID, Type: "test", Role: "TesterWorker", Status: model.TaskStatusRunning, CurrentRunID: &runID}, &model.Run{RunID: runID, TaskID: taskID, Status: model.RunStatusRunning}, &model.AgentExecution{RunID: runID, ExecutionID: runID, RunnerEndpoint: "runner-a", Provider: "fake", Status: model.AgentExecutionStatusDispatching, RequestHash: "hash"}} {
+				if err := w.db.Create(row).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			stops := repository.NewStopRepository(w.db)
+			if _, err := stops.Stop(context.Background(), repository.StopTarget{TaskID: taskID}, "admin", "", 3); err != nil {
+				t.Fatal(err)
+			}
+			o.stops = &faultyStopDelivery{StopRepository: stops, id: first.StopID, block: block}
+			calls := 0
+			o.stopRunnerResolver = func(string) (StopRunnerClient, error) {
+				return stopRunnerFunc(func(_ context.Context, id string, r runner.CancellationRequest) (*runner.CancellationAck, error) {
+					calls++
+					return &runner.CancellationAck{StopID: r.StopID, TaskID: r.TaskID, ExecutionID: id, CancelIntentPersisted: true, FutureCreateBlocked: true}, nil
+				}), nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+			defer cancel()
+			if err := o.ReconcileStops(ctx, 20); err != nil {
+				t.Fatalf("row failure aborted round: %v", err)
+			}
+			healthy, err := stops.GetForTask(context.Background(), taskID)
+			if err != nil || healthy.ConfirmationKind != model.StopConfirmationCreateBlocked || calls != 1 {
+				t.Fatalf("healthy target starved: %+v calls=%d err=%v", healthy, calls, err)
+			}
+		})
+	}
+}

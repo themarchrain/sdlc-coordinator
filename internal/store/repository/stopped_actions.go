@@ -2,12 +2,48 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"sdlc-coordinator/internal/model"
 
 	"gorm.io/gorm"
 )
+
+func (r *StopRepository) SettleStoppedWritebacks(ctx context.Context, limit int) error {
+	if limit <= 0 || limit > 20 {
+		limit = 20
+	}
+	var rows []model.Writeback
+	if err := r.db.WithContext(ctx).Model(&model.Writeback{}).Joins("JOIN tasks t ON t.task_id = writebacks.task_id").Where("t.status = ? AND writebacks.status = ?", model.TaskStatusInterrupted, model.WritebackStatusPending).Order("writebacks.id ASC").Limit(limit).Select("writebacks.*").Find(&rows).Error; err != nil {
+		return err
+	}
+	var failures error
+	for _, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(failures, err)
+		}
+		if err := withLockedTask(ctx, r.db, row.TaskID, func(tx *gorm.DB, task *model.Task, now time.Time) error {
+			if task.Status != model.TaskStatusInterrupted {
+				return nil
+			}
+			var unresolved int64
+			if err := tx.Model(&model.ActionAdmission{}).Where("task_id = ? AND run_id = ? AND kind = ? AND action_key = ? AND not_sent_at IS NULL", row.TaskID, row.RunID, model.ActionWriteback, row.DedupeKey).Count(&unresolved).Error; err != nil {
+				return err
+			}
+			status, reason := model.WritebackStatusSkipped, "task_interrupted"
+			if unresolved != 0 {
+				status, reason = model.WritebackStatusUnknown, "admitted writeback outcome unknown after task interruption"
+			}
+			return tx.Model(&model.Writeback{}).Where("id = ? AND status = ?", row.ID, model.WritebackStatusPending).Updates(map[string]any{"status": status, "error_message": reason, "updated_at": now}).Error
+		}); err != nil {
+			failures = errors.Join(failures, fmt.Errorf("settle writeback %s: %w", row.WritebackID, err))
+			r.db.Logger.Warn(ctx, "stopped writeback settlement deferred: writeback_id=%s", row.WritebackID)
+		}
+	}
+	return failures
+}
 
 func (r *EffectRepository) RetryStoppedAware(ctx context.Context, key string) (*model.Effect, error) {
 	effect, err := r.GetByDedupeKey(ctx, key)

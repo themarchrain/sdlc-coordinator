@@ -44,7 +44,7 @@ func (o *Orchestrator) DispatchDeveloperTask(ctx context.Context, taskID string)
 		return nil, err
 	}
 	run.InputJSON = string(rawInput)
-	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, "", run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	workspaceRequest, err := buildDeveloperWorkspaceRequest(ctx, task, run, o.developerRunnerSettings)
@@ -57,6 +57,9 @@ func (o *Orchestrator) DispatchDeveloperTask(ctx context.Context, taskID string)
 		Provider: o.developerRunnerSettings.Provider, Timeout: o.developerRunnerSettings.TaskTimeout,
 	}); err != nil {
 		o.recordDispatchFailure(ctx, task, run, err)
+		return nil, err
+	}
+	if err := o.runs.UpdateDispatchProjection(ctx, run.RunID, run.ExternalSystem, run.ExternalID, run.InputJSON); err != nil {
 		return nil, err
 	}
 	return &DispatchResult{Task: task, Run: run}, nil

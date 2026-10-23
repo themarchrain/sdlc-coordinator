@@ -222,3 +222,110 @@ func TestAutoMergeRejectionRecordsNonDeliveryProof(t *testing.T) {
 		t.Fatalf("known rejected merge left unknown: %+v %v", admission, err)
 	}
 }
+
+func TestAutoMergeUnknownOutcomeHandsOffWithoutResend(t *testing.T) {
+	db, orch, _, _ := externalAdmissionFixture(t)
+	if err := store.Migrate(db, &model.MergeGateAudit{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tasks := repository.NewTaskRepository(db)
+	artifacts := repository.NewArtifactRepository(db)
+	verifier := gateFixture(t, ctx, tasks, artifacts)
+	runID := "verify-run"
+	if err := db.Create(&model.Run{RunID: runID, TaskID: verifier.TaskID, WorkerRole: verifier.Role, Status: model.RunStatusSucceeded}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(verifier).Update("current_run_id", runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeGateClient{liveHeadSHA: gateHeadSHA, mergeErr: errors.New("uncertain merge response")}
+	orch.mergeAudits = repository.NewMergeGateAuditRepository(db)
+	orch.verificationArtifacts = artifacts
+	orch.autoMergeEnabled = func(context.Context) bool { return true }
+	orch.repositoryLookup = &gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{RepositoryID: fixtureRepositoryID, Provider: "github", PathWithNamespace: "group/project", Status: registeredrepo.StatusEnabled}}
+	orch.mergeGateClients = func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
+		return client, client, nil
+	}
+	first, err := orch.RunAutoMergeGate(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].Decision != MergeGateDecisionSkipped {
+		t.Fatalf("first=%+v", first)
+	}
+	client.mergeErr = nil
+	second, err := orch.RunAutoMergeGate(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].Decision != MergeGateDecisionFallback || client.mergeCalls != 1 {
+		t.Fatalf("missing safe handoff: second=%+v calls=%d", second, client.mergeCalls)
+	}
+	var audit model.MergeGateAudit
+	if err := db.Where("task_id = ?", verifier.TaskID).First(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	var messages int64
+	if err := db.Model(&model.Effect{}).Where("task_id = ?", verifier.TaskID).Count(&messages).Error; err != nil || messages != 1 {
+		t.Fatalf("handoff messages=%d err=%v", messages, err)
+	}
+}
+
+func TestAutoMergePriorAdmissionRecovery(t *testing.T) {
+	for _, mode := range []string{"not_sent", "merged"} {
+		t.Run(mode, func(t *testing.T) {
+			db, orch, _, _ := externalAdmissionFixture(t)
+			if err := store.Migrate(db, &model.MergeGateAudit{}); err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			tasks := repository.NewTaskRepository(db)
+			artifacts := repository.NewArtifactRepository(db)
+			verifier := gateFixture(t, ctx, tasks, artifacts)
+			runID := "verify-run"
+			if err := db.Create(&model.Run{RunID: runID, TaskID: verifier.TaskID, WorkerRole: verifier.Role, Status: model.RunStatusSucceeded}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(verifier).Update("current_run_id", runID).Error; err != nil {
+				t.Fatal(err)
+			}
+			client := &fakeGateClient{liveHeadSHA: gateHeadSHA, mergeErr: errors.New("uncertain merge response")}
+			orch.mergeAudits = repository.NewMergeGateAuditRepository(db)
+			orch.verificationArtifacts = artifacts
+			orch.autoMergeEnabled = func(context.Context) bool { return true }
+			orch.repositoryLookup = &gateRepositoryLookup{repo: &registeredrepo.RegisteredRepository{RepositoryID: fixtureRepositoryID, Provider: "github", PathWithNamespace: "group/project", Status: registeredrepo.StatusEnabled}}
+			orch.mergeGateClients = func(*registeredrepo.RegisteredRepository) (codehost.MergeRequestReader, codehost.MergeRequestMerger, error) {
+				return client, client, nil
+			}
+			first, err := orch.RunAutoMergeGate(ctx, 20)
+			if err != nil || len(first) != 1 || first[0].Decision != MergeGateDecisionSkipped {
+				t.Fatalf("first=%+v err=%v", first, err)
+			}
+			client.mergeErr = nil
+			wantCalls := 1
+			if mode == "not_sent" {
+				var previous model.ActionAdmission
+				if err := db.Where("task_id = ? AND kind = ?", verifier.TaskID, model.ActionAutoMerge).First(&previous).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := repository.NewActionAdmissionRepository(db).ConfirmNotSent(ctx, &previous); err != nil {
+					t.Fatal(err)
+				}
+				wantCalls = 2
+			} else {
+				client.mergedAfterRead = 1
+			}
+			second, err := orch.RunAutoMergeGate(ctx, 20)
+			if err != nil || len(second) != 1 || second[0].Decision != MergeGateDecisionMerged || client.mergeCalls != wantCalls {
+				t.Fatalf("recovery=%+v calls=%d want=%d err=%v", second, client.mergeCalls, wantCalls, err)
+			}
+			if mode == "not_sent" {
+				var last model.ActionAdmission
+				if err := db.Order("attempt DESC").Where("task_id = ?", verifier.TaskID).First(&last).Error; err != nil || last.Attempt != 2 {
+					t.Fatalf("attempt=%+v err=%v", last, err)
+				}
+			}
+		})
+	}
+}

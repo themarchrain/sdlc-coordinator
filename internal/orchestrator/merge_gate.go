@@ -300,8 +300,26 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	if task.CurrentRunID != nil {
 		runID = *task.CurrentRunID
 	}
-	admission, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: task.TaskID, RunID: runID, Kind: model.ActionAutoMerge, ActionKey: task.TaskID, Attempt: 1}, lease)
+	attempt := 1
+	if o.actionAdmissions != nil {
+		allocator, ok := o.actionAdmissions.(interface {
+			NextAttempt(context.Context, model.ActionKind, string) (int, error)
+		})
+		if !ok {
+			result.Transient = ErrStopUnavailable
+			return result
+		}
+		attempt, err = allocator.NextAttempt(ctx, model.ActionAutoMerge, task.TaskID)
+		if err != nil {
+			result.Transient = err
+			return result
+		}
+	}
+	admission, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: task.TaskID, RunID: runID, Kind: model.ActionAutoMerge, ActionKey: task.TaskID, Attempt: attempt}, lease)
 	if err != nil {
+		if actionOutcomeUncertain(err) {
+			return fallback("a previous merge request has an unconfirmed outcome; no merge request was resent; manual verification is required")
+		}
 		result.NotifyHuman = false
 		result.Transient = err
 		return result

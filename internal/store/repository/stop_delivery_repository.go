@@ -127,6 +127,11 @@ func (r *StopRepository) FinishDelivery(ctx context.Context, id string, lease mo
 				return err
 			}
 		}
+		if kind == model.StopConfirmationCreateBlocked {
+			if err := tx.Model(&model.AgentExecution{}).Where("run_id = ? AND execution_id = ? AND status = ?", stop.RunID, stop.ExecutionID, model.AgentExecutionStatusDispatching).Updates(map[string]any{"status": model.AgentExecutionStatusInterrupted, "error_code": "create_blocked_by_stop", "finished_at": now, "last_observed_at": now, "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
 		return tx.Model(stop).Updates(updates).Error
 	})
 }
