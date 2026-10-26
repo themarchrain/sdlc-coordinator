@@ -20,12 +20,14 @@ func NewStateMachine() *StateMachine {
 	return &StateMachine{
 		allowed: map[model.TaskStatus]map[model.TaskStatus]struct{}{
 			model.TaskStatusPending: {
-				model.TaskStatusClaimed: {},
+				model.TaskStatusClaimed:     {},
+				model.TaskStatusInterrupted: {},
 			},
 			model.TaskStatusClaimed: {
 				model.TaskStatusRunning:       {},
 				model.TaskStatusRetryPending:  {},
 				model.TaskStatusHumanRequired: {},
+				model.TaskStatusInterrupted:   {},
 			},
 			model.TaskStatusRunning: {
 				model.TaskStatusFinalizing:      {},
@@ -35,6 +37,7 @@ func NewStateMachine() *StateMachine {
 				model.TaskStatusRetryPending:    {},
 				model.TaskStatusBlocked:         {},
 				model.TaskStatusHumanRequired:   {},
+				model.TaskStatusInterrupted:     {},
 			},
 			model.TaskStatusFinalizing: {
 				model.TaskStatusSucceeded:       {},
@@ -43,19 +46,24 @@ func NewStateMachine() *StateMachine {
 				model.TaskStatusRetryPending:    {},
 				model.TaskStatusBlocked:         {},
 				model.TaskStatusHumanRequired:   {},
+				model.TaskStatusInterrupted:     {},
 			},
 			model.TaskStatusWaitingUpstream: {
-				model.TaskStatusPending: {},
+				model.TaskStatusPending:     {},
+				model.TaskStatusInterrupted: {},
 			},
-			model.TaskStatusWaitingMerge: {},
+			model.TaskStatusWaitingMerge: {model.TaskStatusInterrupted: {}},
 			model.TaskStatusRetryPending: {
-				model.TaskStatusClaimed: {},
+				model.TaskStatusClaimed:     {},
+				model.TaskStatusInterrupted: {},
 			},
-			model.TaskStatusBlocked: {},
+			model.TaskStatusBlocked: {model.TaskStatusInterrupted: {}},
 			model.TaskStatusHumanRequired: {
-				model.TaskStatusPending: {},
+				model.TaskStatusPending:     {},
+				model.TaskStatusInterrupted: {},
 			},
-			model.TaskStatusSucceeded: {},
+			model.TaskStatusSucceeded:   {},
+			model.TaskStatusInterrupted: {},
 		},
 	}
 }

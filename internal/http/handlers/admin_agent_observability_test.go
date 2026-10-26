@@ -91,7 +91,7 @@ func newAdminAgentObservabilityTestRouter(t *testing.T) *gin.Engine {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}); err != nil {
+	if err := store.Migrate(db, &model.StopRequest{}, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.AgentExecutionEvent{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	started := time.Date(2026, 8, 19, 9, 0, 0, 0, time.UTC)

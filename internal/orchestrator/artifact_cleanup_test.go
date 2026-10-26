@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
@@ -199,6 +200,7 @@ func TestTickArtifactCleanupRotatesPastFailedBatch(t *testing.T) {
 }
 
 type artifactCleanupFixture struct {
+	db          *gorm.DB
 	now         time.Time
 	orch        *Orchestrator
 	tasks       *repository.TaskRepository
@@ -216,7 +218,7 @@ func newArtifactCleanupFixture(t *testing.T, workspaceRoot string) artifactClean
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}); err != nil {
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}, &model.StopRequest{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
@@ -238,6 +240,7 @@ func newArtifactCleanupFixture(t *testing.T, workspaceRoot string) artifactClean
 		WithClock(func() time.Time { return now }),
 	)
 	return artifactCleanupFixture{
+		db:  db,
 		now: now, orch: orch, tasks: tasks, runs: runs, executions: executions,
 		submissions: submissions, writebacks: writebacks, effects: effects, store: storeRec,
 	}
@@ -296,7 +299,7 @@ func TestCleanupClaimRecoversAfterHolderExit(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}); err != nil {
+	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}, &model.StopRequest{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	ctx := context.Background()

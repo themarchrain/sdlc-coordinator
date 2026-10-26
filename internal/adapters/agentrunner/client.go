@@ -75,10 +75,21 @@ func (c *Client) Cancel(ctx context.Context, executionID string) (*runner.Execut
 	return &execution, nil
 }
 
+func (c *Client) CancelDurable(ctx context.Context, executionID string, request runner.CancellationRequest) (*runner.CancellationAck, error) {
+	var ack runner.CancellationAck
+	if err := c.do(ctx, http.MethodPost, "/internal/executions/"+url.PathEscape(executionID)+"/cancel", request, &ack); err != nil {
+		return nil, err
+	}
+	return &ack, nil
+}
+
 func (c *Client) Delete(ctx context.Context, executionID string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+executionPath(executionID), nil)
 	if err != nil {
 		return err
+	}
+	if c.internalToken != "" {
+		request.Header.Set("Authorization", "Bearer "+c.internalToken)
 	}
 	response, err := c.http.Do(request)
 	if err != nil {

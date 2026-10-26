@@ -3,6 +3,7 @@ package agentrunner_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -10,6 +11,21 @@ import (
 	"sdlc-coordinator/internal/adapters/agentrunner"
 	"sdlc-coordinator/internal/runner"
 )
+
+func TestClientArtifactDeletionSendsDeploymentToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer deployment" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := agentrunner.NewWorkspaceClient(server.URL, "deployment", server.Client())
+	if err := client.Delete(context.Background(), "execution"); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestClientCreatesPollsEventsAndReadsResult(t *testing.T) {
 	t.Parallel()

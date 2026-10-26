@@ -9,6 +9,12 @@ import { TasksPage } from './TasksPage'
 afterEach(() => vi.restoreAllMocks())
 
 describe('TasksPage', () => {
+  it('supports filtering interrupted tasks from the URL', async () => {
+    const listTasks = vi.spyOn(adminApi, 'listTasks').mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
+    renderTasks('/tasks?status=interrupted')
+    expect(await screen.findByText('已中断')).toBeInTheDocument()
+    expect(listTasks).toHaveBeenCalledWith(expect.objectContaining({ status: 'interrupted' }))
+  })
   it('restores the status filter from the URL', async () => {
     const listTasks = vi.spyOn(adminApi, 'listTasks').mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
 

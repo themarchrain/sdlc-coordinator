@@ -9,12 +9,42 @@ import (
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/results"
+	"sdlc-coordinator/internal/store/repository"
 )
 
 const (
 	defaultNextTaskType       = "generated_from_next_task"
 	defaultDependencyRelation = "upstream_fix"
 )
+
+type resultFinalizer interface {
+	FinalizeResultAtomic(context.Context, *model.Task, *model.Run, []repository.ResultTaskExpansion, bool) error
+}
+
+func (o *Orchestrator) prepareResultNextTasks(parent *model.Task, run *model.Run, payload results.CanonicalResult) ([]repository.ResultTaskExpansion, int, error) {
+	expansions := make([]repository.ResultTaskExpansion, 0, len(payload.NextTasks))
+	blocking := 0
+	for index, next := range payload.NextTasks {
+		child, dependency, err := BuildNextTaskExpansion(parent, run, next, index)
+		if err != nil {
+			return nil, 0, err
+		}
+		if child.TaskID == "" {
+			child.TaskID = model.NewID("task")
+		}
+		child.CreatedAt = o.now()
+		if err := o.prepareDeliveryBranch(child); err != nil {
+			return nil, 0, err
+		}
+		if next.FireAndForget || o.dependencies == nil {
+			dependency = nil
+		} else {
+			blocking++
+		}
+		expansions = append(expansions, repository.ResultTaskExpansion{Task: child, Dependency: dependency})
+	}
+	return expansions, blocking, nil
+}
 
 func BuildNextTaskExpansion(parent *model.Task, parentRun *model.Run, next results.NextTaskIntent, index int) (*model.Task, *model.Dependency, error) {
 	if parent == nil {

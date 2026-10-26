@@ -129,6 +129,9 @@ func (o *Orchestrator) replaySubmission(ctx context.Context, submission *model.R
 	if submission.Status == model.ResultSubmissionStatusSucceeded {
 		return o.submissionResponse(ctx, submission)
 	}
+	if submission.Status == model.ResultSubmissionStatusInterrupted {
+		return nil, repository.ErrTaskInterrupted
+	}
 	if !resultSubmissionLeaseExpired(submission, o.now()) {
 		return nil, ErrResultProcessing
 	}
@@ -196,6 +199,16 @@ func (o *Orchestrator) finalizeAcceptedSubmission(ctx context.Context, submissio
 		}
 		*submission = *failed
 		return nil, err
+	}
+	if _, atomic := o.tasks.(resultFinalizer); atomic {
+		current, err := o.resultSubmissions.GetBySubmissionID(ctx, submission.SubmissionID)
+		if err != nil {
+			return nil, err
+		}
+		*submission = *current
+		if current.Status == model.ResultSubmissionStatusSucceeded {
+			return o.submissionResponse(ctx, submission)
+		}
 	}
 	completedAt := o.now()
 	submission.Status = model.ResultSubmissionStatusSucceeded

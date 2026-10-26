@@ -234,7 +234,7 @@ func TestRunRepositoryListsSucceededRunsForArtifactCleanupMySQL(t *testing.T) {
 
 func assertRunRepositoryListsSucceededRunsForArtifactCleanup(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}); err != nil {
+	if err := store.Migrate(db, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}, &model.StopRequest{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	repo := NewRunRepository(db)

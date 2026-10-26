@@ -78,7 +78,9 @@ type ExecutionEvent struct {
 
 type ExecutionDetail struct {
 	ExecutionRecord
-	Events []ExecutionEvent `json:"events"`
+	Events  []ExecutionEvent  `json:"events"`
+	Stop    *model.StopStatus `json:"stop,omitempty"`
+	CanStop bool              `json:"can_stop"`
 }
 
 type ExecutionPage struct {
@@ -180,7 +182,15 @@ func (q *Query) GetExecution(ctx context.Context, executionID string) (*Executio
 		}
 		events = append(events, ExecutionEvent{Seq: event.Seq, Type: event.Type, OccurredAt: event.OccurredAt, Payload: payload})
 	}
-	return &ExecutionDetail{ExecutionRecord: item, Events: events}, nil
+	stop, err := repository.NewStopRepository(q.db).ReadStatus(ctx, repository.StopTarget{ExecutionID: item.ExecutionID})
+	if err != nil {
+		return nil, err
+	}
+	allowed, err := repository.NewStopRepository(q.db).CanStop(ctx, repository.StopTarget{ExecutionID: item.ExecutionID})
+	if err != nil {
+		return nil, err
+	}
+	return &ExecutionDetail{ExecutionRecord: item, Events: events, Stop: stop, CanStop: allowed}, nil
 }
 
 // usageEventTypes covers per-turn usage events for both providers:

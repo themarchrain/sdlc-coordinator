@@ -183,7 +183,7 @@ func ratioMetric(numerator, denominator int64) RatioMetric {
 
 func isCompletedRunStatus(status model.RunStatus) bool {
 	switch status {
-	case model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked:
+	case model.RunStatusSucceeded, model.RunStatusFailed, model.RunStatusBlocked, model.RunStatusInterrupted:
 		return true
 	default:
 		return false

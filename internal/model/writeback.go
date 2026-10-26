@@ -14,6 +14,7 @@ const (
 	WritebackStatusSucceeded WritebackStatus = "succeeded"
 	WritebackStatusFailed    WritebackStatus = "failed"
 	WritebackStatusUnknown   WritebackStatus = "unknown"
+	WritebackStatusSkipped   WritebackStatus = "skipped"
 )
 
 type Writeback struct {

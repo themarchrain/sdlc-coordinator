@@ -9,10 +9,11 @@ import (
 type ResultSubmissionStatus string
 
 const (
-	ResultSubmissionStatusProcessing ResultSubmissionStatus = "processing"
-	ResultSubmissionStatusSucceeded  ResultSubmissionStatus = "succeeded"
-	ResultSubmissionStatusFailed     ResultSubmissionStatus = "failed"
-	ResultSubmissionStatusUnknown    ResultSubmissionStatus = "unknown"
+	ResultSubmissionStatusProcessing  ResultSubmissionStatus = "processing"
+	ResultSubmissionStatusSucceeded   ResultSubmissionStatus = "succeeded"
+	ResultSubmissionStatusFailed      ResultSubmissionStatus = "failed"
+	ResultSubmissionStatusUnknown     ResultSubmissionStatus = "unknown"
+	ResultSubmissionStatusInterrupted ResultSubmissionStatus = "interrupted"
 )
 
 type ResultSubmission struct {

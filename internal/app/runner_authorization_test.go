@@ -41,7 +41,7 @@ func TestRunnerAuthorizationDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tenant handle: %v", err)
 	}
-	if err := store.Migrate(handle.DB, &model.Task{}, &model.Run{}, &model.WorkItemLease{}); err != nil {
+	if err := store.Migrate(handle.DB, &model.Task{}, &model.Run{}, &model.WorkItemLease{}, &model.StopRequest{}); err != nil {
 		t.Fatalf("migrate tenant store: %v", err)
 	}
 	t.Cleanup(resolver.Close)

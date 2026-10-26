@@ -82,9 +82,20 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	effectRepo := repository.NewEffectRepository(db)
 	inboundEventRepo := repository.NewInboundEventRepository(db)
 	resultSubmissionRepo := repository.NewResultSubmissionRepository(db)
+	stopRepo := repository.NewStopRepository(db)
+	actionAdmissions := repository.NewActionAdmissionRepository(db)
+	workItemLeases := repository.NewWorkItemLeaseRepository(db)
 
 	repoStore := registeredrepo.NewStore(db)
 	opts := []orchestrator.Option{
+		orchestrator.WithStopRepository(stopRepo),
+		orchestrator.WithActionAdmissions(actionAdmissions),
+		orchestrator.WithStopRunnerResolver(func(endpoint string) (orchestrator.StopRunnerClient, error) {
+			if strings.TrimSpace(endpoint) == "" {
+				return nil, orchestrator.ErrStopUnavailable
+			}
+			return agentrunner.NewWorkspaceClient(endpoint, shared.cfg.AgentRunner.InternalToken, nil), nil
+		}),
 		orchestrator.WithArtifactRepository(artifactRepo),
 		orchestrator.WithDependencyRepository(dependencyRepo),
 		orchestrator.WithWritebackRepository(writebackRepo),
@@ -172,6 +183,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		orchSubmitter,
 	)
 	testerRunnerCoordinator.SetTaskBundlePublisher(remoteWorkspace)
+	reviewerRunnerCoordinator.SetActionAdmissions(actionAdmissions, workItemLeases, runnerSettings.Provider)
+	developerRunnerCoordinator.SetActionAdmissions(actionAdmissions, workItemLeases, runnerSettings.Provider)
+	testerRunnerCoordinator.SetActionAdmissions(actionAdmissions, workItemLeases, runnerSettings.Provider)
 	opts = append(opts,
 		orchestrator.WithReviewerRunner(reviewerRunnerCoordinator, runnerSettings),
 		orchestrator.WithDeveloperRunner(developerRunnerCoordinator, runnerSettings),
@@ -206,6 +220,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	// 交付执行权（run 级租约）：MCP 与文本两个通道的 commit/push 前都经它
 	// 竞争同一处理权，保证跨实例只有一次可信交付。
 	mcpChannel.SetDeliveryExecutionRight(repository.NewWorkItemLeaseRepository(db))
+	mcpChannel.SetActionAdmissions(actionAdmissions)
 	opts = append(opts, orchestrator.WithResultIngress(ingressIssuer, shared.cfg.Scheduler.TickRequest.CallbackBaseURL))
 	orch = orchestrator.New(taskRepo, runRepo, opts...)
 	processor := events.NewProcessor(inboundEventRepo, orch)

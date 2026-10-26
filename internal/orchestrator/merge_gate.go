@@ -104,7 +104,7 @@ func (o *Orchestrator) RunAutoMergeGate(ctx context.Context, limit int) ([]Merge
 			o.releaseWorkItemLease(lease)
 			continue
 		}
-		result := o.evaluateAutoMergeGate(ctx, task)
+		result := o.evaluateAutoMergeGate(ctx, task, lease)
 		o.releaseWorkItemLease(lease)
 		if result.Transient != nil {
 			// 查询类瞬时故障:不写审计(下一轮重评),本轮记 skipped 并留
@@ -159,7 +159,7 @@ func DefaultMergeGateClientFactory(repo *registeredrepo.RegisteredRepository) (c
 // evaluateAutoMergeGate 评估单条验证任务的证据合取。确定性失败(上下文不可
 // 读、血缘/仓行缺失、平台 4xx 拒绝、头部漂移)一律 fallback+审计,只有查询
 // 类瞬时故障才返回 Transient 留待下轮。
-func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Task) gateEvaluation {
+func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Task, lease model.WorkItemLease) gateEvaluation {
 	result := gateEvaluation{}
 	var taskContext struct {
 		ParentTaskID string `json:"parent_task_id"`
@@ -296,6 +296,34 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 	}
 
 	// 防线三:合并调用再次断言头部,读合之间头部漂移由平台拒合。
+	runID := ""
+	if task.CurrentRunID != nil {
+		runID = *task.CurrentRunID
+	}
+	attempt := 1
+	if o.actionAdmissions != nil {
+		allocator, ok := o.actionAdmissions.(interface {
+			NextAttempt(context.Context, model.ActionKind, string) (int, error)
+		})
+		if !ok {
+			result.Transient = ErrStopUnavailable
+			return result
+		}
+		attempt, err = allocator.NextAttempt(ctx, model.ActionAutoMerge, task.TaskID)
+		if err != nil {
+			result.Transient = err
+			return result
+		}
+	}
+	admission, err := o.admitExternalAction(ctx, ActionAdmissionRequest{TaskID: task.TaskID, RunID: runID, Kind: model.ActionAutoMerge, ActionKey: task.TaskID, Attempt: attempt}, lease)
+	if err != nil {
+		if actionOutcomeUncertain(err) {
+			return fallback("a previous merge request has an unconfirmed outcome; no merge request was resent; manual verification is required")
+		}
+		result.NotifyHuman = false
+		result.Transient = err
+		return result
+	}
 	mergeResult, err := merger.MergePullRequest(ctx, result.ProjectPath, result.MergeRequestIID, codehost.MergePullRequestRequest{
 		ExpectedHeadSHA: result.HeadSHA,
 	})
@@ -309,12 +337,20 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 				result.Reasons = append(reasons, fmt.Sprintf("merge call was rejected but the platform reports the merge request merged at %s", result.MergedCommitSHA))
 				return result
 			}
+			if proofErr := o.confirmActionNotSent(ctx, admission); proofErr != nil {
+				result.Transient = proofErr
+				return result
+			}
 			return fallback(fmt.Sprintf("platform rejected the merge: %v", err))
 		}
 		result.Transient = fmt.Errorf("merge pull request: %w", err)
 		return result
 	}
 	if !mergeResult.Merged {
+		if proofErr := o.confirmActionNotSent(ctx, admission); proofErr != nil {
+			result.Transient = proofErr
+			return result
+		}
 		return fallback("platform returned an unmerged result")
 	}
 	result.Decision = MergeGateDecisionMerged

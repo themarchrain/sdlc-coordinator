@@ -391,7 +391,7 @@ a:hover { color: var(--link-hover); }
 .drawer-stack { display: grid; gap: 18px; }
 .drawer-stack > section { min-width: 0; padding-top: 2px; }
 .drawer-title-id { display: block; margin-top: 3px; color: var(--faint); font-weight: 400; }
-.run-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 16px; padding: 10px 12px; background: var(--canvas-soft); border: 1px solid var(--hairline-soft); border-radius: var(--radius-lg); font-size: 12px; color: var(--body); }
+.run-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 10px 12px; background: var(--canvas-soft); border: 1px solid var(--hairline-soft); border-radius: var(--radius-lg); font-size: 12px; color: var(--body); }
 .run-summary__duration { color: var(--primary); font-weight: 600; }
 .structured-stack { display: grid; gap: 14px; }
 .detail-section { min-width: 0; padding: 16px; background: var(--surface-detail); border: 1px solid var(--hairline-detail); border-radius: var(--radius-lg); }

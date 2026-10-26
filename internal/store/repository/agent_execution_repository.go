@@ -27,10 +27,40 @@ func (r *AgentExecutionRepository) Create(ctx context.Context, execution *model.
 }
 
 func (r *AgentExecutionRepository) Update(ctx context.Context, execution *model.AgentExecution) error {
-	if err := r.db.WithContext(ctx).Save(execution).Error; err != nil {
-		return fmt.Errorf("update agent execution: %w", err)
+	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
+		Where("run_id = ? AND execution_id = ? AND request_hash = ?", execution.RunID, execution.ExecutionID, execution.RequestHash).
+		Where("status NOT IN ? OR status = ?", terminalExecutionStatuses(), execution.Status).
+		Select("*").Omit("id", "run_id", "execution_id", "request_hash", "create_spec_json", "created_at").Updates(execution)
+	if result.Error != nil {
+		return fmt.Errorf("update agent execution: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		stored, err := r.GetByRunID(ctx, execution.RunID)
+		if err != nil {
+			return err
+		}
+		*execution = *stored
 	}
 	return nil
+}
+
+func terminalExecutionStatuses() []model.AgentExecutionStatus {
+	return []model.AgentExecutionStatus{model.AgentExecutionStatusSucceeded, model.AgentExecutionStatusFailed, model.AgentExecutionStatusCancelled, model.AgentExecutionStatusInterrupted}
+}
+
+func (r *AgentExecutionRepository) CreateDispatchIntent(ctx context.Context, execution *model.AgentExecution) error {
+	return withLockedCurrentRun(ctx, r.db, execution.RunID, func(tx *gorm.DB, run *model.Run) error {
+		if run.Status != model.RunStatusRunning && run.Status != model.RunStatusFinalizing {
+			return ErrTaskNotClaimable
+		}
+		if run.RunnerEndpoint != "" && run.RunnerEndpoint != execution.RunnerEndpoint {
+			return ErrTaskNotClaimable
+		}
+		if err := tx.Model(run).Updates(map[string]any{"external_system": "agent-runner", "external_id": execution.ExecutionID}).Error; err != nil {
+			return err
+		}
+		return tx.Create(execution).Error
+	})
 }
 
 func (r *AgentExecutionRepository) TouchLastObservedAt(ctx context.Context, runID string, at time.Time) error {
@@ -65,16 +95,18 @@ func (r *AgentExecutionRepository) SettleUnacceptedIfDispatching(ctx context.Con
 // 接管方才不会按旧端点重发同一 run 造成双执行。0 行且库内已是他方更新时
 // 由调用方按不确定语义处理（保持待对账，不换端点）。
 func (r *AgentExecutionRepository) UpdateRunnerEndpointIfUnchanged(ctx context.Context, runID, fromEndpoint, toEndpoint string) error {
-	result := r.db.WithContext(ctx).Model(&model.AgentExecution{}).
-		Where("run_id = ? AND runner_endpoint = ?", runID, fromEndpoint).
-		Update("runner_endpoint", toEndpoint)
-	if result.Error != nil {
-		return fmt.Errorf("update runner endpoint for run %s: %w", runID, result.Error)
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("runner endpoint for run %s was changed concurrently (expected %q)", runID, fromEndpoint)
-	}
-	return nil
+	return withLockedCurrentRun(ctx, r.db, runID, func(tx *gorm.DB, _ *model.Run) error {
+		result := tx.Model(&model.AgentExecution{}).
+			Where("run_id = ? AND runner_endpoint = ?", runID, fromEndpoint).
+			Update("runner_endpoint", toEndpoint)
+		if result.Error != nil {
+			return fmt.Errorf("update runner endpoint for run %s: %w", runID, result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("runner endpoint for run %s was changed concurrently (expected %q)", runID, fromEndpoint)
+		}
+		return nil
+	})
 }
 
 func (r *AgentExecutionRepository) GetByRunID(ctx context.Context, runID string) (*model.AgentExecution, error) {

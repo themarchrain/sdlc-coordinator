@@ -9,4 +9,8 @@ var (
 	ErrResultAlreadyAccepted = errors.New("result already accepted")
 	ErrResultNotAcceptable   = errors.New("result not acceptable")
 	ErrResultNotClaimable    = errors.New("result not claimable")
+	ErrStopNotCurrentRun     = errors.New("not_current_run")
+	ErrStopAlreadyTerminal   = errors.New("already_terminal")
+	ErrInvalidStopRequest    = errors.New("invalid stop request")
+	ErrTaskInterrupted       = errors.New("task interrupted")
 )

@@ -8,6 +8,12 @@ import { DataExplorerPage } from './DataExplorerPage'
 afterEach(() => vi.restoreAllMocks())
 
 describe('DataExplorerPage', () => {
+  it('offers the interrupted run status filter', async () => {
+    vi.spyOn(adminApi, 'listEntities').mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
+    renderExplorer('/explorer?entity=runs')
+    fireEvent.mouseDown(screen.getAllByRole('combobox')[1])
+    expect(await screen.findByTitle('已中断')).toBeInTheDocument()
+  })
   it('restores the entity and opens a run detail from a deep link', async () => {
     vi.spyOn(adminApi, 'listEntities').mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
     vi.spyOn(adminApi, 'getEntity').mockResolvedValue({

@@ -56,6 +56,7 @@ type TaskRepository interface {
 	// ListDispatchableAfter pages after (UpdatedAt, ID), bounded by throughID when nonzero.
 	ListDispatchableAfter(context.Context, *model.Task, int, uint) ([]model.Task, error)
 	Claim(context.Context, string, string, time.Time) error
+	StartRunAtomic(context.Context, string, *model.Run, time.Time, time.Time) (*model.Task, error)
 	RenewActiveLease(context.Context, string, string, time.Time) error
 	HasActiveReviewerTaskForDedupePrefix(context.Context, string, string) (bool, error)
 	ListByDeliveryBranch(context.Context, string) ([]model.Task, error)
@@ -172,6 +173,7 @@ type ResultSubmissionRepository interface {
 }
 
 type Orchestrator struct {
+	actionAdmissions               ActionAdmissionPort
 	tickMu                         sync.Mutex
 	mergeGateMu                    sync.Mutex
 	mergeGateCursor                uint
@@ -185,6 +187,9 @@ type Orchestrator struct {
 	writebacks                     WritebackRepository
 	dependencies                   DependencyRepository
 	resultSubmissions              ResultSubmissionRepository
+	stops                          StopRepositoryPort
+	stopRunnerResolver             func(string) (StopRunnerClient, error)
+	stopWakeMu                     sync.Mutex
 	codeHostResolver               CodeHostBackendResolver
 	mergeRequestReaderResolver     MergeRequestReaderResolver
 	reworkMergeRequestFetchTimeout time.Duration
@@ -786,6 +791,9 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 	if err != nil {
 		return nil, nil, err
 	}
+	if task.Status == model.TaskStatusInterrupted || run.Status == model.RunStatusInterrupted {
+		return nil, nil, repository.ErrTaskInterrupted
+	}
 	if isStaleRunForTask(task, run.RunID) {
 		return o.applyStaleRunResult(ctx, task, run, payload)
 	}
@@ -813,7 +821,17 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		return task, run, nil
 	}
 
-	expandedNextTasks, err := o.expandResultNextTasks(ctx, task, run, payload)
+	finalizer, atomicFinalization := o.tasks.(resultFinalizer)
+	if o.stops != nil && !atomicFinalization {
+		return nil, nil, errors.New("atomic result finalizer is required for task stops")
+	}
+	var expansions []repository.ResultTaskExpansion
+	var expandedNextTasks int
+	if atomicFinalization {
+		expansions, expandedNextTasks, err = o.prepareResultNextTasks(task, run, payload)
+	} else {
+		expandedNextTasks, err = o.expandResultNextTasks(ctx, task, run, payload)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -868,11 +886,17 @@ func (o *Orchestrator) ApplyCanonicalResult(ctx context.Context, payload results
 		run.ErrorMessage = payload.Summary
 	}
 
-	if err := o.tasks.Update(ctx, task); err != nil {
-		return nil, nil, fmt.Errorf("update result task %s: %w", payload.TaskID, err)
-	}
-	if err := o.runs.Update(ctx, run); err != nil {
-		return nil, nil, fmt.Errorf("update result run %s: %w", payload.RunID, err)
+	if atomicFinalization {
+		if err := finalizer.FinalizeResultAtomic(ctx, task, run, expansions, o.resultSubmissions != nil); err != nil {
+			return nil, nil, fmt.Errorf("finalize result %s: %w", payload.RunID, err)
+		}
+	} else {
+		if err := o.tasks.Update(ctx, task); err != nil {
+			return nil, nil, fmt.Errorf("update result task %s: %w", payload.TaskID, err)
+		}
+		if err := o.runs.Update(ctx, run); err != nil {
+			return nil, nil, fmt.Errorf("update result run %s: %w", payload.RunID, err)
+		}
 	}
 	if err := o.resolveDependenciesForResult(ctx, task, payload); err != nil {
 		return nil, nil, err
@@ -998,38 +1022,12 @@ func (o *Orchestrator) StartRun(ctx context.Context, taskID string, run *model.R
 	}
 	run.TaskID = taskID
 
-	task, err := o.ClaimTask(ctx, taskID, run.RunID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if task.Status != model.TaskStatusClaimed || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
-		return nil, nil, repository.ErrTaskNotClaimable
-	}
-
-	if err := o.runs.Create(ctx, run); err != nil {
-		return nil, nil, fmt.Errorf("create run %s: %w", run.RunID, err)
-	}
-
-	previous := task.Status
-	if err := o.stateMachine.Transition(task, model.TaskStatusRunning); err != nil {
-		return nil, nil, err
-	}
-	o.policy.Apply(task, previous, model.TaskStatusRunning, o.now())
-	applied, err := o.tasks.AdvanceGuardedForCurrentRun(ctx, task, previous, run.RunID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("start run %s: %w", run.RunID, err)
-	}
-	if !applied {
-		return nil, nil, repository.ErrTaskNotClaimable
-	}
-
-	run.Status = model.RunStatusRunning
 	startedAt := o.now()
-	run.StartedAt = &startedAt
-	if err := o.runs.Update(ctx, run); err != nil {
-		return nil, nil, fmt.Errorf("update run %s: %w", run.RunID, err)
+	_, err := o.tasks.StartRunAtomic(ctx, taskID, run, o.policy.LeaseUntil(startedAt), startedAt)
+	if err != nil {
+		return nil, nil, err
 	}
-	task, err = o.tasks.GetByTaskID(ctx, taskID)
+	task, err := o.tasks.GetByTaskID(ctx, taskID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1131,7 +1129,8 @@ func isTerminalRunStatus(status model.RunStatus) bool {
 	switch status {
 	case model.RunStatusSucceeded,
 		model.RunStatusFailed,
-		model.RunStatusBlocked:
+		model.RunStatusBlocked,
+		model.RunStatusInterrupted:
 		return true
 	default:
 		return false

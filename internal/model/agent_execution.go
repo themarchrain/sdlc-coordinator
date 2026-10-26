@@ -28,6 +28,7 @@ type AgentExecution struct {
 	RunnerEndpoint string               `gorm:"column:runner_endpoint" json:"-"`
 	Status         AgentExecutionStatus `gorm:"index;not null;size:32"`
 	RequestHash    string               `gorm:"index;not null;size:64"`
+	CreateSpecJSON string               `gorm:"type:text" json:"-"`
 	LastEventSeq   int64                `gorm:"not null;default:0"`
 	LastObservedAt *time.Time           `gorm:"index"`
 	ResultHash     string               `gorm:"index;size:64"`

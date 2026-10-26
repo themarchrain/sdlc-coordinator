@@ -215,6 +215,30 @@ export interface AgentExecutionEvent {
 
 export interface AgentExecutionDetail extends AgentExecution {
   events: AgentExecutionEvent[]
+  stop?: StopStatus | null
+  can_stop?: boolean
+}
+
+export type StopTarget = 'task' | 'run' | 'execution'
+
+export interface StopStatus {
+  stop_id: string
+  scope: 'task' | 'execution_cleanup'
+  task_id: string
+  run_id?: string
+  execution_id?: string
+  task_status: string
+  run_status?: string
+  execution_status?: string
+  delivery_status: 'pending' | 'delivering' | 'waiting_exit' | 'confirmed'
+  confirmation_kind?: 'no_remote_target' | 'create_blocked' | 'execution_exited'
+  exit_confirmed: boolean
+  requested_by: string
+  requested_at: string
+  reason?: string
+  confirmed_at?: string
+  unknown_writebacks?: number
+  unknown_messages?: number
 }
 
 export type EntityKey =

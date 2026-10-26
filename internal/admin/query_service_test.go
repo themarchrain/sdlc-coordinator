@@ -324,7 +324,7 @@ func newQueryServiceTestDB(t *testing.T) (*QueryService, *gorm.DB) {
 	}
 	if err := store.Migrate(
 		db,
-		&model.Task{},
+		&model.StopRequest{}, &model.Task{},
 		&model.Run{},
 		&model.Artifact{},
 		&model.Dependency{},

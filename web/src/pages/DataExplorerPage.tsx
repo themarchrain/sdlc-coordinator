@@ -4,7 +4,9 @@ import { CheckOutlined, DownOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
-import type { EntityKey } from '../api/types'
+import type { EntityKey, StopStatus } from '../api/types'
+import { useWorkspaceSession } from '../app/workspaceSession'
+import { StopControl } from '../components/StopControl'
 import { patchSearchParams, repositoryFilter } from '../app/searchParams'
 import { EntityDetail } from '../components/StructuredDetail'
 import { ErrorState, LoadingState } from '../components/PageState'
@@ -32,7 +34,7 @@ interface EntityConfig {
 }
 
 const workerRoles = ['DeveloperWorker', 'TesterWorker', 'ReviewerWorker']
-const runStatuses = ['pending', 'running', 'finalizing', 'succeeded', 'failed', 'blocked']
+const runStatuses = ['pending', 'running', 'finalizing', 'succeeded', 'failed', 'blocked', 'interrupted']
 const dependencyStatuses = ['pending', 'ready', 'blocked', 'resolved']
 const writebackStatuses = ['pending', 'running', 'succeeded', 'failed', 'unknown']
 const effectStatuses = ['pending', 'running', 'succeeded', 'failed', 'skipped']
@@ -245,21 +247,17 @@ export function DataExplorerPage() {
 }
 
 function EntityDrawer({ config, id, onClose }: { config: EntityConfig; id?: string; onClose: () => void }) {
-  const [detail, setDetail] = useState<Record<string, unknown>>()
-  const [error, setError] = useState<unknown>()
-  const [loading, setLoading] = useState(false)
-  useEffect(() => {
-    if (!id) return
-    setLoading(true)
-    setDetail(undefined)
-    setError(undefined)
-    adminApi.getEntity(config.key, id).then(setDetail).catch(setError).finally(() => setLoading(false))
-  }, [config.key, id])
+  const tenantID = useWorkspaceSession().session?.scope.tenant?.id
+  const request = useRemote(async () => ({ id, entity: config.key, tenantID, detail: await adminApi.getEntity(config.key, id!) }), [config.key, id, tenantID], Boolean(id))
+  const detail = request.data?.id === id && request.data?.entity === config.key && request.data?.tenantID === tenantID ? request.data.detail : undefined
   return <Drawer width="min(860px, 100vw)" title={<div><span>{config.title}</span><small className="drawer-title-id mono">{id}</small></div>} open={Boolean(id)} onClose={onClose} destroyOnClose>
-    {loading ? <LoadingState /> : error ? <ErrorState error={error} /> : detail ? <>
-      {config.key === 'runs' ? <RunSummary detail={detail} /> : null}
-      <EntityDetail entity={config.key} detail={detail} />
-    </> : null}
+    {request.loading ? <LoadingState /> : request.error ? <ErrorState error={request.error} onRetry={request.reload} /> : detail ? (
+      <div className="drawer-stack">
+        {config.key === 'runs' ? <StopControl target="run" id={id!} canStop={detail.can_stop === true} initialStop={detail.stop as StopStatus | null | undefined} onChanged={request.reload} /> : null}
+        {config.key === 'runs' ? <RunSummary detail={detail} /> : null}
+        <EntityDetail entity={config.key} detail={detail} />
+      </div>
+    ) : null}
   </Drawer>
 }
 
@@ -305,7 +303,7 @@ function formatTime(value: unknown) {
 
 function optionLabel(value: string) {
   return ({
-    pending: '待处理', received: '已接收', normalized: '已规范化', task_created: '已创建 Task', running: '运行中', finalizing: '结果收口中',
+    interrupted: '已中断', pending: '待处理', received: '已接收', normalized: '已规范化', task_created: '已创建 Task', running: '运行中', finalizing: '结果收口中',
     processing: '处理中', ready: '已就绪', resolved: '已解决', blocked: '已阻塞', unknown: '结果未知', succeeded: '已成功', failed: '已失败',
     ignored: '已忽略', skipped: '已跳过', develop_from_issue: 'Issue 开发', review_mr: 'MR 审查', rework_merge_request: 'MR 接续开发',
     verify_merge_request: 'MR 验证', DeveloperWorker: '开发', TesterWorker: '验证', ReviewerWorker: '审查',

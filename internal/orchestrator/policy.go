@@ -87,6 +87,7 @@ func (p Policy) Apply(task *model.Task, from, to model.TaskStatus, now time.Time
 		model.TaskStatusRetryPending,
 		model.TaskStatusBlocked,
 		model.TaskStatusHumanRequired,
+		model.TaskStatusInterrupted,
 		model.TaskStatusSucceeded:
 		task.LeaseUntil = nil
 	}

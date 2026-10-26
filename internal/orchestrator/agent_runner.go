@@ -37,6 +37,8 @@ func (f RunTokenIssuerFunc) IssueRunToken(taskID, runID, role string, taskTimeou
 }
 
 type AgentRunnerCoordinator struct {
+	admissions ActionAdmissionPort
+	leases     WorkItemLeasePort
 	tasks      TaskRepository
 	runs       RunRepository
 	executions AgentExecutionProjectionRepository
@@ -46,8 +48,13 @@ type AgentRunnerCoordinator struct {
 	now    func() time.Time
 	// ingress enables the MCP result channel on dispatch; nil keeps the
 	// channel closed (text-only mode).
-	ingressIssuer   RunTokenIssuer
-	ingressEndpoint string
+	ingressIssuer       RunTokenIssuer
+	ingressEndpoint     string
+	dispatchCredentials func(context.Context, runner.ProviderConfig) (runner.ProviderConfig, error)
+}
+
+func (c *AgentRunnerCoordinator) SetActionAdmissions(admissions ActionAdmissionPort, leases WorkItemLeasePort) {
+	c.admissions, c.leases = admissions, leases
 }
 
 func NewAgentRunnerCoordinator(tasks TaskRepository, runs RunRepository, executions AgentExecutionProjectionRepository, runnerClient ReviewerRunnerClient) *AgentRunnerCoordinator {
@@ -225,7 +232,10 @@ func runnerCreateDefinitelyRejected(err error) bool {
 func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt RunnerAttempt, run *model.Run, expectedHash string, request runner.CreateExecutionRequest, persistedEndpoint string, repin func(context.Context, string, string) error) (*runner.Execution, string, bool, error) {
 	firstErr := error(nil)
 	for {
-		remote, createErr := attempt.Client.Create(ctx, request)
+		remote, createErr := c.createAdmitted(ctx, attempt.Client, request, false)
+		if dispatchAdmissionDenied(createErr) {
+			return nil, "", false, createErr
+		}
 		if createErr == nil {
 			return remote, attempt.Endpoint, true, nil
 		}
@@ -260,14 +270,29 @@ func (c *AgentRunnerCoordinator) createOnPool(ctx context.Context, attempt Runne
 }
 
 func (c *AgentRunnerCoordinator) persistIntent(ctx context.Context, run *model.Run, request runner.CreateExecutionRequest, endpoint, expectedHash string) (*model.AgentExecution, error) {
+	snapshot, err := dispatchSnapshot(request)
+	if err != nil {
+		return nil, err
+	}
 	now := c.now().UTC()
 	intent := &model.AgentExecution{
 		RunID: run.RunID, ExecutionID: run.RunID, Provider: request.Provider.Name,
 		ProviderConfigRevision: request.Provider.Revision, ProviderModel: request.Provider.Model,
 		ProviderEffort: request.Provider.Effort, RunnerEndpoint: endpoint,
 		Status: model.AgentExecutionStatusDispatching, RequestHash: expectedHash, LastObservedAt: &now,
+		CreateSpecJSON: snapshot,
 	}
-	if err := c.executions.Create(ctx, intent); err != nil {
+	create := c.executions.Create
+	if c.admissions != nil {
+		guarded, ok := c.executions.(interface {
+			CreateDispatchIntent(context.Context, *model.AgentExecution) error
+		})
+		if !ok {
+			return nil, ErrStopUnavailable
+		}
+		create = guarded.CreateDispatchIntent
+	}
+	if err := create(ctx, intent); err != nil {
 		stored, lookupErr := c.executions.GetByRunID(ctx, run.RunID)
 		if lookupErr == nil {
 			return stored, nil
@@ -299,6 +324,7 @@ func (c *AgentRunnerCoordinator) projectRemoteIntoIntent(ctx context.Context, st
 	projection.ID = stored.ID
 	projection.CreatedAt = stored.CreatedAt
 	projection.RunnerEndpoint = stored.RunnerEndpoint
+	projection.CreateSpecJSON = stored.CreateSpecJSON
 	if err := c.executions.Update(ctx, projection); err != nil {
 		return nil, fmt.Errorf("persist dispatch projection for run %s: %w", stored.RunID, err)
 	}
@@ -306,7 +332,14 @@ func (c *AgentRunnerCoordinator) projectRemoteIntoIntent(ctx context.Context, st
 }
 
 func (c *AgentRunnerCoordinator) reconcileIntent(ctx context.Context, stored *model.AgentExecution) (*model.AgentExecution, error) {
-	client := c.executionClient(stored)
+	return c.reconcileIntentWithRequest(ctx, stored, nil)
+}
+
+func (c *AgentRunnerCoordinator) reconcileIntentWithRequest(ctx context.Context, stored *model.AgentExecution, request *runner.CreateExecutionRequest) (*model.AgentExecution, error) {
+	client, err := c.pinnedExecutionClient(stored)
+	if err != nil {
+		return nil, err
+	}
 	remote, getErr := client.Get(ctx, stored.ExecutionID)
 	if getErr == nil {
 		if err := validateRemoteExecution(remote, stored.ExecutionID, stored.RequestHash); err != nil {
@@ -317,6 +350,9 @@ func (c *AgentRunnerCoordinator) reconcileIntent(ctx context.Context, stored *mo
 	if !runnerNotFound(getErr) {
 		return nil, fmt.Errorf("%w: read back execution %s on %q: %v", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint, getErr)
 	}
+	if c.admissions != nil {
+		return c.replayDispatchIntent(ctx, stored, request)
+	}
 	return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
 }
 
@@ -326,6 +362,14 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	}
 	if err := validateAgentRunnerTask(task, run, request); err != nil {
 		return nil, err
+	}
+	if c.admissions != nil {
+		if c.router == nil {
+			return nil, ErrStopUnavailable
+		}
+		if err := c.assertDispatchActive(ctx, task.TaskID, run.RunID); err != nil {
+			return nil, err
+		}
 	}
 	expectedHash, err := runner.RequestHash(request)
 	if err != nil {
@@ -338,16 +382,15 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	if found && existing.Status != model.AgentExecutionStatusDispatching {
 		return existing, nil
 	}
-	if found {
-		// 意图已落库、远端结果未定：按原目标端点收敛。
-		return c.reconcileIntent(ctx, existing)
-	}
 	if c.ingressIssuer != nil && c.ingressEndpoint != "" {
 		token, err := c.ingressIssuer.IssueRunToken(task.TaskID, run.RunID, task.Role, time.Duration(request.TimeoutSeconds)*time.Second)
 		if err != nil {
 			return nil, fmt.Errorf("issue run result token: %w", err)
 		}
 		request.ResultSubmission = &runner.ResultSubmissionChannel{EndpointURL: c.ingressEndpoint, BearerToken: token}
+	}
+	if found {
+		return c.reconcileIntentWithRequest(ctx, existing, &request)
 	}
 	var attempt RunnerAttempt
 	if pinned := strings.TrimSpace(run.RunnerEndpoint); pinned != "" {
@@ -364,6 +407,9 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	// 两者之间时，接管方按该端点回读/重发，不换 Runner、不产生第二个执行。
 	intent, err := c.persistIntent(ctx, run, request, attempt.Endpoint, expectedHash)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateStoredExecution(intent, run.RunID, expectedHash); err != nil {
 		return nil, err
 	}
 	if intent.Status != model.AgentExecutionStatusDispatching {
@@ -385,6 +431,9 @@ func (c *AgentRunnerCoordinator) Start(ctx context.Context, task *model.Task, ru
 	}
 	remote, endpoint, definite, err := c.createOnPool(ctx, attempt, run, expectedHash, request, intent.RunnerEndpoint, repoPin)
 	if err != nil {
+		if dispatchAdmissionDenied(err) {
+			return nil, err
+		}
 		if !definite {
 			// 结果不确定：保持意图待对账（轮询按原端点收敛），本函数按
 			// 已受理返回意图行，不判失败、不重派新执行。
@@ -450,20 +499,30 @@ func (c *AgentRunnerCoordinator) Observe(ctx context.Context, runID string) (*Ag
 	if err := c.executions.TouchLastObservedAt(ctx, runID, c.now().UTC()); err != nil {
 		return nil, err
 	}
-	client := c.executionClient(stored)
+	client, err := c.pinnedExecutionClient(stored)
+	if err != nil {
+		return nil, err
+	}
 	if stored.Status == model.AgentExecutionStatusDispatching {
-		remote, getErr := client.Get(ctx, stored.ExecutionID)
-		if runnerNotFound(getErr) {
-			return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
+		if c.admissions != nil {
+			stored, err = c.reconcileIntent(ctx, stored)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			remote, getErr := client.Get(ctx, stored.ExecutionID)
+			if runnerNotFound(getErr) {
+				return nil, fmt.Errorf("%w: runner returned 404 for persisted dispatch intent %s on %q; restore runner data or resolve manually before retrying", errDispatchOutcomeUnknown, stored.ExecutionID, stored.RunnerEndpoint)
+			}
+			if getErr != nil {
+				return nil, fmt.Errorf("read back dispatching execution %s: %w", stored.ExecutionID, getErr)
+			}
+			converged, err := c.projectRemoteIntoIntent(ctx, stored, remote, stored.LastEventSeq)
+			if err != nil {
+				return nil, err
+			}
+			stored = converged
 		}
-		if getErr != nil {
-			return nil, fmt.Errorf("read back dispatching execution %s: %w", stored.ExecutionID, getErr)
-		}
-		converged, err := c.projectRemoteIntoIntent(ctx, stored, remote, stored.LastEventSeq)
-		if err != nil {
-			return nil, err
-		}
-		stored = converged
 	}
 	events, err := client.Events(ctx, stored.ExecutionID, stored.LastEventSeq)
 	if err != nil {

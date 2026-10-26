@@ -26,8 +26,12 @@ func (r *RunRepository) Create(ctx context.Context, run *model.Run) error {
 }
 
 func (r *RunRepository) Update(ctx context.Context, run *model.Run) error {
-	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
-		return fmt.Errorf("update run: %w", err)
+	result := r.db.WithContext(ctx).Model(&model.Run{}).Where("run_id = ? AND status <> ?", run.RunID, model.RunStatusInterrupted).Select("*").Omit("id", "run_id", "task_id", "created_at").Updates(run)
+	if result.Error != nil {
+		return fmt.Errorf("update run: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return ErrTaskInterrupted
 	}
 	return nil
 }
@@ -88,12 +92,14 @@ func (r *RunRepository) UpdateDispatchProjection(ctx context.Context, runID, ext
 // 准备、任务包投递、执行、commit/push、清理全链按同一端点寻址，崩溃恢复
 // 路径按钉住值重放，不换 runner。
 func (r *RunRepository) PinRunnerEndpointIfEmpty(ctx context.Context, runID, endpoint string) error {
-	if err := r.db.WithContext(ctx).Model(&model.Run{}).
-		Where("run_id = ? AND (runner_endpoint = '' OR runner_endpoint IS NULL)", runID).
-		Update("runner_endpoint", endpoint).Error; err != nil {
-		return fmt.Errorf("pin run runner endpoint: %w", err)
-	}
-	return nil
+	return withLockedCurrentRun(ctx, r.db, runID, func(tx *gorm.DB, _ *model.Run) error {
+		if err := tx.Model(&model.Run{}).
+			Where("run_id = ? AND (runner_endpoint = '' OR runner_endpoint IS NULL)", runID).
+			Update("runner_endpoint", endpoint).Error; err != nil {
+			return fmt.Errorf("pin run runner endpoint: %w", err)
+		}
+		return nil
+	})
 }
 
 // PinRunnerWorkspacePathIfEmpty 仅在 run 尚未记录 runner 工作区路径时写入
@@ -191,6 +197,7 @@ func (r *RunRepository) ListSucceededForArtifactCleanup(ctx context.Context, bef
 		Where("status = ? AND error_message = ? AND completed_at IS NOT NULL AND completed_at <= ? AND artifacts_purged_at IS NULL AND (artifacts_purge_started_at IS NULL OR artifacts_purge_started_at <= ?) AND external_system = ?",
 			model.RunStatusSucceeded, "", before, staleBefore, "agent-runner").
 		Where("EXISTS (SELECT 1 FROM agent_executions ae WHERE ae.run_id = runs.run_id AND ae.status = ? AND TRIM(COALESCE(ae.result_hash, '')) <> '' AND TRIM(COALESCE(ae.error_code, '')) = '' AND TRIM(COALESCE(ae.error_message, '')) = '')", model.AgentExecutionStatusSucceeded).
+		Where("NOT EXISTS (SELECT 1 FROM stop_requests s WHERE s.run_id = runs.run_id)").
 		Where("EXISTS (SELECT 1 FROM result_submissions rs WHERE rs.run_id = runs.run_id AND rs.status = ? AND TRIM(COALESCE(rs.error_message, '')) = '')", model.ResultSubmissionStatusSucceeded).
 		Where("NOT EXISTS (SELECT 1 FROM writebacks wb WHERE wb.run_id = runs.run_id AND (wb.status IS NULL OR wb.status <> ?))", model.WritebackStatusSucceeded).
 		Where("NOT EXISTS (SELECT 1 FROM effects e WHERE e.run_id = runs.run_id AND (e.status IS NULL OR e.status NOT IN ?))", []model.EffectStatus{model.EffectStatusSucceeded, model.EffectStatusSkipped, model.EffectStatusDeliveryUnverified}).

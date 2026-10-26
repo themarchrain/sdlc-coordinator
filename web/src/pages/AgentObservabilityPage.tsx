@@ -3,6 +3,8 @@ import { Button, Descriptions, Drawer, Form, Input, Select, Space, Table, Timeli
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
+import { useWorkspaceSession } from '../app/workspaceSession'
+import { StopControl } from '../components/StopControl'
 import type { AgentExecution, AgentExecutionDetail, AgentExecutionEvent, Query } from '../api/types'
 import { patchSearchParams } from '../app/searchParams'
 import { PageHeading } from '../components/PageHeading'
@@ -110,9 +112,11 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 }
 
 function AgentExecutionDrawer({ executionID, onClose }: { executionID?: string; onClose: () => void }) {
-  const detail = useRemote(() => adminApi.getAgentExecution(executionID!), [executionID], Boolean(executionID))
+  const tenantID = useWorkspaceSession().session?.scope.tenant?.id
+  const detail = useRemote(async () => ({ executionID, tenantID, detail: await adminApi.getAgentExecution(executionID!) }), [executionID, tenantID], Boolean(executionID))
+  const snapshot = detail.data?.executionID === executionID && detail.data?.tenantID === tenantID ? detail.data?.detail : undefined
   return <Drawer width="min(820px, 100vw)" open={Boolean(executionID)} onClose={onClose} destroyOnClose title={<span className="mono">{executionID}</span>}>
-    {detail.loading ? <LoadingState /> : detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} /> : detail.data ? <ExecutionDetailBody data={detail.data} /> : null}
+    {detail.loading ? <LoadingState /> : detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} /> : snapshot ? <><StopControl target="execution" id={executionID!} canStop={snapshot.can_stop === true} initialStop={snapshot.stop} onChanged={detail.reload} /><ExecutionDetailBody data={snapshot} /></> : null}
   </Drawer>
 }
 

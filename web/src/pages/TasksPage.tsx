@@ -3,11 +3,13 @@ import { AutoComplete, Button, Descriptions, Drawer, Form, Input, Select, Space,
 import { useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
-import type { TaskSummary } from '../api/types'
+import type { StopStatus, TaskSummary } from '../api/types'
+import { useWorkspaceSession } from '../app/workspaceSession'
 import { patchSearchParams, repositoryFilter } from '../app/searchParams'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import { StatusTag } from '../components/StatusTag'
+import { StopControl } from '../components/StopControl'
 import { TaskStateMachinePanel } from '../components/TaskStateMachinePanel'
 import { AuditJson, TaskContextDetail } from '../components/StructuredDetail'
 import type { TimelineSlots } from '../themes/types'
@@ -16,7 +18,7 @@ import { useRemote } from '../hooks/useRemote'
 
 const roles = ['DeveloperWorker', 'TesterWorker', 'ReviewerWorker']
 const taskTypes = ['develop_from_issue', 'review_mr', 'rework_merge_request', 'upstream_fix', 'verify_merge_request', 'generated_from_next_task']
-const taskStatuses = ['pending', 'claimed', 'running', 'finalizing', 'waiting_upstream', 'waiting_merge', 'retry_pending', 'human_required', 'blocked', 'succeeded']
+const taskStatuses = ['pending', 'claimed', 'running', 'finalizing', 'waiting_upstream', 'waiting_merge', 'retry_pending', 'human_required', 'blocked', 'succeeded', 'interrupted']
 const taskFilterKeys = ['status', 'role', 'type', 'repository'] as const
 
 export function TasksPage() {
@@ -101,11 +103,12 @@ export function TasksPage() {
 
 function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void }) {
   const { theme } = useTheme()
+  const tenantID = useWorkspaceSession().session?.scope.tenant?.id
   const request = useRemote(async () => {
     const [task, events] = await Promise.all([adminApi.getTask(taskID!), adminApi.taskTimeline(taskID!)])
-    return { taskID, task, timeline: events.items, loadedAt: new Date().toISOString() }
-  }, [taskID], Boolean(taskID))
-  const snapshot = request.data?.taskID === taskID ? request.data : undefined
+    return { taskID, tenantID, task, timeline: events.items, loadedAt: new Date().toISOString() }
+  }, [taskID, tenantID], Boolean(taskID))
+  const snapshot = request.data?.taskID === taskID && request.data?.tenantID === tenantID ? request.data : undefined
   const detail = snapshot?.task
 
   return (
@@ -116,6 +119,7 @@ function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void 
       </div>
       {request.loading || (!snapshot && !request.error && taskID) ? <LoadingState /> : request.error ? <ErrorState error={request.error} onRetry={request.reload} /> : detail && snapshot ? (
         <div className="drawer-stack">
+          <StopControl target="task" id={taskID!} canStop={detail.can_stop === true} initialStop={detail.stop as StopStatus | null | undefined} onChanged={request.reload} />
           <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered items={[
             { key: 'status', label: '状态', children: <StatusTag status={String(detail.status || '')} /> },
             { key: 'role', label: '角色', children: String(detail.role || '—') },
@@ -156,7 +160,7 @@ function timelineColor(status: string, slots: TimelineSlots) {
 
 function optionLabel(value: string) {
   return ({
-    pending: '待派发', claimed: '已领取', running: '运行中', finalizing: '结果收口中', retry_pending: '等待重试', waiting_upstream: '等待上游',
+    interrupted: '已中断', pending: '待派发', claimed: '已领取', running: '运行中', finalizing: '结果收口中', retry_pending: '等待重试', waiting_upstream: '等待上游',
     waiting_merge: '等待合并', human_required: '需要人工', blocked: '已阻塞', succeeded: '已成功', develop_from_issue: 'Issue 开发', review_mr: 'MR 审查',
     rework_merge_request: 'MR 接续开发', upstream_fix: '上游修复', verify_merge_request: 'MR 验证', generated_from_next_task: '派生任务',
     DeveloperWorker: '开发', TesterWorker: '验证', ReviewerWorker: '审查',

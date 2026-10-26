@@ -69,6 +69,9 @@ func (handler *AdminOperationHandler) RegisterRoutes(group *gin.RouterGroup, mid
 	group.POST("/scheduler/tick", append(middleware, handler.Tick)...)
 	group.POST("/effects/:effect_id/retry", append(middleware, handler.RetryEffect)...)
 	group.POST("/tasks/:task_id/rebind", append(middleware, handler.RebindTask)...)
+	group.POST("/tasks/:task_id/stop", handler.stopTarget("task", "task_id"))
+	group.POST("/runs/:run_id/stop", handler.stopTarget("run", "run_id"))
+	group.POST("/agents/executions/executions/:execution_id/stop", handler.stopTarget("execution", "execution_id"))
 }
 
 func (handler *AdminOperationHandler) TickDefaults(c *gin.Context) {
@@ -146,6 +149,12 @@ func (handler *AdminOperationHandler) RebindTask(c *gin.Context) {
 // statusFromError 把仓库/编排错误映射到 HTTP 状态码。
 func statusFromError(err error) int {
 	switch {
+	case errors.Is(err, orchestrator.ErrStopUnavailable):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, repository.ErrInvalidStopRequest):
+		return http.StatusBadRequest
+	case errors.Is(err, repository.ErrStopNotCurrentRun), errors.Is(err, repository.ErrStopAlreadyTerminal), errors.Is(err, repository.ErrTaskInterrupted):
+		return http.StatusConflict
 	case errors.Is(err, repository.ErrNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, repository.ErrTaskNotClaimable),
