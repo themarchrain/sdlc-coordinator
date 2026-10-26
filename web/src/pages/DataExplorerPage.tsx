@@ -251,11 +251,13 @@ function EntityDrawer({ config, id, onClose }: { config: EntityConfig; id?: stri
   const request = useRemote(async () => ({ id, entity: config.key, tenantID, detail: await adminApi.getEntity(config.key, id!) }), [config.key, id, tenantID], Boolean(id))
   const detail = request.data?.id === id && request.data?.entity === config.key && request.data?.tenantID === tenantID ? request.data.detail : undefined
   return <Drawer width="min(860px, 100vw)" title={<div><span>{config.title}</span><small className="drawer-title-id mono">{id}</small></div>} open={Boolean(id)} onClose={onClose} destroyOnClose>
-    {request.loading ? <LoadingState /> : request.error ? <ErrorState error={request.error} onRetry={request.reload} /> : detail ? <>
-      {config.key === 'runs' ? <StopControl target="run" id={id!} canStop={detail.can_stop === true} initialStop={detail.stop as StopStatus | null | undefined} onChanged={request.reload} /> : null}
-      {config.key === 'runs' ? <RunSummary detail={detail} /> : null}
-      <EntityDetail entity={config.key} detail={detail} />
-    </> : null}
+    {request.loading ? <LoadingState /> : request.error ? <ErrorState error={request.error} onRetry={request.reload} /> : detail ? (
+      <div className="drawer-stack">
+        {config.key === 'runs' ? <StopControl target="run" id={id!} canStop={detail.can_stop === true} initialStop={detail.stop as StopStatus | null | undefined} onChanged={request.reload} /> : null}
+        {config.key === 'runs' ? <RunSummary detail={detail} /> : null}
+        <EntityDetail entity={config.key} detail={detail} />
+      </div>
+    ) : null}
   </Drawer>
 }
 
