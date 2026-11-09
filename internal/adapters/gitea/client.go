@@ -263,6 +263,11 @@ func mapMergeStatusError(err error) error {
 	switch {
 	case status.StatusCode == http.StatusConflict:
 		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
+	case status.StatusCode == http.StatusMethodNotAllowed && strings.Contains(status.Message, "Please try again later"):
+		// Gitea 在 PR 进入 checking 时对合并/读取返回 405 "Please try again
+		// later":同仓任意 base 分支 push 都会把目标 PR 置为检查中,属可重试
+		// 窗口;其余 405(协作中/WIP/分支保护/已合并)仍是确定性拒绝。
+		return codehost.NewTransientRejection(err)
 	case status.StatusCode >= http.StatusBadRequest && status.StatusCode < http.StatusInternalServerError:
 		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)
 	}

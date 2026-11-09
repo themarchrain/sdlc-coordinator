@@ -902,3 +902,45 @@ func TestClientMergePullRequestInvalidRepoDoesNotReachNetwork(t *testing.T) {
 		t.Fatalf("invalid repo path must not reach the network, got %d requests", requests)
 	}
 }
+
+func TestClientMergeCheckingWindowStaysTransient(t *testing.T) {
+	cases := []struct {
+		name      string
+		entry     string
+		status    int
+		body      string
+		transient bool
+		rejected  bool
+	}{
+		{name: "checking window on merge stays transient", entry: "merge", status: http.StatusMethodNotAllowed, body: `{"message":"Please try again later"}`, transient: true},
+		{name: "checking window on read stays transient", entry: "read", status: http.StatusMethodNotAllowed, body: `{"message":"Please try again later"}`, transient: true},
+		{name: "real 405 rejection stays deterministic", entry: "merge", status: http.StatusMethodNotAllowed, body: `{"message":"state of the pull request does not allow merging"}`, rejected: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+			client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+			var err error
+			switch tc.entry {
+			case "merge":
+				_, err = client.MergePullRequest(context.Background(), "agent/framework", 12, codehost.MergePullRequestRequest{ExpectedHeadSHA: "abc123"})
+			case "read":
+				_, err = client.GetMergeRequest(context.Background(), "agent/framework", 12)
+			}
+			if err == nil {
+				t.Fatal("expected request error")
+			}
+			if got := codehost.IsTransientRejection(err); got != tc.transient {
+				t.Fatalf("expected transient=%v, got %v: %v", tc.transient, got, err)
+			}
+			if got := errors.Is(err, codehost.ErrMergeRejected) || errors.Is(err, codehost.ErrMergeHeadMismatch); got != tc.rejected {
+				t.Fatalf("expected deterministic=%v, got %v: %v", tc.rejected, got, err)
+			}
+		})
+	}
+}
