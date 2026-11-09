@@ -164,17 +164,24 @@ func (info pullBranchInfo) branch() string {
 	return strings.TrimSpace(info.Name)
 }
 
-// GetMergeRequest 读取 PR 详情(分支与 HEAD);与 github/gitlab 客户端同名方法
-// 形态一致。
-func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+// getPull 读取 PR 原始响应,不做门禁哨兵分类。GetMergeRequest 在其上做映射;
+// 合并后的真相回读直接消费原始错误,保证「请求已发出、结果未知」不会被
+// 升级成确定性拒绝。
+func (c *Client) getPull(ctx context.Context, repo string, mrIID int) (*pullResponse, error) {
 	owner, name, err := splitRepo(repo)
 	if err != nil {
 		return nil, err
 	}
 	var pr pullResponse
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), mrIID), nil, &pr); err != nil {
-		return nil, mapMergeStatusError(err)
+		return nil, err
 	}
+	return &pr, nil
+}
+
+// mergeRequest 把平台 PR 原始响应映射为 codehost.MergeRequest;Merged/
+// MergeCommitSHA 供自动合并门禁做拒绝/歧义后的真相恢复。
+func (pr *pullResponse) mergeRequest() *codehost.MergeRequest {
 	return &codehost.MergeRequest{
 		IID:            pr.Number,
 		WebURL:         pr.HTMLURL,
@@ -183,13 +190,25 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 		HeadSHA:        strings.TrimSpace(pr.Head.SHA),
 		Merged:         pr.Merged,
 		MergeCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
-	}, nil
+	}
+}
+
+// GetMergeRequest 读取 PR 详情(分支与 HEAD);与 github/gitlab 客户端同名方法
+// 形态一致。
+func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+	pr, err := c.getPull(ctx, repo, mrIID)
+	if err != nil {
+		return nil, mapMergeStatusError(err)
+	}
+	return pr.mergeRequest(), nil
 }
 
 // MergePullRequest 执行 PR 合并:ExpectedHeadSHA 走 Gitea 原生 head_commit_id
 // 断言,头部漂移由平台拒合。Gitea 合并成功响应是空 200,不携带结果,必须
-// 回读 PR:仅 merged=true 才返回合并成功并透出 merge_commit_sha。不删源分支、
-// 不设置 force_merge/merge_when_checks_succeed,不绕平台保护规则。
+// 回读 PR:merged=true 返回合并成功并透出 merge_commit_sha;merged=false
+// 返回未合并结果(err=nil),由门禁回落人工;回读失败属于结果不确定,包装为
+// Ambiguous 交给门禁下一轮回读真实状态。不删源分支、不设置 force_merge/
+// merge_when_checks_succeed,不绕平台保护规则。
 func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, req codehost.MergePullRequestRequest) (*codehost.MergePullRequestResult, error) {
 	owner, name, err := splitRepo(repo)
 	if err != nil {
@@ -213,13 +232,16 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), mrIID), payload, nil); err != nil {
 		return nil, mapMergeStatusError(err)
 	}
-	mergeRequest, err := c.GetMergeRequest(ctx, repo, mrIID)
+	pr, err := c.getPull(ctx, repo, mrIID)
 	if err != nil {
-		return nil, err
+		// 合并请求已发出(空 200),此刻真相未知:回读失败属于结果不确定,
+		// 保持 Ambiguous 由门禁下一轮回读真实状态;不得复用读入口的哨兵
+		// 映射,否则已生效的合并会被记成确定性拒绝。
+		return nil, codehost.NewAmbiguousError(fmt.Errorf("read back merged pull request %s#%d: %w", repo, mrIID, err))
 	}
 	return &codehost.MergePullRequestResult{
-		Merged:          mergeRequest.Merged,
-		MergedCommitSHA: mergeRequest.MergeCommitSHA,
+		Merged:          pr.Merged,
+		MergedCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
 	}, nil
 }
 

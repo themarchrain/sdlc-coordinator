@@ -731,6 +731,66 @@ func TestClientMergePullRequestDefaultsToGiteaMerge(t *testing.T) {
 	}
 }
 
+func TestClientMergePullRequestReadbackFailureStaysUncertain(t *testing.T) {
+	var seenGetPath string
+	var seenGetMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			// 合并 POST 成功(空 200),平台可能已生效。
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		seenGetMethod = r.Method
+		seenGetPath = r.URL.EscapedPath()
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "group/project", 12, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc123",
+	})
+	if err == nil {
+		t.Fatal("expected readback failure error")
+	}
+	if !codehost.IsAmbiguousError(err) {
+		t.Fatalf("readback failure after a 200 merge must stay uncertain, got %v", err)
+	}
+	if errors.Is(err, codehost.ErrMergeRejected) || errors.Is(err, codehost.ErrMergeHeadMismatch) {
+		t.Fatalf("readback failure must not be classified as deterministic rejection, got %v", err)
+	}
+	if seenGetMethod != http.MethodGet || seenGetPath != "/api/v1/repos/group/project/pulls/12" {
+		t.Fatalf("unexpected readback request %s %s", seenGetMethod, seenGetPath)
+	}
+}
+
+func TestClientMergePullRequestReadbackUnmergedReturnsUnmerged(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":12,"merged":false}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	result, err := client.MergePullRequest(context.Background(), "group/project", 12, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc123",
+	})
+	if err != nil {
+		t.Fatalf("unmerged readback must not error, got %v", err)
+	}
+	if result.Merged {
+		t.Fatalf("expected unmerged result, got %#v", result)
+	}
+	if result.MergedCommitSHA != "" {
+		t.Fatalf("expected empty merge commit sha, got %#v", result)
+	}
+}
+
 func TestClientMergeErrorClassification(t *testing.T) {
 	cases := []struct {
 		name         string
