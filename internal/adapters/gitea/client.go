@@ -173,7 +173,7 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	}
 	var pr pullResponse
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), mrIID), nil, &pr); err != nil {
-		return nil, err
+		return nil, mapMergeStatusError(err)
 	}
 	return &codehost.MergeRequest{
 		IID:            pr.Number,
@@ -211,7 +211,7 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 		payload["merge_message_field"] = req.CommitMessage
 	}
 	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), mrIID), payload, nil); err != nil {
-		return nil, err
+		return nil, mapMergeStatusError(err)
 	}
 	mergeRequest, err := c.GetMergeRequest(ctx, repo, mrIID)
 	if err != nil {
@@ -221,6 +221,30 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 		Merged:          mergeRequest.Merged,
 		MergedCommitSHA: mergeRequest.MergeCommitSHA,
 	}, nil
+}
+
+// mapMergeStatusError 把确定性拒绝归到哨兵错误上:409=头部断言失配
+// (ErrMergeHeadMismatch),其余 4xx 家族=平台明确拒绝、不可重试
+// (ErrMergeRejected,含 404 的 PR 已删/仓库转移与 401/403 的凭据问题);
+// 5xx 与网络类保持 Ambiguous 原样。429/408 属于可重试的 4xx
+// (TransientRejection),必须先于 4xx 归类原样返回,不得改写。读与合两个
+// 入口共用同一分类,门禁据此区分回落与重评;Issue/Labels 等非门禁写回
+// 不经过此映射,保持原有 StatusError 语义。
+func mapMergeStatusError(err error) error {
+	if codehost.IsTransientRejection(err) {
+		return err
+	}
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return err
+	}
+	switch {
+	case status.StatusCode == http.StatusConflict:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
+	case status.StatusCode >= http.StatusBadRequest && status.StatusCode < http.StatusInternalServerError:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)
+	}
+	return err
 }
 
 func splitRepo(repo string) (string, string, error) {

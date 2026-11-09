@@ -3,6 +3,7 @@ package gitea
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -727,5 +728,117 @@ func TestClientMergePullRequestDefaultsToGiteaMerge(t *testing.T) {
 	}
 	if _, ok := seenPayload["merge_when_checks_succeed"]; ok {
 		t.Fatalf("merge_when_checks_succeed must never be sent, got %#v", seenPayload)
+	}
+}
+
+func TestClientMergeErrorClassification(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       int
+		headMismatch bool
+		rejected     bool
+	}{
+		{name: "conflict is head mismatch", status: http.StatusConflict, headMismatch: true},
+		{name: "forbidden is platform rejection", status: http.StatusForbidden, rejected: true},
+		{name: "not found is platform rejection", status: http.StatusNotFound, rejected: true},
+		{name: "method not allowed is platform rejection", status: http.StatusMethodNotAllowed, rejected: true},
+		{name: "unprocessable is platform rejection", status: http.StatusUnprocessableEntity, rejected: true},
+		{name: "locked is platform rejection", status: http.StatusLocked, rejected: true},
+		{name: "request timeout stays transient", status: http.StatusRequestTimeout},
+		{name: "rate limited stays transient", status: http.StatusTooManyRequests},
+		{name: "server error stays ambiguous", status: http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("expected POST, got %s", r.Method)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(server.Close)
+			client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+			_, err := client.MergePullRequest(context.Background(), "agent/framework", 12, codehost.MergePullRequestRequest{
+				ExpectedHeadSHA: "abc123",
+			})
+			if err == nil {
+				t.Fatal("expected merge error")
+			}
+			if got := errors.Is(err, codehost.ErrMergeHeadMismatch); got != tc.headMismatch {
+				t.Fatalf("expected headMismatch=%v, got %v: %v", tc.headMismatch, got, err)
+			}
+			if got := errors.Is(err, codehost.ErrMergeRejected); got != tc.rejected {
+				t.Fatalf("expected rejected=%v, got %v: %v", tc.rejected, got, err)
+			}
+			if (tc.status == http.StatusRequestTimeout || tc.status == http.StatusTooManyRequests) && !codehost.IsTransientRejection(err) {
+				t.Fatalf("expected transient rejection, got %v", err)
+			}
+			if tc.status >= http.StatusInternalServerError && !codehost.IsAmbiguousError(err) {
+				t.Fatalf("expected ambiguous error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestClientGetMergeRequestErrorClassification(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       int
+		headMismatch bool
+		rejected     bool
+	}{
+		{name: "conflict is head mismatch", status: http.StatusConflict, headMismatch: true},
+		{name: "not found is platform rejection", status: http.StatusNotFound, rejected: true},
+		{name: "forbidden is platform rejection", status: http.StatusForbidden, rejected: true},
+		{name: "rate limited stays transient", status: http.StatusTooManyRequests},
+		{name: "server error stays ambiguous", status: http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Errorf("expected GET, got %s", r.Method)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(server.Close)
+			client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+			_, err := client.GetMergeRequest(context.Background(), "agent/framework", 12)
+			if err == nil {
+				t.Fatal("expected read error")
+			}
+			if got := errors.Is(err, codehost.ErrMergeHeadMismatch); got != tc.headMismatch {
+				t.Fatalf("expected headMismatch=%v, got %v: %v", tc.headMismatch, got, err)
+			}
+			if got := errors.Is(err, codehost.ErrMergeRejected); got != tc.rejected {
+				t.Fatalf("expected rejected=%v, got %v: %v", tc.rejected, got, err)
+			}
+			if tc.status == http.StatusTooManyRequests && !codehost.IsTransientRejection(err) {
+				t.Fatalf("expected transient rejection, got %v", err)
+			}
+			if tc.status >= http.StatusInternalServerError && !codehost.IsAmbiguousError(err) {
+				t.Fatalf("expected ambiguous error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestClientMergePullRequestInvalidRepoDoesNotReachNetwork(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	_, err := client.MergePullRequest(context.Background(), "not-a-repo", 12, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc123",
+	})
+	if err == nil {
+		t.Fatal("expected invalid repo error")
+	}
+	if requests != 0 {
+		t.Fatalf("invalid repo path must not reach the network, got %d requests", requests)
 	}
 }
