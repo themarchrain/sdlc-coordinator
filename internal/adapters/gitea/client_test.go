@@ -638,3 +638,94 @@ func TestGetMergeRequestMapsPullBranches(t *testing.T) {
 		t.Fatalf("expected merge truth merged=true sha=merged123, got %#v", mergeRequest)
 	}
 }
+
+func TestClientMergePullRequestSendsHeadAssertionAndReadsBackTruth(t *testing.T) {
+	var seenPath string
+	var seenPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			seenPath = r.URL.EscapedPath()
+			if err := json.NewDecoder(r.Body).Decode(&seenPayload); err != nil {
+				t.Errorf("decode merge payload: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			// Gitea 合并成功响应是空 200。
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"number": 12,
+			"html_url": "http://gitea.local/group/project/pulls/12",
+			"head": {"ref": "feature/x", "sha": "abc123"},
+			"base": {"ref": "main"},
+			"merged": true,
+			"merge_commit_sha": "merged999"
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	result, err := client.MergePullRequest(context.Background(), "group/project", 12, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc123",
+		MergeMethod:     "squash",
+		CommitTitle:     "squash title",
+		CommitMessage:   "squash body",
+	})
+	if err != nil {
+		t.Fatalf("merge pull request: %v", err)
+	}
+	if seenPath != "/api/v1/repos/group/project/pulls/12/merge" {
+		t.Fatalf("unexpected merge path %s", seenPath)
+	}
+	if seenPayload["do"] != "squash" {
+		t.Fatalf("unexpected merge method: %#v", seenPayload)
+	}
+	if seenPayload["head_commit_id"] != "abc123" {
+		t.Fatalf("unexpected head assertion: %#v", seenPayload)
+	}
+	if seenPayload["delete_branch_after_merge"] != false {
+		t.Fatalf("delete_branch_after_merge must be explicit false: %#v", seenPayload)
+	}
+	if seenPayload["merge_title_field"] != "squash title" || seenPayload["merge_message_field"] != "squash body" {
+		t.Fatalf("unexpected merge commit fields: %#v", seenPayload)
+	}
+	if !result.Merged || result.MergedCommitSHA != "merged999" {
+		t.Fatalf("expected merged result from readback, got %#v", result)
+	}
+}
+
+func TestClientMergePullRequestDefaultsToGiteaMerge(t *testing.T) {
+	var seenPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&seenPayload); err != nil {
+				t.Errorf("decode merge payload: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":12,"merged":true,"merge_commit_sha":"merged777"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+	if _, err := client.MergePullRequest(context.Background(), "group/project", 12, codehost.MergePullRequestRequest{
+		ExpectedHeadSHA: "abc123",
+	}); err != nil {
+		t.Fatalf("merge pull request with default method: %v", err)
+	}
+	if seenPayload["do"] != "merge" {
+		t.Fatalf("expected gitea required default do=merge, got %#v", seenPayload)
+	}
+	if _, ok := seenPayload["force_merge"]; ok {
+		t.Fatalf("force_merge must never be sent, got %#v", seenPayload)
+	}
+	if _, ok := seenPayload["merge_when_checks_succeed"]; ok {
+		t.Fatalf("merge_when_checks_succeed must never be sent, got %#v", seenPayload)
+	}
+}

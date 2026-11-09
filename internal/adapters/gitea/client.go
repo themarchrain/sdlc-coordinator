@@ -186,6 +186,43 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	}, nil
 }
 
+// MergePullRequest 执行 PR 合并:ExpectedHeadSHA 走 Gitea 原生 head_commit_id
+// 断言,头部漂移由平台拒合。Gitea 合并成功响应是空 200,不携带结果,必须
+// 回读 PR:仅 merged=true 才返回合并成功并透出 merge_commit_sha。不删源分支、
+// 不设置 force_merge/merge_when_checks_succeed,不绕平台保护规则。
+func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, req codehost.MergePullRequestRequest) (*codehost.MergePullRequestResult, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	method := strings.TrimSpace(req.MergeMethod)
+	if method == "" {
+		method = "merge"
+	}
+	payload := map[string]any{
+		"do":                        method,
+		"head_commit_id":            req.ExpectedHeadSHA,
+		"delete_branch_after_merge": false,
+	}
+	if strings.TrimSpace(req.CommitTitle) != "" {
+		payload["merge_title_field"] = req.CommitTitle
+	}
+	if strings.TrimSpace(req.CommitMessage) != "" {
+		payload["merge_message_field"] = req.CommitMessage
+	}
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), mrIID), payload, nil); err != nil {
+		return nil, err
+	}
+	mergeRequest, err := c.GetMergeRequest(ctx, repo, mrIID)
+	if err != nil {
+		return nil, err
+	}
+	return &codehost.MergePullRequestResult{
+		Merged:          mergeRequest.Merged,
+		MergedCommitSHA: mergeRequest.MergeCommitSHA,
+	}, nil
+}
+
 func splitRepo(repo string) (string, string, error) {
 	parts := strings.Split(strings.Trim(repo, "/"), "/")
 	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
