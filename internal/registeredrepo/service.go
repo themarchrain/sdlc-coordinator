@@ -60,6 +60,14 @@ func ValidProvider(provider string) bool {
 	return false
 }
 
+// requiresTokenScopeAttestation 报告该平台是否存在“项目级（仓库级）令牌”概念。
+// GitLab/GitHub 可以签发只覆盖单个仓库的令牌，登记面要求操作者对此做声明；
+// Gitea 的个人访问令牌只有账号级 + 权限范围，仓库级令牌在平台上不存在，
+// 因此既不在界面要求声明，也不在服务端以此为前置条件。
+func requiresTokenScopeAttestation(provider string) bool {
+	return NormalizeProvider(provider) != "gitea"
+}
+
 type CreateRequest struct {
 	DisplayName         string
 	PathWithNamespace   string
@@ -290,7 +298,8 @@ type noopActivity struct{}
 func (noopActivity) HasActiveWork(context.Context, string) (bool, error) { return false, nil }
 
 func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, error) {
-	if !request.TokenScopeAttested {
+	// 项目级令牌声明只对具备仓库级令牌概念的平台有意义;Gitea 无此概念。
+	if requiresTokenScopeAttestation(request.Provider) && !request.TokenScopeAttested {
 		return nil, ErrTokenNotAttested
 	}
 	path := strings.TrimSpace(request.PathWithNamespace)
@@ -327,7 +336,7 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (*View, err
 		BaseURL:             baseURL,
 		Token:               request.Token,
 		WebhookSecret:       strings.TrimSpace(request.WebhookSecret),
-		TokenScopeAttested:  true,
+		TokenScopeAttested:  request.TokenScopeAttested || !requiresTokenScopeAttestation(provider),
 		CodeHostIssueLabels: encodeLabels(request.CodeHostIssueLabels),
 		ReviewerMentions:    request.ReviewerMentions,
 		VerifyCommand:       verifyCommand,
@@ -384,7 +393,10 @@ func (s *Service) Enable(ctx context.Context, repositoryID string) (*View, error
 		}
 		return nil, err
 	}
-	if !repo.TokenScopeAttested || strings.TrimSpace(repo.Token) == "" {
+	if strings.TrimSpace(repo.Token) == "" {
+		return nil, ErrTokenNotAttested
+	}
+	if requiresTokenScopeAttestation(repo.Provider) && !repo.TokenScopeAttested {
 		return nil, ErrTokenNotAttested
 	}
 	if strings.TrimSpace(repo.WebhookSecret) == "" {
@@ -488,11 +500,13 @@ func (s *Service) Patch(ctx context.Context, repositoryID string, request PatchR
 		repo.BaseURL = normalizedBaseURL
 	}
 	if tokenChanged {
-		if request.TokenScopeAttested == nil || !*request.TokenScopeAttested {
+		if requiresTokenScopeAttestation(repo.Provider) && (request.TokenScopeAttested == nil || !*request.TokenScopeAttested) {
 			return nil, ErrTokenNotAttested
 		}
 		repo.Token = request.Token
-		repo.TokenScopeAttested = true
+		if request.TokenScopeAttested != nil {
+			repo.TokenScopeAttested = *request.TokenScopeAttested
+		}
 	}
 	// webhook secret 轮换不影响平台身份与 git 凭据,空值表示保持(不支持清空)。
 	if strings.TrimSpace(request.WebhookSecret) != "" {

@@ -37,7 +37,7 @@ In Gitea, open **Settings → Applications → Generate Token** and select:
 
 Copy the token securely as soon as it is displayed. Never put a token in an Issue, chat, document, or Git repository.
 
-> The registration form has a required confirmation checkbox stating the token is project-level (repository-level). Because Gitea has no repository-level token, satisfy its intent with a dedicated account that is only a collaborator on this repository, rather than checking the box while using an instance administrator token.
+Gitea does not provide project-level (repository-level) tokens, only account-scoped PATs, so the registration form does not ask for a project-level declaration; narrow the reach with a dedicated account instead.
 
 ## 2. Register and enable the repository in Coordinator
 
@@ -49,8 +49,7 @@ Sign in as the organization's tenant administrator and open **Repository Managem
 | **Platform** | `Gitea`. |
 | **Platform URL** | See "About the platform URL"; it must be reachable from both Coordinator and the Runner. |
 | **Repository path** | `owner/repository`; do not paste a browser URL containing `/settings` or append `.git`. |
-| **Project Token** | Paste the token created above. |
-| **Project Token confirmation** | Check the box after confirming the token's reach covers only this repository. |
+| **Access token** | Paste the token created above. |
 | **Webhook Secret** | Enter the generated random secret and keep a copy for the next step. Do not enter the token here. |
 | **Verification command** | Optional. Enter a test or build command the Runner can actually execute, such as `go test ./...` for a Go project. It runs during automated verification. |
 | **Commit author name / email** | Optional; if provided, both must be set and they will appear in public Git history. Leave both empty to use the built-in identity. |

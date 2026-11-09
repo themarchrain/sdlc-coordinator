@@ -75,6 +75,33 @@ func TestCreateRejectsUnattestedTokenAndDoesNotEchoSecret(t *testing.T) {
 	}
 }
 
+// TestCreateGiteaSkipsTokenScopeAttestation 锁定平台差异:Gitea 的个人访问
+// 令牌只有账号级 + 权限范围,不存在仓库级令牌,登记与启用都不能再要求
+// 操作者做项目级声明。
+func TestCreateGiteaSkipsTokenScopeAttestation(t *testing.T) {
+	svc, probe := newServiceWithProbe(t)
+	view, err := svc.Create(context.Background(), CreateRequest{
+		DisplayName:       "gitea-repo",
+		PathWithNamespace: "group/a",
+		Provider:          "gitea",
+		BaseURL:           "https://gitea.example.com",
+		Token:             "token-a",
+		WebhookSecret:     "hook-secret-a",
+	})
+	if err != nil {
+		t.Fatalf("gitea create without attestation: %v", err)
+	}
+	if view.Provider != "gitea" {
+		t.Fatalf("provider = %q", view.Provider)
+	}
+	if probe.calls != 1 {
+		t.Fatalf("probe calls = %d", probe.calls)
+	}
+	if _, err := svc.Enable(context.Background(), view.RepositoryID); err != nil {
+		t.Fatalf("gitea enable without attestation: %v", err)
+	}
+}
+
 func TestCreateRequiresWebhookSecret(t *testing.T) {
 	svc, probe := newServiceWithProbe(t)
 	_, err := svc.Create(context.Background(), CreateRequest{
