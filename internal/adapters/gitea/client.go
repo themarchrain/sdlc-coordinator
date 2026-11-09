@@ -141,10 +141,12 @@ func (c *Client) AddMergeRequestLabels(ctx context.Context, repo string, mrIID i
 }
 
 type pullResponse struct {
-	Number  int            `json:"number"`
-	HTMLURL string         `json:"html_url"`
-	Head    pullBranchInfo `json:"head"`
-	Base    pullBranchInfo `json:"base"`
+	Number         int            `json:"number"`
+	HTMLURL        string         `json:"html_url"`
+	Head           pullBranchInfo `json:"head"`
+	Base           pullBranchInfo `json:"base"`
+	Merged         bool           `json:"merged"`
+	MergeCommitSHA string         `json:"merge_commit_sha"`
 }
 
 type pullBranchInfo struct {
@@ -174,11 +176,13 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 		return nil, err
 	}
 	return &codehost.MergeRequest{
-		IID:          pr.Number,
-		WebURL:       pr.HTMLURL,
-		SourceBranch: pr.Head.branch(),
-		TargetBranch: pr.Base.branch(),
-		HeadSHA:      strings.TrimSpace(pr.Head.SHA),
+		IID:            pr.Number,
+		WebURL:         pr.HTMLURL,
+		SourceBranch:   pr.Head.branch(),
+		TargetBranch:   pr.Base.branch(),
+		HeadSHA:        strings.TrimSpace(pr.Head.SHA),
+		Merged:         pr.Merged,
+		MergeCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
 	}, nil
 }
 

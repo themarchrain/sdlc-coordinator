@@ -614,7 +614,9 @@ func TestGetMergeRequestMapsPullBranches(t *testing.T) {
 			"number": 23,
 			"html_url": "https://gitea.example/octo-org/external/pulls/23",
 			"head": {"name": "legacy-head", "ref": "feature/external-pr", "sha": "cccccccccccccccccccccccccccccccccccccccc"},
-			"base": {"name": "main"}
+			"base": {"name": "main"},
+			"merged": true,
+			"merge_commit_sha": "merged123"
 		}`))
 	}))
 	t.Cleanup(server.Close)
@@ -631,5 +633,8 @@ func TestGetMergeRequestMapsPullBranches(t *testing.T) {
 		mergeRequest.SourceBranch != "feature/external-pr" || mergeRequest.TargetBranch != "main" ||
 		mergeRequest.HeadSHA != "cccccccccccccccccccccccccccccccccccccccc" {
 		t.Fatalf("unexpected merge request: %#v", mergeRequest)
+	}
+	if !mergeRequest.Merged || mergeRequest.MergeCommitSHA != "merged123" {
+		t.Fatalf("expected merge truth merged=true sha=merged123, got %#v", mergeRequest)
 	}
 }
