@@ -39,11 +39,11 @@ base_url: 'https://gitlab.example.com',
   },
 ]
 
-function renderPage(items = repositories) {
+function renderPage(items = repositories, codehostProvider: 'gitlab' | 'gitea' | 'github' = 'gitea') {
   vi.spyOn(adminApi, 'listRepositories').mockResolvedValue({ items })
   vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue({
     config: {
-      codehost: { provider: 'gitea', base_url: 'https://gitea.example.com', rework_allowed_user_ids: [] },
+      codehost: { provider: codehostProvider, base_url: 'https://gitea.example.com', rework_allowed_user_ids: [] },
       im: { provider: '', telegram: {}, feishu: {}, reviewer_mentions: [] },
       runner: { provider: '', effort: '', task_timeout: '' },
     },
@@ -92,7 +92,7 @@ describe('RepositoriesPage', () => {
     expect(document.body.textContent).not.toMatch(/"token"\s*:/)
   })
 
-  it('requires a project-scoped token attestation on the create form', async () => {
+  it('uses an access-token label and hides the attestation for Gitea on the create form', async () => {
     renderPage([])
 
     fireEvent.click(await screen.findByRole('button', { name: /新增仓库/ }))
@@ -102,11 +102,24 @@ describe('RepositoriesPage', () => {
     expect(within(dialog).getByLabelText('平台')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('平台地址')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('仓库路径')).toBeInTheDocument()
-    expect(within(dialog).getByLabelText('项目级 Token')).toBeInTheDocument()
-    expect(within(dialog).getByRole('checkbox', { name: /项目级（repository 级）token/ })).toBeInTheDocument()
-    expect(within(dialog).getByText(/操作者确认这是该平台项目级（repository 级）token，不是用户\/组\/实例 token/)).toBeInTheDocument()
+    // Gitea 只有账号级 PAT,表单改为“访问令牌”,且不出现项目级确认框。
+    expect(within(dialog).getByLabelText('访问令牌')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('项目级 Token')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: /项目级（repository 级）token/ })).not.toBeInTheDocument()
     // 全局 codehost 配置降级为表单默认值:新表单预填配置中的平台与地址。
     await waitFor(() => expect(within(dialog).getByLabelText('平台地址')).toHaveValue('https://gitea.example.com'))
+  })
+
+  it('requires a project-scoped token attestation for non-Gitea platforms on the create form', async () => {
+    renderPage([], 'gitlab')
+
+    fireEvent.click(await screen.findByRole('button', { name: /新增仓库/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('项目级 Token')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('访问令牌')).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('checkbox', { name: /项目级（repository 级）token/ })).toBeInTheDocument()
+    expect(within(dialog).getByText(/操作者确认这是该平台项目级（repository 级）token，不是用户\/组\/实例 token/)).toBeInTheDocument()
   })
 
   it('submits per-repository platform identity on create', async () => {
@@ -118,9 +131,8 @@ describe('RepositoriesPage', () => {
     await waitFor(() => expect(within(dialog).getByLabelText('平台地址')).toHaveValue('https://gitea.example.com'))
     fireEvent.change(within(dialog).getByLabelText('显示名称'), { target: { value: 'Gitea 仓' } })
     fireEvent.change(within(dialog).getByLabelText('仓库路径'), { target: { value: 'group/gitea-repo' } })
-    fireEvent.change(within(dialog).getByLabelText('项目级 Token'), { target: { value: 'token-input' } })
+    fireEvent.change(within(dialog).getByLabelText('访问令牌'), { target: { value: 'token-input' } })
     fireEvent.change(within(dialog).getByLabelText('Webhook Secret'), { target: { value: 'hook-secret' } })
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: /项目级（repository 级）token/ }))
     fireEvent.click(within(dialog).getByRole('button', { name: '保 存' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
@@ -138,10 +150,9 @@ describe('RepositoriesPage', () => {
     await waitFor(() => expect(within(dialog).getByLabelText('平台地址')).toHaveValue('https://gitea.example.com'))
     fireEvent.change(within(dialog).getByLabelText('显示名称'), { target: { value: 'Gitea 仓' } })
     fireEvent.change(within(dialog).getByLabelText('仓库路径'), { target: { value: 'group/gitea-repo' } })
-    fireEvent.change(within(dialog).getByLabelText('项目级 Token'), { target: { value: 'token-input' } })
+    fireEvent.change(within(dialog).getByLabelText('访问令牌'), { target: { value: 'token-input' } })
     fireEvent.change(within(dialog).getByLabelText('Webhook Secret'), { target: { value: 'hook-secret' } })
     fireEvent.change(within(dialog).getByLabelText('验证命令'), { target: { value: '  go test ./...  ' } })
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: /项目级（repository 级）token/ }))
     fireEvent.click(within(dialog).getByRole('button', { name: '保 存' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({

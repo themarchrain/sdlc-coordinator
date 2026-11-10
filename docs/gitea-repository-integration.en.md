@@ -54,7 +54,7 @@ Sign in as the organization's tenant administrator and open **Repository Managem
 | **Verification command** | Optional. Enter a test or build command the Runner can actually execute, such as `go test ./...` for a Go project. It runs during automated verification. |
 | **Commit author name / email** | Optional; if provided, both must be set and they will appear in public Git history. Leave both empty to use the built-in identity. |
 
-On save, Coordinator immediately calls `/api/v1/repos/owner/repository` with the token to probe the repository identity and default branch. A failed probe returns an error and the row is not persisted. After success, confirm the repository is **enabled** with no recent configuration error.
+On save, Coordinator immediately calls `/api/v1/repos/owner/repository` with the token to probe the repository identity and default branch. A failed probe does not roll back: the repository row is kept in **configuring** status and the failure reason is recorded in the *recent configuration error* column. Whether the probe succeeds or not, a newly added repository stays in **configuring** and requires an administrator to explicitly click enable in the list; enabling probes the repository once more, and only a successful enable moves it to **enabled** with an empty recent configuration error.
 
 ## 3. Configure the Gitea webhook
 

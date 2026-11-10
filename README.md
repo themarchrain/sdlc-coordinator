@@ -131,6 +131,8 @@ sequenceDiagram
 
 - [GitHub 仓库集成（中文）](./docs/github-repository-integration.zh-CN.md)
 - [GitHub Repository Integration (English)](./docs/github-repository-integration.en.md)
+- [Gitea 仓库集成（中文）](./docs/gitea-repository-integration.zh-CN.md)
+- [Gitea Repository Integration (English)](./docs/gitea-repository-integration.en.md)
 - [多实例部署说明](./deploy/multi-instance/README.md)
 - [Agent Runner 投放目录](./deploy/agent-runner-runtime/README.md)
 
