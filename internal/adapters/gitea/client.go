@@ -164,9 +164,7 @@ func (info pullBranchInfo) branch() string {
 	return strings.TrimSpace(info.Name)
 }
 
-// getPull 读取 PR 原始响应,不做门禁哨兵分类。GetMergeRequest 在其上做映射;
-// 合并后的真相回读直接消费原始错误,保证「请求已发出、结果未知」不会被
-// 升级成确定性拒绝。
+// getPull 读取 PR 原始响应,不做门禁哨兵分类;GetMergeRequest 在其上做映射。
 func (c *Client) getPull(ctx context.Context, repo string, mrIID int) (*pullResponse, error) {
 	owner, name, err := splitRepo(repo)
 	if err != nil {
@@ -179,8 +177,7 @@ func (c *Client) getPull(ctx context.Context, repo string, mrIID int) (*pullResp
 	return &pr, nil
 }
 
-// mergeRequest 把平台 PR 原始响应映射为 codehost.MergeRequest;Merged/
-// MergeCommitSHA 供自动合并门禁做拒绝/歧义后的真相恢复。
+// mergeRequest 把平台 PR 原始响应映射为 codehost.MergeRequest。
 func (pr *pullResponse) mergeRequest() *codehost.MergeRequest {
 	return &codehost.MergeRequest{
 		IID:            pr.Number,
@@ -203,12 +200,8 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	return pr.mergeRequest(), nil
 }
 
-// MergePullRequest 执行 PR 合并:ExpectedHeadSHA 走 Gitea 原生 head_commit_id
-// 断言,头部漂移由平台拒合。Gitea 合并成功响应是空 200,不携带结果,必须
-// 回读 PR:merged=true 返回合并成功并透出 merge_commit_sha;merged=false
-// 返回未合并结果(err=nil),由门禁回落人工;回读失败属于结果不确定,包装为
-// Ambiguous 交给门禁下一轮回读真实状态。不删源分支、不设置 force_merge/
-// merge_when_checks_succeed,不绕平台保护规则。
+// MergePullRequest 以 head_commit_id 断言证据头后合并 PR;空 200 后回读真实结果,
+// 回读失败按结果不确定处理(Ambiguous),不删源分支、不绕过平台保护规则。
 func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, req codehost.MergePullRequestRequest) (*codehost.MergePullRequestResult, error) {
 	owner, name, err := splitRepo(repo)
 	if err != nil {
@@ -234,9 +227,7 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 	}
 	pr, err := c.getPull(ctx, repo, mrIID)
 	if err != nil {
-		// 合并请求已发出(空 200),此刻真相未知:回读失败属于结果不确定,
-		// 保持 Ambiguous 由门禁下一轮回读真实状态;不得复用读入口的哨兵
-		// 映射,否则已生效的合并会被记成确定性拒绝。
+		// 合并请求已发出(空 200),回读失败属于结果不确定,保持 Ambiguous 交由下一轮复查。
 		return nil, codehost.NewAmbiguousError(fmt.Errorf("read back merged pull request %s#%d: %w", repo, mrIID, err))
 	}
 	return &codehost.MergePullRequestResult{
@@ -245,13 +236,8 @@ func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, r
 	}, nil
 }
 
-// mapMergeStatusError 把确定性拒绝归到哨兵错误上:409=头部断言失配
-// (ErrMergeHeadMismatch),其余 4xx 家族=平台明确拒绝、不可重试
-// (ErrMergeRejected,含 404 的 PR 已删/仓库转移与 401/403 的凭据问题);
-// 5xx 与网络类保持 Ambiguous 原样。429/408 属于可重试的 4xx
-// (TransientRejection),必须先于 4xx 归类原样返回,不得改写。读与合两个
-// 入口共用同一分类,门禁据此区分回落与重评;Issue/Labels 等非门禁写回
-// 不经过此映射,保持原有 StatusError 语义。
+// mapMergeStatusError 把确定拒绝映射为门禁哨兵:409 为头部失配,其余 4xx 为不可重试拒绝;
+// 408/429 保持可重试,5xx 与网络错误保持歧义;读与合两个入口共用此分类。
 func mapMergeStatusError(err error) error {
 	if codehost.IsTransientRejection(err) {
 		return err
@@ -264,9 +250,7 @@ func mapMergeStatusError(err error) error {
 	case status.StatusCode == http.StatusConflict:
 		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
 	case status.StatusCode == http.StatusMethodNotAllowed && strings.Contains(status.Message, "Please try again later"):
-		// Gitea 在 PR 进入 checking 时对合并/读取返回 405 "Please try again
-		// later":同仓任意 base 分支 push 都会把目标 PR 置为检查中,属可重试
-		// 窗口;其余 405(协作中/WIP/分支保护/已合并)仍是确定性拒绝。
+		// Gitea 在 PR checking 窗口对合并/读取返回 405,属可重试;其余 405 仍是确定拒绝。
 		return codehost.NewTransientRejection(err)
 	case status.StatusCode >= http.StatusBadRequest && status.StatusCode < http.StatusInternalServerError:
 		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)

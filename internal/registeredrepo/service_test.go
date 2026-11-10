@@ -75,9 +75,7 @@ func TestCreateRejectsUnattestedTokenAndDoesNotEchoSecret(t *testing.T) {
 	}
 }
 
-// TestCreateGiteaSkipsTokenScopeAttestation 锁定平台差异:Gitea 的个人访问
-// 令牌只有账号级 + 权限范围,不存在仓库级令牌,登记与启用都不能再要求
-// 操作者做项目级声明。
+// TestCreateGiteaSkipsTokenScopeAttestation 锁定 Gitea 不需项目级声明的平台差异。
 func TestCreateGiteaSkipsTokenScopeAttestation(t *testing.T) {
 	svc, probe := newServiceWithProbe(t)
 	view, err := svc.Create(context.Background(), CreateRequest{

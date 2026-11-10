@@ -60,10 +60,8 @@ func ValidProvider(provider string) bool {
 	return false
 }
 
-// requiresTokenScopeAttestation 报告该平台是否存在“项目级（仓库级）令牌”概念。
-// GitLab/GitHub 可以签发只覆盖单个仓库的令牌，登记面要求操作者对此做声明；
-// Gitea 的个人访问令牌只有账号级 + 权限范围，仓库级令牌在平台上不存在，
-// 因此既不在界面要求声明，也不在服务端以此为前置条件。
+// requiresTokenScopeAttestation 报告平台是否存在项目级(仓库级)令牌概念。
+// Gitea 只有账号级 PAT,不再要求项目级声明;GitLab/GitHub 仍要求。
 func requiresTokenScopeAttestation(provider string) bool {
 	return NormalizeProvider(provider) != "gitea"
 }
