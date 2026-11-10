@@ -133,6 +133,8 @@ Additional deployment documentation:
 
 - [GitHub Repository Integration (English)](./docs/github-repository-integration.en.md)
 - [GitHub 仓库集成（中文）](./docs/github-repository-integration.zh-CN.md)
+- [Gitea Repository Integration (English)](./docs/gitea-repository-integration.en.md)
+- [Gitea 仓库集成（中文）](./docs/gitea-repository-integration.zh-CN.md)
 - [Multi-instance deployment](./deploy/multi-instance/README.md)
 - [Agent Runner runtime directory](./deploy/agent-runner-runtime/README.md)
 

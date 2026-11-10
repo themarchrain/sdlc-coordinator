@@ -141,10 +141,12 @@ func (c *Client) AddMergeRequestLabels(ctx context.Context, repo string, mrIID i
 }
 
 type pullResponse struct {
-	Number  int            `json:"number"`
-	HTMLURL string         `json:"html_url"`
-	Head    pullBranchInfo `json:"head"`
-	Base    pullBranchInfo `json:"base"`
+	Number         int            `json:"number"`
+	HTMLURL        string         `json:"html_url"`
+	Head           pullBranchInfo `json:"head"`
+	Base           pullBranchInfo `json:"base"`
+	Merged         bool           `json:"merged"`
+	MergeCommitSHA string         `json:"merge_commit_sha"`
 }
 
 type pullBranchInfo struct {
@@ -162,9 +164,8 @@ func (info pullBranchInfo) branch() string {
 	return strings.TrimSpace(info.Name)
 }
 
-// GetMergeRequest 读取 PR 详情(分支与 HEAD);与 github/gitlab 客户端同名方法
-// 形态一致。
-func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+// getPull 读取 PR 原始响应,不做门禁哨兵分类;GetMergeRequest 在其上做映射。
+func (c *Client) getPull(ctx context.Context, repo string, mrIID int) (*pullResponse, error) {
 	owner, name, err := splitRepo(repo)
 	if err != nil {
 		return nil, err
@@ -173,13 +174,88 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), mrIID), nil, &pr); err != nil {
 		return nil, err
 	}
+	return &pr, nil
+}
+
+// mergeRequest 把平台 PR 原始响应映射为 codehost.MergeRequest。
+func (pr *pullResponse) mergeRequest() *codehost.MergeRequest {
 	return &codehost.MergeRequest{
-		IID:          pr.Number,
-		WebURL:       pr.HTMLURL,
-		SourceBranch: pr.Head.branch(),
-		TargetBranch: pr.Base.branch(),
-		HeadSHA:      strings.TrimSpace(pr.Head.SHA),
+		IID:            pr.Number,
+		WebURL:         pr.HTMLURL,
+		SourceBranch:   pr.Head.branch(),
+		TargetBranch:   pr.Base.branch(),
+		HeadSHA:        strings.TrimSpace(pr.Head.SHA),
+		Merged:         pr.Merged,
+		MergeCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
+	}
+}
+
+// GetMergeRequest 读取 PR 详情(分支与 HEAD);与 github/gitlab 客户端同名方法
+// 形态一致。
+func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*codehost.MergeRequest, error) {
+	pr, err := c.getPull(ctx, repo, mrIID)
+	if err != nil {
+		return nil, mapMergeStatusError(err)
+	}
+	return pr.mergeRequest(), nil
+}
+
+// MergePullRequest 以 head_commit_id 断言证据头后合并 PR;空 200 后回读真实结果,
+// 回读失败按结果不确定处理(Ambiguous),不删源分支、不绕过平台保护规则。
+func (c *Client) MergePullRequest(ctx context.Context, repo string, mrIID int, req codehost.MergePullRequestRequest) (*codehost.MergePullRequestResult, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	method := strings.TrimSpace(req.MergeMethod)
+	if method == "" {
+		method = "merge"
+	}
+	payload := map[string]any{
+		"do":                        method,
+		"head_commit_id":            req.ExpectedHeadSHA,
+		"delete_branch_after_merge": false,
+	}
+	if strings.TrimSpace(req.CommitTitle) != "" {
+		payload["merge_title_field"] = req.CommitTitle
+	}
+	if strings.TrimSpace(req.CommitMessage) != "" {
+		payload["merge_message_field"] = req.CommitMessage
+	}
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), mrIID), payload, nil); err != nil {
+		return nil, mapMergeStatusError(err)
+	}
+	pr, err := c.getPull(ctx, repo, mrIID)
+	if err != nil {
+		// 合并请求已发出(空 200),回读失败属于结果不确定,保持 Ambiguous 交由下一轮复查。
+		return nil, codehost.NewAmbiguousError(fmt.Errorf("read back merged pull request %s#%d: %w", repo, mrIID, err))
+	}
+	return &codehost.MergePullRequestResult{
+		Merged:          pr.Merged,
+		MergedCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
 	}, nil
+}
+
+// mapMergeStatusError 把确定拒绝映射为门禁哨兵:409 为头部失配,其余 4xx 为不可重试拒绝;
+// 408/429 保持可重试,5xx 与网络错误保持歧义;读与合两个入口共用此分类。
+func mapMergeStatusError(err error) error {
+	if codehost.IsTransientRejection(err) {
+		return err
+	}
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return err
+	}
+	switch {
+	case status.StatusCode == http.StatusConflict:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeHeadMismatch, status.Message)
+	case status.StatusCode == http.StatusMethodNotAllowed && strings.Contains(status.Message, "Please try again later"):
+		// Gitea 在 PR checking 窗口对合并/读取返回 405,属可重试;其余 405 仍是确定拒绝。
+		return codehost.NewTransientRejection(err)
+	case status.StatusCode >= http.StatusBadRequest && status.StatusCode < http.StatusInternalServerError:
+		return fmt.Errorf("%w: %s", codehost.ErrMergeRejected, status.Message)
+	}
+	return err
 }
 
 func splitRepo(repo string) (string, string, error) {

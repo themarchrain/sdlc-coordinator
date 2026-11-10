@@ -198,8 +198,8 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
         <Form.Item name="path_with_namespace" label="仓库路径" rules={[{ required: true, message: '请输入仓库路径（owner/repo）' }]}><Input className="mono" placeholder="group/repository" /></Form.Item>
         <Form.Item
           name="token"
-          label={<SecretConfiguredLabel label="项目级 Token" configured={!creating && repository.token_configured} />}
-          rules={creating ? [{ required: true, message: '请输入该平台的项目级 Token' }] : undefined}
+          label={<SecretConfiguredLabel label={provider === 'gitea' ? '访问令牌' : '项目级 Token'} configured={!creating && repository.token_configured} />}
+          rules={creating ? [{ required: true, message: provider === 'gitea' ? '请输入该仓库的访问令牌' : '请输入该平台的项目级 Token' }] : undefined}
         >
           <Input.Password autoComplete="new-password" placeholder={creating ? '' : '留空表示保持已配置 token'} />
         </Form.Item>
@@ -211,21 +211,23 @@ function RepositoryForm({ repository, onClose, onSaved }: { repository: Register
           <Input.Password autoComplete="new-password" placeholder={creating ? '平台侧 webhook 配置的签名密钥' : '留空表示保持已配置 secret'} />
         </Form.Item>
         <p className="form-note">Webhook Secret 用于验证此仓库的 webhook 事件（按仓持有、可按仓轮换，改动保存后即时生效）；列表只展示是否已配置，不会回显原值。平台侧 webhook 的 secret 需与此处一致。</p>
-        <Form.Item
-          name="token_scope_attested"
-          valuePropName="checked"
-          rules={[{
-            validator: async (_, value) => {
-              if (creating || form.getFieldValue('token')) {
-                if (!value) throw new Error('请确认这是项目级 token')
-              }
-            },
-          }]}
-        >
-          <Checkbox>
-            操作者确认这是该平台项目级（repository 级）token，不是用户/组/实例 token。
-          </Checkbox>
-        </Form.Item>
+        {provider === 'gitea' ? null : (
+          <Form.Item
+            name="token_scope_attested"
+            valuePropName="checked"
+            rules={[{
+              validator: async (_, value) => {
+                if (creating || form.getFieldValue('token')) {
+                  if (!value) throw new Error('请确认这是项目级 token')
+                }
+              },
+            }]}
+          >
+            <Checkbox>
+              操作者确认这是该平台项目级（repository 级）token，不是用户/组/实例 token。
+            </Checkbox>
+          </Form.Item>
+        )}
         <p className="form-note">Token 只用于创建或轮换，列表和详情只展示是否已配置，不会回显原值。</p>
         <Form.Item name="verify_command" label="验证命令" tooltip="仓库级验证命令下限：自动验证任务会在 MR 工作区执行它；留空表示本仓库未声明下限">
           <Input className="mono" placeholder="例如 go test ./..." maxLength={512} />

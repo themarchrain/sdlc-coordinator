@@ -343,6 +343,14 @@ func (o *Orchestrator) evaluateAutoMergeGate(ctx context.Context, task *model.Ta
 			}
 			return fallback(fmt.Sprintf("platform rejected the merge: %v", err))
 		}
+		// 仅确定未应用的临时拒绝可释放本次准入。合并成功后回读失败
+		// 可能同时包装临时读取拒绝,此时歧义优先,仍禁止重发合并。
+		if codehost.IsTransientRejection(err) && !codehost.IsAmbiguousError(err) {
+			if proofErr := o.confirmActionNotSent(ctx, admission); proofErr != nil {
+				result.Transient = proofErr
+				return result
+			}
+		}
 		result.Transient = fmt.Errorf("merge pull request: %w", err)
 		return result
 	}

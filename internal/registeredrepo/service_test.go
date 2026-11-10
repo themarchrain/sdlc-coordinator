@@ -75,6 +75,31 @@ func TestCreateRejectsUnattestedTokenAndDoesNotEchoSecret(t *testing.T) {
 	}
 }
 
+// TestCreateGiteaSkipsTokenScopeAttestation 锁定 Gitea 不需项目级声明的平台差异。
+func TestCreateGiteaSkipsTokenScopeAttestation(t *testing.T) {
+	svc, probe := newServiceWithProbe(t)
+	view, err := svc.Create(context.Background(), CreateRequest{
+		DisplayName:       "gitea-repo",
+		PathWithNamespace: "group/a",
+		Provider:          "gitea",
+		BaseURL:           "https://gitea.example.com",
+		Token:             "token-a",
+		WebhookSecret:     "hook-secret-a",
+	})
+	if err != nil {
+		t.Fatalf("gitea create without attestation: %v", err)
+	}
+	if view.Provider != "gitea" {
+		t.Fatalf("provider = %q", view.Provider)
+	}
+	if probe.calls != 1 {
+		t.Fatalf("probe calls = %d", probe.calls)
+	}
+	if _, err := svc.Enable(context.Background(), view.RepositoryID); err != nil {
+		t.Fatalf("gitea enable without attestation: %v", err)
+	}
+}
+
 func TestCreateRequiresWebhookSecret(t *testing.T) {
 	svc, probe := newServiceWithProbe(t)
 	_, err := svc.Create(context.Background(), CreateRequest{
