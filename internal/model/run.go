@@ -19,17 +19,18 @@ const (
 )
 
 type Run struct {
-	ID             uint      `gorm:"primaryKey"`
-	RunID          string    `gorm:"uniqueIndex;not null;size:128"`
-	TaskID         string    `gorm:"index;not null;size:128"`
-	WorkerRole     string    `gorm:"index;not null;size:32"`
-	Status         RunStatus `gorm:"index;not null;size:32"`
-	ExternalSystem string    `gorm:"index;size:64"`
-	ExternalID     string    `gorm:"index;size:128"`
-	ExternalURL    string    `gorm:"type:text"`
-	InputJSON      string    `gorm:"type:text"`
-	OutputJSON     string    `gorm:"type:text"`
-	ErrorMessage   string    `gorm:"type:text"`
+	ID                 uint      `gorm:"primaryKey"`
+	RunID              string    `gorm:"uniqueIndex;not null;size:128"`
+	TaskID             string    `gorm:"index;not null;size:128"`
+	WorkerRole         string    `gorm:"index;not null;size:32"`
+	Status             RunStatus `gorm:"index;not null;size:32"`
+	RecoveryGeneration uint64    `gorm:"not null;default:0"`
+	ExternalSystem     string    `gorm:"index;size:64"`
+	ExternalID         string    `gorm:"index;size:128"`
+	ExternalURL        string    `gorm:"type:text"`
+	InputJSON          string    `gorm:"type:text"`
+	OutputJSON         string    `gorm:"type:text"`
+	ErrorMessage       string    `gorm:"type:text"`
 	// Provider 钉住本 run 派发时实际使用的执行 CLI：组织段配置热切换后，
 	// 恢复/投影重建路径按钉住值重放请求，请求哈希与远端既有执行保持一致。
 	// 空串表示派发于钉住机制之前（或系统默认），恢复路径回落现取值。

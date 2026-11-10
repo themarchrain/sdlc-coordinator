@@ -687,7 +687,7 @@ type RecoveryResult struct {
 }
 
 func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Task, run *model.Run, cause error) {
-	nextTaskStatus := o.policy.NextFailureStatus(task)
+	nextTaskStatus := o.policy.NextExecutionFailureStatus(task, runner.FailureInfo(cause))
 	// 列级条件更新只碰状态、错误信息与完成时间：本函数持有的是派发前的
 	// 旧快照，分钟级工作区准备窗口内 run 可能已被结果回传通道终态化，
 	// 整行保存会把库中的终态回滚成旧值。

@@ -51,6 +51,7 @@ func (r *TaskRepository) StartRunAtomic(ctx context.Context, taskID string, run 
 		}
 		created.TaskID = taskID
 		created.Status = model.RunStatusRunning
+		created.RecoveryGeneration = task.RecoveryGeneration
 		created.StartedAt = &startedAt
 		if err := tx.Create(&created).Error; err != nil {
 			return err

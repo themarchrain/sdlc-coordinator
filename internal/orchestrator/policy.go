@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"time"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 )
 
@@ -32,16 +33,42 @@ func (p Policy) LeaseUntil(now time.Time) time.Time {
 	return now.Add(p.normalized().LeaseDuration)
 }
 
-func (p Policy) NextFailureStatus(task *model.Task) model.TaskStatus {
+func (p Policy) AttemptsRemaining(task *model.Task) int {
 	if task == nil {
-		return model.TaskStatusBlocked
+		return 0
 	}
+	if task.RecoveryGeneration == 0 || task.RetryCycleMaxAttempts == 0 {
+		remaining := p.normalized().MaxAttempts - task.AttemptCount
+		if remaining < 0 {
+			return 0
+		}
+		return remaining
+	}
+	if task.RetryCycleMaxAttempts < 0 || task.RetryCycleBaseCount < 0 || task.AttemptCount < task.RetryCycleBaseCount {
+		return 0
+	}
+	remaining := task.RetryCycleMaxAttempts - (task.AttemptCount - task.RetryCycleBaseCount)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
 
-	if task.AttemptCount < p.normalized().MaxAttempts {
+func (p Policy) NextFailureStatus(task *model.Task) model.TaskStatus {
+	if p.AttemptsRemaining(task) > 0 {
 		return model.TaskStatusRetryPending
 	}
-
 	return model.TaskStatusBlocked
+}
+
+func (p Policy) NextExecutionFailureStatus(task *model.Task, info *failure.Info) model.TaskStatus {
+	if task != nil && task.RecoveryGeneration > 0 {
+		switch failure.Classify(info) {
+		case failure.ClassificationPrerequisite, failure.ClassificationFatal:
+			return model.TaskStatusBlocked
+		}
+	}
+	return p.NextFailureStatus(task)
 }
 
 func (p Policy) RecoveryStatus(task *model.Task, now time.Time) (model.TaskStatus, bool) {
@@ -55,7 +82,7 @@ func (p Policy) RecoveryStatus(task *model.Task, now time.Time) (model.TaskStatu
 
 	switch task.Status {
 	case model.TaskStatusClaimed, model.TaskStatusRunning:
-		if task.AttemptCount < p.normalized().MaxAttempts {
+		if p.AttemptsRemaining(task) > 0 {
 			return model.TaskStatusRetryPending, true
 		}
 		return model.TaskStatusHumanRequired, true
