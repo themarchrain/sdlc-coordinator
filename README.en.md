@@ -9,6 +9,7 @@ It assigns coding agents to repository work, keeps the official task/run state, 
 ## Capabilities
 
 - Discover, claim, deduplicate, lease, retry, and recover repository work items.
+- Recover `blocked` tasks through safety-gated, generation-scoped, audited rounds; see [blocked task recovery](./docs/blocked-task-recovery.zh-CN.md).
 - Persist code-host events and artifacts as structured records.
 - Start execution through Agent Runner, inject context, reconcile results, and support recovery.
 - Provide an embedded admin UI for run visibility and governance configuration.
