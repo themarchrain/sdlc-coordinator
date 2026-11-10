@@ -32,8 +32,15 @@ func (r *ResultSubmissionRepository) Accept(ctx context.Context, submission *mod
 		if task.Status == model.TaskStatusInterrupted {
 			return ErrTaskInterrupted
 		}
+		var run model.Run
+		if err := tx.Where("run_id = ? AND task_id = ?", submission.RunID, submission.TaskID).First(&run).Error; err != nil {
+			return ErrResultNotAcceptable
+		}
+		if run.RecoveryGeneration != task.RecoveryGeneration {
+			return ErrRecoveryGenerationMismatch
+		}
 		taskResult := tx.Model(&model.Task{}).
-			Where("task_id = ? AND current_run_id = ? AND status = ?", submission.TaskID, submission.RunID, model.TaskStatusRunning).
+			Where("task_id = ? AND current_run_id = ? AND status = ? AND recovery_generation = ?", submission.TaskID, submission.RunID, model.TaskStatusRunning, task.RecoveryGeneration).
 			Updates(map[string]any{"status": model.TaskStatusFinalizing, "lease_until": nil})
 		if taskResult.Error != nil {
 			return taskResult.Error

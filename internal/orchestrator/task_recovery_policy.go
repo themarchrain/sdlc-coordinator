@@ -2,8 +2,6 @@ package orchestrator
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +9,7 @@ import (
 	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
+	"sdlc-coordinator/internal/store/repository"
 )
 
 const (
@@ -90,6 +89,7 @@ type RecoveryFacts struct {
 	TenantInvalid            bool
 	SafetyBlockers           []SafetyBlocker
 	SnapshotVersion          string
+	SafetyDigest             string
 	CheckedAt                time.Time
 	FailureInfo              *failure.Info
 }
@@ -109,6 +109,9 @@ type RecoveryAssessment struct {
 	FailureCode              string                 `json:"failure_code,omitempty"`
 	FailureSummary           string                 `json:"failure_summary,omitempty"`
 	DBSnapshotVersion        string                 `json:"db_snapshot_version,omitempty"`
+	TaskVersion              string                 `json:"-"`
+	SafetyDigest             string                 `json:"-"`
+	RecoveryGeneration       uint64                 `json:"-"`
 }
 
 type RecoveryFactsReader interface {
@@ -144,6 +147,11 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 		CheckedAt:         facts.CheckedAt,
 		SourceRunID:       sourceRunID(facts),
 		DBSnapshotVersion: facts.SnapshotVersion,
+		SafetyDigest:      facts.SafetyDigest,
+	}
+	if facts.Task != nil {
+		assessment.TaskVersion = repository.RecoveryTaskVersion(facts.Task)
+		assessment.RecoveryGeneration = facts.Task.RecoveryGeneration
 	}
 	if assessment.CheckedAt.IsZero() {
 		assessment.CheckedAt = time.Now().UTC()
@@ -154,7 +162,7 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 		assessment.FailureSummary = info.Summary
 	}
 	if facts.Task != nil {
-		assessment.BlockRevision = RecoveryBlockRevision(facts.Task)
+		assessment.BlockRevision = repository.RecoveryBlockRevision(facts.Task, facts.SafetyDigest)
 	}
 	blockers := append([]SafetyBlocker(nil), facts.SafetyBlockers...)
 	addBlocker := func(code, summary, remediation string) {
@@ -404,16 +412,7 @@ func latestExecutionForRun(executions []model.AgentExecution, runID string) *mod
 }
 
 func RecoveryBlockRevision(task *model.Task) string {
-	if task == nil {
-		return ""
-	}
-	currentRun := ""
-	if task.CurrentRunID != nil {
-		currentRun = *task.CurrentRunID
-	}
-	raw := fmt.Sprintf("%s|%s|%d|%d|%s", task.TaskID, task.Status, task.AttemptCount, task.RecoveryGeneration, currentRun)
-	sum := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(sum[:])
+	return repository.RecoveryBlockRevision(task, "")
 }
 
 func infoSummary(info *failure.Info) string {

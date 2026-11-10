@@ -33,6 +33,7 @@
     { "from": "retry_pending", "to": "claimed", "path": "M239 204 V188 H194 V84 H208" },
     { "from": "waiting_upstream", "to": "pending", "path": "M429 268 V298 H8 V84 H18" },
     { "from": "human_required", "to": "pending", "path": "M59 204 V106" },
+    { "from": "blocked", "to": "pending", "kind": "audited_recovery", "path": "M594 372 V620 H-20 V84 H18" },
     { "from": "pending", "to": "interrupted", "kind": "manual_stop", "path": "M49 36 V-20 H820 V548 H180" },
     { "from": "claimed", "to": "interrupted", "kind": "manual_stop", "path": "M239 36 V-32 H832 V554 H180" },
     { "from": "running", "to": "interrupted", "kind": "manual_stop", "path": "M429 36 V-44 H844 V560 H180" },

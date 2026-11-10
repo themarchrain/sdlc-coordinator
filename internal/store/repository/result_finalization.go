@@ -20,7 +20,7 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 		if current.Status == model.TaskStatusInterrupted {
 			return ErrTaskInterrupted
 		}
-		if (current.Status != model.TaskStatusRunning && current.Status != model.TaskStatusFinalizing) || (current.CurrentRunID != nil && *current.CurrentRunID != run.RunID) {
+		if (current.Status != model.TaskStatusRunning && current.Status != model.TaskStatusFinalizing) || current.CurrentRunID == nil || *current.CurrentRunID != run.RunID {
 			return ErrResultNotAcceptable
 		}
 		query := tx.Where("run_id = ? AND task_id = ?", run.RunID, task.TaskID)
@@ -31,7 +31,7 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 		if err := query.First(&currentRun).Error; err != nil {
 			return stopLookupError(err)
 		}
-		if currentRun.Status != model.RunStatusRunning && currentRun.Status != model.RunStatusFinalizing {
+		if (currentRun.Status != model.RunStatusRunning && currentRun.Status != model.RunStatusFinalizing) || currentRun.RecoveryGeneration != current.RecoveryGeneration {
 			return ErrResultNotAcceptable
 		}
 		if err := tx.Model(current).Updates(map[string]any{"status": task.Status, "current_run_id": task.CurrentRunID, "lease_until": task.LeaseUntil, "last_error": task.LastError, "updated_at": now}).Error; err != nil {

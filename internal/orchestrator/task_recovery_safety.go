@@ -56,6 +56,7 @@ func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (Recover
 		MergeGateAudit:      snapshot.MergeGateAudit,
 		Stop:                snapshot.Stop,
 		SnapshotVersion:     snapshot.Version,
+		SafetyDigest:        repository.RecoverySafetyDigest(snapshot),
 		CheckedAt:           now,
 	}
 	if snapshot.Task != nil {

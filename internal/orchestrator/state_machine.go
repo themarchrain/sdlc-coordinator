@@ -57,7 +57,10 @@ func NewStateMachine() *StateMachine {
 				model.TaskStatusClaimed:     {},
 				model.TaskStatusInterrupted: {},
 			},
-			model.TaskStatusBlocked: {model.TaskStatusInterrupted: {}},
+			model.TaskStatusBlocked: {
+				model.TaskStatusPending:     {},
+				model.TaskStatusInterrupted: {},
+			},
 			model.TaskStatusHumanRequired: {
 				model.TaskStatusPending:     {},
 				model.TaskStatusInterrupted: {},

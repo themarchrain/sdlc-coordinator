@@ -295,7 +295,7 @@ func (r *TaskRepository) ResumeHumanRequired(ctx context.Context, dedupeKey, con
 
 	result := r.db.WithContext(ctx).
 		Model(&model.Task{}).
-		Where("dedupe_key = ? AND role = ? AND status = ?", dedupeKey, "DeveloperWorker", model.TaskStatusHumanRequired).
+		Where("dedupe_key = ? AND role = ? AND status = ? AND recovery_generation = 0", dedupeKey, "DeveloperWorker", model.TaskStatusHumanRequired).
 		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("resume human-required task: %w", result.Error)
@@ -317,7 +317,7 @@ func (r *TaskRepository) ResumeRework(ctx context.Context, dedupeKey, contextJSO
 
 	result := r.db.WithContext(ctx).
 		Model(&model.Task{}).
-		Where("dedupe_key = ? AND type = ? AND role = ?", dedupeKey, "rework_merge_request", "DeveloperWorker").
+		Where("dedupe_key = ? AND type = ? AND role = ? AND recovery_generation = 0", dedupeKey, "rework_merge_request", "DeveloperWorker").
 		Where("status IN ?", []model.TaskStatus{model.TaskStatusWaitingMerge, model.TaskStatusHumanRequired, model.TaskStatusBlocked}).
 		Updates(updates)
 	if result.Error != nil {

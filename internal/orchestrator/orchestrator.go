@@ -196,6 +196,7 @@ type Orchestrator struct {
 	writebackAuth                  WritebackAuthHandler
 	repositoryLookup               RepositoryLookup
 	recoveryReader                 RecoveryFactsReader
+	recoveries                     TaskRecoveryRepository
 	assigneeMentionDirectory       AssigneeMentionDirectory
 	developerIMTarget              string
 	reviewerIMMentionsProvider     func(context.Context) []string
@@ -545,6 +546,12 @@ func WithRecoveryFactsReader(reader RecoveryFactsReader) Option {
 	}
 }
 
+func WithTaskRecoveryRepository(repo TaskRecoveryRepository) Option {
+	return func(o *Orchestrator) {
+		o.recoveries = repo
+	}
+}
+
 var (
 	ErrRepositoryNotEnabled = errors.New("repository_not_enabled")
 	ErrRepositoryNotBound   = errors.New("repository_not_bound")
@@ -652,6 +659,9 @@ func (o *Orchestrator) RebindTask(ctx context.Context, taskID, repositoryID stri
 	if err != nil {
 		return nil, err
 	}
+	if task.RecoveryGeneration > 0 {
+		return nil, fmt.Errorf("task %s already belongs to recovery generation %d; use audited task recovery", taskID, task.RecoveryGeneration)
+	}
 	switch task.Status {
 	case model.TaskStatusSucceeded, model.TaskStatusRunning, model.TaskStatusClaimed, model.TaskStatusFinalizing, model.TaskStatusWaitingMerge:
 		return nil, fmt.Errorf("task %s cannot be rebound in status %s", taskID, task.Status)
@@ -736,6 +746,9 @@ func (o *Orchestrator) AdvanceTask(ctx context.Context, taskID string, next mode
 	task, err := o.tasks.GetByTaskID(ctx, taskID)
 	if err != nil {
 		return nil, err
+	}
+	if task.Status == model.TaskStatusBlocked && next == model.TaskStatusPending {
+		return nil, ErrRecoveryRequiresAuditedPath
 	}
 
 	previous := task.Status
@@ -944,8 +957,11 @@ func (o *Orchestrator) applyStaleRunResult(ctx context.Context, task *model.Task
 }
 
 func isStaleRunForTask(task *model.Task, runID string) bool {
-	if task == nil || task.CurrentRunID == nil || *task.CurrentRunID == "" {
+	if task == nil {
 		return false
+	}
+	if task.CurrentRunID == nil || *task.CurrentRunID == "" {
+		return task.RecoveryGeneration > 0
 	}
 	return *task.CurrentRunID != runID
 }

@@ -77,6 +77,9 @@ func authorizeRunnerOperation(ctx context.Context, db *gorm.DB, request workspac
 
 	switch request.Kind {
 	case workspaceproto.KindDeveloperCommit, workspaceproto.KindDeveloperPush:
+		if task.RecoveryGeneration != run.RecoveryGeneration {
+			return deny("run belongs to a superseded recovery generation")
+		}
 		if !current {
 			return deny("run is no longer the current run of the task")
 		}
