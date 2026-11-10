@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/results"
 	"sdlc-coordinator/internal/runner"
 )
@@ -185,6 +187,88 @@ func TestProviderParsesNestedTurnFailureAndRedactsSecrets(t *testing.T) {
 	message, _ := payload["message"].(string)
 	if !strings.Contains(message, "[REDACTED]") || strings.Contains(message, "api-secret") || strings.Contains(message, "tenant-secret") {
 		t.Fatalf("nested error message was not safely preserved: %#v", payload)
+	}
+}
+
+func TestProviderClassifiesExplicitProviderFailure(t *testing.T) {
+	root := t.TempDir()
+	writeCodexTestFile(t, root, "prompt.md", "review")
+	writeCodexTestFile(t, root, "schema.json", `{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
+	command := &fakeCommandRunner{
+		lines: [][]byte{[]byte(`{"type":"turn.failed","error":{"code":"rate_limit_error","message":"rate limited for api-secret"}}`)},
+		err:   errors.New("exit status 1"),
+	}
+	provider := newProvider("codex", command)
+	var events []capturedProviderEvent
+	_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-rate-limited", TaskID: "task-rate-limited", Role: "ReviewerWorker", WorkspacePath: root,
+		PromptFile: "prompt.md", SchemaFile: "schema.json",
+		Provider: runner.ProviderConfig{Name: "codex-cli", APIKey: "api-secret"},
+	}, func(eventType string, payload map[string]any) {
+		events = append(events, capturedProviderEvent{eventType: eventType, payload: payload})
+	})
+	if err == nil {
+		t.Fatal("expected provider failure")
+	}
+	info := runner.FailureInfo(err)
+	if info == nil {
+		t.Fatalf("explicit provider code was not preserved: %v", err)
+	}
+	if info.Code != failure.CodeProviderRateLimited || info.Stage != failure.StageProvider || info.Source != failure.SourceProvider {
+		t.Fatalf("unexpected failure info: %#v", info)
+	}
+	if got := failure.Classify(info); got != failure.ClassificationTransient {
+		t.Fatalf("Classify() = %q, want transient", got)
+	}
+	if strings.Contains(err.Error(), "api-secret") || strings.Contains(info.Summary, "api-secret") {
+		t.Fatalf("provider failure leaked a secret: error=%q info=%#v", err, info)
+	}
+	for _, event := range events {
+		raw, _ := json.Marshal(event)
+		if strings.Contains(string(raw), "api-secret") {
+			t.Fatalf("provider failure leaked into event: %s", raw)
+		}
+	}
+}
+
+func TestProviderClassifiesLocalSetupFailures(t *testing.T) {
+	tests := []struct {
+		name          string
+		promptFile    string
+		schemaContent string
+		commandErr    error
+		wantCode      string
+		wantClass     failure.Classification
+	}{
+		{name: "cli missing", promptFile: "prompt.md", schemaContent: `{"type":"object"}`, commandErr: &exec.Error{Name: "codex", Err: exec.ErrNotFound}, wantCode: failure.CodeCLIMissing, wantClass: failure.ClassificationPrerequisite},
+		{name: "prompt missing", promptFile: "missing.md", schemaContent: `{"type":"object"}`, wantCode: failure.CodeMissingConfiguration, wantClass: failure.ClassificationPrerequisite},
+		{name: "schema rejected", promptFile: "prompt.md", schemaContent: `{not-json`, wantCode: failure.CodeUnsupportedSchema, wantClass: failure.ClassificationFatal},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeCodexTestFile(t, root, "prompt.md", "review")
+			writeCodexTestFile(t, root, "schema.json", test.schemaContent)
+			command := &fakeCommandRunner{err: test.commandErr}
+			provider := newProvider("codex", command)
+			_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+				ExecutionID: "run-setup", TaskID: "task-setup", Role: "ReviewerWorker", WorkspacePath: root,
+				PromptFile: test.promptFile, SchemaFile: "schema.json", Provider: runner.ProviderConfig{Name: "codex-cli"},
+			}, nil)
+			if err == nil {
+				t.Fatal("expected setup failure")
+			}
+			info := runner.FailureInfo(err)
+			if info == nil {
+				t.Fatalf("setup failure was not typed: %v", err)
+			}
+			if info.Code != test.wantCode || info.Stage != failure.StageInitialization || info.Source != failure.SourceRunner {
+				t.Fatalf("unexpected failure info: %#v", info)
+			}
+			if got := failure.Classify(info); got != test.wantClass {
+				t.Fatalf("Classify() = %q, want %q", got, test.wantClass)
+			}
+		})
 	}
 }
 

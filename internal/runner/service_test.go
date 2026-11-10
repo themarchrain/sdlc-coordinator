@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/runner"
 )
 
@@ -213,9 +214,111 @@ func TestServicePersistsProviderFailureMessage(t *testing.T) {
 	if completed.ErrorCode != "provider_failed" || completed.ErrorMessage != provider.err.Error() {
 		t.Fatalf("provider failure detail was not preserved: %#v", completed)
 	}
+	if got := failure.Classify(completed.Failure); got != failure.ClassificationUnknown {
+		t.Fatalf("ordinary provider failure must remain unknown, got %q", got)
+	}
 	raw, err := os.ReadFile(filepath.Join(dataRoot, "executions", request.ExecutionID, "execution.json"))
 	if err != nil || !strings.Contains(string(raw), provider.err.Error()) {
 		t.Fatalf("durable execution lost provider failure detail: raw=%s err=%v", raw, err)
+	}
+}
+
+func TestServicePersistsStructuredFailure(t *testing.T) {
+	const secret = "sk-live-rate-limit-secret"
+	dataRoot := t.TempDir()
+	provider := &failedProvider{err: &runner.ProviderFailure{
+		Info: failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageProvider,
+			Source:  failure.SourceProvider,
+			Code:    failure.CodeProviderRateLimited,
+			Summary: "rate limited for " + secret,
+		},
+		Cause: errors.New("gateway returned 429 for " + secret),
+	}}
+	service, err := runner.NewService(dataRoot, map[string]runner.Provider{"fake": provider})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	request := sampleRequest()
+	request.ExecutionID = "run-structured-failure"
+	request.TaskID = "task-structured-failure"
+	request.Provider.APIKey = secret
+	created, err := service.Create(context.Background(), request)
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	completed := waitForStatus(t, service, request.ExecutionID, runner.StatusFailed)
+	if completed.Failure == nil {
+		t.Fatal("structured failure metadata was not persisted")
+	}
+	if completed.Failure.Code != failure.CodeProviderRateLimited || completed.Failure.Stage != failure.StageProvider || completed.Failure.Source != failure.SourceProvider {
+		t.Fatalf("unexpected failure metadata: %#v", completed.Failure)
+	}
+	if got := failure.Classify(completed.Failure); got != failure.ClassificationTransient {
+		t.Fatalf("Classify() = %q, want transient", got)
+	}
+	if strings.Contains(completed.Failure.Summary, secret) || strings.Contains(completed.ErrorMessage, secret) {
+		t.Fatalf("structured failure leaked a secret: failure=%#v error=%q", completed.Failure, completed.ErrorMessage)
+	}
+	events, err := service.Events(request.ExecutionID, 0)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	for _, event := range events {
+		raw, _ := json.Marshal(event)
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("structured failure leaked into event stream: %s", raw)
+		}
+	}
+	if completed.ErrorCode != "provider_failed" {
+		t.Fatalf("legacy error code changed: %q", completed.ErrorCode)
+	}
+	if created.RequestHash == "" {
+		t.Fatal("request hash missing")
+	}
+
+	restarted, err := runner.NewService(dataRoot, nil)
+	if err != nil {
+		t.Fatalf("restart service: %v", err)
+	}
+	reloaded, err := restarted.Get(request.ExecutionID)
+	if err != nil {
+		t.Fatalf("reload execution: %v", err)
+	}
+	if reloaded.Failure == nil || reloaded.Failure.Code != failure.CodeProviderRateLimited {
+		t.Fatalf("structured failure metadata was not durable: %#v", reloaded.Failure)
+	}
+}
+
+func TestFailureMetadataDoesNotChangeRequestHash(t *testing.T) {
+	provider := &failedProvider{err: &runner.ProviderFailure{
+		Info: failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageProvider,
+			Source:  failure.SourceProvider,
+			Code:    failure.CodeConnectionFailed,
+		},
+		Cause: errors.New("connection failed"),
+	}}
+	service, err := runner.NewService(t.TempDir(), map[string]runner.Provider{"fake": provider})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	request := sampleRequest()
+	request.ExecutionID = "run-hash-failure"
+	request.TaskID = "task-hash-failure"
+	created, err := service.Create(context.Background(), request)
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	waitForStatus(t, service, request.ExecutionID, runner.StatusFailed)
+	hashed, err := runner.RequestHash(request)
+	if err != nil {
+		t.Fatalf("hash request: %v", err)
+	}
+	if created.RequestHash != hashed {
+		t.Fatalf("failure metadata changed request identity: %s != %s", created.RequestHash, hashed)
 	}
 }
 

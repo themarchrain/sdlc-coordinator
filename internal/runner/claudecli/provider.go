@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/runner"
 )
 
@@ -41,28 +43,28 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	}
 	prompt, err := readTaskFile(request.WorkspacePath, request.PromptFile)
 	if err != nil {
-		return nil, fmt.Errorf("read claude prompt: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("read claude prompt: %w", err))
 	}
 	schemaRaw, err := readTaskFile(request.WorkspacePath, request.SchemaFile)
 	if err != nil {
-		return nil, fmt.Errorf("read claude result schema: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("read claude result schema: %w", err))
 	}
 	schema, err := canonicalJSON(schemaRaw)
 	if err != nil {
-		return nil, fmt.Errorf("decode claude result schema: %w", err)
+		return nil, setupFailure(failure.CodeUnsupportedSchema, fmt.Errorf("decode claude result schema: %w", err))
 	}
 	runtimeRoot, err := os.MkdirTemp("", "agent-runner-claude-")
 	if err != nil {
-		return nil, fmt.Errorf("create isolated claude config root: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("create isolated claude config root: %w", err))
 	}
 	defer os.RemoveAll(runtimeRoot)
 	configDir := filepath.Join(runtimeRoot, "claude-config")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create isolated claude config dir: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("create isolated claude config dir: %w", err))
 	}
 	environment, err := claudeEnvironment(request.Provider, configDir)
 	if err != nil {
-		return nil, err
+		return nil, setupFailure(failure.CodeMissingConfiguration, err)
 	}
 	args := []string{
 		"-p", "--bare", "--no-session-persistence", "--output-format", "stream-json", "--verbose",
@@ -88,6 +90,9 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		Binary: p.binary, Args: args, Dir: request.WorkspacePath, Env: environment, Stdin: string(prompt),
 	}, parser.consume)
 	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, setupFailure(failure.CodeCLIMissing, fmt.Errorf("run claude cli: %w", err))
+		}
 		return nil, fmt.Errorf("run claude cli: %w", err)
 	}
 	if parser.terminalError != nil {
@@ -187,11 +192,11 @@ func (p *streamParser) consume(line []byte) error {
 			if message != "" {
 				errorPayload["message"] = message
 				p.emitEvent("claude_error", errorPayload)
-				p.terminalError = fmt.Errorf("claude terminal result reported %s: %s", subtype, message)
+				p.terminalError = providerResultFailure(event, subtype, message)
 				return nil
 			}
 			p.emitEvent("claude_error", errorPayload)
-			p.terminalError = fmt.Errorf("claude terminal result reported %s", subtype)
+			p.terminalError = providerResultFailure(event, subtype, "")
 			return nil
 		}
 		structured, exists := event["structured_output"]
@@ -272,6 +277,49 @@ func (p *streamParser) failureMessage(event map[string]any) string {
 
 func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
 	return runner.RedactSecrets(message, runner.ProviderSecrets(provider, channel))
+}
+
+func setupFailure(code string, cause error) error {
+	return &runner.ProviderFailure{
+		Info: failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageInitialization,
+			Source:  failure.SourceRunner,
+			Code:    code,
+		},
+		Cause: cause,
+	}
+}
+
+func providerResultFailure(event map[string]any, subtype, message string) error {
+	rawCode := ""
+	if errorObject, ok := event["error"].(map[string]any); ok {
+		rawCode = stringValue(errorObject, "code")
+		if rawCode == "" {
+			rawCode = stringValue(errorObject, "type")
+		}
+	}
+	if rawCode == "" {
+		rawCode = stringValue(event, "error_code")
+	}
+	info, known := runner.ProviderCodeInfo(rawCode)
+	if !known {
+		info = failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageResult,
+			Source:  failure.SourceProvider,
+			Code:    strings.TrimSpace(rawCode),
+		}
+	}
+	info.Summary = subtype
+	if message != "" {
+		info.Summary = subtype + ": " + strings.TrimSpace(message)
+	}
+	cause := fmt.Errorf("claude terminal result reported %s", subtype)
+	if message != "" {
+		cause = fmt.Errorf("claude terminal result reported %s: %s", subtype, message)
+	}
+	return &runner.ProviderFailure{Info: info, Cause: cause}
 }
 
 func readTaskFile(root, name string) ([]byte, error) {

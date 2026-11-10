@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"sdlc-coordinator/internal/failure"
 )
 
 var executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
@@ -189,7 +191,8 @@ func (s *Service) run(ctx context.Context, provider Provider, runtime *execution
 		} else if errors.Is(executionCtx.Err(), context.Canceled) {
 			s.finishFailure(runtime, StatusCancelled, "cancelled", "execution cancelled")
 		} else {
-			s.finishFailure(runtime, StatusFailed, "provider_failed", redactFailureMessage(err.Error(), request.Provider, request.ResultSubmission))
+			message := redactFailureMessage(err.Error(), request.Provider, request.ResultSubmission)
+			s.finishFailureWithInfo(runtime, StatusFailed, "provider_failed", message, sanitizeFailureInfo(FailureInfo(err), message, request.Provider, request.ResultSubmission))
 		}
 		return
 	}
@@ -233,18 +236,47 @@ func (s *Service) transition(runtime *executionRuntime, status Status, eventType
 }
 
 func (s *Service) finishFailure(runtime *executionRuntime, status Status, code, message string) {
+	s.finishFailureWithInfo(runtime, status, code, message, nil)
+}
+
+func (s *Service) finishFailureWithInfo(runtime *executionRuntime, status Status, code, message string, info *failure.Info) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
 	if _, stopped := s.cancellations[runtime.execution.ExecutionID]; stopped {
-		status, code, message = StatusCancelled, "cancelled", "execution cancelled"
+		status, code, message, info = StatusCancelled, "cancelled", "execution cancelled", nil
 	}
 	runtime.exited = true
 	runtime.execution.Status = status
 	runtime.execution.ErrorCode = code
 	runtime.execution.ErrorMessage = strings.TrimSpace(message)
+	runtime.execution.Failure = info
 	runtime.execution.FinishedAt = &now
-	s.persistAndEmitLocked(runtime, string(status), map[string]any{"error_code": code})
+	payload := map[string]any{"error_code": code}
+	if info != nil {
+		payload["failure_code"] = info.Code
+		payload["failure_stage"] = info.Stage
+	}
+	s.persistAndEmitLocked(runtime, string(status), payload)
+}
+
+func sanitizeFailureInfo(info *failure.Info, fallback string, provider ProviderConfig, channel *ResultSubmissionChannel) *failure.Info {
+	if info == nil {
+		return nil
+	}
+	sanitized := *info
+	sanitized.Code = strings.TrimSpace(sanitized.Code)
+	sanitized.Stage = strings.TrimSpace(sanitized.Stage)
+	sanitized.Source = strings.TrimSpace(sanitized.Source)
+	summary := strings.TrimSpace(sanitized.Summary)
+	if summary == "" {
+		summary = fallback
+	}
+	sanitized.Summary = redactFailureMessage(summary, provider, channel)
+	if len(sanitized.Summary) > 4096 {
+		sanitized.Summary = sanitized.Summary[:4096]
+	}
+	return &sanitized
 }
 
 // persistAndEmitLocked 持久化 execution 快照并追加生命周期事件；两者都发生在

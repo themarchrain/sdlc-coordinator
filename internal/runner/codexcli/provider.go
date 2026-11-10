@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/results"
 	"sdlc-coordinator/internal/runner"
 )
@@ -50,43 +52,43 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	}
 	promptPath, err := safeTaskFile(request.WorkspacePath, request.PromptFile)
 	if err != nil {
-		return nil, fmt.Errorf("read codex prompt: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("read codex prompt: %w", err))
 	}
 	schemaPath, err := safeTaskFile(request.WorkspacePath, request.SchemaFile)
 	if err != nil {
-		return nil, fmt.Errorf("read codex result schema: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("read codex result schema: %w", err))
 	}
 	prompt, err := os.ReadFile(promptPath)
 	if err != nil {
-		return nil, fmt.Errorf("read codex prompt: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("read codex prompt: %w", err))
 	}
 	schemaRaw, err := os.ReadFile(schemaPath)
 	if err != nil {
-		return nil, fmt.Errorf("read codex result schema: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("read codex result schema: %w", err))
 	}
 	adaptedSchema, err := adaptResponsesSchema(schemaRaw)
 	if err != nil {
-		return nil, err
+		return nil, setupFailure(failure.CodeUnsupportedSchema, err)
 	}
 
 	runtimeRoot, err := os.MkdirTemp(request.WorkspacePath, ".agent-runner-codex-")
 	if err != nil {
-		return nil, fmt.Errorf("create isolated codex home: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("create isolated codex home: %w", err))
 	}
 	defer os.RemoveAll(runtimeRoot)
 	codexHome := filepath.Join(runtimeRoot, "codex-home")
 	if err := os.MkdirAll(codexHome, 0o700); err != nil {
-		return nil, fmt.Errorf("create isolated codex home: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("create isolated codex home: %w", err))
 	}
 	finalPath := filepath.Join(runtimeRoot, "codex-final.json")
 	adaptedSchemaPath := filepath.Join(runtimeRoot, "codex-result-schema.json")
 	if err := os.WriteFile(adaptedSchemaPath, adaptedSchema, 0o600); err != nil {
-		return nil, fmt.Errorf("write adapted codex result schema: %w", err)
+		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("write adapted codex result schema: %w", err))
 	}
 
 	headerConfig, err := buildHeaderEnvironment(request.Provider.Headers)
 	if err != nil {
-		return nil, err
+		return nil, setupFailure(failure.CodeMissingConfiguration, err)
 	}
 	environment := allowedBaseEnvironment(os.Environ())
 	environment = append(environment, "CODEX_HOME="+codexHome)
@@ -148,12 +150,14 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if err := p.command.Run(ctx, commandSpec{
 		Binary: p.binary, Args: args, Dir: request.WorkspacePath, Env: environment, Stdin: string(prompt),
 	}, parser.consume); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, setupFailure(failure.CodeCLIMissing, fmt.Errorf("run codex cli: %w", err))
+		}
 		if parser.failureMessage != "" {
-			detail := parser.failureMessage
-			if parser.failureCode != "" {
-				detail = parser.failureCode + ": " + detail
-			}
-			return nil, fmt.Errorf("run codex cli: %s", detail)
+			return nil, executionFailure(parser.failureCode, parser.failureMessage, err)
+		}
+		if parser.turnFailed {
+			return nil, executionFailure(parser.failureCode, "turn failed", err)
 		}
 		return nil, fmt.Errorf("run codex cli: %s", redactProviderError(err.Error(), request.Provider, request.ResultSubmission))
 	}
@@ -164,10 +168,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		if detail == "" {
 			detail = "turn failed"
 		}
-		if parser.failureCode != "" {
-			detail = parser.failureCode + ": " + detail
-		}
-		return nil, fmt.Errorf("run codex cli: %s", detail)
+		return nil, executionFailure(parser.failureCode, detail, nil)
 	}
 	result, err := os.ReadFile(finalPath)
 	if err != nil {
@@ -210,6 +211,38 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 
 func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
 	return runner.RedactSecrets(message, runner.ProviderSecrets(provider, channel))
+}
+
+func setupFailure(code string, cause error) error {
+	return &runner.ProviderFailure{
+		Info: failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageInitialization,
+			Source:  failure.SourceRunner,
+			Code:    code,
+		},
+		Cause: cause,
+	}
+}
+
+func executionFailure(rawCode, detail string, cause error) error {
+	info, known := runner.ProviderCodeInfo(rawCode)
+	if !known {
+		info = failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageProvider,
+			Source:  failure.SourceProvider,
+			Code:    strings.TrimSpace(rawCode),
+		}
+	}
+	info.Summary = strings.TrimSpace(detail)
+	if code := strings.TrimSpace(rawCode); code != "" {
+		info.Summary = code + ": " + info.Summary
+	}
+	if cause == nil {
+		cause = errors.New(info.Summary)
+	}
+	return &runner.ProviderFailure{Info: info, Cause: cause}
 }
 
 type headerEnvironment struct {

@@ -34,6 +34,7 @@ type AgentExecution struct {
 	ResultHash     string               `gorm:"index;size:64"`
 	ErrorCode      string               `gorm:"index;size:64"`
 	ErrorMessage   string               `gorm:"type:text"`
+	FailureJSON    string               `gorm:"type:text" json:"-"`
 	StartedAt      *time.Time           `gorm:"index"`
 	FinishedAt     *time.Time           `gorm:"index"`
 	CreatedAt      time.Time

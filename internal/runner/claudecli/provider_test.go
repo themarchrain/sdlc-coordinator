@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/runner"
 )
 
@@ -104,6 +106,87 @@ func TestProviderBuildsSafeHeadlessCommandAndReturnsStructuredOutput(t *testing.
 	}
 	if events[1].payload["model"] != "gateway-model" || events[2].payload["duration_ms"] != float64(1450) {
 		t.Fatalf("important telemetry was not preserved: %#v", events)
+	}
+}
+
+func TestProviderClassifiesExplicitProviderFailure(t *testing.T) {
+	root := t.TempDir()
+	writeClaudeTestFile(t, root, "prompt.md", "review")
+	writeClaudeTestFile(t, root, "schema.json", `{"type":"object"}`)
+	command := &fakeCommandRunner{lines: [][]byte{
+		[]byte(`{"type":"result","subtype":"error_during_execution","is_error":true,"error":{"type":"rate_limit_error"},"result":"rate limited for sk-ant-secret-123"}`),
+	}}
+	provider := newProvider("claude", command)
+	var events []capturedProviderEvent
+	_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-rate-limited", TaskID: "task-rate-limited", Role: "ReviewerWorker", WorkspacePath: root,
+		PromptFile: "prompt.md", SchemaFile: "schema.json",
+		Provider: runner.ProviderConfig{Name: "claude-cli", APIKey: "sk-ant-secret-123"},
+	}, func(eventType string, payload map[string]any) {
+		events = append(events, capturedProviderEvent{eventType: eventType, payload: payload})
+	})
+	if err == nil {
+		t.Fatal("expected provider failure")
+	}
+	info := runner.FailureInfo(err)
+	if info == nil {
+		t.Fatalf("explicit provider code was not preserved: %v", err)
+	}
+	if info.Code != failure.CodeProviderRateLimited || info.Stage != failure.StageProvider || info.Source != failure.SourceProvider {
+		t.Fatalf("unexpected failure info: %#v", info)
+	}
+	if got := failure.Classify(info); got != failure.ClassificationTransient {
+		t.Fatalf("Classify() = %q, want transient", got)
+	}
+	if strings.Contains(err.Error(), "sk-ant-secret-123") || strings.Contains(info.Summary, "sk-ant-secret-123") {
+		t.Fatalf("provider failure leaked a secret: error=%q info=%#v", err, info)
+	}
+	for _, event := range events {
+		raw, _ := json.Marshal(event)
+		if strings.Contains(string(raw), "sk-ant-secret-123") {
+			t.Fatalf("provider failure leaked into event: %s", raw)
+		}
+	}
+}
+
+func TestProviderClassifiesLocalSetupFailures(t *testing.T) {
+	tests := []struct {
+		name          string
+		promptFile    string
+		schemaContent string
+		commandErr    error
+		wantCode      string
+		wantClass     failure.Classification
+	}{
+		{name: "cli missing", promptFile: "prompt.md", schemaContent: `{"type":"object"}`, commandErr: &exec.Error{Name: "claude", Err: exec.ErrNotFound}, wantCode: failure.CodeCLIMissing, wantClass: failure.ClassificationPrerequisite},
+		{name: "prompt missing", promptFile: "missing.md", schemaContent: `{"type":"object"}`, wantCode: failure.CodeMissingConfiguration, wantClass: failure.ClassificationPrerequisite},
+		{name: "schema rejected", promptFile: "prompt.md", schemaContent: `{not-json`, wantCode: failure.CodeUnsupportedSchema, wantClass: failure.ClassificationFatal},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeClaudeTestFile(t, root, "prompt.md", "review")
+			writeClaudeTestFile(t, root, "schema.json", test.schemaContent)
+			command := &fakeCommandRunner{err: test.commandErr}
+			provider := newProvider("claude", command)
+			_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+				ExecutionID: "run-setup", TaskID: "task-setup", Role: "ReviewerWorker", WorkspacePath: root,
+				PromptFile: test.promptFile, SchemaFile: "schema.json", Provider: runner.ProviderConfig{Name: "claude-cli"},
+			}, nil)
+			if err == nil {
+				t.Fatal("expected setup failure")
+			}
+			info := runner.FailureInfo(err)
+			if info == nil {
+				t.Fatalf("setup failure was not typed: %v", err)
+			}
+			if info.Code != test.wantCode || info.Stage != failure.StageInitialization || info.Source != failure.SourceRunner {
+				t.Fatalf("unexpected failure info: %#v", info)
+			}
+			if got := failure.Classify(info); got != test.wantClass {
+				t.Fatalf("Classify() = %q, want %q", got, test.wantClass)
+			}
+		})
 	}
 }
 
