@@ -47,6 +47,29 @@ func TestRecoverBlockedTaskAtomic(t *testing.T) {
 	}
 }
 
+func TestTransientIgnoresUnrequestedRiskAckAndReplays(t *testing.T) {
+	_, task, _, orch := openRecoveryOrchestrator(t, failure.CodeProviderRateLimited)
+	assessment, err := orch.AssessTaskRecovery(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := RecoverTaskRequest{
+		RequestID: "request-transient-risk-flag", BlockRevision: assessment.BlockRevision,
+		Reason: "retry", AcknowledgeUnknownRisk: true,
+	}
+	first, err := orch.RecoverBlockedTask(context.Background(), task.TaskID, "member-1", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Recovery.RiskAcknowledged {
+		t.Fatal("transient recovery stored an unrequested risk acknowledgement")
+	}
+	replay, err := orch.RecoverBlockedTask(context.Background(), task.TaskID, "member-1", request)
+	if err != nil || !replay.Replayed {
+		t.Fatalf("same transient request did not replay: replayed=%v err=%v", replay != nil && replay.Replayed, err)
+	}
+}
+
 func TestRecoveryUnknownRequiresAck(t *testing.T) {
 	db, task, _, orch := openRecoveryOrchestrator(t, failure.CodeProviderFailed)
 	_ = db

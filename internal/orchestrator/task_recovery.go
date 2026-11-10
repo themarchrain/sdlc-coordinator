@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store/repository"
 )
@@ -59,7 +60,11 @@ func (o *Orchestrator) RecoverBlockedTask(ctx context.Context, taskID, actorID s
 		return nil, ErrRecoveryInvalid
 	}
 	if existing, err := o.recoveries.GetByRequest(ctx, taskID, request.RequestID); err == nil {
-		if existing.RequestedBy == actorID && existing.BlockRevision == request.BlockRevision && existing.Reason == request.Reason && existing.RiskAcknowledged == request.AcknowledgeUnknownRisk {
+		effectiveRiskAck := request.AcknowledgeUnknownRisk
+		if existing.Classification != string(failure.ClassificationUnknown) {
+			effectiveRiskAck = false
+		}
+		if existing.RequestedBy == actorID && existing.BlockRevision == request.BlockRevision && existing.Reason == request.Reason && existing.RiskAcknowledged == effectiveRiskAck {
 			task, taskErr := o.tasks.GetByTaskID(ctx, taskID)
 			if taskErr != nil {
 				return nil, taskErr
@@ -94,12 +99,15 @@ func (o *Orchestrator) RecoverBlockedTask(ctx context.Context, taskID, actorID s
 		return nil, err
 	}
 	cycleMax := o.policy.normalized().MaxAttempts
+	effectiveRiskAck := assessment.RequiresRiskConfirmation && request.AcknowledgeUnknownRisk
+	effectiveRequest := request
+	effectiveRequest.AcknowledgeUnknownRisk = effectiveRiskAck
 	command := repository.RecoveryCommand{
 		RequestID:           request.RequestID,
-		RequestHash:         recoveryCommandHash(taskID, actorID, request, assessment, cycleMax),
+		RequestHash:         recoveryCommandHash(taskID, actorID, effectiveRequest, assessment, cycleMax),
 		BlockRevision:       assessment.BlockRevision,
 		Reason:              request.Reason,
-		RiskAcknowledged:    request.AcknowledgeUnknownRisk,
+		RiskAcknowledged:    effectiveRiskAck,
 		ExpectedGeneration:  task.RecoveryGeneration,
 		CycleMaxAttempts:    cycleMax,
 		FailureSnapshotJSON: recoveryFailureSnapshot(assessment),
