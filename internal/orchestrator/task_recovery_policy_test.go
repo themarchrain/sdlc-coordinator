@@ -57,6 +57,26 @@ func TestPrerequisiteResolvedCanRecover(t *testing.T) {
 	}
 }
 
+func TestCompletedDeliveryDoesNotBlockRecoveryButUnsettledGitActionDoes(t *testing.T) {
+	completed := eligibleRecoveryFacts()
+	completed.DeliveryCheckpoints = []model.DeveloperDeliveryCheckpoint{{
+		RunID: completed.Runs[0].RunID, BaselineSHA: "base-sha", CommitSHA: "commit-sha",
+	}}
+	if assessment := EvaluateTaskRecovery(completed); !assessment.Eligible {
+		t.Fatalf("completed delivery blocked recovery: %+v", assessment.SafetyBlockers)
+	}
+
+	unsettled := eligibleRecoveryFacts()
+	unsettled.ActionAdmissions = []model.ActionAdmission{{
+		AdmissionID: "admission-git", Kind: model.ActionGitPush, ActionKey: "push-1",
+		Attempt: 1, LeaseOwner: "owner", LeaseGeneration: 1,
+	}}
+	assessment := EvaluateTaskRecovery(unsettled)
+	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyActionUnsettled) {
+		t.Fatalf("unsettled Git action did not block: %+v", assessment)
+	}
+}
+
 func TestUnknownCannotOverrideSafety(t *testing.T) {
 	tests := []struct {
 		name     string
