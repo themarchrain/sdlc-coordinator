@@ -195,6 +195,7 @@ type Orchestrator struct {
 	reworkMergeRequestFetchTimeout time.Duration
 	writebackAuth                  WritebackAuthHandler
 	repositoryLookup               RepositoryLookup
+	recoveryReader                 RecoveryFactsReader
 	assigneeMentionDirectory       AssigneeMentionDirectory
 	developerIMTarget              string
 	reviewerIMMentionsProvider     func(context.Context) []string
@@ -535,6 +536,12 @@ type RepositoryLookup interface {
 func WithRepositoryLookup(lookup RepositoryLookup) Option {
 	return func(o *Orchestrator) {
 		o.repositoryLookup = lookup
+	}
+}
+
+func WithRecoveryFactsReader(reader RecoveryFactsReader) Option {
+	return func(o *Orchestrator) {
+		o.recoveryReader = reader
 	}
 }
 
