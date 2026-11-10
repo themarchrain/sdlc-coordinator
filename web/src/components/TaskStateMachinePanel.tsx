@@ -21,9 +21,13 @@ export function TaskStateMachinePanel({ status }: { status: string }) {
         <defs><marker id={arrowID} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0 0 L8 4 L0 8 Z" className="task-state-arrow" />
         </marker></defs>
-        {graph.edges.map((edge) => <path key={`${edge.from}-${edge.to}`} d={edge.path} className={`task-state-edge${edge.kind === 'manual_stop' ? ' task-state-edge--manual-stop' : ''}`} strokeDasharray={edge.kind === 'manual_stop' ? '6 4' : undefined} markerEnd={`url(#${arrowID})`}>
-          <title>{edge.from} → {edge.to}{edge.kind === 'manual_stop' ? '（人工停止）' : ''}</title>
-        </path>)}
+        {graph.edges.map((edge) => {
+          const edgeKind = 'kind' in edge ? String(edge.kind) : ''
+          const edgeNote = edgeKind === 'manual_stop' ? '（人工停止）' : edgeKind === 'audited_recovery' ? '（经恢复资格检查）' : ''
+          return <path key={`${edge.from}-${edge.to}`} d={edge.path} className={`task-state-edge${edgeKind === 'manual_stop' ? ' task-state-edge--manual-stop' : ''}`} strokeDasharray={edgeKind === 'manual_stop' ? '6 4' : undefined} markerEnd={`url(#${arrowID})`}>
+            <title>{edge.from} → {edge.to}{edgeNote}</title>
+          </path>
+        })}
         {graph.nodes.map((node) => {
           const selected = node.id === status
           return <g key={node.id} transform={`translate(${node.x} ${node.y})`} role="group" aria-label={`${node.label}（${node.id}）${selected ? '，当前状态' : ''}`} aria-current={selected ? 'true' : undefined} className={`task-state-node${selected ? ' task-state-node--current' : ''}`}>

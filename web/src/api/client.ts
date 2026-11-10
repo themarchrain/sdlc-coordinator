@@ -34,6 +34,9 @@ import type {
   Requirement,
   RequirementInput,
   RequirementSyncResult,
+  RecoverTaskRequest,
+  RecoverTaskResponse,
+  RecoveryAssessment,
   TaskSummary,
   TickRequest,
   TickResult,
@@ -143,6 +146,9 @@ export const adminApi = {
   listTasks: (query: Query, signal?: AbortSignal) => request<Page<TaskSummary>>(`/api/admin/tasks${queryString(query)}`, { signal }),
   getTask: (taskID: string, signal?: AbortSignal) => request<Record<string, unknown>>(`/api/admin/tasks/${encodeURIComponent(taskID)}`, { signal }),
   taskTimeline: (taskID: string, signal?: AbortSignal) => request<{ items: TimelineEvent[] }>(`/api/admin/tasks/${encodeURIComponent(taskID)}/timeline`, { signal }),
+  taskRecovery: (taskID: string, signal?: AbortSignal) => request<RecoveryAssessment>(`/api/admin/tasks/${encodeURIComponent(taskID)}/recovery`, { signal }),
+  recoverTask: (taskID: string, value: RecoverTaskRequest) =>
+    request<RecoverTaskResponse>(`/api/admin/tasks/${encodeURIComponent(taskID)}/recovery`, { method: 'POST', body: jsonBody(value) }),
 
   listEntities: (entity: EntityKey, query: Query, signal?: AbortSignal) =>
     request<Page<Record<string, unknown>>>(`/api/admin/${entityPaths[entity]}${queryString(query)}`, { signal }),

@@ -54,6 +54,21 @@ describe('admin API client', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/effects/effect%3A1/retry')
   })
 
+  it('loads recovery eligibility and posts the recovery command with encoded task IDs', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ task_id: 'task/one', eligible: true, block_revision: 'revision-1', safety_blockers: [] }))
+      .mockResolvedValueOnce(response({ replayed: false, recovery: { recovery_id: 'r1' }, task: { task_id: 'task/one' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await adminApi.taskRecovery('task/one')
+    await adminApi.recoverTask('task/one', { request_id: 'req-1', block_revision: 'revision-1', reason: 'retry', acknowledge_unknown_risk: false })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/tasks/task%2Fone/recovery')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/tasks/task%2Fone/recovery')
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({ request_id: 'req-1', block_revision: 'revision-1', reason: 'retry', acknowledge_unknown_risk: false })
+  })
+
   it('uses the coordinator configuration management contract', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response({ mode: 'setup_pending', revision: 0 })))
     vi.stubGlobal('fetch', fetchMock)

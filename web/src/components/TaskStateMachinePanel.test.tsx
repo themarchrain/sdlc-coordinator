@@ -16,7 +16,7 @@ describe('TaskStateMachinePanel', () => {
     expect(screen.getByRole('img', { name: 'Task 状态机' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: `${label}（${status}），当前状态` })).toHaveAttribute('aria-current', 'true')
     expect(container.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
-    expect(container.querySelectorAll('path[marker-end]')).toHaveLength(29)
+    expect(container.querySelectorAll('path[marker-end]')).toHaveLength(30)
   })
 
   it('distinguishes manual stops and shows interruption as a terminal state', () => {
@@ -35,6 +35,8 @@ describe('TaskStateMachinePanel', () => {
     for (const path of manualStops) expect(path).toHaveAttribute('stroke-dasharray', '6 4')
     expect([...container.querySelectorAll('path[marker-end]')].some((path) => path.textContent?.startsWith('interrupted →'))).toBe(false)
     expect([...manualStops].some((path) => path.textContent?.startsWith('succeeded →'))).toBe(false)
+    expect(container.querySelector('path[marker-end] title')?.textContent).toBeDefined()
+    expect([...container.querySelectorAll('path[marker-end] title')].map((title) => title.textContent)).toContain('blocked → pending（经恢复资格检查）')
   })
 
   it('keeps unknown states visible without highlighting a known state', () => {

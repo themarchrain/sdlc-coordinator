@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
+import type { PortalSessionPayload } from '../api/portal'
 import { patchSearchParams } from '../app/searchParams'
+import { WorkspaceSessionProvider } from '../app/workspaceSession'
 import { TasksPage } from './TasksPage'
 
 afterEach(() => vi.restoreAllMocks())
@@ -153,6 +155,22 @@ describe('TasksPage', () => {
     expect(listTasks).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, repository_id: 'repo_b', status: 'running' }))
   })
 
+  it('reloads the task drawer, timeline and list after a recovery is accepted', async () => {
+    const listTasks = vi.spyOn(adminApi, 'listTasks').mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
+    vi.spyOn(adminApi, 'getTask').mockResolvedValueOnce({ task_id: 'task-blocked', status: 'blocked', role: 'DeveloperWorker', type: 'bugfix' }).mockResolvedValue({ task_id: 'task-blocked', status: 'pending', role: 'DeveloperWorker', type: 'bugfix' })
+    vi.spyOn(adminApi, 'taskTimeline').mockResolvedValue({ items: [] })
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue({ task_id: 'task-blocked', classification: 'transient', eligible: true, requires_risk_confirmation: false, reason_code: 'eligible', reason_summary: '外部故障已恢复', block_revision: 'revision-1', safety_blockers: [] })
+    vi.spyOn(adminApi, 'recoverTask').mockResolvedValue({ replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-blocked', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: false, classification: 'transient', attempt_count_before: 1, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-blocked', status: 'pending' } })
+
+    renderTasksWithSession('/tasks?task_id=task-blocked')
+    expect(await screen.findByText('task-blocked')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2))
+    expect(adminApi.getTask).toHaveBeenCalledTimes(2)
+    expect(adminApi.taskTimeline).toHaveBeenCalledTimes(2)
+  })
+
   it('omits the status tag for timeline events without a status', async () => {
     vi.spyOn(adminApi, 'listTasks').mockResolvedValue({
       items: [{ task_id: 'task-statusless', type: 'develop_from_issue', role: 'DeveloperWorker', status: 'running', source_repo: 'group/repo', target_repo: 'group/repo', current_run_id: 'run-1', created_at: '2026-08-08T08:00:00Z', updated_at: '2026-08-08T08:10:00Z' }],
@@ -182,4 +200,12 @@ function RepositorySwitchProbe() {
 
 function renderTasks(path = '/tasks') {
   return render(<MemoryRouter initialEntries={[path]}><RepositorySwitchProbe /><TasksPage /></MemoryRouter>)
+}
+
+function renderTasksWithSession(path = '/tasks') {
+  const session: PortalSessionPayload = {
+    user: { id: 17, username: 'member', role: 'member', must_change_password: false },
+    scope: { kind: 'tenant', role: 'member', tenant: { id: 1, slug: 'acme', display_name: 'Acme', status: 'active' } },
+  }
+  return render(<WorkspaceSessionProvider value={{ session, role: 'member', superAdmin: false }}><MemoryRouter initialEntries={[path]}><RepositorySwitchProbe /><TasksPage /></MemoryRouter></WorkspaceSessionProvider>)
 }

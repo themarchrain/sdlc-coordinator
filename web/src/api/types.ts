@@ -86,8 +86,66 @@ export interface TaskSummary extends Record<string, unknown> {
   target_repo: string
   current_run_id?: string
   last_error?: string
+  recovery_generation?: number
+  attempt_count?: number
+  retry_cycle_base_count?: number
+  retry_cycle_max_attempts?: number
+  retry_cycle_attempt_count?: number
   created_at: string
   updated_at: string
+}
+
+export interface RecoverySafetyBlocker {
+  code: string
+  summary: string
+  remediation?: string
+}
+
+export interface RecoveryAssessment {
+  task_id: string
+  classification: string
+  eligible: boolean
+  requires_risk_confirmation: boolean
+  reason_code: string
+  reason_summary: string
+  remediation?: string
+  source_run_id?: string
+  block_revision: string
+  failure_stage?: string
+  failure_code?: string
+  failure_summary?: string
+  safety_blockers: RecoverySafetyBlocker[]
+}
+
+export interface RecoverTaskRequest {
+  request_id: string
+  block_revision: string
+  reason: string
+  acknowledge_unknown_risk: boolean
+}
+
+export interface TaskRecoveryRecord {
+  recovery_id: string
+  task_id: string
+  request_id: string
+  source_generation: number
+  target_generation: number
+  block_revision: string
+  source_run_id?: string
+  requested_by: string
+  requested_at: string
+  reason?: string
+  risk_acknowledged: boolean
+  classification: string
+  attempt_count_before: number
+  cycle_max_attempts: number
+  created_at: string
+}
+
+export interface RecoverTaskResponse {
+  replayed: boolean
+  recovery: TaskRecoveryRecord
+  task: Record<string, unknown>
 }
 
 export interface TimelineEvent {
