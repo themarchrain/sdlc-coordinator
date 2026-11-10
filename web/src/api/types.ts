@@ -114,7 +114,7 @@ export interface RecoveryAssessment {
   failure_stage?: string
   failure_code?: string
   failure_summary?: string
-  safety_blockers: RecoverySafetyBlocker[]
+  safety_blockers?: RecoverySafetyBlocker[]
 }
 
 export interface RecoverTaskRequest {

@@ -90,7 +90,8 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
   }
   if (!assessment) return null
 
-  const canRecover = !loading && !error && assessment.eligible && assessment.safety_blockers.length === 0
+  const safetyBlockers = assessment.safety_blockers ?? []
+  const canRecover = !loading && !error && assessment.eligible && safetyBlockers.length === 0
   const buttonLabel = assessment.requires_risk_confirmation ? '风险恢复' : '恢复任务'
 
   const openRisk = () => {
@@ -108,7 +109,7 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
   }
 
   const submit = async () => {
-    if (sending.current || !assessment || !assessment.eligible || assessment.safety_blockers.length > 0) return
+    if (sending.current || !assessment || !assessment.eligible || safetyBlockers.length > 0) return
     if (assessment.requires_risk_confirmation && (!riskAcknowledged || !reason.trim())) {
       setFormError('请确认风险并填写恢复说明')
       return
@@ -155,8 +156,8 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
       { key: 'reason', label: '判断说明', children: assessment.reason_summary || '—' },
       { key: 'failure', label: '原始错误', children: <span className="error-copy">{assessment.failure_summary || '—'}</span> },
     ]} />
-    {assessment.safety_blockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<ul>{assessment.safety_blockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>} /> : null}
-    {!canRecover && assessment.safety_blockers.length === 0 ? <Alert type="warning" message={assessment.reason_summary || '当前任务不能恢复'} /> : null}
+    {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>} /> : null}
+    {!canRecover && safetyBlockers.length === 0 ? <Alert type="warning" message={assessment.reason_summary || '当前任务不能恢复'} /> : null}
     {error ? <Alert type="error" message={error} action={<Button size="small" onClick={() => {
       if (errorKind === 'unavailable') {
         setError(undefined)
