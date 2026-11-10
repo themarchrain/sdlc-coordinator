@@ -68,6 +68,14 @@ describe('TaskRecoveryControl', () => {
     expect(screen.getByText(/前次执行未确认退出/)).toBeInTheDocument()
   })
 
+  it('renders an empty blocker list when the API omits the array', async () => {
+    const { safety_blockers: _blockers, ...withoutBlockers } = transient
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(withoutBlockers)
+    renderControl(transient)
+
+    expect(await screen.findByRole('button', { name: '恢复任务' })).toBeInTheDocument()
+  })
+
   it('displays the original redacted error as text', async () => {
     vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue({ ...transient, failure_summary: 'token=*** provider timeout' })
     renderControl(transient)
