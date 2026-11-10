@@ -51,6 +51,8 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 		&model.StopRequest{}, &model.Task{}, &model.Run{}, &model.Artifact{}, &model.Dependency{},
 		&model.Writeback{}, &model.Effect{}, &model.InboundEvent{},
 		&model.ResultSubmission{}, &model.ResultSubmissionRejection{},
+		&model.AgentExecution{}, &model.TaskRecovery{}, &model.WorkItemLease{}, &model.ActionAdmission{},
+		&model.DeveloperDeliveryCheckpoint{}, &model.MergeGateAudit{},
 		&model.ConnectorInstance{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -79,8 +81,13 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
 	inboundRepo := repository.NewInboundEventRepository(db)
+	taskRecoveryRepo := repository.NewTaskRecoveryRepository(db)
 	orch := orchestrator.New(taskRepo, runRepo,
 		orchestrator.WithResultSubmissionRepository(repository.NewResultSubmissionRepository(db)),
+		orchestrator.WithTaskRecoveryRepository(taskRecoveryRepo),
+		orchestrator.WithRecoveryFactsReader(&orchestrator.RecoverySafetyReader{
+			Store: taskRecoveryRepo, RepositoryLookup: repoStore,
+		}),
 	)
 	processor := events.NewProcessor(inboundRepo, orch)
 	processor.SetRepositoryLookup(repoStore)

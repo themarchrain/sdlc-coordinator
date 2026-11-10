@@ -204,6 +204,8 @@ var adminOperationRows = []MatrixRow{
 	mr("POST", "/api/admin/scheduler/tick", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin+" + "+mwRuntimeGate, mwPortalTenantAdmin+" + "+mwRuntimeGate, "写操作；另挂 ConfigurationGate"),
 	mr("POST", "/api/admin/effects/:effect_id/retry", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin+" + "+mwRuntimeGate, mwPortalTenantAdmin+" + "+mwRuntimeGate, "任务写操作"),
 	mr("POST", "/api/admin/tasks/:task_id/rebind", ClassAdmin, allow, allow, deny, deny, ChannelNone, false, mwPortalTenantAdmin+" + "+mwRuntimeGate, mwPortalTenantAdmin+" + "+mwRuntimeGate, "任务写操作"),
+	mr("GET", "/api/admin/tasks/:task_id/recovery", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember, mwPortalMember, "blocked 任务恢复资格只读"),
+	mr("POST", "/api/admin/tasks/:task_id/recovery", ClassAdmin, support_only, allow, allow, deny, ChannelNone, false, mwPortalMember+" + "+mwRuntimeGate, mwPortalMember+" + "+mwRuntimeGate, "blocked 任务恢复受理"),
 }
 
 var adminConfigurationRows = []MatrixRow{

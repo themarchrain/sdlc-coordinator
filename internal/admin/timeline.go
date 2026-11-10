@@ -86,6 +86,18 @@ func (service *QueryService) TaskTimeline(ctx context.Context, taskID string) ([
 			events = append(events, newTimelineEvent("stop-confirmed:"+stop.StopID, *stop.ConfirmedAt, "stop", "confirmed", "confirmed", label, "", "stop", stop.StopID))
 		}
 	}
+	var recoveries []model.TaskRecovery
+	if err := service.db.WithContext(ctx).Where("task_id = ?", task.TaskID).Order("id ASC").Find(&recoveries).Error; err != nil {
+		return nil, fmt.Errorf("timeline task recoveries: %w", err)
+	}
+	for _, recovery := range recoveries {
+		events = append(events, newTimelineEvent(
+			"recovery:"+recovery.RecoveryID+":accepted", recovery.RequestedAt, "recovery", "accepted", "pending",
+			"恢复已受理",
+			fmt.Sprintf("操作者=%s；风险确认=%t；理由=%s；来源Run=%s；代次=%d→%d", recovery.RequestedBy, recovery.RiskAcknowledged, recovery.Reason, recovery.SourceRunID, recovery.SourceGeneration, recovery.TargetGeneration),
+			"task_recovery", recovery.RecoveryID,
+		))
+	}
 	sort.Slice(events, func(i, j int) bool { return timelineEventLess(events[i], events[j]) })
 	return events, nil
 }

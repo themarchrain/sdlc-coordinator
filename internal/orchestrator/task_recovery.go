@@ -17,6 +17,7 @@ var (
 	ErrRecoveryUnavailable         = errors.New("task recovery unavailable")
 	ErrRecoveryInvalid             = errors.New("invalid task recovery request")
 	ErrRecoveryRequiresAuditedPath = errors.New("blocked task recovery requires audited path")
+	ErrRecoverySafetyBlocked       = errors.New("task recovery blocked by safety gate")
 )
 
 type TaskRecoveryRepository interface {
@@ -75,6 +76,9 @@ func (o *Orchestrator) RecoverBlockedTask(ctx context.Context, taskID, actorID s
 		return nil, err
 	}
 	if !assessment.Eligible {
+		if len(assessment.SafetyBlockers) != 0 {
+			return nil, fmt.Errorf("%w: %s", ErrRecoverySafetyBlocked, assessment.ReasonCode)
+		}
 		return nil, fmt.Errorf("%w: %s", repository.ErrRecoveryNotEligible, assessment.ReasonCode)
 	}
 	if assessment.RequiresRiskConfirmation {

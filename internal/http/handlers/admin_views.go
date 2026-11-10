@@ -12,50 +12,70 @@ import (
 
 // TaskResponse 是任务在 admin 操作与 webhook 响应里的序列化形态。
 type TaskResponse struct {
-	TaskID             string           `json:"task_id"`
-	DedupeKey          string           `json:"dedupe_key"`
-	Type               string           `json:"type"`
-	Role               string           `json:"role"`
-	SourceRepo         string           `json:"source_repo,omitempty"`
-	TargetRepo         string           `json:"target_repo,omitempty"`
-	Objective          string           `json:"objective"`
-	AcceptanceCriteria string           `json:"acceptance_criteria,omitempty"`
-	Status             model.TaskStatus `json:"status"`
-	LeaseUntil         *time.Time       `json:"lease_until,omitempty"`
-	AttemptCount       int              `json:"attempt_count"`
-	CurrentRunID       *string          `json:"current_run_id,omitempty"`
-	ContextJSON        string           `json:"context_json,omitempty"`
-	CallbackURL        string           `json:"callback_url,omitempty"`
-	LastError          string           `json:"last_error,omitempty"`
-	CreatedAt          time.Time        `json:"created_at"`
-	UpdatedAt          time.Time        `json:"updated_at"`
+	TaskID                 string           `json:"task_id"`
+	DedupeKey              string           `json:"dedupe_key"`
+	Type                   string           `json:"type"`
+	Role                   string           `json:"role"`
+	SourceRepo             string           `json:"source_repo,omitempty"`
+	TargetRepo             string           `json:"target_repo,omitempty"`
+	Objective              string           `json:"objective"`
+	AcceptanceCriteria     string           `json:"acceptance_criteria,omitempty"`
+	Status                 model.TaskStatus `json:"status"`
+	LeaseUntil             *time.Time       `json:"lease_until,omitempty"`
+	AttemptCount           int              `json:"attempt_count"`
+	RecoveryGeneration     uint64           `json:"recovery_generation"`
+	RetryCycleBaseCount    int              `json:"retry_cycle_base_count"`
+	RetryCycleMaxAttempts  int              `json:"retry_cycle_max_attempts"`
+	RetryCycleAttemptCount int              `json:"retry_cycle_attempt_count"`
+	CurrentRunID           *string          `json:"current_run_id,omitempty"`
+	ContextJSON            string           `json:"context_json,omitempty"`
+	CallbackURL            string           `json:"callback_url,omitempty"`
+	LastError              string           `json:"last_error,omitempty"`
+	CreatedAt              time.Time        `json:"created_at"`
+	UpdatedAt              time.Time        `json:"updated_at"`
 }
 
 func taskResponse(task *model.Task) TaskResponse {
 	return TaskResponse{
-		TaskID:             task.TaskID,
-		DedupeKey:          task.DedupeKey,
-		Type:               task.Type,
-		Role:               task.Role,
-		SourceRepo:         task.SourceRepo,
-		TargetRepo:         task.TargetRepo,
-		Objective:          task.Objective,
-		AcceptanceCriteria: task.AcceptanceCriteria,
-		Status:             task.Status,
-		LeaseUntil:         task.LeaseUntil,
-		AttemptCount:       task.AttemptCount,
-		CurrentRunID:       task.CurrentRunID,
-		ContextJSON:        task.ContextJSON,
-		CallbackURL:        task.CallbackURL,
-		LastError:          task.LastError,
-		CreatedAt:          task.CreatedAt,
-		UpdatedAt:          task.UpdatedAt,
+		TaskID:                 task.TaskID,
+		DedupeKey:              task.DedupeKey,
+		Type:                   task.Type,
+		Role:                   task.Role,
+		SourceRepo:             task.SourceRepo,
+		TargetRepo:             task.TargetRepo,
+		Objective:              task.Objective,
+		AcceptanceCriteria:     task.AcceptanceCriteria,
+		Status:                 task.Status,
+		LeaseUntil:             task.LeaseUntil,
+		AttemptCount:           task.AttemptCount,
+		RecoveryGeneration:     task.RecoveryGeneration,
+		RetryCycleBaseCount:    task.RetryCycleBaseCount,
+		RetryCycleMaxAttempts:  task.RetryCycleMaxAttempts,
+		RetryCycleAttemptCount: retryCycleAttemptCount(task),
+		CurrentRunID:           task.CurrentRunID,
+		ContextJSON:            task.ContextJSON,
+		CallbackURL:            task.CallbackURL,
+		LastError:              task.LastError,
+		CreatedAt:              task.CreatedAt,
+		UpdatedAt:              task.UpdatedAt,
 	}
+}
+
+func retryCycleAttemptCount(task *model.Task) int {
+	if task == nil || task.RetryCycleMaxAttempts <= 0 {
+		return 0
+	}
+	used := task.AttemptCount - task.RetryCycleBaseCount
+	if used < 0 {
+		return 0
+	}
+	return used
 }
 
 func runSummary(run model.Run) gin.H {
 	return gin.H{"run_id": run.RunID, "task_id": run.TaskID, "worker_role": run.WorkerRole, "status": run.Status,
-		"external_system": run.ExternalSystem, "external_id": run.ExternalID, "external_url": run.ExternalURL,
+		"recovery_generation": run.RecoveryGeneration,
+		"external_system":     run.ExternalSystem, "external_id": run.ExternalID, "external_url": run.ExternalURL,
 		"error_message": run.ErrorMessage, "started_at": run.StartedAt, "completed_at": run.CompletedAt,
 		"created_at": run.CreatedAt, "updated_at": run.UpdatedAt}
 }

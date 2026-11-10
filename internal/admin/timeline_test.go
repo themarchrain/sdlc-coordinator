@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,33 @@ func TestTaskTimelineCombinesRelatedEntitiesInStableOrder(t *testing.T) {
 			t.Fatalf("substring-only inbound event must not be included: %#v", events)
 		}
 	}
+}
+
+func TestTaskTimelineIncludesRecoveryAudit(t *testing.T) {
+	service, db := newQueryServiceTestDB(t)
+	seedTimelineEntities(t, db, "task-timeline")
+	recovery := &model.TaskRecovery{
+		RecoveryID: "recovery-timeline", TaskID: "task-timeline", RequestID: "request-timeline", RequestHash: "hash",
+		SourceGeneration: 0, TargetGeneration: 1, BlockRevision: "revision", SourceRunID: "run-timeline",
+		RequestedBy: "17", RequestedAt: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC), Reason: "重试外部暂时故障",
+		RiskAcknowledged: true, Classification: "transient", AttemptCountBefore: 2, CycleMaxAttempts: 3,
+	}
+	if err := db.Create(recovery).Error; err != nil {
+		t.Fatal(err)
+	}
+	events, err := service.TaskTimeline(context.Background(), "task-timeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Category == "recovery" {
+			if event.EntityID != recovery.RecoveryID || event.Action != "accepted" || !strings.Contains(event.Summary, "17") || !strings.Contains(event.Summary, "重试外部暂时故障") {
+				t.Fatalf("recovery timeline event = %+v", event)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing recovery timeline event in %#v", events)
 }
 
 func TestTaskTimelineSeparatesCreationFromCurrentTerminalState(t *testing.T) {

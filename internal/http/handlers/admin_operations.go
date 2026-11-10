@@ -69,6 +69,8 @@ func (handler *AdminOperationHandler) RegisterRoutes(group *gin.RouterGroup, mid
 	group.POST("/scheduler/tick", append(middleware, handler.Tick)...)
 	group.POST("/effects/:effect_id/retry", append(middleware, handler.RetryEffect)...)
 	group.POST("/tasks/:task_id/rebind", append(middleware, handler.RebindTask)...)
+	group.GET("/tasks/:task_id/recovery", handler.GetTaskRecovery)
+	group.POST("/tasks/:task_id/recovery", append(middleware, handler.RecoverTask)...)
 	group.POST("/tasks/:task_id/stop", handler.stopTarget("task", "task_id"))
 	group.POST("/runs/:run_id/stop", handler.stopTarget("run", "run_id"))
 	group.POST("/agents/executions/executions/:execution_id/stop", handler.stopTarget("execution", "execution_id"))
