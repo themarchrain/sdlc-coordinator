@@ -54,6 +54,39 @@ func TestAdminTaskListAndDetailContract(t *testing.T) {
 	}
 }
 
+func TestAdminTaskQueriesExposeRecoveryBudget(t *testing.T) {
+	router, db := newAdminQueryHandlerTestRouter(t)
+	seedAdminQueryTask(t, db)
+	if err := db.Model(&model.Task{}).Where("task_id = ?", "task-admin").Updates(map[string]any{
+		"recovery_generation": 2, "attempt_count": 6,
+		"retry_cycle_base_count": 4, "retry_cycle_max_attempts": 3,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"/api/admin/tasks", "/api/admin/tasks/task-admin"} {
+		t.Run(query, func(t *testing.T) {
+			response := performAdminQueryRequest(router, query)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			var body map[string]any
+			decodeAdminQueryJSON(t, response, &body)
+			if query == "/api/admin/tasks" {
+				body = body["items"].([]any)[0].(map[string]any)
+			}
+			for key, want := range map[string]float64{
+				"recovery_generation": 2, "attempt_count": 6,
+				"retry_cycle_base_count": 4, "retry_cycle_max_attempts": 3,
+				"retry_cycle_attempt_count": 2,
+			} {
+				if got := body[key]; got != want {
+					t.Errorf("%s = %v, want %v", key, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestAdminTaskQueryRejectsInvalidPageAndReturnsNotFound(t *testing.T) {
 	router, _ := newAdminQueryHandlerTestRouter(t)
 

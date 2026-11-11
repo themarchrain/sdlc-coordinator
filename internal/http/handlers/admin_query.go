@@ -399,6 +399,8 @@ func taskSummary(task model.Task) gin.H {
 		"source_repo": task.SourceRepo, "target_repo": task.TargetRepo, "repository_id": task.RepositoryID,
 		"status":      task.Status,
 		"lease_until": task.LeaseUntil, "attempt_count": task.AttemptCount, "current_run_id": task.CurrentRunID,
+		"recovery_generation": task.RecoveryGeneration, "retry_cycle_base_count": task.RetryCycleBaseCount,
+		"retry_cycle_max_attempts": task.RetryCycleMaxAttempts, "retry_cycle_attempt_count": retryCycleAttemptCount(&task),
 		"delivery_branch": task.DeliveryBranch, "last_error": task.LastError,
 		"created_at": task.CreatedAt, "updated_at": task.UpdatedAt,
 	}
