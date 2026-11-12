@@ -39,3 +39,8 @@ __pycache__/
 faultsuite-results.jsonl
 /.tmpgo-cache/
 /.tmpbuild/
+
+# OS metadata
+.DS_Store
+._*
+Thumbs.db
