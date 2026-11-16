@@ -20,6 +20,14 @@ const transient: RecoveryAssessment = {
   reason_code: 'eligible', reason_summary: '外部故障已恢复', block_revision: 'revision-1',
   failure_summary: '上游返回 503', safety_blockers: [], checked_at: '2026-11-16T10:00:00Z',
 }
+const adminPersona: WorkspaceSessionValue = {
+  session: { ...session, user: { ...session.user, role: 'tenant_admin' }, scope: { ...session.scope, role: 'tenant_admin' } },
+  role: 'tenant_admin', superAdmin: false,
+}
+const interrupted: RecoveryAssessment = {
+  ...transient, eligible: false, reason_code: 'execution_unconfirmed', reason_summary: '前次执行未确认退出',
+  safety_blockers: [{ code: 'execution_unconfirmed', summary: '前次执行未确认退出', remediation: '确认该执行已退出后重试' }],
+}
 
 function renderControl(assessment: RecoveryAssessment, taskID = 'task-1', status = 'blocked', value: WorkspaceSessionValue = persona) {
   return render(<WorkspaceSessionProvider value={value}><TaskRecoveryControl taskID={taskID} status={status} onRecovered={() => {}} /></WorkspaceSessionProvider>)
@@ -220,6 +228,47 @@ describe('TaskRecoveryControl', () => {
     fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
 
     expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+  })
+
+  it('shows members the unconfirmed execution without the admin confirmation', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    renderControl(interrupted)
+
+    expect(await screen.findByText('存在未解除的安全阻塞')).toBeInTheDocument()
+    expect(screen.getByText('前次执行未确认退出；确认该执行已退出后重试')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '确认旧执行已退出' })).not.toBeInTheDocument()
+  })
+
+  it('lets a tenant admin confirm that an interrupted execution exited', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(interrupted).mockResolvedValueOnce(transient)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit').mockResolvedValue({
+      confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-1', execution_id: 'exec-1',
+      remote_state: 'terminal', source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+    })
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认旧执行已退出' }))
+    expect(screen.getByRole('button', { name: '提交确认' })).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已在机器上确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('task-1', expect.objectContaining({ reason: '已在机器上确认进程退出' })))
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+  })
+
+  it('reports a still running execution instead of an unknown result', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'execution_still_running', '远端执行仍在运行'))
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认旧执行已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    expect(await screen.findByText('远端执行仍在运行，不能确认退出')).toBeInTheDocument()
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument()
   })
 
   it('ignores a late assessment after switching Tasks', async () => {

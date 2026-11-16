@@ -36,6 +36,8 @@ import type {
   RequirementSyncResult,
   RecoverTaskRequest,
   RecoverTaskResponse,
+  ExecutionExitConfirmation,
+  ExecutionExitConfirmationRequest,
   RecoveryAssessment,
   TaskSummary,
   TickRequest,
@@ -149,6 +151,8 @@ export const adminApi = {
   taskRecovery: (taskID: string, signal?: AbortSignal) => request<RecoveryAssessment>(`/api/admin/tasks/${encodeURIComponent(taskID)}/recovery`, { signal }),
   recoverTask: (taskID: string, value: RecoverTaskRequest) =>
     request<RecoverTaskResponse>(`/api/admin/tasks/${encodeURIComponent(taskID)}/recovery`, { method: 'POST', body: jsonBody(value) }),
+  confirmExecutionExit: (taskID: string, value: ExecutionExitConfirmationRequest) =>
+    request<ExecutionExitConfirmation>(`/api/admin/tasks/${encodeURIComponent(taskID)}/execution-exit`, { method: 'POST', body: jsonBody(value) }),
 
   listEntities: (entity: EntityKey, query: Query, signal?: AbortSignal) =>
     request<Page<Record<string, unknown>>>(`/api/admin/${entityPaths[entity]}${queryString(query)}`, { signal }),

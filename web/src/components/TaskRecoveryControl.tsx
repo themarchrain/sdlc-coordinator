@@ -47,6 +47,9 @@ function describeRecoveryFailure(cause: unknown): RecoveryFailure {
     case 404:
       return { kind: 'missing', message: '任务不存在或已被删除' }
     case 409:
+      if (cause.code === 'execution_still_running') return { kind: 'refused', message: '远端执行仍在运行，不能确认退出' }
+      if (cause.code === 'execution_not_interrupted') return { kind: 'refused', message: '当前执行不是中断状态，无需确认退出' }
+      if (cause.code === 'execution_evidence_changed') return { kind: 'stale', message: '执行证据已变化，正在刷新恢复资格', refresh: true }
       return { kind: 'stale', message: '任务状态已变化，正在刷新恢复资格', refresh: true }
     case 503:
       return { kind: 'unavailable', message: '恢复安全检查暂不可用，可重试' }
@@ -71,11 +74,12 @@ export function TaskRecoveryControl(props: TaskRecoveryControlProps) {
   const { session, role, superAdmin } = useWorkspaceSession()
   const tenantID = session?.scope.tenant?.id
   const permitted = Boolean(session && tenantID) && (role === 'member' || role === 'tenant_admin' || (superAdmin && Boolean(session?.support?.active)))
+  const canConfirmExit = Boolean(session && tenantID) && (role === 'tenant_admin' || (superAdmin && Boolean(session?.support?.active)))
   const identity = `${session?.user.id ?? ''}:${tenantID ?? ''}:${role}:${superAdmin}:${props.taskID}:${props.status}`
-  return <TaskRecoveryControlBody key={identity} {...props} permitted={permitted} />
+  return <TaskRecoveryControlBody key={identity} {...props} permitted={permitted} canConfirmExit={canConfirmExit} />
 }
 
-function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: TaskRecoveryControlProps & { permitted: boolean }) {
+function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canConfirmExit }: TaskRecoveryControlProps & { permitted: boolean; canConfirmExit: boolean }) {
   const [assessment, setAssessment] = useState<RecoveryAssessment>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
@@ -212,7 +216,10 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
       { key: 'checked_at', label: '资格检查时间', children: formatCheckedAt(assessment.checked_at) },
       { key: 'failure', label: '原始错误', children: <span className="error-copy">{assessment.failure_summary || '—'}</span> },
     ]} />
-    {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>} /> : null}
+    {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<>
+      <ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>
+      {canConfirmExit && safetyBlockers.some((blocker) => blocker.code === 'execution_unconfirmed') ? <ExecutionExitConfirm taskID={taskID} onConfirmed={() => setReloadVersion((value) => value + 1)} /> : null}
+    </>} /> : null}
     {!canRecover && safetyBlockers.length === 0 ? <Alert type="warning" message={assessment.reason_summary || '当前任务不能恢复'} /> : null}
     {error ? <Alert type="error" message={error} action={errorKind === 'stale' || errorKind === 'unavailable' || errorKind === 'unknown' ? <Button size="small" onClick={() => {
       if (errorKind === 'unavailable') {
@@ -235,4 +242,58 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
       </Space>
     </Modal>
   </section>
+}
+
+function ExecutionExitConfirm({ taskID, onConfirmed }: { taskID: string; onConfirmed: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState<string>()
+  const [submitting, setSubmitting] = useState(false)
+  const sending = useRef(false)
+  const requestID = useRef('')
+
+  const close = () => {
+    setOpen(false)
+    setAcknowledged(false)
+    setReason('')
+    setError(undefined)
+  }
+
+  const submit = async () => {
+    if (sending.current || !acknowledged || !reason.trim()) return
+    sending.current = true
+    setSubmitting(true)
+    setError(undefined)
+    if (!requestID.current) requestID.current = newRequestID()
+    try {
+      await adminApi.confirmExecutionExit(taskID, { request_id: requestID.current, reason: reason.trim() })
+      requestID.current = ''
+      close()
+      onConfirmed()
+    } catch (cause) {
+      const failure = describeRecoveryFailure(cause)
+      if (failure.refresh) {
+        close()
+        onConfirmed()
+        return
+      }
+      setError(failure.message)
+    } finally {
+      sending.current = false
+      setSubmitting(false)
+    }
+  }
+
+  return <>
+    <Button size="small" onClick={() => setOpen(true)}>确认旧执行已退出</Button>
+    <Modal open={open} title="确认旧执行已退出" okText="提交确认" cancelText="取消" confirmLoading={submitting} okButtonProps={{ disabled: !acknowledged || !reason.trim() || submitting }} onCancel={close} onOk={submit}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert type="warning" message="该确认只记录你核实过的证据，不会停止或改写执行记录，也不会直接恢复任务。" />
+        <Checkbox checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)}>我确认该执行进程已经退出，且不会再回写结果</Checkbox>
+        <Input.TextArea aria-label="确认说明" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} showCount rows={3} placeholder="说明在哪里、用什么方式确认了该执行已经退出" />
+        {error ? <span className="error-copy">{error}</span> : null}
+      </Space>
+    </Modal>
+  </>
 }

@@ -143,6 +143,22 @@ export interface TaskRecoveryRecord {
   created_at: string
 }
 
+export interface ExecutionExitConfirmationRequest {
+  request_id: string
+  reason: string
+}
+
+export interface ExecutionExitConfirmation {
+  confirmation_id: string
+  task_id: string
+  run_id: string
+  execution_id: string
+  remote_state: string
+  remote_message?: string
+  source_generation: number
+  confirmed_at: string
+}
+
 export interface RecoverTaskResponse {
   replayed: boolean
   recovery: TaskRecoveryRecord
