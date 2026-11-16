@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/store"
@@ -136,4 +137,73 @@ func (f fakeRecoveryRepositoryLookup) Get(context.Context, string) (*registeredr
 		return nil, f.err
 	}
 	return f.repo, nil
+}
+
+type countingPrerequisiteChecker struct {
+	resolved bool
+	calls    int
+}
+
+func (c *countingPrerequisiteChecker) CheckRecoveryPrerequisite(context.Context, *failure.Info) (bool, error) {
+	c.calls++
+	return c.resolved, nil
+}
+
+func TestProviderSetupCodeDoesNotReachPrerequisiteCheck(t *testing.T) {
+	tests := []struct {
+		name      string
+		source    string
+		code      string
+		wantCalls int
+	}{
+		{name: "runner observed cli missing", source: failure.SourceRunner, code: failure.CodeCLIMissing, wantCalls: 1},
+		{name: "runner observed missing configuration", source: failure.SourceRunner, code: failure.CodeMissingConfiguration, wantCalls: 1},
+		{name: "provider echoed cli missing", source: failure.SourceProvider, code: failure.CodeCLIMissing, wantCalls: 0},
+		{name: "provider echoed missing configuration", source: failure.SourceProvider, code: failure.CodeMissingConfiguration, wantCalls: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := openRecoverySafetyDB(t)
+			ctx := context.Background()
+			now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+			runID := "run-setup-code"
+			repositoryID := "repo-setup-code"
+			task := &model.Task{
+				TaskID: "task-setup-code", DedupeKey: "dedupe-setup-code", Type: "bugfix", Role: "DeveloperWorker",
+				RepositoryID: &repositoryID, TargetRepo: "group/project", Status: model.TaskStatusBlocked,
+				CurrentRunID: &runID, AttemptCount: 5, ContextJSON: `{}`,
+			}
+			if err := db.Create(task).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusBlocked}).Error; err != nil {
+				t.Fatal(err)
+			}
+			finished := now.Add(-time.Minute)
+			failureJSON := `{"version":1,"stage":"initialization","source":"` + test.source + `","code":"` + test.code + `"}`
+			if err := db.Create(&model.AgentExecution{
+				RunID: runID, ExecutionID: runID, Provider: "codex", Status: model.AgentExecutionStatusFailed,
+				RequestHash: "request-hash", FinishedAt: &finished, FailureJSON: failureJSON,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			checker := &countingPrerequisiteChecker{resolved: true}
+			reader := &RecoverySafetyReader{
+				Store:               repository.NewTaskRecoveryRepository(db),
+				RepositoryLookup:    fakeRecoveryRepositoryLookup{repo: &registeredrepo.RegisteredRepository{RepositoryID: repositoryID, Status: registeredrepo.StatusEnabled}},
+				PrerequisiteChecker: checker,
+				Now:                 func() time.Time { return now },
+			}
+			facts, err := reader.Read(ctx, task.TaskID)
+			if err != nil {
+				t.Fatalf("read recovery facts: %v", err)
+			}
+			if checker.calls != test.wantCalls {
+				t.Fatalf("prerequisite checks = %d, want %d", checker.calls, test.wantCalls)
+			}
+			if test.wantCalls == 0 && facts.PrerequisiteResolved {
+				t.Fatal("provider echoed setup code was treated as a resolved prerequisite")
+			}
+		})
+	}
 }

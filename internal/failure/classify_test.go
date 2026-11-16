@@ -59,6 +59,21 @@ func TestClassify(t *testing.T) {
 			want: ClassificationFatal,
 		},
 		{
+			name: "provider cannot claim a runner setup code",
+			info: &Info{Version: VersionV1, Stage: StageProvider, Source: SourceProvider, Code: CodeCLIMissing},
+			want: ClassificationUnknown,
+		},
+		{
+			name: "provider cannot claim missing configuration",
+			info: &Info{Version: VersionV1, Stage: StageProvider, Source: SourceProvider, Code: CodeMissingConfiguration},
+			want: ClassificationUnknown,
+		},
+		{
+			name: "coordinator cannot claim a runner setup code",
+			info: &Info{Version: VersionV1, Stage: StageResult, Source: SourceCoordinator, Code: CodeCLIMissing},
+			want: ClassificationUnknown,
+		},
+		{
 			name: "bare provider failed is unknown",
 			info: &Info{Version: VersionV1, Stage: StageResult, Source: SourceRunner, Code: CodeProviderFailed},
 			want: ClassificationUnknown,

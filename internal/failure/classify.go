@@ -24,6 +24,14 @@ var trustedSources = map[string]struct{}{
 	SourceCoordinator: {},
 }
 
+// runnerSetupCodes only mean the runner observed a missing local prerequisite.
+// The same word echoed by a provider or an old coordinator record must stay
+// unknown, otherwise a provider error can unlock the prerequisite gate.
+var runnerSetupCodes = map[string]struct{}{
+	CodeCLIMissing:           {},
+	CodeMissingConfiguration: {},
+}
+
 // Classify only trusts a supported version, source and explicit code. Free-form
 // summaries are never used as classification evidence.
 func Classify(info *Info) Classification {
@@ -33,7 +41,11 @@ func Classify(info *Info) Classification {
 	if _, ok := trustedSources[info.Source]; !ok {
 		return ClassificationUnknown
 	}
-	class, ok := classByCode[strings.TrimSpace(info.Code)]
+	code := strings.TrimSpace(info.Code)
+	if _, runnerOnly := runnerSetupCodes[code]; runnerOnly && info.Source != SourceRunner {
+		return ClassificationUnknown
+	}
+	class, ok := classByCode[code]
 	if !ok {
 		return ClassificationUnknown
 	}
