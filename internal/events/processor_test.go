@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -586,7 +587,7 @@ func newProcessorFixture(t *testing.T) (*Processor, *repository.InboundEventRepo
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
 	inboundRepo := repository.NewInboundEventRepository(db)
-	orch := orchestrator.New(taskRepo, runRepo)
+	orch := orchestrator.New(taskRepo, runRepo, orchestrator.WithRecoveryObjectReader(openTaskObjectReader{}))
 
 	return NewProcessor(inboundRepo, orch), inboundRepo, taskRepo
 }
@@ -606,9 +607,17 @@ func newProcessorFixtureWithNormalizerOptions(t *testing.T, opts ...GitLabNormal
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
 	inboundRepo := repository.NewInboundEventRepository(db)
-	orch := orchestrator.New(taskRepo, runRepo)
+	orch := orchestrator.New(taskRepo, runRepo, orchestrator.WithRecoveryObjectReader(openTaskObjectReader{}))
 
 	return NewProcessor(inboundRepo, orch, opts...), inboundRepo, taskRepo
+}
+
+// openTaskObjectReader reports the live object as open: these fixtures cover the
+// event plumbing, not the object-state gate.
+type openTaskObjectReader struct{}
+
+func (openTaskObjectReader) ReadRecoveryObject(context.Context, *model.Task) (orchestrator.RecoveryObjectState, error) {
+	return orchestrator.RecoveryObjectState{State: codehost.MergeRequestStateOpen}, nil
 }
 
 type mutableRepositoryLookup struct {
