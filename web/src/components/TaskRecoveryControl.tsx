@@ -97,7 +97,10 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
   const lastRevision = useRef('')
   const scopeRef = useRef('')
 
-  useEffect(() => () => { mounted.current = false }, [])
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   useEffect(() => {
     scopeRef.current = `${taskID}:${assessment?.block_revision ?? ''}`

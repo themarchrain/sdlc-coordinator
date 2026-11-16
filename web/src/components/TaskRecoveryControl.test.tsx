@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AdminApiError, adminApi } from '../api/client'
@@ -167,6 +168,18 @@ describe('TaskRecoveryControl', () => {
     expect(await screen.findByText('恢复已受理')).toBeInTheDocument()
     expect(screen.queryByText(/已运行/)).not.toBeInTheDocument()
     expect(onRecovered).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits once per click under StrictMode', async () => {
+    const recovered = { replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-1', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: false, classification: 'transient', attempt_count_before: 2, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-1', status: 'pending' } }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    const recover = vi.spyOn(adminApi, 'recoverTask').mockResolvedValue(recovered)
+    render(<StrictMode><WorkspaceSessionProvider value={persona}><TaskRecoveryControl taskID="task-1" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider></StrictMode>)
+
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    await waitFor(() => expect(recover).toHaveBeenCalledTimes(1))
+    expect(screen.getAllByText('恢复已受理')).toHaveLength(1)
   })
 
   it('refreshes assessment after a 409', async () => {
