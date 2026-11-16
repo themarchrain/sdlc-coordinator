@@ -349,4 +349,21 @@ func TestRecoverySafetyReaderTreatsAnUnsentDispatchAsExited(t *testing.T) {
 	if assessment := EvaluateTaskRecovery(facts); !assessment.Eligible {
 		t.Fatalf("the unsent evidence did not clear the dispatching execution: %+v", assessment.SafetyBlockers)
 	}
+	// 换端点后的第二次派发真的发出去了：第一笔"未发出"不能代表整个 Run。
+	if err := db.Create(&model.ActionAdmission{
+		AdmissionID: "admission-resent", TaskID: task.TaskID, RunID: runID, Kind: model.ActionExecutionCreate,
+		ActionKey: "execution-create", Attempt: 2, LeaseOwner: "owner", LeaseGeneration: 1, AdmittedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	facts, err = reader.Read(ctx, task.TaskID)
+	if err != nil {
+		t.Fatalf("read recovery facts with the retried dispatch: %v", err)
+	}
+	if facts.DispatchProvenNotSentRuns[runID] {
+		t.Fatalf("an earlier unsent attempt still covered the run: %+v", facts.DispatchProvenNotSentRuns)
+	}
+	if assessment := EvaluateTaskRecovery(facts); !hasSafetyBlocker(assessment, RecoverySafetyExecutionActive) {
+		t.Fatalf("a possibly sent retry did not block recovery: %+v", assessment.SafetyBlockers)
+	}
 }

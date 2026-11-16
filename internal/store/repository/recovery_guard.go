@@ -166,17 +166,30 @@ func RecoverySafetyDigest(snapshot *RecoverySnapshot) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// RecoveryDispatchProvenNotSentRuns reports the runs whose execution-create
+// RecoveryDispatchProvenNotSentRuns reports the runs whose every execution-create
 // admission never left the coordinator. Such a run has no live process, so its
-// execution row is not evidence that anything is still running.
+// execution row is not evidence that anything is still running. One unsent
+// attempt is not enough: a later retry of the same run may have been sent.
 func RecoveryDispatchProvenNotSentRuns(snapshot *RecoverySnapshot) map[string]bool {
 	if snapshot == nil {
 		return nil
 	}
-	runs := map[string]bool{}
+	unsent := map[string]bool{}
+	sent := map[string]bool{}
 	for _, admission := range snapshot.ActionAdmissions {
-		if admission.Kind == model.ActionExecutionCreate && admission.NotSentAt != nil && admission.RunID != "" {
-			runs[admission.RunID] = true
+		if admission.Kind != model.ActionExecutionCreate || admission.RunID == "" {
+			continue
+		}
+		if admission.NotSentAt != nil {
+			unsent[admission.RunID] = true
+			continue
+		}
+		sent[admission.RunID] = true
+	}
+	runs := map[string]bool{}
+	for runID := range unsent {
+		if !sent[runID] {
+			runs[runID] = true
 		}
 	}
 	return runs
