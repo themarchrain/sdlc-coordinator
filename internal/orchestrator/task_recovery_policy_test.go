@@ -149,6 +149,46 @@ func TestScanAllPreviousRunsForUncertainAction(t *testing.T) {
 	}
 }
 
+func TestOlderInterruptedExecutionBlocksRecovery(t *testing.T) {
+	finished := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name     string
+		finished *time.Time
+	}{
+		{name: "finished at recorded but exit unknown", finished: &finished},
+		{name: "no finish record", finished: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			facts := eligibleRecoveryFacts()
+			olderRunID := "run-older-interrupted"
+			facts.Runs = append([]model.Run{{RunID: olderRunID, TaskID: facts.Task.TaskID, Status: model.RunStatusInterrupted}}, facts.Runs...)
+			facts.Executions = append([]model.AgentExecution{{
+				RunID: olderRunID, ExecutionID: olderRunID, Status: model.AgentExecutionStatusInterrupted,
+				RequestHash: "older-request-hash", ErrorCode: "runner_restarted", FinishedAt: test.finished,
+			}}, facts.Executions...)
+			assessment := EvaluateTaskRecovery(facts)
+			if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
+				t.Fatalf("older execution without exit proof was ignored: %+v", assessment)
+			}
+		})
+	}
+}
+
+func TestOlderTerminalExecutionNeedsFinishRecord(t *testing.T) {
+	facts := eligibleRecoveryFacts()
+	olderRunID := "run-older-failed"
+	facts.Runs = append([]model.Run{{RunID: olderRunID, TaskID: facts.Task.TaskID, Status: model.RunStatusFailed}}, facts.Runs...)
+	facts.Executions = append([]model.AgentExecution{{
+		RunID: olderRunID, ExecutionID: olderRunID, Status: model.AgentExecutionStatusFailed,
+		RequestHash: "older-request-hash", ErrorCode: "provider_failed",
+	}}, facts.Executions...)
+	assessment := EvaluateTaskRecovery(facts)
+	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
+		t.Fatalf("terminal execution without finish record was accepted as exited: %+v", assessment)
+	}
+}
+
 func TestAssessmentTimeoutHasNoSideEffects(t *testing.T) {
 	task := eligibleRecoveryFacts().Task
 	reader := &fakeRecoveryFactsReader{err: context.DeadlineExceeded}

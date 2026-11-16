@@ -238,9 +238,8 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 
 func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, string)) {
 	for _, execution := range facts.Executions {
-		switch execution.Status {
-		case model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning, model.AgentExecutionStatusDispatching:
-			add(RecoverySafetyExecutionActive, "前次执行仍可能在运行，不能恢复", "请等待执行结束并确认退出结果")
+		if blocker, blocked := executionExitBlocker(execution); blocked {
+			add(blocker.Code, blocker.Summary, blocker.Remediation)
 		}
 	}
 	source := sourceRun(facts)
@@ -258,7 +257,6 @@ func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, strin
 		return
 	}
 	if execution.Status == model.AgentExecutionStatusInterrupted {
-		add(RecoverySafetyExecutionUnconfirmed, "Runner 重启或中断没有退出证明，不能恢复", "请先确认旧执行已退出")
 		return
 	}
 	if execution.FinishedAt == nil {
@@ -275,6 +273,24 @@ func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, strin
 	}
 	if facts.ExpectedRequestHash != "" && execution.RequestHash != facts.ExpectedRequestHash {
 		add(RecoverySafetyExecutionUnconfirmed, "执行请求 hash 与当前旧 Run 不一致", "请先完成执行对账")
+	}
+}
+
+// executionExitBlocker reports why one execution record fails to prove that its
+// process is gone. Every execution of the task is checked, not just the source
+// run, because an older uncertain execution can still hold the workspace.
+func executionExitBlocker(execution model.AgentExecution) (SafetyBlocker, bool) {
+	switch execution.Status {
+	case model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning, model.AgentExecutionStatusDispatching:
+		return SafetyBlocker{Code: RecoverySafetyExecutionActive, Summary: "前次执行仍可能在运行，不能恢复", Remediation: "请等待执行结束并确认退出结果"}, true
+	case model.AgentExecutionStatusSucceeded, model.AgentExecutionStatusFailed, model.AgentExecutionStatusCancelled:
+		if execution.FinishedAt == nil {
+			return SafetyBlocker{Code: RecoverySafetyExecutionUnconfirmed, Summary: "存在没有结束记录的历史执行，不能证明已退出", Remediation: "请先完成执行对账"}, true
+		}
+		return SafetyBlocker{}, false
+	default:
+		// interrupted 记录的是进程退出未知，FinishedAt 也不能当退出证明。
+		return SafetyBlocker{Code: RecoverySafetyExecutionUnconfirmed, Summary: "存在没有退出证明的历史执行，不能恢复", Remediation: "请先确认旧执行已退出"}, true
 	}
 }
 
