@@ -159,7 +159,7 @@ describe('TasksPage', () => {
     const listTasks = vi.spyOn(adminApi, 'listTasks').mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
     vi.spyOn(adminApi, 'getTask').mockResolvedValueOnce({ task_id: 'task-blocked', status: 'blocked', role: 'DeveloperWorker', type: 'bugfix' }).mockResolvedValue({ task_id: 'task-blocked', status: 'pending', role: 'DeveloperWorker', type: 'bugfix' })
     vi.spyOn(adminApi, 'taskTimeline').mockResolvedValue({ items: [] })
-    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue({ task_id: 'task-blocked', classification: 'transient', eligible: true, requires_risk_confirmation: false, reason_code: 'eligible', reason_summary: '外部故障已恢复', block_revision: 'revision-1', safety_blockers: [] })
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue({ task_id: 'task-blocked', classification: 'transient', eligible: true, requires_risk_confirmation: false, reason_code: 'eligible', reason_summary: '外部故障已恢复', block_revision: 'revision-1', safety_blockers: [], checked_at: '2026-11-16T10:00:00Z' })
     vi.spyOn(adminApi, 'recoverTask').mockResolvedValue({ replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-blocked', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: false, classification: 'transient', attempt_count_before: 1, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-blocked', status: 'pending' } })
 
     renderTasksWithSession('/tasks?task_id=task-blocked')
