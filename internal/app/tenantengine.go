@@ -143,10 +143,9 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		ResolveRepository: runnerRepositoryResolver(repoStore),
 	}
 	recoveryReader := &orchestrator.RecoverySafetyReader{
-		Store:               taskRecoveryRepo,
-		RepositoryLookup:    repoStore,
-		ObjectReader:        tenantRecoveryObjectReader{repositories: repoStore, resolver: codeHostResolver},
-		PrerequisiteChecker: tenantRecoveryPrerequisiteChecker{provider: runnerSettings.Provider},
+		Store:            taskRecoveryRepo,
+		RepositoryLookup: repoStore,
+		ObjectReader:     tenantRecoveryObjectReader{repositories: repoStore, resolver: codeHostResolver},
 	}
 	var orch *orchestrator.Orchestrator
 	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {

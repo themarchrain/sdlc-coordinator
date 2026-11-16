@@ -7,11 +7,9 @@ import (
 	"strings"
 
 	"sdlc-coordinator/internal/adapters/codehost"
-	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/registeredrepo"
-	"sdlc-coordinator/internal/runner"
 )
 
 type tenantRecoveryObjectReader struct {
@@ -88,20 +86,4 @@ func taskMergeRequestIID(task *model.Task) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("task context has no valid merge_request.iid")
-}
-
-type tenantRecoveryPrerequisiteChecker struct {
-	provider runner.ProviderConfig
-}
-
-func (c tenantRecoveryPrerequisiteChecker) CheckRecoveryPrerequisite(_ context.Context, info *failure.Info) (bool, error) {
-	if info == nil {
-		return false, nil
-	}
-	switch strings.TrimSpace(info.Code) {
-	case failure.CodeCLIMissing, failure.CodeMissingConfiguration:
-		return strings.TrimSpace(c.provider.Name) != "", nil
-	default:
-		return false, nil
-	}
 }
