@@ -38,7 +38,7 @@ func (r *TaskRepository) RebindGuarded(ctx context.Context, taskID, repositoryID
 		if task.Status == model.TaskStatusInterrupted {
 			return ErrTaskInterrupted
 		}
-		if expect.RecoveryGeneration != task.RecoveryGeneration || expect.CurrentRunID != currentRunIDOf(task) {
+		if expect.RecoveryGeneration != task.RecoveryGeneration || expect.CurrentRunID != currentRunIDOf(task) || expect.Status != task.Status {
 			return ErrRecoveryRevisionChanged
 		}
 		next := task.Status

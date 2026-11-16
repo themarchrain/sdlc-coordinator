@@ -119,3 +119,31 @@ func TestRebindGuardedRejectsDisallowedStatus(t *testing.T) {
 		t.Fatalf("running rebind error = %v", err)
 	}
 }
+
+func TestRebindGuardedRequiresTheExpectedStatus(t *testing.T) {
+	db := openRebindDB(t)
+	task := rebindParkedTask("task-rebind-status")
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	stale, err := NewTaskRepository(db).GetByTaskID(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect := RebindExpectationFromTask(stale)
+	if err := db.Model(&model.Task{}).Where("task_id = ?", task.TaskID).
+		Update("status", model.TaskStatusHumanRequired).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewTaskRepository(db)
+	if _, err := repo.RebindGuarded(context.Background(), task.TaskID, "repo-rebound", expect); !errors.Is(err, ErrRecoveryRevisionChanged) {
+		t.Fatalf("status drift rebind error = %v", err)
+	}
+	current, err := repo.GetByTaskID(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != model.TaskStatusHumanRequired || *current.RepositoryID != "repo-original" {
+		t.Fatalf("status drift rebind changed the task: %+v", current)
+	}
+}
