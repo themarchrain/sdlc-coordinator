@@ -91,7 +91,16 @@ func TestTenantExecutionExitConfirmationIsIsolated(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	request := orchestrator.ConfirmExecutionExitRequest{RequestID: "request-tenant-exit", Reason: "checked the runner host"}
+	executionID, fingerprint := "run-tenant-exit", ""
+	var stored model.AgentExecution
+	if err := first.Where("execution_id = ?", executionID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	fingerprint = model.ExecutionExitFingerprint(&stored)
+	request := orchestrator.ConfirmExecutionExitRequest{
+		ExecutionID: executionID, ExpectedFingerprint: fingerprint,
+		RequestID: "request-tenant-exit", Reason: "checked the runner host",
+	}
 	if _, err := firstEngine.orch.ConfirmExecutionExit(context.Background(), "task-tenant-exit", "tenant-admin", request); err != nil {
 		t.Fatalf("own tenant confirmation: %v", err)
 	}

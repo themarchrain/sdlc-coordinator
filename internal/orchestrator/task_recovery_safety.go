@@ -103,7 +103,8 @@ func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (Recover
 		facts.ContextReason = contextReason
 		facts.ExpectedHeadSHA = expectedHead
 		facts.FailureInfo = recoveryFailureInfo(snapshot)
-		facts.DispatchProvenNotSent = recoveryDispatchProvenNotSent(snapshot)
+		facts.DispatchProvenNotSentRuns = repository.RecoveryDispatchProvenNotSentRuns(snapshot)
+		facts.DispatchProvenNotSent = facts.DispatchProvenNotSentRuns[sourceRunID(facts)]
 		if facts.FailureInfo != nil && failure.Classify(facts.FailureInfo) == failure.ClassificationPrerequisite && supportsPrerequisiteCheck(facts.FailureInfo.Code) && r.PrerequisiteChecker != nil {
 			checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
 			resolved, checkErr := r.PrerequisiteChecker.CheckRecoveryPrerequisite(checkCtx, facts.FailureInfo)
@@ -213,22 +214,6 @@ func recoveryFailureInfo(snapshot *repository.RecoverySnapshot) *failure.Info {
 		return failure.FromLegacy("", snapshot.Task.LastError)
 	}
 	return nil
-}
-
-func recoveryDispatchProvenNotSent(snapshot *repository.RecoverySnapshot) bool {
-	if snapshot == nil || snapshot.Task == nil {
-		return false
-	}
-	source := sourceRun(RecoveryFacts{Task: snapshot.Task, Runs: snapshot.Runs})
-	if source == nil {
-		return false
-	}
-	for _, admission := range snapshot.ActionAdmissions {
-		if admission.RunID == source.RunID && admission.Kind == model.ActionExecutionCreate && admission.NotSentAt != nil {
-			return true
-		}
-	}
-	return false
 }
 
 func validateRecoveryTaskObject(task *model.Task) (objectValid bool, objectReason string, contextValid bool, contextReason string, expectedHead string) {

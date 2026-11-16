@@ -81,16 +81,17 @@ type RecoveryFacts struct {
 	HeadCheckUnavailable   bool
 	HeadCheckError         string
 	// ObjectStateCheckRequired 表示任务目标（PR/MR 或 issue）必须有可确认的开放状态。
-	ObjectStateCheckRequired bool
-	CurrentObjectState       string
-	ObjectStateUnavailable   bool
-	ObjectStateError         string
-	DispatchProvenNotSent    bool
-	SafetyBlockers           []SafetyBlocker
-	SnapshotVersion          string
-	SafetyDigest             string
-	CheckedAt                time.Time
-	FailureInfo              *failure.Info
+	ObjectStateCheckRequired  bool
+	CurrentObjectState        string
+	ObjectStateUnavailable    bool
+	ObjectStateError          string
+	DispatchProvenNotSent     bool
+	DispatchProvenNotSentRuns map[string]bool
+	SafetyBlockers            []SafetyBlocker
+	SnapshotVersion           string
+	SafetyDigest              string
+	CheckedAt                 time.Time
+	FailureInfo               *failure.Info
 }
 
 type RecoveryAssessment struct {
@@ -107,10 +108,23 @@ type RecoveryAssessment struct {
 	FailureStage             string                 `json:"failure_stage,omitempty"`
 	FailureCode              string                 `json:"failure_code,omitempty"`
 	FailureSummary           string                 `json:"failure_summary,omitempty"`
+	UnconfirmedExecutions    []UnconfirmedExecution `json:"unconfirmed_executions,omitempty"`
 	DBSnapshotVersion        string                 `json:"db_snapshot_version,omitempty"`
 	TaskVersion              string                 `json:"-"`
 	SafetyDigest             string                 `json:"-"`
 	RecoveryGeneration       uint64                 `json:"-"`
+}
+
+// UnconfirmedExecution is one execution record that has no exit proof of its
+// own. The operator confirms exit by execution id and fingerprint, so the row
+// they saw is the row that gets reconciled.
+type UnconfirmedExecution struct {
+	RunID       string `json:"run_id"`
+	ExecutionID string `json:"execution_id"`
+	Fingerprint string `json:"fingerprint"`
+	Status      string `json:"status"`
+	StartedAt   string `json:"started_at,omitempty"`
+	FinishedAt  string `json:"finished_at,omitempty"`
 }
 
 type RecoveryFactsReader interface {
@@ -184,7 +198,7 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 		}
 	}
 
-	evaluateExecutionSafety(facts, addBlocker)
+	assessment.UnconfirmedExecutions = evaluateExecutionSafety(facts, addBlocker)
 	evaluateExternalActions(facts, addBlocker)
 	evaluateObjectAndRepository(facts, addBlocker)
 	evaluateConflicts(facts, addBlocker)
@@ -229,66 +243,84 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 	return assessment
 }
 
-func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, string)) {
+// evaluateExecutionSafety checks every execution of the task, because an older
+// uncertain execution can still hold the workspace. It returns the executions
+// that only a human exit confirmation can clear.
+func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, string)) []UnconfirmedExecution {
 	source := sourceRun(facts)
-	var sourceExecution *model.AgentExecution
-	if source != nil {
-		sourceExecution = latestExecutionForRun(facts.Executions, source.RunID)
-	}
+	var unconfirmed []UnconfirmedExecution
 	for _, execution := range facts.Executions {
-		if blocker, blocked := executionExitBlocker(facts, sourceExecution, execution); blocked {
-			add(blocker.Code, blocker.Summary, blocker.Remediation)
+		blocker, blocked := executionExitBlocker(facts, execution)
+		if !blocked {
+			continue
+		}
+		add(blocker.Code, blocker.Summary, blocker.Remediation)
+		if blocker.Code == RecoverySafetyExecutionUnconfirmed {
+			unconfirmed = append(unconfirmed, unconfirmedExecutionOf(execution))
 		}
 	}
+	// 来源 Run 没有执行行时，Runner 404 或投影缺失都不能证明执行已退出，
+	// 也没有可确认的对象，只能换任务。
 	if source == nil {
 		if !facts.DispatchProvenNotSent {
-			add(RecoverySafetyExecutionUnconfirmed, "缺少前次执行已结束或未开始的受信证据", "请先完成执行对账")
+			add(RecoverySafetyExecutionUnconfirmed, "缺少前次执行已结束或未开始的受信证据", "该任务没有可对账的执行记录，请新建任务")
 		}
-		return
+		return unconfirmed
 	}
 	execution := latestExecutionForRun(facts.Executions, source.RunID)
 	if execution == nil {
 		if !facts.DispatchProvenNotSent {
-			add(RecoverySafetyExecutionUnconfirmed, "缺少前次执行的结束记录，Runner 404 或投影缺失不能证明执行已退出", "请先完成执行对账")
+			add(RecoverySafetyExecutionUnconfirmed, "缺少前次执行的结束记录，Runner 404 或投影缺失不能证明执行已退出", "该任务没有可对账的执行记录，请新建任务")
 		}
-		return
+		return unconfirmed
 	}
-	if execution.Status == model.AgentExecutionStatusInterrupted {
-		return
-	}
-	if execution.FinishedAt == nil {
-		add(RecoverySafetyExecutionUnconfirmed, "前次执行没有结束时间，不能证明已退出", "请先完成执行对账")
-		return
+	if model.ExecutionNeedsExitConfirmation(execution) {
+		return unconfirmed
 	}
 	if execution.ExecutionID != "" && execution.ExecutionID != source.RunID {
 		add(RecoverySafetyExecutionUnconfirmed, "执行身份与旧 Run 不一致", "请先完成执行对账")
-		return
+		return unconfirmed
 	}
 	if strings.TrimSpace(execution.RequestHash) == "" {
 		add(RecoverySafetyExecutionUnconfirmed, "执行记录缺少请求身份 hash，不能证明是本次受信执行", "请先完成执行对账")
 	}
+	return unconfirmed
+}
+
+func unconfirmedExecutionOf(execution model.AgentExecution) UnconfirmedExecution {
+	record := UnconfirmedExecution{
+		RunID:       execution.RunID,
+		ExecutionID: execution.ExecutionID,
+		Fingerprint: model.ExecutionExitFingerprint(&execution),
+		Status:      string(execution.Status),
+	}
+	if execution.StartedAt != nil {
+		record.StartedAt = execution.StartedAt.UTC().Format(time.RFC3339)
+	}
+	if execution.FinishedAt != nil {
+		record.FinishedAt = execution.FinishedAt.UTC().Format(time.RFC3339)
+	}
+	return record
 }
 
 // executionExitBlocker reports why one execution record fails to prove that its
 // process is gone. Every execution of the task is checked, not just the source
 // run, because an older uncertain execution can still hold the workspace.
-func executionExitBlocker(facts RecoveryFacts, sourceExecution *model.AgentExecution, execution model.AgentExecution) (SafetyBlocker, bool) {
-	switch execution.Status {
-	case model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning, model.AgentExecutionStatusDispatching:
-		return SafetyBlocker{Code: RecoverySafetyExecutionActive, Summary: "前次执行仍可能在运行，不能恢复", Remediation: "请等待执行结束并确认退出结果"}, true
-	case model.AgentExecutionStatusSucceeded, model.AgentExecutionStatusFailed, model.AgentExecutionStatusCancelled:
-		if execution.FinishedAt == nil {
-			return SafetyBlocker{Code: RecoverySafetyExecutionUnconfirmed, Summary: "存在没有结束记录的历史执行，不能证明已退出", Remediation: "请先完成执行对账"}, true
-		}
+func executionExitBlocker(facts RecoveryFacts, execution model.AgentExecution) (SafetyBlocker, bool) {
+	// 派发请求从未发出时不存在进程，不用人工确认。
+	if facts.DispatchProvenNotSentRuns[execution.RunID] {
 		return SafetyBlocker{}, false
-	default:
-		// interrupted 记录的是进程退出未知，FinishedAt 也不能当退出证明；
-		// 只有来源 Run 的最新执行可以由人工退出确认作证。
-		if sourceExecution != nil && sourceExecution.RunID == execution.RunID && sourceExecution.ExecutionID == execution.ExecutionID && exitConfirmationCoversExecution(facts, execution) {
-			return SafetyBlocker{}, false
-		}
-		return SafetyBlocker{Code: RecoverySafetyExecutionUnconfirmed, Summary: "存在没有退出证明的历史执行，不能恢复", Remediation: "请先确认旧执行已退出"}, true
 	}
+	if execution.Status == model.AgentExecutionStatusDispatching || model.ExecutionIsActive(&execution) {
+		return SafetyBlocker{Code: RecoverySafetyExecutionActive, Summary: "前次执行仍可能在运行，不能恢复", Remediation: "请等待执行结束并确认退出结果"}, true
+	}
+	if !model.ExecutionNeedsExitConfirmation(&execution) {
+		return SafetyBlocker{}, false
+	}
+	if exitConfirmationCoversExecution(facts, execution) {
+		return SafetyBlocker{}, false
+	}
+	return SafetyBlocker{Code: RecoverySafetyExecutionUnconfirmed, Summary: "存在没有退出证明的历史执行，不能恢复", Remediation: "请先确认该执行已退出"}, true
 }
 
 // exitConfirmationCoversExecution requires the confirmation to describe this

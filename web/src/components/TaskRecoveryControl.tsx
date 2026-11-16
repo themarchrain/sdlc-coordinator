@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Checkbox, Descriptions, Input, Modal, Space } from 'antd'
 
 import { adminApi, AdminApiError } from '../api/client'
-import type { RecoverTaskResponse, RecoveryAssessment } from '../api/types'
+import type { ExecutionExitConfirmation, RecoverTaskResponse, RecoveryAssessment, UnconfirmedExecution } from '../api/types'
 import { useWorkspaceSession } from '../app/workspaceSession'
 
 export interface TaskRecoveryControlProps {
@@ -47,8 +47,10 @@ function describeRecoveryFailure(cause: unknown): RecoveryFailure {
     case 404:
       return { kind: 'missing', message: '任务不存在或已被删除' }
     case 409:
-      if (cause.code === 'execution_still_running') return { kind: 'refused', message: '远端执行仍在运行，不能确认退出' }
-      if (cause.code === 'execution_not_interrupted') return { kind: 'refused', message: '当前执行不是中断状态，无需确认退出' }
+      if (cause.code === 'execution_still_running') return { kind: 'refused', message: '该执行仍在运行，不能确认退出' }
+      if (cause.code === 'execution_exit_not_required') return { kind: 'stale', message: '该执行已有结束记录，无需确认退出', refresh: true }
+      if (cause.code === 'execution_status_unknown') return { kind: 'refused', message: 'Runner 返回了无法识别的执行状态，请联系运维核对后再确认' }
+      if (cause.code === 'execution_not_found') return { kind: 'stale', message: '任务下已没有这条执行记录，正在刷新恢复资格', refresh: true }
       if (cause.code === 'execution_evidence_changed') return { kind: 'stale', message: '执行证据已变化，正在刷新恢复资格', refresh: true }
       return { kind: 'stale', message: '任务状态已变化，正在刷新恢复资格', refresh: true }
     case 503:
@@ -221,7 +223,9 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
     ]} />
     {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<>
       <ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>
-      {canConfirmExit && safetyBlockers.some((blocker) => blocker.code === 'execution_unconfirmed') ? <ExecutionExitConfirm taskID={taskID} onConfirmed={() => setReloadVersion((value) => value + 1)} /> : null}
+      {canConfirmExit && safetyBlockers.some((blocker) => blocker.code === 'execution_unconfirmed')
+        ? <ExecutionExitConfirm taskID={taskID} executions={assessment.unconfirmed_executions ?? []} onConfirmed={() => setReloadVersion((value) => value + 1)} />
+        : null}
     </>} /> : null}
     {!canRecover && safetyBlockers.length === 0 ? <Alert type="warning" message={assessment.reason_summary || '当前任务不能恢复'} /> : null}
     {error ? <Alert type="error" message={error} action={errorKind === 'stale' || errorKind === 'unavailable' || errorKind === 'unknown' ? <Button size="small" onClick={() => {
@@ -247,32 +251,37 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
   </section>
 }
 
-function ExecutionExitConfirm({ taskID, onConfirmed }: { taskID: string; onConfirmed: () => void }) {
-  const [open, setOpen] = useState(false)
+function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: string; executions: UnconfirmedExecution[]; onConfirmed: () => void }) {
+  const [target, setTarget] = useState<UnconfirmedExecution>()
   const [acknowledged, setAcknowledged] = useState(false)
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string>()
   const [submitting, setSubmitting] = useState(false)
+  const [outcome, setOutcome] = useState<string>()
   const sending = useRef(false)
   const requestID = useRef('')
 
   const close = () => {
-    setOpen(false)
+    setTarget(undefined)
     setAcknowledged(false)
     setReason('')
     setError(undefined)
   }
 
   const submit = async () => {
-    if (sending.current || !acknowledged || !reason.trim()) return
+    if (!target || sending.current || !acknowledged || !reason.trim()) return
     sending.current = true
     setSubmitting(true)
     setError(undefined)
     if (!requestID.current) requestID.current = newRequestID()
     try {
-      await adminApi.confirmExecutionExit(taskID, { request_id: requestID.current, reason: reason.trim() })
+      const stored = await adminApi.confirmExecutionExit(taskID, {
+        request_id: requestID.current, reason: reason.trim(),
+        execution_id: target.execution_id, expected_fingerprint: target.fingerprint,
+      })
       requestID.current = ''
       close()
+      setOutcome(remoteOutcomeCopy(stored))
       onConfirmed()
     } catch (cause) {
       const failure = describeRecoveryFailure(cause)
@@ -288,15 +297,38 @@ function ExecutionExitConfirm({ taskID, onConfirmed }: { taskID: string; onConfi
     }
   }
 
+  if (executions.length === 0) return null
+
   return <>
-    <Button size="small" onClick={() => setOpen(true)}>确认旧执行已退出</Button>
-    <Modal open={open} title="确认旧执行已退出" okText="提交确认" cancelText="取消" confirmLoading={submitting} okButtonProps={{ disabled: !acknowledged || !reason.trim() || submitting }} onCancel={close} onOk={submit}>
+    {outcome ? <Alert type="success" message={outcome} /> : null}
+    <ul>
+      {executions.map((execution) => <li key={execution.execution_id}>
+        <code>{execution.execution_id}</code>（Run {execution.run_id}，状态 {execution.status}）
+        {' '}<Button size="small" onClick={() => { setOutcome(undefined); setTarget(execution) }}>确认已退出</Button>
+      </li>)}
+    </ul>
+    <Modal open={Boolean(target)} title="确认该执行已退出" okText="提交确认" cancelText="取消" confirmLoading={submitting} okButtonProps={{ disabled: !acknowledged || !reason.trim() || submitting }} onCancel={close} onOk={submit}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert type="warning" message="该确认只记录你核实过的证据，不会停止或改写执行记录，也不会直接恢复任务。" />
+        {target ? <span>确认对象：<code>{target.execution_id}</code>（Run {target.run_id}，状态 {target.status}）</span> : null}
         <Checkbox checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)}>我确认该执行进程已经退出，且不会再回写结果</Checkbox>
         <Input.TextArea aria-label="确认说明" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} showCount rows={3} placeholder="说明在哪里、用什么方式确认了该执行已经退出" />
         {error ? <span className="error-copy">{error}</span> : null}
       </Space>
     </Modal>
   </>
+}
+
+// remoteOutcomeCopy reports what the runner answered, so the operator can tell
+// an attested exit from one the runner confirmed.
+function remoteOutcomeCopy(stored: ExecutionExitConfirmation) {
+  const detail = stored.remote_message ? `：${stored.remote_message}` : ''
+  switch (stored.remote_state) {
+    case 'terminal':
+      return `已记录退出确认；Runner 回报执行已结束${detail}`
+    case 'not_found':
+      return `已记录退出确认；Runner 没有这条执行记录${detail}`
+    default:
+      return `已记录退出确认；未能读取 Runner 执行状态${detail}`
+  }
 }

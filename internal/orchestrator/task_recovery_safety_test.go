@@ -310,3 +310,56 @@ func TestRecoverySafetyReaderFailsClosedOnObjectState(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoverySafetyReaderTreatsAnUnsentDispatchAsExited(t *testing.T) {
+	db := openRecoverySafetyDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC)
+	runID := "run-unsent"
+	repositoryID := "repo-1"
+	task := &model.Task{
+		TaskID: "task-unsent", DedupeKey: "dedupe-unsent", Type: "bugfix", Role: "DeveloperWorker",
+		RepositoryID: &repositoryID, TargetRepo: "group/project", Status: model.TaskStatusBlocked, AttemptCount: 5,
+		CurrentRunID: &runID, ContextJSON: `{}`,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusFailed}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.AgentExecution{RunID: runID, ExecutionID: runID, Status: model.AgentExecutionStatusDispatching, RequestHash: "hash-unsent"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	reader := &RecoverySafetyReader{
+		Store:            repository.NewTaskRecoveryRepository(db),
+		RepositoryLookup: fakeRecoveryRepositoryLookup{repo: &registeredrepo.RegisteredRepository{RepositoryID: repositoryID, Status: registeredrepo.StatusEnabled}},
+		Now:              func() time.Time { return now },
+	}
+	facts, err := reader.Read(ctx, task.TaskID)
+	if err != nil {
+		t.Fatalf("read recovery facts: %v", err)
+	}
+	if facts.DispatchProvenNotSent || facts.DispatchProvenNotSentRuns[runID] {
+		t.Fatalf("an empty admission list looked like evidence: %+v", facts.DispatchProvenNotSentRuns)
+	}
+	if assessment := EvaluateTaskRecovery(facts); !hasSafetyBlocker(assessment, RecoverySafetyExecutionActive) {
+		t.Fatalf("a dispatching execution without evidence did not block recovery: %+v", assessment.SafetyBlockers)
+	}
+	if err := db.Create(&model.ActionAdmission{
+		AdmissionID: "admission-unsent", TaskID: task.TaskID, RunID: runID, Kind: model.ActionExecutionCreate,
+		ActionKey: "execution-create", Attempt: 1, LeaseOwner: "owner", LeaseGeneration: 1, AdmittedAt: now, NotSentAt: &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	facts, err = reader.Read(ctx, task.TaskID)
+	if err != nil {
+		t.Fatalf("read recovery facts with the admission: %v", err)
+	}
+	if !facts.DispatchProvenNotSent || !facts.DispatchProvenNotSentRuns[runID] {
+		t.Fatalf("the execution-create admission was not read: %+v", facts.DispatchProvenNotSentRuns)
+	}
+	if assessment := EvaluateTaskRecovery(facts); !assessment.Eligible {
+		t.Fatalf("the unsent evidence did not clear the dispatching execution: %+v", assessment.SafetyBlockers)
+	}
+}

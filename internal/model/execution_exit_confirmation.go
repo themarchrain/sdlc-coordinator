@@ -60,3 +60,32 @@ func ExecutionExitFingerprint(execution *AgentExecution) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
+
+// ExecutionNeedsExitConfirmation reports whether an execution row lacks its own
+// exit proof. A terminal row with a finish time proves its process ended; an
+// interrupted row, a terminal row without a finish time and an unrecognised
+// status do not, and only a human confirmation can vouch for them.
+func ExecutionNeedsExitConfirmation(execution *AgentExecution) bool {
+	if execution == nil {
+		return false
+	}
+	switch execution.Status {
+	case AgentExecutionStatusAccepted, AgentExecutionStatusStarting, AgentExecutionStatusRunning, AgentExecutionStatusDispatching:
+		return false
+	case AgentExecutionStatusSucceeded, AgentExecutionStatusFailed, AgentExecutionStatusCancelled:
+		return execution.FinishedAt == nil
+	}
+	return true
+}
+
+// ExecutionIsActive reports whether the row still claims a live process.
+func ExecutionIsActive(execution *AgentExecution) bool {
+	if execution == nil {
+		return false
+	}
+	switch execution.Status {
+	case AgentExecutionStatusAccepted, AgentExecutionStatusStarting, AgentExecutionStatusRunning, AgentExecutionStatusDispatching:
+		return true
+	}
+	return false
+}

@@ -115,6 +115,7 @@ export interface RecoveryAssessment {
   failure_stage?: string
   failure_code?: string
   failure_summary?: string
+  unconfirmed_executions?: UnconfirmedExecution[]
   safety_blockers?: RecoverySafetyBlocker[]
 }
 
@@ -143,9 +144,20 @@ export interface TaskRecoveryRecord {
   created_at: string
 }
 
+export interface UnconfirmedExecution {
+  run_id: string
+  execution_id: string
+  fingerprint: string
+  status: string
+  started_at?: string
+  finished_at?: string
+}
+
 export interface ExecutionExitConfirmationRequest {
   request_id: string
   reason: string
+  execution_id: string
+  expected_fingerprint: string
 }
 
 export interface ExecutionExitConfirmation {

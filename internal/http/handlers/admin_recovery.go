@@ -26,8 +26,10 @@ type adminExecutionExitConfirmation interface {
 }
 
 type confirmExecutionExitBody struct {
-	RequestID string `json:"request_id"`
-	Reason    string `json:"reason"`
+	RequestID           string `json:"request_id"`
+	Reason              string `json:"reason"`
+	ExecutionID         string `json:"execution_id"`
+	ExpectedFingerprint string `json:"expected_fingerprint"`
 }
 
 type recoverTaskBody struct {
@@ -38,20 +40,21 @@ type recoverTaskBody struct {
 }
 
 type recoveryAssessmentResponse struct {
-	TaskID                   string                       `json:"task_id"`
-	Classification           string                       `json:"classification"`
-	Eligible                 bool                         `json:"eligible"`
-	RequiresRiskConfirmation bool                         `json:"requires_risk_confirmation"`
-	ReasonCode               string                       `json:"reason_code"`
-	ReasonSummary            string                       `json:"reason_summary"`
-	Remediation              string                       `json:"remediation,omitempty"`
-	SourceRunID              string                       `json:"source_run_id,omitempty"`
-	CheckedAt                string                       `json:"checked_at"`
-	BlockRevision            string                       `json:"block_revision"`
-	FailureStage             string                       `json:"failure_stage,omitempty"`
-	FailureCode              string                       `json:"failure_code,omitempty"`
-	FailureSummary           string                       `json:"failure_summary,omitempty"`
-	SafetyBlockers           []orchestrator.SafetyBlocker `json:"safety_blockers"`
+	TaskID                   string                              `json:"task_id"`
+	Classification           string                              `json:"classification"`
+	Eligible                 bool                                `json:"eligible"`
+	RequiresRiskConfirmation bool                                `json:"requires_risk_confirmation"`
+	ReasonCode               string                              `json:"reason_code"`
+	ReasonSummary            string                              `json:"reason_summary"`
+	Remediation              string                              `json:"remediation,omitempty"`
+	SourceRunID              string                              `json:"source_run_id,omitempty"`
+	CheckedAt                string                              `json:"checked_at"`
+	BlockRevision            string                              `json:"block_revision"`
+	FailureStage             string                              `json:"failure_stage,omitempty"`
+	FailureCode              string                              `json:"failure_code,omitempty"`
+	FailureSummary           string                              `json:"failure_summary,omitempty"`
+	UnconfirmedExecutions    []orchestrator.UnconfirmedExecution `json:"unconfirmed_executions,omitempty"`
+	SafetyBlockers           []orchestrator.SafetyBlocker        `json:"safety_blockers"`
 }
 
 func (handler *AdminOperationHandler) recoveryFor(c *gin.Context) adminTaskRecovery {
@@ -60,8 +63,8 @@ func (handler *AdminOperationHandler) recoveryFor(c *gin.Context) adminTaskRecov
 	return recovery
 }
 
-// ConfirmExecutionExit records a tenant admin reconciliation of an interrupted
-// source execution. It never starts, stops or rewrites an execution.
+// ConfirmExecutionExit records a tenant admin reconciliation of one execution
+// the operator selected. It never starts, stops or rewrites an execution.
 func (handler *AdminOperationHandler) ConfirmExecutionExit(c *gin.Context) {
 	actor := currentActor(c)
 	if actor == nil || actor.ID == 0 {
@@ -78,11 +81,13 @@ func (handler *AdminOperationHandler) ConfirmExecutionExit(c *gin.Context) {
 	if !decodeAdminConnectorBody(c, &body) {
 		return
 	}
-	if strings.TrimSpace(body.RequestID) == "" || strings.TrimSpace(body.Reason) == "" || utf8.RuneCountInString(body.Reason) > 1000 {
-		writeAdminError(c, http.StatusBadRequest, "invalid_body", "request_id 与 recovery 说明必填，说明最多 1000 个字符")
+	if strings.TrimSpace(body.RequestID) == "" || strings.TrimSpace(body.Reason) == "" || strings.TrimSpace(body.ExecutionID) == "" ||
+		strings.TrimSpace(body.ExpectedFingerprint) == "" || utf8.RuneCountInString(body.Reason) > 1000 {
+		writeAdminError(c, http.StatusBadRequest, "invalid_body", "request_id、execution_id、执行指纹与 recovery 说明必填，说明最多 1000 个字符")
 		return
 	}
 	stored, err := confirmation.ConfirmExecutionExit(c.Request.Context(), c.Param("task_id"), strconv.FormatUint(uint64(actor.ID), 10), orchestrator.ConfirmExecutionExitRequest{
+		ExecutionID: body.ExecutionID, ExpectedFingerprint: body.ExpectedFingerprint,
 		RequestID: body.RequestID, Reason: body.Reason,
 	})
 	if err != nil {
@@ -105,8 +110,12 @@ func writeExecutionExitError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, orchestrator.ErrExecutionExitStillRunning):
 		writeAdminError(c, http.StatusConflict, "execution_still_running", "远端执行仍在运行，不能确认退出")
-	case errors.Is(err, repository.ErrExecutionNotInterrupted):
-		writeAdminError(c, http.StatusConflict, "execution_not_interrupted", "当前执行不是中断状态，无需确认退出")
+	case errors.Is(err, orchestrator.ErrExecutionExitStatusUnknown):
+		writeAdminError(c, http.StatusConflict, "execution_status_unknown", "Runner 返回了无法识别的执行状态，不能确认退出")
+	case errors.Is(err, repository.ErrExecutionExitNotRequired):
+		writeAdminError(c, http.StatusConflict, "execution_exit_not_required", "该执行已有结束记录，无需确认退出")
+	case errors.Is(err, repository.ErrExecutionExitNotFound):
+		writeAdminError(c, http.StatusNotFound, "execution_not_found", "该任务下没有这条执行记录")
 	case errors.Is(err, repository.ErrExecutionFingerprintChanged):
 		writeAdminError(c, http.StatusConflict, "execution_evidence_changed", "执行证据已变化，请重新读取后确认")
 	case errors.Is(err, repository.ErrRecoveryGenerationMismatch), errors.Is(err, repository.ErrRecoveryRevisionChanged), errors.Is(err, repository.ErrRecoveryStateChanged):
@@ -154,7 +163,8 @@ func (handler *AdminOperationHandler) GetTaskRecovery(c *gin.Context) {
 		SourceRunID: assessment.SourceRunID, BlockRevision: assessment.BlockRevision,
 		CheckedAt:    assessment.CheckedAt.UTC().Format(time.RFC3339),
 		FailureStage: assessment.FailureStage, FailureCode: assessment.FailureCode, FailureSummary: assessment.FailureSummary,
-		SafetyBlockers: blockers,
+		UnconfirmedExecutions: assessment.UnconfirmedExecutions,
+		SafetyBlockers:        blockers,
 	})
 }
 

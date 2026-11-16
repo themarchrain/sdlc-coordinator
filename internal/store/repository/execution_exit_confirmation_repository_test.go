@@ -35,6 +35,9 @@ func exitConfirmationFixture(t *testing.T, db *gorm.DB, taskID string, generatio
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&model.Run{RunID: runID, TaskID: taskID, WorkerRole: task.Role, Status: model.RunStatusBlocked}).Error; err != nil {
+		t.Fatal(err)
+	}
 	finished := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
 	execution := &model.AgentExecution{
 		RunID: runID, ExecutionID: runID, Provider: "codex", Status: model.AgentExecutionStatusInterrupted,
@@ -94,18 +97,30 @@ func TestExecutionExitConfirmationRequiresCurrentGeneration(t *testing.T) {
 	}
 }
 
-func TestExecutionExitConfirmationRejectsNonInterruptedExecution(t *testing.T) {
+func TestExecutionExitConfirmationRejectsExecutionWithItsOwnExitProof(t *testing.T) {
 	db := openExitConfirmationDB(t)
-	task, execution := exitConfirmationFixture(t, db, "task-exit-running", 1)
-	confirmation := exitConfirmationFor(task, execution, "request-running")
-	execution.Status = model.AgentExecutionStatusRunning
-	confirmation.ExecutionFingerprint = model.ExecutionExitFingerprint(execution)
-	if err := db.Model(&model.AgentExecution{}).Where("run_id = ?", execution.RunID).
-		Updates(map[string]any{"status": model.AgentExecutionStatusRunning}).Error; err != nil {
+	task, execution := exitConfirmationFixture(t, db, "task-exit-finished", 1)
+	confirmation := exitConfirmationFor(task, execution, "request-finished")
+	if err := db.Model(&model.AgentExecution{}).Where("execution_id = ?", execution.ExecutionID).
+		Updates(map[string]any{"status": model.AgentExecutionStatusFailed}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := NewExecutionExitConfirmationRepository(db).Create(context.Background(), confirmation); !errors.Is(err, ErrExecutionNotInterrupted) {
-		t.Fatalf("running execution error = %v", err)
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	confirmation.ExecutionFingerprint = model.ExecutionExitFingerprint(execution)
+	if _, _, err := NewExecutionExitConfirmationRepository(db).Create(context.Background(), confirmation); !errors.Is(err, ErrExecutionExitNotRequired) {
+		t.Fatalf("execution with a finish time error = %v", err)
+	}
+}
+
+func TestExecutionExitConfirmationRejectsExecutionFromAnotherTask(t *testing.T) {
+	db := openExitConfirmationDB(t)
+	task, _ := exitConfirmationFixture(t, db, "task-exit-owner", 1)
+	_, foreign := exitConfirmationFixture(t, db, "task-exit-foreign", 1)
+	confirmation := exitConfirmationFor(task, foreign, "request-foreign")
+	if _, _, err := NewExecutionExitConfirmationRepository(db).Create(context.Background(), confirmation); !errors.Is(err, ErrExecutionExitNotFound) {
+		t.Fatalf("foreign execution error = %v", err)
 	}
 }
 

@@ -247,7 +247,7 @@ func TestSourceInterruptedNeedsMatchingExitConfirmation(t *testing.T) {
 	}
 }
 
-func TestExitConfirmationDoesNotCoverOlderInterruptedExecution(t *testing.T) {
+func TestExitConfirmationCoversAnOlderInterruptedExecution(t *testing.T) {
 	finished := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
 	facts := eligibleRecoveryFacts()
 	olderRunID := "run-older-interrupted-confirmed"
@@ -263,8 +263,11 @@ func TestExitConfirmationDoesNotCoverOlderInterruptedExecution(t *testing.T) {
 		RemoteState: model.ExecutionExitRemoteTerminal,
 	}}
 	assessment := EvaluateTaskRecovery(facts)
-	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
-		t.Fatalf("confirmation covered an older execution: %+v", assessment)
+	if !assessment.Eligible {
+		t.Fatalf("confirmation of the older execution did not clear the gate: %+v", assessment.SafetyBlockers)
+	}
+	if len(assessment.UnconfirmedExecutions) != 0 {
+		t.Fatalf("confirmed execution is still listed: %+v", assessment.UnconfirmedExecutions)
 	}
 }
 
@@ -378,5 +381,18 @@ func TestEmptyCurrentHeadBlocksRecovery(t *testing.T) {
 	assessment := EvaluateTaskRecovery(facts)
 	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyHeadCheckUnavailable) {
 		t.Fatalf("empty current head was accepted: %+v", assessment.SafetyBlockers)
+	}
+}
+
+func TestDispatchingExecutionBlocksUntilTheDispatchIsProvenUnsent(t *testing.T) {
+	facts := eligibleRecoveryFacts()
+	facts.Executions[0].Status = model.AgentExecutionStatusDispatching
+	facts.Executions[0].FinishedAt = nil
+	if assessment := EvaluateTaskRecovery(facts); !hasSafetyBlocker(assessment, RecoverySafetyExecutionActive) {
+		t.Fatalf("dispatching execution did not block recovery: %+v", assessment.SafetyBlockers)
+	}
+	facts.DispatchProvenNotSentRuns = map[string]bool{facts.Executions[0].RunID: true}
+	if assessment := EvaluateTaskRecovery(facts); !assessment.Eligible {
+		t.Fatalf("an unsent dispatch still blocked recovery: %+v", assessment.SafetyBlockers)
 	}
 }

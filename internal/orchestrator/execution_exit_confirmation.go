@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	ErrExecutionExitUnavailable  = errors.New("execution exit confirmation unavailable")
-	ErrExecutionExitStillRunning = errors.New("execution is still running on the runner")
+	ErrExecutionExitUnavailable   = errors.New("execution exit confirmation unavailable")
+	ErrExecutionExitStillRunning  = errors.New("execution is still running on the runner")
+	ErrExecutionExitStatusUnknown = errors.New("the runner reported an unrecognised execution status")
 )
 
 const (
@@ -31,8 +32,10 @@ type ExecutionExitReader interface {
 }
 
 type ConfirmExecutionExitRequest struct {
-	RequestID string
-	Reason    string
+	ExecutionID         string
+	ExpectedFingerprint string
+	RequestID           string
+	Reason              string
 }
 
 func WithExecutionExitReader(resolver func(endpoint string) (ExecutionExitReader, error)) Option {
@@ -43,18 +46,22 @@ func WithExecutionExitConfirmationRepository(repository *repository.ExecutionExi
 	return func(o *Orchestrator) { o.executionExits = repository }
 }
 
-// ConfirmExecutionExit records a human reconciliation for an interrupted source
-// execution. The remote answer is stored as evidence; the local execution row is
-// never rewritten, so a later change invalidates the confirmation fingerprint.
+// ConfirmExecutionExit records a human reconciliation for one execution the
+// operator selected by id. The expected fingerprint pins the evidence the
+// operator saw, so a row that changed in the meantime is refused rather than
+// silently confirmed. The remote answer is stored as evidence; the local
+// execution row is never rewritten.
 func (o *Orchestrator) ConfirmExecutionExit(ctx context.Context, taskID, actorID string, request ConfirmExecutionExitRequest) (*model.ExecutionExitConfirmation, error) {
 	if o.recoveries == nil || o.executionExits == nil || o.executionExitReader == nil {
 		return nil, ErrExecutionExitUnavailable
 	}
 	taskID = strings.TrimSpace(taskID)
 	actorID = strings.TrimSpace(actorID)
+	executionID := strings.TrimSpace(request.ExecutionID)
+	expectedFingerprint := strings.TrimSpace(request.ExpectedFingerprint)
 	requestID := strings.TrimSpace(request.RequestID)
 	reason := strings.TrimSpace(request.Reason)
-	if taskID == "" || actorID == "" || requestID == "" || reason == "" || utf8.RuneCountInString(reason) > executionExitMaxReasonLength {
+	if taskID == "" || actorID == "" || executionID == "" || expectedFingerprint == "" || requestID == "" || reason == "" || utf8.RuneCountInString(reason) > executionExitMaxReasonLength {
 		return nil, ErrRecoveryInvalid
 	}
 	existing, err := o.executionExits.GetByRequest(ctx, taskID, requestID)
@@ -78,18 +85,20 @@ func (o *Orchestrator) ConfirmExecutionExit(ctx context.Context, taskID, actorID
 	if snapshot.Task.Status != model.TaskStatusBlocked {
 		return nil, repository.ErrRecoveryStateChanged
 	}
-	source := sourceRun(RecoveryFacts{Task: snapshot.Task, Runs: snapshot.Runs})
-	if source == nil {
-		return nil, ErrExecutionExitUnavailable
-	}
-	execution := latestExecutionForRun(snapshot.Executions, source.RunID)
+	execution := executionByID(snapshot.Executions, executionID)
 	if execution == nil {
-		return nil, ErrExecutionExitUnavailable
+		return nil, repository.ErrExecutionExitNotFound
 	}
-	if execution.Status != model.AgentExecutionStatusInterrupted {
-		return nil, repository.ErrExecutionNotInterrupted
+	if model.ExecutionIsActive(execution) {
+		return nil, ErrExecutionExitStillRunning
 	}
-	remoteState, remoteMessage, err := o.readRemoteExecutionExit(ctx, source, execution)
+	if !model.ExecutionNeedsExitConfirmation(execution) {
+		return nil, repository.ErrExecutionExitNotRequired
+	}
+	if model.ExecutionExitFingerprint(execution) != expectedFingerprint {
+		return nil, repository.ErrExecutionFingerprintChanged
+	}
+	remoteState, remoteMessage, err := o.readRemoteExecutionExit(ctx, runByID(snapshot.Runs, execution.RunID), execution)
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +131,35 @@ func (o *Orchestrator) ConfirmExecutionExit(ctx context.Context, taskID, actorID
 	return stored, nil
 }
 
+// executionByID returns the execution row the operator named. The row is looked
+// up inside the task snapshot, so an execution id from another task cannot be
+// confirmed through this task.
+func executionByID(executions []model.AgentExecution, executionID string) *model.AgentExecution {
+	for index := range executions {
+		if executions[index].ExecutionID == executionID {
+			return &executions[index]
+		}
+	}
+	return nil
+}
+
+func runByID(runs []model.Run, runID string) *model.Run {
+	for index := range runs {
+		if runs[index].RunID == runID {
+			return &runs[index]
+		}
+	}
+	return nil
+}
+
 func (o *Orchestrator) readRemoteExecutionExit(ctx context.Context, run *model.Run, execution *model.AgentExecution) (string, string, error) {
-	reader, err := o.executionExitReader(run.RunnerEndpoint)
+	// 执行可能被池回退换过端点：观测与清理都跟 execution 记录的端点走，
+	// 只有旧数据没有该字段时才退回 Run 的端点。
+	endpoint := strings.TrimSpace(execution.RunnerEndpoint)
+	if endpoint == "" && run != nil {
+		endpoint = strings.TrimSpace(run.RunnerEndpoint)
+	}
+	reader, err := o.executionExitReader(endpoint)
 	if err != nil || reader == nil {
 		return model.ExecutionExitRemoteUnreachable, boundedRemoteMessage(fmt.Sprintf("runner client unavailable: %v", err)), nil
 	}
@@ -139,11 +175,17 @@ func (o *Orchestrator) readRemoteExecutionExit(ctx context.Context, run *model.R
 	if remote == nil {
 		return model.ExecutionExitRemoteUnreachable, "runner returned an empty execution record", nil
 	}
+	if err := validateRemoteExecution(remote, execution.ExecutionID, execution.RequestHash); err != nil {
+		// 记录身份不一致的远端返回不能当退出证据，只留一条不可信说明。
+		return model.ExecutionExitRemoteUnreachable, boundedRemoteMessage("runner returned a mismatched execution record: " + err.Error()), nil
+	}
 	switch remote.Status {
 	case runner.StatusAccepted, runner.StatusStarting, runner.StatusRunning:
 		return "", "", ErrExecutionExitStillRunning
+	case runner.StatusSucceeded, runner.StatusFailed, runner.StatusCancelled, runner.StatusInterrupted:
+		return model.ExecutionExitRemoteTerminal, boundedRemoteMessage("runner reports " + string(remote.Status)), nil
 	}
-	return model.ExecutionExitRemoteTerminal, boundedRemoteMessage("runner reports " + string(remote.Status)), nil
+	return "", "", fmt.Errorf("%w: %q", ErrExecutionExitStatusUnknown, string(remote.Status))
 }
 
 func boundedRemoteMessage(message string) string {

@@ -15,7 +15,8 @@ import (
 var (
 	ErrInvalidExecutionConfirmation = errors.New("invalid execution exit confirmation")
 	ErrExecutionFingerprintChanged  = errors.New("execution evidence changed since the confirmation was read")
-	ErrExecutionNotInterrupted      = errors.New("execution is not in the interrupted state")
+	ErrExecutionExitNotFound        = errors.New("execution not found for this task")
+	ErrExecutionExitNotRequired     = errors.New("execution already proves it exited")
 )
 
 type ExecutionExitConfirmationRepository struct {
@@ -67,17 +68,29 @@ func (r *ExecutionExitConfirmationRepository) Create(ctx context.Context, confir
 			return ErrRecoveryGenerationMismatch
 		}
 		var execution model.AgentExecution
-		if err := tx.Where("run_id = ?", confirmation.RunID).First(&execution).Error; err != nil {
+		if err := tx.Where("execution_id = ?", confirmation.ExecutionID).First(&execution).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrNotFound
+				return ErrExecutionExitNotFound
 			}
 			return err
 		}
-		if execution.ExecutionID != confirmation.ExecutionID || model.ExecutionExitFingerprint(&execution) != confirmation.ExecutionFingerprint {
+		// 执行行只挂 Run，必须回查 Run 确认它属于本任务，否则别的任务的
+		// 执行 id 可以拿到本任务下作证。
+		var run model.Run
+		if err := tx.Where("run_id = ?", execution.RunID).First(&run).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrExecutionExitNotFound
+			}
+			return err
+		}
+		if run.TaskID != confirmation.TaskID {
+			return ErrExecutionExitNotFound
+		}
+		if execution.RunID != confirmation.RunID || model.ExecutionExitFingerprint(&execution) != confirmation.ExecutionFingerprint {
 			return ErrExecutionFingerprintChanged
 		}
-		if execution.Status != model.AgentExecutionStatusInterrupted {
-			return ErrExecutionNotInterrupted
+		if !model.ExecutionNeedsExitConfirmation(&execution) {
+			return ErrExecutionExitNotRequired
 		}
 		var existing model.ExecutionExitConfirmation
 		lookup := tx.Where("task_id = ? AND request_id = ?", confirmation.TaskID, confirmation.RequestID).First(&existing).Error
