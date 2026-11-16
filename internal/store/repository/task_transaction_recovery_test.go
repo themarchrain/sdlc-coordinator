@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestStartRunRefusesExhaustedRecoveryCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := &model.Run{RunID: "run-start-exhausted", WorkerRole: task.Role}
-	if _, err := NewTaskRepository(db).StartRunAtomic(ctx, task.TaskID, run, now.Add(time.Hour), now); !errors.Is(err, ErrTaskNotClaimable) {
+	if _, err := NewTaskRepository(db).StartRunAtomic(ctx, task.TaskID, run, now.Add(time.Hour), now); !errors.Is(err, ErrRecoveryBudgetExhausted) {
 		t.Fatalf("start with an exhausted cycle error = %v", err)
 	}
 	var runs int64
@@ -71,8 +72,15 @@ func TestStartRunRefusesExhaustedRecoveryCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.AttemptCount != 8 || current.Status != model.TaskStatusPending {
-		t.Fatalf("refused start changed the task: %+v", current)
+	if current.AttemptCount != 8 {
+		t.Fatalf("refused start changed the attempt count: %+v", current)
+	}
+	// 留在 pending 会被下一次 Tick 反复拾取并再次拒绝，等于活锁。
+	if current.Status != model.TaskStatusBlocked {
+		t.Fatalf("exhausted cycle left the task in %s: %+v", current.Status, current)
+	}
+	if !strings.Contains(current.LastError, "额度") {
+		t.Fatalf("exhausted cycle left no operator-facing reason: %q", current.LastError)
 	}
 }
 

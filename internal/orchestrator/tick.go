@@ -252,6 +252,14 @@ func (o *Orchestrator) Tick(ctx context.Context, req TickRequest) (*TickResult, 
 			}
 		}
 		if err != nil {
+			// 本轮额度耗尽的启动拒绝已经把任务停靠成 blocked；这不是竞态，
+			// 按竞态忽略会让它在下一次 Tick 里重复出现。
+			if errors.Is(err, repository.ErrRecoveryBudgetExhausted) {
+				result.DispatchFailures = append(result.DispatchFailures, DispatchTickResult{
+					TaskID: task.TaskID, Status: model.TaskStatusBlocked, Error: repository.RecoveryBudgetExhaustedReason,
+				})
+				continue
+			}
 			// A concurrent Tick can list the same pending Task, but Claim is the
 			// atomic ownership boundary. Losing that race is expected, not a Tick
 			// failure and must not create another Run.

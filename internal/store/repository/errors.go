@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrNotFound                   = errors.New("not found")
 	ErrTaskNotClaimable           = errors.New("task not claimable")
+	ErrRecoveryBudgetExhausted    = errors.New("recovery cycle has no attempts left")
 	ErrRecoveryGenerationMismatch = errors.New("recovery generation mismatch")
 	ErrTaskLeaseNotRenewable      = errors.New("task lease not renewable")
 	ErrResultAlreadyAccepted      = errors.New("result already accepted")
