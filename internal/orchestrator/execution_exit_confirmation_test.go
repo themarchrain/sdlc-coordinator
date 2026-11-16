@@ -102,6 +102,24 @@ func (f *exitConfirmationFixture) bound(request ConfirmExecutionExitRequest, exe
 	return request
 }
 
+func TestConfirmingAnExecutionAgainAfterRecoveryReusesTheEvidence(t *testing.T) {
+	fixture := openExitConfirmationOrchestrator(t)
+	first := fixture.confirm(t, ConfirmExecutionExitRequest{RequestID: "request-exit-generation-zero", Reason: "checked the runner host, no process left"})
+	// 任务恢复到第 1 代后，同一个执行不会再跑起来，不需要第二份证据。
+	if err := fixture.db.Model(&model.Task{}).Where("task_id = ?", fixture.task.TaskID).
+		Update("recovery_generation", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	second := fixture.confirm(t, ConfirmExecutionExitRequest{RequestID: "request-exit-generation-one", Reason: "checked the runner host, no process left"})
+	if second.ExecutionID != first.ExecutionID || second.ExecutionFingerprint != first.ExecutionFingerprint || second.SourceGeneration != first.SourceGeneration {
+		t.Fatalf("the second confirmation replaced the evidence: first=%+v second=%+v", first, second)
+	}
+	var stored int64
+	if err := fixture.db.Model(&model.ExecutionExitConfirmation{}).Where("task_id = ?", fixture.task.TaskID).Count(&stored).Error; err != nil || stored != 1 {
+		t.Fatalf("stored confirmations = %d err=%v", stored, err)
+	}
+}
+
 func TestConfirmExecutionExitRecordsTerminalEvidence(t *testing.T) {
 	fixture := openExitConfirmationOrchestrator(t)
 	confirmation := fixture.confirm(t, ConfirmExecutionExitRequest{RequestID: "request-exit-terminal", Reason: "checked the runner host, no process left"})

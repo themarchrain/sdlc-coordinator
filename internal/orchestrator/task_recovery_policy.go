@@ -316,7 +316,9 @@ func executionExitBlocker(facts RecoveryFacts, execution model.AgentExecution) (
 }
 
 // exitConfirmationCoversExecution requires the confirmation to describe this
-// exact execution evidence at the task's current recovery generation.
+// exact execution evidence. A confirmation recorded at an earlier recovery
+// generation still holds: an exited process does not start again because the
+// task moved on, and the fingerprint pins the row the operator saw.
 func exitConfirmationCoversExecution(facts RecoveryFacts, execution model.AgentExecution) bool {
 	if facts.Task == nil {
 		return false
@@ -327,7 +329,7 @@ func exitConfirmationCoversExecution(facts RecoveryFacts, execution model.AgentE
 		if confirmation.RunID != execution.RunID || confirmation.ExecutionID != execution.ExecutionID {
 			continue
 		}
-		return confirmation.ExecutionFingerprint == fingerprint && confirmation.SourceGeneration == facts.Task.RecoveryGeneration
+		return confirmation.ExecutionFingerprint == fingerprint
 	}
 	return false
 }

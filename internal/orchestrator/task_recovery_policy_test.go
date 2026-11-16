@@ -230,13 +230,15 @@ func TestSourceInterruptedNeedsMatchingExitConfirmation(t *testing.T) {
 		t.Fatalf("stale fingerprint cleared the gate: %+v", assessment.SafetyBlockers)
 	}
 
-	staleGeneration := interruptedRecoveryFacts()
-	staleGeneration.Task.RecoveryGeneration = 2
-	older := confirmed(&staleGeneration)
+	// 恢复代次提升不会让已经退出的进程重新运行：同一条执行、同一份证据的
+	// 早先代次确认仍然有效。
+	earlierGeneration := interruptedRecoveryFacts()
+	earlierGeneration.Task.RecoveryGeneration = 2
+	older := confirmed(&earlierGeneration)
 	older.SourceGeneration = 1
-	staleGeneration.ExitConfirmations = []model.ExecutionExitConfirmation{older}
-	if assessment := EvaluateTaskRecovery(staleGeneration); !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
-		t.Fatalf("confirmation from an older generation cleared the gate: %+v", assessment.SafetyBlockers)
+	earlierGeneration.ExitConfirmations = []model.ExecutionExitConfirmation{older}
+	if assessment := EvaluateTaskRecovery(earlierGeneration); !assessment.Eligible {
+		t.Fatalf("confirmation from an earlier generation did not clear the gate: %+v", assessment.SafetyBlockers)
 	}
 }
 
@@ -293,6 +295,32 @@ func TestOldHeadNotEligible(t *testing.T) {
 	assessment := EvaluateTaskRecovery(facts)
 	if assessment.Eligible || !hasSafetyBlocker(assessment, "head_superseded") {
 		t.Fatalf("old head was not rejected: %+v", assessment)
+	}
+}
+
+func TestExitConfirmationSurvivesTheNextRecoveryGeneration(t *testing.T) {
+	finished := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	facts := eligibleRecoveryFacts()
+	// 第 0 代确认过的执行在任务恢复到第 1 代后仍然是同一个已退出的进程。
+	facts.Task.RecoveryGeneration = 1
+	olderRunID := "run-confirmed-before-recovery"
+	facts.Runs = append([]model.Run{{RunID: olderRunID, TaskID: facts.Task.TaskID, Status: model.RunStatusInterrupted}}, facts.Runs...)
+	older := model.AgentExecution{
+		RunID: olderRunID, ExecutionID: olderRunID, Status: model.AgentExecutionStatusInterrupted,
+		RequestHash: "older-request-hash", ErrorCode: "runner_restarted", FinishedAt: &finished,
+	}
+	facts.Executions = append([]model.AgentExecution{older}, facts.Executions...)
+	facts.ExitConfirmations = []model.ExecutionExitConfirmation{{
+		TaskID: facts.Task.TaskID, RunID: older.RunID, ExecutionID: older.ExecutionID,
+		SourceGeneration: 0, ExecutionFingerprint: model.ExecutionExitFingerprint(&older),
+		RemoteState: model.ExecutionExitRemoteTerminal,
+	}}
+	assessment := EvaluateTaskRecovery(facts)
+	if !assessment.Eligible {
+		t.Fatalf("recovering the generation expired the exit confirmation: %+v", assessment.SafetyBlockers)
+	}
+	if len(assessment.UnconfirmedExecutions) != 0 {
+		t.Fatalf("the confirmed execution came back as unconfirmed: %+v", assessment.UnconfirmedExecutions)
 	}
 }
 
