@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store"
@@ -259,6 +260,43 @@ func TestRecoveredTaskResumesRework(t *testing.T) {
 	assertResumedAfterRecovery(t, repo, task.TaskID, 3, 4)
 }
 
+func TestRecoveredTaskRejectsResultsFromTheOldRun(t *testing.T) {
+	db := openRecoveryAcceptDB(t)
+	ctx := context.Background()
+	oldRunID := "run-recover-old-result"
+	task := recoveryAcceptTask("task-recover-old-result")
+	task.CurrentRunID = &oldRunID
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Run{RunID: oldRunID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusFailed}).Error; err != nil {
+		t.Fatal(err)
+	}
+	proof := recoveryProof(task)
+	proof.CurrentRunID = oldRunID
+	if _, _, err := NewTaskRecoveryRepository(db).Accept(ctx, task.TaskID, "member-1", recoveryCommand(task, "request-old-result", "hash-old-result"), proof); err != nil {
+		t.Fatalf("accept recovery: %v", err)
+	}
+	submission := &model.ResultSubmission{
+		SubmissionID: "submission-old-result", TaskID: task.TaskID, RunID: oldRunID, Source: "mcp", Role: "DeveloperWorker",
+		PayloadHash: "payload-hash", RawPayloadJSON: `{}`, CanonicalJSON: `{}`,
+	}
+	if err := NewResultSubmissionRepository(db).Accept(ctx, submission, time.Now().UTC().Add(time.Hour)); !errors.Is(err, ErrRecoveryGenerationMismatch) {
+		t.Fatalf("result from the recovered run error = %v", err)
+	}
+	var stored int64
+	if err := db.Model(&model.ResultSubmission{}).Where("submission_id = ?", submission.SubmissionID).Count(&stored).Error; err != nil || stored != 0 {
+		t.Fatalf("old result was stored after recovery: count=%d err=%v", stored, err)
+	}
+	current, err := NewTaskRepository(db).GetByTaskID(ctx, task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != model.TaskStatusPending || current.CurrentRunID != nil || current.RecoveryGeneration != 1 {
+		t.Fatalf("old result moved the recovered task: %+v", current)
+	}
+}
+
 func assertResumedAfterRecovery(t *testing.T, repo *TaskRepository, taskID string, generation uint64, attempts int) {
 	t.Helper()
 	resumed, err := repo.GetByTaskID(context.Background(), taskID)
@@ -309,7 +347,7 @@ func openRecoveryAcceptDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.TaskRecovery{}, &model.StopRequest{}); err != nil {
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.TaskRecovery{}, &model.StopRequest{}, &model.ResultSubmission{}); err != nil {
 		t.Fatal(err)
 	}
 	return db
