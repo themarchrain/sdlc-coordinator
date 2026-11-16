@@ -139,6 +139,48 @@ describe('TaskRecoveryControl', () => {
     await waitFor(() => expect(recover).toHaveBeenCalledTimes(2))
   })
 
+  it('reports a permission refusal instead of an unknown result', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(403, 'forbidden', '没有权限'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText('当前会话没有恢复权限')).toBeInTheDocument()
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument()
+  })
+
+  it('reports a missing task without offering a retry', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(404, 'not_found', '任务不存在'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText('任务不存在或已被删除')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '刷新任务' })).not.toBeInTheDocument()
+  })
+
+  it('refreshes when the server now requires risk confirmation', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery')
+      .mockResolvedValueOnce(transient)
+      .mockResolvedValueOnce({ ...transient, classification: 'unknown', requires_risk_confirmation: true, reason_summary: '无法判定失败原因' })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(400, 'recovery_risk_confirmation_required', '需要确认风险'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: '风险恢复' })).toBeInTheDocument()
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument()
+  })
+
+  it('keeps an unknown result only for server failures', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(500, 'internal_error', '内部错误'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+  })
+
   it('ignores a late assessment after switching Tasks', async () => {
     const old = deferred<RecoveryAssessment>()
     vi.spyOn(adminApi, 'taskRecovery').mockImplementation((id) => id === 'task-1' ? old.promise : Promise.resolve({ ...transient, task_id: 'task-2' }))

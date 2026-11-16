@@ -22,6 +22,39 @@ const classificationLabels: Record<string, string> = {
 
 let requestSequence = 0
 
+type RecoveryFailureKind = 'stale' | 'unavailable' | 'unknown' | 'refused' | 'missing'
+
+interface RecoveryFailure {
+  kind: RecoveryFailureKind
+  message: string
+  refresh?: boolean
+}
+
+// describeRecoveryFailure maps a server answer to what the operator can do next.
+// Only a network error or a server failure leaves the outcome unknown.
+function describeRecoveryFailure(cause: unknown): RecoveryFailure {
+  if (!(cause instanceof AdminApiError)) {
+    return { kind: 'unknown', message: '恢复请求结果未知，请先刷新任务后再决定是否重试' }
+  }
+  switch (cause.status) {
+    case 400:
+      if (cause.code === 'recovery_risk_confirmation_required') {
+        return { kind: 'stale', message: '风险确认要求已变化，正在刷新恢复资格', refresh: true }
+      }
+      return { kind: 'refused', message: '恢复请求参数无效，请刷新后重试' }
+    case 403:
+      return { kind: 'refused', message: '当前会话没有恢复权限' }
+    case 404:
+      return { kind: 'missing', message: '任务不存在或已被删除' }
+    case 409:
+      return { kind: 'stale', message: '任务状态已变化，正在刷新恢复资格', refresh: true }
+    case 503:
+      return { kind: 'unavailable', message: '恢复安全检查暂不可用，可重试' }
+    default:
+      return { kind: 'unknown', message: '恢复请求结果未知，请先刷新任务后再决定是否重试' }
+  }
+}
+
 function formatCheckedAt(value?: string) {
   if (!value) return '—'
   const parsed = new Date(value)
@@ -46,7 +79,7 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
   const [assessment, setAssessment] = useState<RecoveryAssessment>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
-  const [errorKind, setErrorKind] = useState<'stale' | 'unavailable' | 'unknown'>()
+  const [errorKind, setErrorKind] = useState<RecoveryFailureKind>()
   const [reloadVersion, setReloadVersion] = useState(0)
   const [riskOpen, setRiskOpen] = useState(false)
   const [riskAcknowledged, setRiskAcknowledged] = useState(false)
@@ -138,17 +171,10 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
       onRecovered()
     } catch (cause) {
       if (!mounted.current || scopeRef.current !== scopeAtStart) return
-      if (cause instanceof AdminApiError && cause.status === 409) {
-        setError('任务状态已变化，正在刷新恢复资格')
-        setErrorKind('stale')
-        setReloadVersion((value) => value + 1)
-      } else if (cause instanceof AdminApiError && cause.status === 503) {
-        setError('恢复安全检查暂不可用，可重试')
-        setErrorKind('unavailable')
-      } else {
-        setError('恢复请求结果未知，请先刷新任务后再决定是否重试')
-        setErrorKind('unknown')
-      }
+      const failure = describeRecoveryFailure(cause)
+      setError(failure.message)
+      setErrorKind(failure.kind)
+      if (failure.refresh) setReloadVersion((value) => value + 1)
     } finally {
       sending.current = false
       setSubmitting(false)
@@ -167,7 +193,7 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
     ]} />
     {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>} /> : null}
     {!canRecover && safetyBlockers.length === 0 ? <Alert type="warning" message={assessment.reason_summary || '当前任务不能恢复'} /> : null}
-    {error ? <Alert type="error" message={error} action={<Button size="small" onClick={() => {
+    {error ? <Alert type="error" message={error} action={errorKind === 'stale' || errorKind === 'unavailable' || errorKind === 'unknown' ? <Button size="small" onClick={() => {
       if (errorKind === 'unavailable') {
         setError(undefined)
         setErrorKind(undefined)
@@ -175,7 +201,7 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
       } else {
         setReloadVersion((value) => value + 1)
       }
-    }}>{errorKind === 'unavailable' ? '重试' : errorKind === 'stale' ? '刷新资格' : '刷新任务'}</Button>} /> : null}
+    }}>{errorKind === 'unavailable' ? '重试' : errorKind === 'stale' ? '刷新资格' : '刷新任务'}</Button> : undefined} /> : null}
     {canRecover && !adopted ? <Space>
       <Button type={assessment.requires_risk_confirmation ? 'default' : 'primary'} danger={assessment.requires_risk_confirmation} loading={submitting} disabled={submitting} onClick={assessment.requires_risk_confirmation ? openRisk : submit}>{buttonLabel}</Button>
     </Space> : null}
