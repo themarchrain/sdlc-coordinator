@@ -81,20 +81,9 @@ func loadRecoverySnapshot(ctx context.Context, db *gorm.DB, taskID string) (*Rec
 	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("id ASC").Find(&snapshot.ExitConfirmations).Error; err != nil {
 		return nil, fmt.Errorf("load recovery execution exit confirmations: %w", err)
 	}
-	var leases []model.WorkItemLease
-	if err := db.WithContext(ctx).Order("scope ASC").Limit(1000).Find(&leases).Error; err != nil {
-		return nil, fmt.Errorf("load recovery leases: %w", err)
-	}
-	for _, lease := range leases {
-		if strings.Contains(lease.Scope, taskID) {
-			snapshot.WorkItemLeases = append(snapshot.WorkItemLeases, lease)
-			continue
-		}
-		for _, runID := range runIDs {
-			if strings.Contains(lease.Scope, runID) {
-				snapshot.WorkItemLeases = append(snapshot.WorkItemLeases, lease)
-				break
-			}
+	if scopes := recoveryLeaseScopes(taskID, runIDs); len(scopes) != 0 {
+		if err := db.WithContext(ctx).Where("scope IN ?", scopes).Order("scope ASC").Find(&snapshot.WorkItemLeases).Error; err != nil {
+			return nil, fmt.Errorf("load recovery leases: %w", err)
 		}
 	}
 	var audit model.MergeGateAudit
@@ -110,6 +99,22 @@ func loadRecoverySnapshot(ctx context.Context, db *gorm.DB, taskID string) (*Rec
 		return nil, fmt.Errorf("load recovery stop: %w", err)
 	}
 	return snapshot, nil
+}
+
+// Lease keys that carry a task's execution rights. An exact scope list keeps
+// the read bounded without silently dropping a lease that sorts past a row limit.
+const (
+	developerDeliveryLeaseScope = "developer-delivery:"
+	mergeGateLeaseScope         = "merge-gate:"
+)
+
+func recoveryLeaseScopes(taskID string, runIDs []string) []string {
+	scopes := make([]string, 0, len(runIDs)+1)
+	scopes = append(scopes, mergeGateLeaseScope+taskID)
+	for _, runID := range runIDs {
+		scopes = append(scopes, developerDeliveryLeaseScope+runID)
+	}
+	return scopes
 }
 
 func (r *TaskRecoveryRepository) Accept(ctx context.Context, taskID, actorID string, command RecoveryCommand, proof RecoveryDBProof) (*model.TaskRecovery, bool, error) {

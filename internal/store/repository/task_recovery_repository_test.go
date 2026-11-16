@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -66,5 +67,65 @@ func TestTaskRecoveryUniqueKeys(t *testing.T) {
 	sameGeneration.RequestID = "request-2"
 	if err := db.Create(&sameGeneration).Error; err == nil {
 		t.Fatal("duplicate task/source generation was accepted")
+	}
+}
+
+func TestRecoverySnapshotFindsLeasesBeyondTheFirstThousand(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{},
+		&model.Writeback{}, &model.Effect{}, &model.DeveloperDeliveryCheckpoint{}, &model.ActionAdmission{},
+		&model.ExecutionExitConfirmation{}, &model.WorkItemLease{}, &model.MergeGateAudit{}, &model.StopRequest{},
+		&model.TaskRecovery{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	runID := "run-lease-visible"
+	task := &model.Task{
+		TaskID: "task-lease-visible", DedupeKey: "dedupe-lease-visible", Type: "bugfix", Role: "DeveloperWorker",
+		Status: model.TaskStatusBlocked, CurrentRunID: &runID, AttemptCount: 5,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusBlocked}).Error; err != nil {
+		t.Fatal(err)
+	}
+	noise := make([]model.WorkItemLease, 0, 1000)
+	for index := 0; index < 1000; index++ {
+		noise = append(noise, model.WorkItemLease{
+			Scope: fmt.Sprintf("aaa-unrelated:%04d", index), Owner: "owner", Generation: 1,
+			LeaseUntil: now.Add(time.Hour), AcquiredAt: now, UpdatedAt: now,
+		})
+	}
+	if err := db.CreateInBatches(&noise, 200).Error; err != nil {
+		t.Fatal(err)
+	}
+	delivery := model.WorkItemLease{Scope: "developer-delivery:" + runID, Owner: "delivery", Generation: 1, LeaseUntil: now.Add(time.Hour), AcquiredAt: now, UpdatedAt: now}
+	otherDelivery := model.WorkItemLease{Scope: "developer-delivery:run-foreign", Owner: "foreign", Generation: 1, LeaseUntil: now.Add(time.Hour), AcquiredAt: now, UpdatedAt: now}
+	mergeGate := model.WorkItemLease{Scope: "merge-gate:" + task.TaskID, Owner: "gate", Generation: 1, LeaseUntil: now.Add(time.Hour), AcquiredAt: now, UpdatedAt: now}
+	for _, lease := range []*model.WorkItemLease{&delivery, &otherDelivery, &mergeGate} {
+		if err := db.Create(lease).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot, err := NewTaskRecoveryRepository(db).LoadRecoverySnapshot(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("load recovery snapshot: %v", err)
+	}
+	scopes := make(map[string]bool, len(snapshot.WorkItemLeases))
+	for _, lease := range snapshot.WorkItemLeases {
+		scopes[lease.Scope] = true
+	}
+	if !scopes[delivery.Scope] {
+		t.Fatalf("active target execution lease was omitted: %v", scopes)
+	}
+	if !scopes[mergeGate.Scope] {
+		t.Fatalf("merge gate lease was omitted: %v", scopes)
+	}
+	if scopes[otherDelivery.Scope] {
+		t.Fatal("lease of another run was loaded")
 	}
 }
