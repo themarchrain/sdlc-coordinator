@@ -217,6 +217,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 			return agentrunner.NewClient(endpoint, nil), nil
 		}),
 		orchestrator.WithRecoveryFactsReader(recoveryReader),
+		orchestrator.WithRecoveryObjectReader(recoveryReader.ObjectReader),
 		orchestrator.WithLogger(shared.logger),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎

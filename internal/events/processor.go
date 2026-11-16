@@ -282,7 +282,8 @@ func (p *Processor) ProcessWebhook(ctx context.Context, normalizer Normalizer, r
 		}
 		createdTask, err = resumer.ResumeDeveloperTask(ctx, request)
 		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrTaskNotClaimable) {
+			if errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrTaskNotClaimable) ||
+				errors.Is(err, model.ErrTaskObjectNotOpen) || errors.Is(err, model.ErrTaskObjectUnavailable) {
 				return p.ignoreInboundEvent(ctx, inbound, err.Error(), duplicate)
 			}
 			return nil, p.failInboundEvent(ctx, inbound, err)
@@ -299,7 +300,8 @@ func (p *Processor) ProcessWebhook(ctx context.Context, normalizer Normalizer, r
 		request.RepositoryID = inbound.RepositoryID
 		createdTask, err = handler.StartOrResumeMergeRequestRework(ctx, request)
 		if err != nil {
-			if errors.Is(err, model.ErrMergeRequestNotManaged) || errors.Is(err, model.ErrMergeRequestReworkRequesterUnauthorized) || errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrTaskNotClaimable) {
+			if errors.Is(err, model.ErrMergeRequestNotManaged) || errors.Is(err, model.ErrMergeRequestReworkRequesterUnauthorized) || errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrTaskNotClaimable) ||
+				errors.Is(err, model.ErrTaskObjectNotOpen) || errors.Is(err, model.ErrTaskObjectUnavailable) {
 				return p.ignoreInboundEvent(ctx, inbound, err.Error(), duplicate)
 			}
 			return nil, p.failInboundEvent(ctx, inbound, err)

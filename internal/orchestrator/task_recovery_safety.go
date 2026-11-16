@@ -274,3 +274,23 @@ func numericValue(value any) (int64, bool) {
 		return 0, false
 	}
 }
+
+// assertTaskObjectOpen refuses to resume a task whose live target object is no
+// longer open. A reader that cannot answer fails closed: resuming on an
+// unreadable object is the same bet as resuming on a closed one.
+func (o *Orchestrator) assertTaskObjectOpen(ctx context.Context, task *model.Task) error {
+	if TaskRecoveryObjectKind(task) == RecoveryObjectNone {
+		return nil
+	}
+	if o.recoveryObjects == nil {
+		return model.ErrTaskObjectUnavailable
+	}
+	state, err := o.recoveryObjects.ReadRecoveryObject(ctx, task)
+	if err != nil {
+		return fmt.Errorf("%w: %v", model.ErrTaskObjectUnavailable, err)
+	}
+	if state.State != codehost.MergeRequestStateOpen {
+		return model.ErrTaskObjectNotOpen
+	}
+	return nil
+}

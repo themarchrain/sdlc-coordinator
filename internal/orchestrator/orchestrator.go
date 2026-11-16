@@ -199,6 +199,7 @@ type Orchestrator struct {
 	writebackAuth                  WritebackAuthHandler
 	repositoryLookup               RepositoryLookup
 	recoveryReader                 RecoveryFactsReader
+	recoveryObjects                RecoveryObjectReader
 	recoveries                     TaskRecoveryRepository
 	executionExits                 *repository.ExecutionExitConfirmationRepository
 	executionExitReader            func(string) (ExecutionExitReader, error)
@@ -548,6 +549,14 @@ func WithRepositoryLookup(lookup RepositoryLookup) Option {
 func WithRecoveryFactsReader(reader RecoveryFactsReader) Option {
 	return func(o *Orchestrator) {
 		o.recoveryReader = reader
+	}
+}
+
+// WithRecoveryObjectReader wires the live target-object reader used by the
+// resume entrances; without it those entrances fail closed.
+func WithRecoveryObjectReader(reader RecoveryObjectReader) Option {
+	return func(o *Orchestrator) {
+		o.recoveryObjects = reader
 	}
 }
 

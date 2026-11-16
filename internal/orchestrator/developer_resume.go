@@ -29,6 +29,9 @@ func (o *Orchestrator) ResumeDeveloperTask(ctx context.Context, request model.De
 	if task.Role != "DeveloperWorker" || task.Status != model.TaskStatusHumanRequired {
 		return nil, repository.ErrTaskNotClaimable
 	}
+	if err := o.assertTaskObjectOpen(ctx, task); err != nil {
+		return nil, err
+	}
 
 	contextJSON, err := resumedDeveloperTaskContext(task.ContextJSON, request)
 	if err != nil {

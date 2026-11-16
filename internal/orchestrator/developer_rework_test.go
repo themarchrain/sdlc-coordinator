@@ -429,6 +429,11 @@ func sampleMergeRequestReworkRequest() model.MergeRequestReworkRequest {
 
 func newDeveloperReworkFixture(t *testing.T) (*Orchestrator, *repository.TaskRepository, *repository.WritebackRepository) {
 	t.Helper()
+	return newDeveloperReworkFixtureWith(t, fakeRecoveryObjectReader{object: RecoveryObjectState{State: codehost.MergeRequestStateOpen}})
+}
+
+func newDeveloperReworkFixtureWith(t *testing.T, objects RecoveryObjectReader) (*Orchestrator, *repository.TaskRepository, *repository.WritebackRepository) {
+	t.Helper()
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -438,7 +443,7 @@ func newDeveloperReworkFixture(t *testing.T) (*Orchestrator, *repository.TaskRep
 	}
 	tasks := repository.NewTaskRepository(db)
 	writebacks := repository.NewWritebackRepository(db)
-	orch := New(tasks, repository.NewRunRepository(db), WithWritebackRepository(writebacks))
+	orch := New(tasks, repository.NewRunRepository(db), WithWritebackRepository(writebacks), WithRecoveryObjectReader(objects))
 	return orch, tasks, writebacks
 }
 
@@ -812,5 +817,41 @@ func TestStartMergeRequestReworkSkipsPlatformEnrichmentForNonGitHubSources(t *te
 	}
 	if stub.calls != 0 {
 		t.Fatalf("expected zero platform API calls for non-github sources, got %d", stub.calls)
+	}
+}
+
+func TestStartMergeRequestReworkResumesOnlyAnOpenMergeRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		reader  RecoveryObjectReader
+		wantErr error
+	}{
+		{name: "merged", reader: fakeRecoveryObjectReader{object: RecoveryObjectState{State: codehost.MergeRequestStateMerged}}, wantErr: model.ErrTaskObjectNotOpen},
+		{name: "closed", reader: fakeRecoveryObjectReader{object: RecoveryObjectState{State: codehost.MergeRequestStateClosed}}, wantErr: model.ErrTaskObjectNotOpen},
+		{name: "unreadable", reader: fakeRecoveryObjectReader{err: errors.New("code host unreachable")}, wantErr: model.ErrTaskObjectUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			orch, tasks, writebacks := newDeveloperReworkFixtureWith(t, test.reader)
+			ctx := context.Background()
+			seedManagedMergeRequest(t, ctx, tasks, writebacks)
+			first, err := orch.StartOrResumeMergeRequestRework(ctx, sampleMergeRequestReworkRequest())
+			if err != nil {
+				t.Fatalf("create first rework task: %v", err)
+			}
+			request := sampleMergeRequestReworkRequest()
+			request.NoteID = 20003
+			request.ResumeContext = "请继续修正。"
+			if _, err := orch.StartOrResumeMergeRequestRework(ctx, request); !errors.Is(err, test.wantErr) {
+				t.Fatalf("resume error = %v, want %v", err, test.wantErr)
+			}
+			current, err := tasks.GetByTaskID(ctx, first.TaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.Status != first.Status || current.CurrentRunID != nil {
+				t.Fatalf("refused resume changed the task: %+v", current)
+			}
+		})
 	}
 }
