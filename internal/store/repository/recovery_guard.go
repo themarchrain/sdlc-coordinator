@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 )
 
@@ -71,6 +72,20 @@ func RecoveryBlockRevision(task *model.Task, safetyDigest string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// failureClassificationKey reduces stored failure evidence to the fields that
+// decide recovery eligibility. A rewritten code or source changes the digest and
+// forces the acceptance to re-read; summary wording alone does not.
+func failureClassificationKey(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var info failure.Info
+	if json.Unmarshal([]byte(raw), &info) != nil {
+		return "invalid"
+	}
+	return fmt.Sprintf("%d|%s|%s|%s", info.Version, info.Source, info.Code, failure.Classify(&info))
+}
+
 // RecoverySafetyDigest hashes only durable safety semantics, excluding
 // observation timestamps such as last_observed_at/checked_at.
 func RecoverySafetyDigest(snapshot *RecoverySnapshot) string {
@@ -101,6 +116,7 @@ func RecoverySafetyDigest(snapshot *RecoverySnapshot) string {
 		}
 		executions = append(executions, strings.Join([]string{
 			execution.RunID, execution.ExecutionID, string(execution.Status), execution.RequestHash, finished,
+			failureClassificationKey(execution.FailureJSON),
 		}, "|"))
 	}
 	view["executions"] = executions

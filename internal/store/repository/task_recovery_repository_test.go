@@ -129,3 +129,29 @@ func TestRecoverySnapshotFindsLeasesBeyondTheFirstThousand(t *testing.T) {
 		t.Fatal("lease of another run was loaded")
 	}
 }
+
+func TestRecoverySafetyDigestTracksFailureEvidence(t *testing.T) {
+	task := &model.Task{TaskID: "task-digest", Status: model.TaskStatusBlocked, AttemptCount: 5}
+	snapshot := func(failureJSON string) *RecoverySnapshot {
+		return &RecoverySnapshot{
+			Task: task,
+			Runs: []model.Run{{RunID: "run-digest", TaskID: task.TaskID, Status: model.RunStatusBlocked}},
+			Executions: []model.AgentExecution{{
+				RunID: "run-digest", ExecutionID: "run-digest", Status: model.AgentExecutionStatusFailed,
+				RequestHash: "request-hash", FailureJSON: failureJSON,
+			}},
+		}
+	}
+	unknown := `{"version":1,"stage":"result","source":"runner","code":"provider_failed","summary":"provider failed"}`
+	fatal := `{"version":1,"stage":"provider","source":"provider","code":"unsupported_schema","summary":"schema rejected"}`
+	if RecoverySafetyDigest(snapshot(unknown)) != RecoverySafetyDigest(snapshot(unknown)) {
+		t.Fatal("digest is not stable for the same evidence")
+	}
+	if RecoverySafetyDigest(snapshot(unknown)) == RecoverySafetyDigest(snapshot(fatal)) {
+		t.Fatal("digest ignored a classification change in the stored failure evidence")
+	}
+	summaryOnly := `{"version":1,"stage":"result","source":"runner","code":"provider_failed","summary":"different wording"}`
+	if RecoverySafetyDigest(snapshot(unknown)) != RecoverySafetyDigest(snapshot(summaryOnly)) {
+		t.Fatal("digest churned on a summary-only change")
+	}
+}
