@@ -129,3 +129,76 @@ func createRunningSubmissionFixture(t *testing.T, ctx context.Context, tasks *Ta
 		t.Fatalf("create run: %v", err)
 	}
 }
+
+func TestResultSubmissionUpdateKeepsClaimProgress(t *testing.T) {
+	ctx := context.Background()
+	repo, taskRepo, runRepo := newResultSubmissionFixture(t)
+	createRunningSubmissionFixture(t, ctx, taskRepo, runRepo, "task-update-stale", "run-update-stale")
+	now := time.Now().UTC()
+	submission := &model.ResultSubmission{
+		TaskID: "task-update-stale", RunID: "run-update-stale", Source: "mcp", ToolName: "submit",
+		Role: "TesterWorker", PayloadHash: "payload-hash", RawPayloadJSON: `{}`, CanonicalJSON: `{}`,
+	}
+	if err := repo.Accept(ctx, submission, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("accept submission: %v", err)
+	}
+	stale, err := repo.GetBySubmissionID(ctx, submission.SubmissionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimRecoverable(ctx, submission.SubmissionID, now, now.Add(time.Hour), 5)
+	if err != nil {
+		t.Fatalf("claim submission: %v", err)
+	}
+	if claimed.AttemptCount != 2 {
+		t.Fatalf("claimed attempts = %d, want 2", claimed.AttemptCount)
+	}
+
+	stale.Status = model.ResultSubmissionStatusUnknown
+	stale.ErrorMessage = "writeback outcome unknown"
+	stale.LeaseUntil = nil
+	if err := repo.Update(ctx, stale); err != nil {
+		t.Fatalf("update submission: %v", err)
+	}
+	current, err := repo.GetBySubmissionID(ctx, submission.SubmissionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != model.ResultSubmissionStatusUnknown || current.ErrorMessage != "writeback outcome unknown" {
+		t.Fatalf("intended columns were not written: %+v", current)
+	}
+	if current.AttemptCount != 2 {
+		t.Fatalf("stale update rolled back the claim count: %d", current.AttemptCount)
+	}
+	if current.PayloadHash != "payload-hash" || current.RawPayloadJSON != `{}` {
+		t.Fatalf("stale update rewrote the payload identity: %+v", current)
+	}
+}
+
+func TestFinalizeResultAtomicReportsMissingSubmissionUpdate(t *testing.T) {
+	ctx := context.Background()
+	_, taskRepo, runRepo := newResultSubmissionFixture(t)
+	createRunningSubmissionFixture(t, ctx, taskRepo, runRepo, "task-finalize-missing", "run-finalize-missing")
+	if err := taskRepo.db.Create(&model.ResultSubmission{
+		SubmissionID: "submission-finalize-missing", TaskID: "task-finalize-missing", RunID: "run-finalize-missing",
+		Source: "mcp", Role: "TesterWorker", PayloadHash: "hash", RawPayloadJSON: `{}`, CanonicalJSON: `{}`,
+		Status: model.ResultSubmissionStatusUnknown,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	task, err := taskRepo.GetByTaskID(ctx, "task-finalize-missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := runRepo.GetByRunID(ctx, "run-finalize-missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := time.Now().UTC()
+	task.Status = model.TaskStatusSucceeded
+	run.Status = model.RunStatusSucceeded
+	run.CompletedAt = &completed
+	if err := taskRepo.FinalizeResultAtomic(ctx, task, run, nil, true); !errors.Is(err, ErrResultNotAcceptable) {
+		t.Fatalf("finalization over an unsettled submission error = %v", err)
+	}
+}

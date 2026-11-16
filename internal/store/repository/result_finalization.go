@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"sdlc-coordinator/internal/model"
@@ -58,9 +60,22 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 			}
 		}
 		if finalizeSubmission {
-			if err := tx.Model(&model.ResultSubmission{}).Where("task_id = ? AND run_id = ? AND status = ?", task.TaskID, run.RunID, model.ResultSubmissionStatusProcessing).
-				Updates(map[string]any{"status": model.ResultSubmissionStatusSucceeded, "error_message": "", "lease_until": nil, "completed_at": now, "updated_at": now}).Error; err != nil {
-				return err
+			result := tx.Model(&model.ResultSubmission{}).Where("task_id = ? AND run_id = ? AND status = ?", task.TaskID, run.RunID, model.ResultSubmissionStatusProcessing).
+				Updates(map[string]any{"status": model.ResultSubmissionStatusSucceeded, "error_message": "", "lease_until": nil, "completed_at": now, "updated_at": now})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				// 没有待结算的提交行是正常路径（结果未经提交表直达）；但存在一行
+				// 停在非成功状态时不能把任务收口成成功，否者它永久卡住。
+				var existing model.ResultSubmission
+				lookup := tx.Where("task_id = ? AND run_id = ?", task.TaskID, run.RunID).First(&existing).Error
+				if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
+					return lookup
+				}
+				if lookup == nil && existing.Status != model.ResultSubmissionStatusSucceeded {
+					return fmt.Errorf("%w: result submission is %s", ErrResultNotAcceptable, existing.Status)
+				}
 			}
 		}
 		return nil

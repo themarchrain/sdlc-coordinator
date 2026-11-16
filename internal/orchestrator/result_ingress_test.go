@@ -555,9 +555,13 @@ func TestFinalizeRecoverableSubmissionsStopsInvalidCanonicalAfterThreeFailures(t
 		t.Fatalf("accept invalid canonical fixture: %v", err)
 	}
 	submission.Status = model.ResultSubmissionStatusFailed
-	submission.AttemptCount = 2
 	if err := submissions.Update(ctx, submission); err != nil {
 		t.Fatalf("create invalid submission: %v", err)
+	}
+	// 领取次数由领取路径独占，夹具直接落到库内以避免被更新路径忽略。
+	if err := db.Model(&model.ResultSubmission{}).Where("submission_id = ?", submission.SubmissionID).
+		Update("attempt_count", 2).Error; err != nil {
+		t.Fatalf("set invalid submission attempts: %v", err)
 	}
 
 	results, err := New(tasks, runs, WithResultSubmissionRepository(submissions)).FinalizeRecoverableSubmissions(ctx, 10)

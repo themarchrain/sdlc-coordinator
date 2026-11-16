@@ -103,7 +103,19 @@ func (r *ResultSubmissionRepository) Update(ctx context.Context, submission *mod
 		if task.Status == model.TaskStatusInterrupted || current.Status == model.ResultSubmissionStatusInterrupted {
 			return ErrTaskInterrupted
 		}
-		return tx.Save(submission).Error
+		// 只推进调用方负责的列：领取次数与载荷属于领取/受理路径，旧快照
+		// 不得用自己读到的值把它们写回去。
+		updates := map[string]any{
+			"status":        submission.Status,
+			"error_message": submission.ErrorMessage,
+			"lease_until":   submission.LeaseUntil,
+			"completed_at":  submission.CompletedAt,
+		}
+		if err := tx.Model(current).Updates(updates).Error; err != nil {
+			return err
+		}
+		*submission = *current
+		return nil
 	}); err != nil {
 		return fmt.Errorf("update result submission: %w", err)
 	}
