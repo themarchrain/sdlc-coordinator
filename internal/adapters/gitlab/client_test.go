@@ -517,3 +517,34 @@ func TestGetMergeRequestDecodesBranches(t *testing.T) {
 		t.Fatalf("unexpected merge request: %#v", mergeRequest)
 	}
 }
+
+func TestGetMergeRequestNormalizesState(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want codehost.MergeRequestState
+	}{
+		{name: "opened is open", body: `{"iid":21,"state":"opened"}`, want: codehost.MergeRequestStateOpen},
+		{name: "locked is open", body: `{"iid":21,"state":"locked"}`, want: codehost.MergeRequestStateOpen},
+		{name: "closed is closed", body: `{"iid":21,"state":"closed"}`, want: codehost.MergeRequestStateClosed},
+		{name: "merged is merged", body: `{"iid":21,"state":"merged"}`, want: codehost.MergeRequestStateMerged},
+		{name: "missing state is unknown", body: `{"iid":21}`, want: codehost.MergeRequestStateUnknown},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(test.body))
+			}))
+			t.Cleanup(server.Close)
+			client := NewClient(server.URL, "test-token", WithHTTPClient(server.Client()))
+			mergeRequest, err := client.GetMergeRequest(context.Background(), "demo-group/demo-project", 21)
+			if err != nil {
+				t.Fatalf("get merge request: %v", err)
+			}
+			if mergeRequest.State != test.want {
+				t.Fatalf("state = %q, want %q", mergeRequest.State, test.want)
+			}
+		})
+	}
+}

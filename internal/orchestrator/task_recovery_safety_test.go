@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -203,6 +204,108 @@ func TestProviderSetupCodeDoesNotReachPrerequisiteCheck(t *testing.T) {
 			}
 			if test.wantCalls == 0 && facts.PrerequisiteResolved {
 				t.Fatal("provider echoed setup code was treated as a resolved prerequisite")
+			}
+		})
+	}
+}
+
+func TestTaskRecoveryObjectKind(t *testing.T) {
+	tests := []struct {
+		name string
+		task *model.Task
+		want RecoveryObjectKind
+	}{
+		{name: "reviewer checks the merge request", task: &model.Task{Role: "ReviewerWorker"}, want: RecoveryObjectMergeRequest},
+		{name: "tester checks the merge request", task: &model.Task{Role: "TesterWorker"}, want: RecoveryObjectMergeRequest},
+		{name: "rework checks the merge request", task: &model.Task{Role: "DeveloperWorker", Type: "rework_merge_request"}, want: RecoveryObjectMergeRequest},
+		{name: "developer issue checks the issue", task: &model.Task{Role: "DeveloperWorker", Type: "develop_from_issue", ContextJSON: `{"issue":{"iid":7}}`}, want: RecoveryObjectIssue},
+		{name: "developer without issue has no live object", task: &model.Task{Role: "DeveloperWorker", Type: "bugfix"}, want: RecoveryObjectNone},
+		{name: "nil task has no live object", task: nil, want: RecoveryObjectNone},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := TaskRecoveryObjectKind(test.task); got != test.want {
+				t.Fatalf("TaskRecoveryObjectKind() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+type fakeRecoveryObjectReader struct {
+	object RecoveryObjectState
+	err    error
+}
+
+func (f fakeRecoveryObjectReader) ReadRecoveryObject(context.Context, *model.Task) (RecoveryObjectState, error) {
+	return f.object, f.err
+}
+
+func TestRecoverySafetyReaderFailsClosedOnObjectState(t *testing.T) {
+	tests := []struct {
+		name     string
+		object   RecoveryObjectState
+		err      error
+		wantCode string
+		wantHead string
+	}{
+		{name: "closed merge request blocks", object: RecoveryObjectState{HeadSHA: "head-1", State: codehost.MergeRequestStateClosed}, wantCode: RecoverySafetyObjectNotOpen, wantHead: "head-1"},
+		{name: "merged merge request blocks", object: RecoveryObjectState{HeadSHA: "head-1", State: codehost.MergeRequestStateMerged}, wantCode: RecoverySafetyObjectNotOpen, wantHead: "head-1"},
+		{name: "missing state is unavailable", object: RecoveryObjectState{HeadSHA: "head-1"}, wantCode: RecoverySafetyObjectStateUnavailable, wantHead: "head-1"},
+		{name: "empty head is unavailable", object: RecoveryObjectState{State: codehost.MergeRequestStateOpen}, wantCode: RecoverySafetyHeadCheckUnavailable},
+		{name: "read failure is unavailable", err: errors.New("read merge request state: connection refused"), wantCode: RecoverySafetyObjectStateUnavailable},
+		{name: "open merge request passes", object: RecoveryObjectState{HeadSHA: "head-1", State: codehost.MergeRequestStateOpen}, wantHead: "head-1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := openRecoverySafetyDB(t)
+			ctx := context.Background()
+			now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+			repositoryID := "repo-object-state"
+			runID := "run-object-state"
+			task := &model.Task{
+				TaskID: "task-object-state", DedupeKey: "dedupe-object-state", Type: "review_mr", Role: "ReviewerWorker",
+				RepositoryID: &repositoryID, Status: model.TaskStatusBlocked, CurrentRunID: &runID, AttemptCount: 5,
+				ContextJSON: `{"merge_request":{"iid":21,"head_sha":"head-1"}}`,
+			}
+			if err := db.Create(task).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&model.Run{RunID: runID, TaskID: task.TaskID, WorkerRole: task.Role, Status: model.RunStatusBlocked}).Error; err != nil {
+				t.Fatal(err)
+			}
+			finished := now.Add(-time.Minute)
+			failureJSON := `{"version":1,"stage":"provider","source":"provider","code":"provider_rate_limited"}`
+			if err := db.Create(&model.AgentExecution{
+				RunID: runID, ExecutionID: runID, Status: model.AgentExecutionStatusFailed,
+				RequestHash: "request-hash", FinishedAt: &finished, FailureJSON: failureJSON,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			reader := &RecoverySafetyReader{
+				Store:            repository.NewTaskRecoveryRepository(db),
+				RepositoryLookup: fakeRecoveryRepositoryLookup{repo: &registeredrepo.RegisteredRepository{RepositoryID: repositoryID, Status: registeredrepo.StatusEnabled}},
+				ObjectReader:     fakeRecoveryObjectReader{object: test.object, err: test.err},
+				Now:              func() time.Time { return now },
+			}
+			facts, err := reader.Read(ctx, task.TaskID)
+			if err != nil {
+				t.Fatalf("read recovery facts: %v", err)
+			}
+			if !facts.ObjectStateCheckRequired {
+				t.Fatal("reviewer task did not require an object state check")
+			}
+			if facts.CurrentHeadSHA != test.wantHead {
+				t.Fatalf("current head = %q, want %q", facts.CurrentHeadSHA, test.wantHead)
+			}
+			assessment := EvaluateTaskRecovery(facts)
+			if test.wantCode == "" {
+				if !assessment.Eligible {
+					t.Fatalf("inspectable open object was rejected: %+v", assessment.SafetyBlockers)
+				}
+				return
+			}
+			if assessment.Eligible || !hasSafetyBlocker(assessment, test.wantCode) {
+				t.Fatalf("missing blocker %q: %+v", test.wantCode, assessment.SafetyBlockers)
 			}
 		})
 	}

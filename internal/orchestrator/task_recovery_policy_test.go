@@ -345,3 +345,38 @@ type fakeRecoveryFactsReader struct {
 func (f *fakeRecoveryFactsReader) Read(context.Context, string) (RecoveryFacts, error) {
 	return f.facts, f.err
 }
+
+func TestObjectStateGatesRecovery(t *testing.T) {
+	open := eligibleRecoveryFacts()
+	open.ObjectStateCheckRequired = true
+	open.CurrentObjectState = "open"
+	if assessment := EvaluateTaskRecovery(open); !assessment.Eligible {
+		t.Fatalf("open object was rejected: %+v", assessment.SafetyBlockers)
+	}
+	for _, state := range []string{"closed", "merged"} {
+		facts := eligibleRecoveryFacts()
+		facts.ObjectStateCheckRequired = true
+		facts.CurrentObjectState = state
+		assessment := EvaluateTaskRecovery(facts)
+		if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyObjectNotOpen) {
+			t.Fatalf("%s object was accepted: %+v", state, assessment.SafetyBlockers)
+		}
+	}
+	unreadable := eligibleRecoveryFacts()
+	unreadable.ObjectStateCheckRequired = true
+	unreadable.ObjectStateUnavailable = true
+	unreadable.ObjectStateError = "read issue state: connection refused"
+	assessment := EvaluateTaskRecovery(unreadable)
+	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyObjectStateUnavailable) {
+		t.Fatalf("unreadable object was accepted: %+v", assessment.SafetyBlockers)
+	}
+}
+
+func TestEmptyCurrentHeadBlocksRecovery(t *testing.T) {
+	facts := eligibleRecoveryFacts()
+	facts.CurrentHeadSHA = ""
+	assessment := EvaluateTaskRecovery(facts)
+	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyHeadCheckUnavailable) {
+		t.Fatalf("empty current head was accepted: %+v", assessment.SafetyBlockers)
+	}
+}

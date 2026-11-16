@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -42,6 +43,8 @@ const (
 	RecoverySafetyPrerequisiteCheckFailed = "prerequisite_check_unavailable"
 	RecoverySafetyHeadCheckUnavailable    = "head_check_unavailable"
 	RecoverySafetyHeadSuperseded          = "head_superseded"
+	RecoverySafetyObjectStateUnavailable  = "object_state_unavailable"
+	RecoverySafetyObjectNotOpen           = "object_not_open"
 	RecoverySafetyCheckUnavailable        = "safety_check_unavailable"
 )
 
@@ -77,12 +80,17 @@ type RecoveryFacts struct {
 	HeadCheckRequired      bool
 	HeadCheckUnavailable   bool
 	HeadCheckError         string
-	DispatchProvenNotSent  bool
-	SafetyBlockers         []SafetyBlocker
-	SnapshotVersion        string
-	SafetyDigest           string
-	CheckedAt              time.Time
-	FailureInfo            *failure.Info
+	// ObjectStateCheckRequired 表示任务目标（PR/MR 或 issue）必须有可确认的开放状态。
+	ObjectStateCheckRequired bool
+	CurrentObjectState       string
+	ObjectStateUnavailable   bool
+	ObjectStateError         string
+	DispatchProvenNotSent    bool
+	SafetyBlockers           []SafetyBlocker
+	SnapshotVersion          string
+	SafetyDigest             string
+	CheckedAt                time.Time
+	FailureInfo              *failure.Info
 }
 
 type RecoveryAssessment struct {
@@ -377,10 +385,20 @@ func evaluateObjectAndRepository(facts RecoveryFacts, add func(string, string, s
 
 func evaluateConflicts(facts RecoveryFacts, add func(string, string, string)) {
 	if facts.HeadCheckRequired {
-		if facts.HeadCheckUnavailable {
+		switch {
+		case facts.HeadCheckUnavailable:
 			add(RecoverySafetyHeadCheckUnavailable, "无法读取当前 PR/MR head，不能确认任务是否已过时", "请稍后重试")
-		} else if facts.ExpectedHeadSHA != "" && facts.CurrentHeadSHA != "" && !strings.EqualFold(facts.ExpectedHeadSHA, facts.CurrentHeadSHA) {
+		case strings.TrimSpace(facts.CurrentHeadSHA) == "":
+			add(RecoverySafetyHeadCheckUnavailable, "当前 PR/MR head 为空，不能确认任务是否已过时", "请稍后重试")
+		case facts.ExpectedHeadSHA != "" && !strings.EqualFold(facts.ExpectedHeadSHA, facts.CurrentHeadSHA):
 			add(RecoverySafetyHeadSuperseded, "任务绑定的 head 已被新提交替代", "请创建面向新 head 的新任务")
+		}
+	}
+	if facts.ObjectStateCheckRequired {
+		if facts.ObjectStateUnavailable {
+			add(RecoverySafetyObjectStateUnavailable, firstNonEmpty(facts.ObjectStateError, "无法读取任务目标的开放状态"), "请稍后重试")
+		} else if facts.CurrentObjectState != string(codehost.MergeRequestStateOpen) {
+			add(RecoverySafetyObjectNotOpen, "任务目标已关闭或已合并，不能恢复", "请新建面向当前目标的任务")
 		}
 	}
 }

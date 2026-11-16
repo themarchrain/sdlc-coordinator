@@ -60,6 +60,7 @@ type noteResponse struct {
 type pullResponse struct {
 	Number         int           `json:"number"`
 	HTMLURL        string        `json:"html_url"`
+	State          string        `json:"state"`
 	Merged         bool          `json:"merged"`
 	MergeCommitSHA string        `json:"merge_commit_sha"`
 	Head           pullBranchRef `json:"head"`
@@ -163,6 +164,7 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 		SourceBranch:   strings.TrimSpace(pr.Head.Ref),
 		TargetBranch:   strings.TrimSpace(pr.Base.Ref),
 		HeadSHA:        strings.TrimSpace(pr.Head.SHA),
+		State:          codehost.NormalizeMergeRequestState(pr.State, pr.Merged),
 		Merged:         pr.Merged,
 		MergeCommitSHA: strings.TrimSpace(pr.MergeCommitSHA),
 	}, nil

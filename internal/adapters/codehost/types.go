@@ -3,6 +3,7 @@ package codehost
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 type Backend interface {
@@ -130,12 +131,42 @@ type MergeRequest struct {
 	SourceBranch string `json:"source_branch,omitempty"`
 	TargetBranch string `json:"target_branch,omitempty"`
 	HeadSHA      string `json:"sha,omitempty"`
+	// State 是归一化后的开放状态;空值表示该平台客户端没有报告状态,
+	// 调用方必须按不可确认处理,不能当作 open。
+	State MergeRequestState `json:"state,omitempty"`
 	// Merged/MergeCommitSHA 透出平台侧真实合并状态,供自动合并门禁在拒绝
 	// 或歧义之后回读真相(合并已生效则按 merged 补审计,不误记 fallback)。
 	// MergeRequestMerger 的实现方必须同步透出这两项,否则拒绝回读与
 	// 歧义恢复两条路径会静默失效。
 	Merged         bool   `json:"merged,omitempty"`
 	MergeCommitSHA string `json:"merge_commit_sha,omitempty"`
+}
+
+type MergeRequestState string
+
+const (
+	MergeRequestStateOpen    MergeRequestState = "open"
+	MergeRequestStateClosed  MergeRequestState = "closed"
+	MergeRequestStateMerged  MergeRequestState = "merged"
+	MergeRequestStateUnknown MergeRequestState = "unknown"
+)
+
+// NormalizeMergeRequestState maps the platform state words onto one shared
+// vocabulary. An unrecognised or missing word stays unknown rather than open.
+func NormalizeMergeRequestState(raw string, merged bool) MergeRequestState {
+	if merged {
+		return MergeRequestStateMerged
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "open", "opened", "locked":
+		return MergeRequestStateOpen
+	case "closed":
+		return MergeRequestStateClosed
+	case "merged":
+		return MergeRequestStateMerged
+	default:
+		return MergeRequestStateUnknown
+	}
 }
 
 type Note struct {

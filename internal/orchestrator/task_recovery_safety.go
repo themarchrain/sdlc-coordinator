@@ -7,13 +7,49 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/store/repository"
 )
 
-type RecoveryHeadReader interface {
-	ReadRecoveryHead(ctx context.Context, task *model.Task) (string, error)
+type RecoveryObjectKind string
+
+const (
+	RecoveryObjectNone         RecoveryObjectKind = ""
+	RecoveryObjectMergeRequest RecoveryObjectKind = "merge_request"
+	RecoveryObjectIssue        RecoveryObjectKind = "issue"
+)
+
+// RecoveryObjectKind reports which live object a task must still be able to act
+// on. A missing or unknown object yields RecoveryObjectNone so the existing task
+// object validation stays the gate for it.
+func TaskRecoveryObjectKind(task *model.Task) RecoveryObjectKind {
+	if task == nil {
+		return RecoveryObjectNone
+	}
+	switch strings.TrimSpace(task.Role) {
+	case "ReviewerWorker", "TesterWorker":
+		return RecoveryObjectMergeRequest
+	case "DeveloperWorker":
+		if strings.TrimSpace(task.Type) == "rework_merge_request" {
+			return RecoveryObjectMergeRequest
+		}
+		if _, ok := RecoveryIssueIID(task); ok {
+			return RecoveryObjectIssue
+		}
+	}
+	return RecoveryObjectNone
+}
+
+// RecoveryObjectState is the live state of the task's target object.
+type RecoveryObjectState struct {
+	HeadSHA string
+	State   codehost.MergeRequestState
+}
+
+type RecoveryObjectReader interface {
+	ReadRecoveryObject(ctx context.Context, task *model.Task) (RecoveryObjectState, error)
 }
 
 type RecoveryPrerequisiteChecker interface {
@@ -23,7 +59,7 @@ type RecoveryPrerequisiteChecker interface {
 type RecoverySafetyReader struct {
 	Store               *repository.TaskRecoveryRepository
 	RepositoryLookup    RepositoryLookup
-	HeadReader          RecoveryHeadReader
+	ObjectReader        RecoveryObjectReader
 	PrerequisiteChecker RecoveryPrerequisiteChecker
 	Now                 func() time.Time
 }
@@ -96,24 +132,71 @@ func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (Recover
 		}
 		role := strings.TrimSpace(snapshot.Task.Role)
 		facts.HeadCheckRequired = (role == "ReviewerWorker" || role == "TesterWorker") && facts.ExpectedHeadSHA != ""
-		if facts.HeadCheckRequired {
-			if r.HeadReader == nil {
-				facts.HeadCheckUnavailable = true
-				facts.HeadCheckError = "PR/MR head reader is unavailable"
-			} else {
-				headCtx, headCancel := context.WithTimeout(ctx, 5*time.Second)
-				head, headErr := r.HeadReader.ReadRecoveryHead(headCtx, snapshot.Task)
-				headCancel()
-				if headErr != nil {
-					facts.HeadCheckUnavailable = true
-					facts.HeadCheckError = headErr.Error()
-				} else {
-					facts.CurrentHeadSHA = head
-				}
-			}
-		}
+		facts.ObjectStateCheckRequired = TaskRecoveryObjectKind(snapshot.Task) != RecoveryObjectNone
+		r.readObjectState(ctx, snapshot.Task, &facts)
 	}
 	return facts, nil
+}
+
+// readObjectState fills the live head and object state used by the conflict
+// gates. Any failure keeps the corresponding gate unconfirmed.
+func (r *RecoverySafetyReader) readObjectState(ctx context.Context, task *model.Task, facts *RecoveryFacts) {
+	if !facts.HeadCheckRequired && !facts.ObjectStateCheckRequired {
+		return
+	}
+	unavailable := func(err error) {
+		if facts.HeadCheckRequired {
+			facts.HeadCheckUnavailable = true
+			facts.HeadCheckError = err.Error()
+		}
+		if facts.ObjectStateCheckRequired {
+			facts.ObjectStateUnavailable = true
+			facts.ObjectStateError = err.Error()
+		}
+	}
+	if r.ObjectReader == nil {
+		unavailable(fmt.Errorf("task object reader is unavailable"))
+		return
+	}
+	objectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	object, err := r.ObjectReader.ReadRecoveryObject(objectCtx, task)
+	if err != nil {
+		unavailable(err)
+		return
+	}
+	facts.CurrentHeadSHA = strings.TrimSpace(object.HeadSHA)
+	facts.CurrentObjectState = string(object.State)
+	if facts.ObjectStateCheckRequired && !confirmableObjectState(facts.CurrentObjectState) {
+		facts.ObjectStateUnavailable = true
+		facts.ObjectStateError = "任务目标状态缺失或无法识别"
+	}
+}
+
+// confirmableObjectState reports whether the platform actually answered: a
+// missing or unrecognised word must not be read as open.
+func confirmableObjectState(state string) bool {
+	switch codehost.MergeRequestState(strings.ToLower(strings.TrimSpace(state))) {
+	case codehost.MergeRequestStateOpen, codehost.MergeRequestStateClosed, codehost.MergeRequestStateMerged:
+		return true
+	}
+	return false
+}
+
+func RecoveryIssueIID(task *model.Task) (int, bool) {
+	if task == nil || strings.TrimSpace(task.ContextJSON) == "" {
+		return 0, false
+	}
+	var context map[string]any
+	if json.Unmarshal([]byte(task.ContextJSON), &context) != nil {
+		return 0, false
+	}
+	issue, _ := context["issue"].(map[string]any)
+	iid, ok := numericValue(issue["iid"])
+	if !ok || iid <= 0 {
+		return 0, false
+	}
+	return int(iid), true
 }
 
 func recoveryFailureInfo(snapshot *repository.RecoverySnapshot) *failure.Info {
