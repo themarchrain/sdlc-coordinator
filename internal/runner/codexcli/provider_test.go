@@ -675,3 +675,28 @@ func TestProviderCommandArgumentsAreDeterministic(t *testing.T) {
 		t.Fatalf("header mapping is not deterministic: %#v != %#v", first, second)
 	}
 }
+
+func TestProviderReadsErrorTypeWithoutCode(t *testing.T) {
+	root := t.TempDir()
+	writeCodexTestFile(t, root, "prompt.md", "review")
+	writeCodexTestFile(t, root, "schema.json", `{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
+	command := &fakeCommandRunner{
+		lines: [][]byte{[]byte(`{"type":"turn.failed","error":{"type":"invalid_request_error"}}`)},
+		err:   errors.New("exit status 1"),
+	}
+	provider := newProvider("codex", command)
+	_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-error-type", TaskID: "task-error-type", Role: "DeveloperWorker", WorkspacePath: root,
+		PromptFile: "prompt.md", SchemaFile: "schema.json", Provider: runner.ProviderConfig{Name: "codex-cli"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected provider failure")
+	}
+	info := runner.FailureInfo(err)
+	if info == nil || info.Code != failure.CodeInvalidRequest || info.Source != failure.SourceProvider {
+		t.Fatalf("error type was not read: %#v", info)
+	}
+	if got := failure.Classify(info); got != failure.ClassificationFatal {
+		t.Fatalf("Classify() = %q, want fatal", got)
+	}
+}

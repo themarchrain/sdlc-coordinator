@@ -454,27 +454,13 @@ func (p *eventParser) deliveryMarker() json.RawMessage {
 }
 
 func (p *eventParser) failurePayload(event map[string]any) map[string]any {
-	errorObject, _ := event["error"].(map[string]any)
-	code := stringValue(errorObject, "code")
-	if code == "" {
-		code = stringValue(event, "error_code")
-	}
-	message := stringValue(errorObject, "message")
-	if message == "" {
-		message = stringValue(event, "message")
-	}
-	if embeddedCode, embeddedMessage := embeddedProviderError(message); embeddedMessage != "" {
-		if code == "" {
-			code = embeddedCode
-		}
-		message = embeddedMessage
-	}
+	extracted := runner.ExtractProviderError(event)
 	payload := map[string]any{}
-	if code != "" {
-		payload["error_code"] = code
+	if extracted.Code != "" {
+		payload["error_code"] = extracted.Code
 	}
-	if message != "" {
-		payload["message"] = redactProviderError(message, p.provider, p.channel)
+	if extracted.Message != "" {
+		payload["message"] = redactProviderError(extracted.Message, p.provider, p.channel)
 	}
 	return payload
 }

@@ -434,3 +434,27 @@ func environmentEntries(values []string, name string) []string {
 	}
 	return entries
 }
+
+func TestProviderReadsErrorEnvelopeEmbeddedInMessage(t *testing.T) {
+	root := t.TempDir()
+	writeClaudeTestFile(t, root, "prompt.md", "review")
+	writeClaudeTestFile(t, root, "schema.json", `{"type":"object"}`)
+	command := &fakeCommandRunner{lines: [][]byte{
+		[]byte(`{"type":"result","subtype":"error_during_execution","is_error":true,"error":{"message":"{\"error\":{\"code\":\"invalid_request_error\",\"message\":\"bad schema\"}}"}}`),
+	}}
+	provider := newProvider("claude", command)
+	_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-envelope", TaskID: "task-envelope", Role: "ReviewerWorker", WorkspacePath: root,
+		PromptFile: "prompt.md", SchemaFile: "schema.json", Provider: runner.ProviderConfig{Name: "claude-cli"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected provider failure")
+	}
+	info := runner.FailureInfo(err)
+	if info == nil || info.Code != failure.CodeInvalidRequest || info.Source != failure.SourceProvider || info.Stage != failure.StageProvider {
+		t.Fatalf("embedded envelope was not read: %#v", info)
+	}
+	if got := failure.Classify(info); got != failure.ClassificationFatal {
+		t.Fatalf("Classify() = %q, want fatal", got)
+	}
+}

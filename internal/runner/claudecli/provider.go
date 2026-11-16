@@ -292,21 +292,12 @@ func setupFailure(code string, cause error) error {
 }
 
 func providerResultFailure(event map[string]any, subtype, message string) error {
-	rawCode := ""
-	if errorObject, ok := event["error"].(map[string]any); ok {
-		rawCode = stringValue(errorObject, "code")
-		if rawCode == "" {
-			rawCode = stringValue(errorObject, "type")
-		}
-	}
-	if rawCode == "" {
-		rawCode = stringValue(event, "error_code")
-	}
+	rawCode := runner.ExtractProviderError(event).Code
 	info, known := runner.ProviderCodeInfo(rawCode)
 	if !known {
 		info = failure.Info{
 			Version: failure.VersionV1,
-			Stage:   failure.StageResult,
+			Stage:   failure.StageProvider,
 			Source:  failure.SourceProvider,
 			Code:    strings.TrimSpace(rawCode),
 		}
