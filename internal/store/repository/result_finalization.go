@@ -67,7 +67,7 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 			}
 			if result.RowsAffected != 1 {
 				// 没有待结算的提交行是正常路径（结果未经提交表直达）；但存在一行
-				// 停在非成功状态时不能把任务收口成成功，否者它永久卡住。
+				// 停在非成功状态时不能把任务收口成成功，否则它永久卡住。
 				var existing model.ResultSubmission
 				lookup := tx.Where("task_id = ? AND run_id = ?", task.TaskID, run.RunID).First(&existing).Error
 				if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
