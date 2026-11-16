@@ -78,6 +78,9 @@ type TaskRepository interface {
 	// RestoreWaitingParentGuarded 把仍在 waiting_upstream 的父任务原子恢复
 	// 为 pending：双实例同时解除同一父任务的依赖链时恰好一个赢家。
 	RestoreWaitingParentGuarded(ctx context.Context, taskID string) (bool, error)
+	// RebindGuarded 在同一锁内复核调用方快照后再改绑定列，旧页面的
+	// rebind 不能覆盖更新的恢复代次或当前 Run。
+	RebindGuarded(ctx context.Context, taskID, repositoryID string, expect repository.RebindExpectation) (*model.Task, error)
 }
 
 type RunRepository interface {
@@ -666,17 +669,11 @@ func (o *Orchestrator) RebindTask(ctx context.Context, taskID, repositoryID stri
 	case model.TaskStatusSucceeded, model.TaskStatusRunning, model.TaskStatusClaimed, model.TaskStatusFinalizing, model.TaskStatusWaitingMerge:
 		return nil, fmt.Errorf("task %s cannot be rebound in status %s", taskID, task.Status)
 	}
-	if task.Status == model.TaskStatusBlocked || task.Status == model.TaskStatusHumanRequired {
-		task.Status = model.TaskStatusPending
-	}
-	task.RepositoryID = &repositoryID
-	task.LastError = ""
-	task.CurrentRunID = nil
-	task.LeaseUntil = nil
-	if err := o.tasks.Update(ctx, task); err != nil {
+	rebound, err := o.tasks.RebindGuarded(ctx, taskID, repositoryID, repository.RebindExpectationFromTask(task))
+	if err != nil {
 		return nil, fmt.Errorf("rebind task %s: %w", taskID, err)
 	}
-	return task, nil
+	return rebound, nil
 }
 
 func (o *Orchestrator) parkUnboundTask(ctx context.Context, taskID string) error {
