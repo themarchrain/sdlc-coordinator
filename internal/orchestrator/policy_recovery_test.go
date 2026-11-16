@@ -124,35 +124,36 @@ func TestLeaseRecoveryUsesCycleBudget(t *testing.T) {
 	taskRepo, runRepo := newRecoveryRepositories(t)
 	orch := New(taskRepo, runRepo, WithClock(func() time.Time { return now }), WithPolicy(Policy{LeaseDuration: time.Minute, MaxAttempts: 3}))
 
-	withBudget := &model.Task{
-		TaskID: "task-recovery-budget-one", DedupeKey: "dedupe-recovery-budget-one", Type: "bugfix", Role: "DeveloperWorker",
-		Status: model.TaskStatusRunning, LeaseUntil: &expired, AttemptCount: 7,
-		RecoveryGeneration: 1, RetryCycleBaseCount: 5, RetryCycleMaxAttempts: 3,
+	// Lease recovery consumes one attempt of the cycle itself: two tries left
+	// keeps the task retryable, one try left makes the recovery the last one.
+	cases := []struct {
+		taskID       string
+		attempts     int
+		wantStatus   model.TaskStatus
+		wantAttempts int
+	}{
+		{taskID: "task-recovery-budget-two", attempts: 6, wantStatus: model.TaskStatusRetryPending, wantAttempts: 7},
+		{taskID: "task-recovery-budget-one", attempts: 7, wantStatus: model.TaskStatusHumanRequired, wantAttempts: 8},
+		{taskID: "task-recovery-budget-zero", attempts: 8, wantStatus: model.TaskStatusHumanRequired, wantAttempts: 9},
 	}
-	exhausted := &model.Task{
-		TaskID: "task-recovery-budget-zero", DedupeKey: "dedupe-recovery-budget-zero", Type: "bugfix", Role: "DeveloperWorker",
-		Status: model.TaskStatusRunning, LeaseUntil: &expired, AttemptCount: 8,
-		RecoveryGeneration: 1, RetryCycleBaseCount: 5, RetryCycleMaxAttempts: 3,
-	}
-	for _, task := range []*model.Task{withBudget, exhausted} {
+	for _, test := range cases {
+		task := &model.Task{
+			TaskID: test.taskID, DedupeKey: test.taskID, Type: "bugfix", Role: "DeveloperWorker",
+			Status: model.TaskStatusRunning, LeaseUntil: &expired, AttemptCount: test.attempts,
+			RecoveryGeneration: 1, RetryCycleBaseCount: 5, RetryCycleMaxAttempts: 3,
+		}
 		if err := taskRepo.Create(ctx, task); err != nil {
 			t.Fatal(err)
 		}
 	}
-
-	recovered, err := orch.RecoverTask(ctx, withBudget.TaskID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recovered.Status != model.TaskStatusRetryPending || recovered.AttemptCount != 8 {
-		t.Fatalf("unexpected budget recovery: %+v", recovered)
-	}
-	human, err := orch.RecoverTask(ctx, exhausted.TaskID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if human.Status != model.TaskStatusHumanRequired || human.AttemptCount != 9 {
-		t.Fatalf("unexpected exhausted recovery: %+v", human)
+	for _, test := range cases {
+		recovered, err := orch.RecoverTask(ctx, test.taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if recovered.Status != test.wantStatus || recovered.AttemptCount != test.wantAttempts {
+			t.Fatalf("%s: status=%s attempts=%d, want %s/%d", test.taskID, recovered.Status, recovered.AttemptCount, test.wantStatus, test.wantAttempts)
+		}
 	}
 }
 
@@ -198,4 +199,26 @@ func failedExecutionWithInfo(t *testing.T, runID, code, message string) *model.A
 		t.Fatal(err)
 	}
 	return &model.AgentExecution{RunID: runID, ExecutionID: runID, Status: model.AgentExecutionStatusFailed, ErrorCode: "provider_failed", ErrorMessage: message, FailureJSON: string(raw)}
+}
+
+func TestLeaseRecoveryStopsWhenItsOwnAttemptExhaustsTheCycle(t *testing.T) {
+	policy := Policy{MaxAttempts: 3}
+	now := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	lease := now.Add(-time.Minute)
+	recovered := func(attempts int) *model.Task {
+		return &model.Task{
+			Status: model.TaskStatusRunning, LeaseUntil: &lease, AttemptCount: attempts,
+			RecoveryGeneration: 1, RetryCycleBaseCount: 5, RetryCycleMaxAttempts: 3,
+		}
+	}
+	if next, ok := policy.RecoveryStatus(recovered(7), now); !ok || next != model.TaskStatusHumanRequired {
+		t.Fatalf("recovery that exhausts the cycle chose %q (ok=%v), want human_required", next, ok)
+	}
+	if next, ok := policy.RecoveryStatus(recovered(6), now); !ok || next != model.TaskStatusRetryPending {
+		t.Fatalf("recovery with budget left chose %q (ok=%v), want retry_pending", next, ok)
+	}
+	legacy := &model.Task{Status: model.TaskStatusRunning, LeaseUntil: &lease, AttemptCount: 1}
+	if next, ok := policy.RecoveryStatus(legacy, now); !ok || next != model.TaskStatusRetryPending {
+		t.Fatalf("legacy generation changed its lease recovery: %q (ok=%v)", next, ok)
+	}
 }

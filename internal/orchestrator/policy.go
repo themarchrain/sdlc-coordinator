@@ -82,13 +82,27 @@ func (p Policy) RecoveryStatus(task *model.Task, now time.Time) (model.TaskStatu
 
 	switch task.Status {
 	case model.TaskStatusClaimed, model.TaskStatusRunning:
-		if p.AttemptsRemaining(task) > 0 {
+		if p.attemptsRemainingAfterLeaseRecovery(task) > 0 {
 			return model.TaskStatusRetryPending, true
 		}
 		return model.TaskStatusHumanRequired, true
 	default:
 		return "", false
 	}
+}
+
+// attemptsRemainingAfterLeaseRecovery accounts for the attempt the lease recovery
+// itself consumes, so the next status is chosen from the budget the task will
+// actually have. Unrecovered generations keep the previous counting.
+func (p Policy) attemptsRemainingAfterLeaseRecovery(task *model.Task) int {
+	remaining := p.AttemptsRemaining(task)
+	if task == nil || task.RecoveryGeneration == 0 || task.RetryCycleMaxAttempts <= 0 {
+		return remaining
+	}
+	if remaining > 0 {
+		remaining--
+	}
+	return remaining
 }
 
 func (p Policy) Apply(task *model.Task, from, to model.TaskStatus, now time.Time) {

@@ -49,6 +49,13 @@ func (r *TaskRepository) StartRunAtomic(ctx context.Context, taskID string, run 
 		if task.Status != model.TaskStatusPending && task.Status != model.TaskStatusRetryPending {
 			return ErrTaskNotClaimable
 		}
+		// 恢复轮开始新 Run 也要消耗本轮额度：额度为 0 时不再启动，避免
+		// 已耗次数超过本轮上限。代次 0 沿用旧策略。
+		if task.RecoveryGeneration > 0 && task.RetryCycleMaxAttempts > 0 {
+			if task.AttemptCount-task.RetryCycleBaseCount >= task.RetryCycleMaxAttempts {
+				return ErrTaskNotClaimable
+			}
+		}
 		created.TaskID = taskID
 		created.Status = model.RunStatusRunning
 		created.RecoveryGeneration = task.RecoveryGeneration
