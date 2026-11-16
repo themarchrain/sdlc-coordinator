@@ -160,6 +160,13 @@ func TestResultSubmissionUpdateKeepsClaimProgress(t *testing.T) {
 	if err := repo.Update(ctx, stale); err != nil {
 		t.Fatalf("update submission: %v", err)
 	}
+	// 调用方拿回的对象必须已经是写后的状态，否则响应会把进度报成旧值。
+	if stale.Status != model.ResultSubmissionStatusUnknown || stale.ErrorMessage != "writeback outcome unknown" || stale.LeaseUntil != nil {
+		t.Fatalf("update returned the pre-write snapshot: %+v", stale)
+	}
+	if stale.AttemptCount != 2 {
+		t.Fatalf("update returned a stale claim count: %d", stale.AttemptCount)
+	}
 	current, err := repo.GetBySubmissionID(ctx, submission.SubmissionID)
 	if err != nil {
 		t.Fatal(err)

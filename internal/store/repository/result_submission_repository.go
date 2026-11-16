@@ -114,6 +114,11 @@ func (r *ResultSubmissionRepository) Update(ctx context.Context, submission *mod
 		if err := tx.Model(current).Updates(updates).Error; err != nil {
 			return err
 		}
+		// 调用方拿回的对象要反映写后的状态，不依赖 ORM 把 map 回填进结构体。
+		current.Status = submission.Status
+		current.ErrorMessage = submission.ErrorMessage
+		current.LeaseUntil = submission.LeaseUntil
+		current.CompletedAt = submission.CompletedAt
 		*submission = *current
 		return nil
 	}); err != nil {
