@@ -16,10 +16,8 @@ import (
 func TestRecoveryAuthMatrix(t *testing.T) {
 	world := newFullyWiredWorld(t)
 	tenantID := world.seedTenant(t, "recovery-acme")
-	otherTenantID := world.seedTenant(t, "recovery-other")
 	adminToken := world.seedUserWithRole(t, tenantID, "recovery-admin", controlplane.RoleTenantAdmin)
 	memberToken := world.seedUserWithRole(t, tenantID, "recovery-member", controlplane.RoleMember)
-	otherToken := world.seedUserWithRole(t, otherTenantID, "recovery-other-member", controlplane.RoleMember)
 
 	tenantStore := world.defaultTenantStore(t)
 	repoStore := registeredrepo.NewStore(tenantStore.DB)
@@ -61,7 +59,6 @@ func TestRecoveryAuthMatrix(t *testing.T) {
 	if response := world.portalDo(t, http.MethodGet, path, "", nil); response.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated GET recovery = %d body=%s", response.Code, response.Body.String())
 	}
-	_ = otherToken
 
 	blockRevision := ""
 	if response := world.portalDo(t, http.MethodGet, path, memberToken, nil); response.Code == http.StatusOK {

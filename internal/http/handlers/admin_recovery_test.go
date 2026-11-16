@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
-	"sdlc-coordinator/internal/store/repository"
 
 	"github.com/gin-gonic/gin"
 )
@@ -75,22 +75,25 @@ func TestRecoveryHandlerGetAndPost(t *testing.T) {
 
 func TestRecoveryHandlerValidatesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	operations := &fakeAdminRecovery{err: repository.ErrRecoveryRiskRequired}
+	operations := &fakeAdminRecovery{err: errors.New("an invalid body must not reach recovery")}
 	router := gin.New()
 	router.Use(func(c *gin.Context) { c.Set(cpActorKey, &controlplane.Actor{ID: 17}) })
 	NewAdminOperationHandler(operations, nil, orchestrator.TickRequest{}).RegisterRoutes(router.Group("/api/admin"))
 
 	for name, body := range map[string]string{
-		"missing ack": `{"request_id":"req-1","block_revision":"revision-1","reason":"retry"}`,
-		"too long":    `{"request_id":"req-1","block_revision":"revision-1","reason":"` + strings.Repeat("a", 1001) + `"}`,
-		"oversized":   `{"request_id":"req-1","block_revision":"revision-1","reason":"` + strings.Repeat("a", 9000) + `"}`,
-		"unknown":     `{"request_id":"req-1","block_revision":"revision-1","force":true}`,
+		"too long":  `{"request_id":"req-1","block_revision":"revision-1","reason":"` + strings.Repeat("a", 1001) + `"}`,
+		"oversized": `{"request_id":"req-1","block_revision":"revision-1","reason":"` + strings.Repeat("a", 9000) + `"}`,
+		"unknown":   `{"request_id":"req-1","block_revision":"revision-1","force":true}`,
 	} {
 		t.Run(name, func(t *testing.T) {
+			operations.request = orchestrator.RecoverTaskRequest{}
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/admin/tasks/task-1/recovery", strings.NewReader(body)))
 			if recorder.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+			}
+			if operations.request.RequestID != "" {
+				t.Fatalf("an invalid body reached recovery: %+v", operations.request)
 			}
 		})
 	}
