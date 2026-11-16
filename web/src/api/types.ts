@@ -110,6 +110,7 @@ export interface RecoveryAssessment {
   reason_summary: string
   remediation?: string
   source_run_id?: string
+  checked_at: string
   block_revision: string
   failure_stage?: string
   failure_code?: string

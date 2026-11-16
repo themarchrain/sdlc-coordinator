@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/controlplane"
 	"sdlc-coordinator/internal/model"
@@ -47,6 +48,8 @@ func TestRecoveryHandlerGetAndPost(t *testing.T) {
 		assessment: orchestrator.RecoveryAssessment{
 			Classification: "transient", Eligible: true, ReasonCode: "eligible", ReasonSummary: "可恢复",
 			BlockRevision: "revision-1", SafetyBlockers: []orchestrator.SafetyBlocker{},
+			CheckedAt:    time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC),
+			FailureStage: "provider", SourceRunID: "run-1",
 		},
 		response: &orchestrator.RecoverTaskResponse{Recovery: &model.TaskRecovery{RecoveryID: "recovery-1"}, Task: &model.Task{TaskID: "task-1", Status: model.TaskStatusPending}},
 	}
@@ -58,6 +61,9 @@ func TestRecoveryHandlerGetAndPost(t *testing.T) {
 	router.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/admin/tasks/task-1/recovery", nil))
 	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"eligible":true`) || strings.Contains(get.Body.String(), "revision-1") == false {
 		t.Fatalf("GET recovery = %d %s", get.Code, get.Body.String())
+	}
+	if !strings.Contains(get.Body.String(), `"checked_at":"2026-11-16T10:00:00Z"`) || !strings.Contains(get.Body.String(), `"failure_stage":"provider"`) || !strings.Contains(get.Body.String(), `"source_run_id":"run-1"`) {
+		t.Fatalf("GET recovery omitted the assessment freshness fields: %s", get.Body.String())
 	}
 
 	post := httptest.NewRecorder()

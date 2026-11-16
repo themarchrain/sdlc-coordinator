@@ -18,7 +18,7 @@ const persona: WorkspaceSessionValue = { session, role: 'member', superAdmin: fa
 const transient: RecoveryAssessment = {
   task_id: 'task-1', classification: 'transient', eligible: true, requires_risk_confirmation: false,
   reason_code: 'eligible', reason_summary: '外部故障已恢复', block_revision: 'revision-1',
-  failure_summary: '上游返回 503', safety_blockers: [],
+  failure_summary: '上游返回 503', safety_blockers: [], checked_at: '2026-11-16T10:00:00Z',
 }
 
 function renderControl(assessment: RecoveryAssessment, taskID = 'task-1', status = 'blocked', value: WorkspaceSessionValue = persona) {
@@ -66,6 +66,19 @@ describe('TaskRecoveryControl', () => {
     expect(screen.queryByRole('button', { name: '恢复任务' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '风险恢复' })).not.toBeInTheDocument()
     expect(screen.getByText(/前次执行未确认退出/)).toBeInTheDocument()
+  })
+
+  it('shows the failure stage, source run and assessment time', async () => {
+    const detailed = { ...transient, failure_stage: 'provider', source_run_id: 'run-9' }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(detailed)
+    renderControl(detailed)
+
+    expect(await screen.findByText('失败阶段')).toBeInTheDocument()
+    expect(screen.getByText('provider')).toBeInTheDocument()
+    expect(screen.getByText('来源执行')).toBeInTheDocument()
+    expect(screen.getByText('run-9')).toBeInTheDocument()
+    expect(screen.getByText('资格检查时间')).toBeInTheDocument()
+    expect(screen.getByText(new Date(detailed.checked_at).toLocaleString('zh-CN', { hour12: false }))).toBeInTheDocument()
   })
 
   it('renders an empty blocker list when the API omits the array', async () => {

@@ -22,6 +22,12 @@ const classificationLabels: Record<string, string> = {
 
 let requestSequence = 0
 
+function formatCheckedAt(value?: string) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString('zh-CN', { hour12: false })
+}
+
 function newRequestID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   requestSequence += 1
@@ -154,6 +160,9 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
     <Descriptions size="small" bordered column={1} items={[
       { key: 'classification', label: '恢复判断', children: classificationLabels[assessment.classification] ?? assessment.classification },
       { key: 'reason', label: '判断说明', children: assessment.reason_summary || '—' },
+      { key: 'stage', label: '失败阶段', children: assessment.failure_stage || '—' },
+      { key: 'source_run', label: '来源执行', children: assessment.source_run_id || '—' },
+      { key: 'checked_at', label: '资格检查时间', children: formatCheckedAt(assessment.checked_at) },
       { key: 'failure', label: '原始错误', children: <span className="error-copy">{assessment.failure_summary || '—'}</span> },
     ]} />
     {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>} /> : null}

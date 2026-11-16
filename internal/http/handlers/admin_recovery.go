@@ -46,6 +46,7 @@ type recoveryAssessmentResponse struct {
 	ReasonSummary            string                       `json:"reason_summary"`
 	Remediation              string                       `json:"remediation,omitempty"`
 	SourceRunID              string                       `json:"source_run_id,omitempty"`
+	CheckedAt                string                       `json:"checked_at"`
 	BlockRevision            string                       `json:"block_revision"`
 	FailureStage             string                       `json:"failure_stage,omitempty"`
 	FailureCode              string                       `json:"failure_code,omitempty"`
@@ -151,6 +152,7 @@ func (handler *AdminOperationHandler) GetTaskRecovery(c *gin.Context) {
 		Eligible: assessment.Eligible, RequiresRiskConfirmation: assessment.RequiresRiskConfirmation,
 		ReasonCode: assessment.ReasonCode, ReasonSummary: assessment.ReasonSummary, Remediation: assessment.Remediation,
 		SourceRunID: assessment.SourceRunID, BlockRevision: assessment.BlockRevision,
+		CheckedAt:    assessment.CheckedAt.UTC().Format(time.RFC3339),
 		FailureStage: assessment.FailureStage, FailureCode: assessment.FailureCode, FailureSummary: assessment.FailureSummary,
 		SafetyBlockers: blockers,
 	})
