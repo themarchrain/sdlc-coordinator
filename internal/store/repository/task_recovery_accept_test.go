@@ -225,28 +225,51 @@ func TestRecoveryConcurrentRequestsOneWinner(t *testing.T) {
 	}
 }
 
-func TestLegacyResumeDoesNotBypassRecoveryGeneration(t *testing.T) {
+func TestRecoveredTaskResumesHumanRequired(t *testing.T) {
 	db := openRecoveryAcceptDB(t)
-	human := &model.Task{
+	heldRunID := "run-recover-resume-human"
+	task := &model.Task{
 		TaskID: "task-recover-resume-human", DedupeKey: "dedupe-resume-human", Type: "bugfix", Role: "DeveloperWorker",
-		Status: model.TaskStatusHumanRequired, RecoveryGeneration: 2,
+		Status: model.TaskStatusHumanRequired, RecoveryGeneration: 2, AttemptCount: 7, CurrentRunID: &heldRunID,
 	}
-	rework := &model.Task{
-		TaskID: "task-recover-resume-rework", DedupeKey: "dedupe-resume-rework", Type: "rework_merge_request", Role: "DeveloperWorker",
-		Status: model.TaskStatusBlocked, RecoveryGeneration: 3,
-	}
-	if err := db.Create(human).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(rework).Error; err != nil {
+	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
 	repo := NewTaskRepository(db)
-	if err := repo.ResumeHumanRequired(context.Background(), human.DedupeKey, `{}`); !errors.Is(err, ErrTaskNotClaimable) {
-		t.Fatalf("legacy human resume bypassed generation: %v", err)
+	if err := repo.ResumeHumanRequired(context.Background(), task.DedupeKey, `{}`); err != nil {
+		t.Fatalf("resume human required after recovery: %v", err)
 	}
-	if err := repo.ResumeRework(context.Background(), rework.DedupeKey, `{}`); !errors.Is(err, ErrTaskNotClaimable) {
-		t.Fatalf("legacy rework resume bypassed generation: %v", err)
+	assertResumedAfterRecovery(t, repo, task.TaskID, 2, 7)
+}
+
+func TestRecoveredTaskResumesRework(t *testing.T) {
+	db := openRecoveryAcceptDB(t)
+	heldRunID := "run-recover-resume-rework"
+	task := &model.Task{
+		TaskID: "task-recover-resume-rework", DedupeKey: "dedupe-resume-rework", Type: "rework_merge_request", Role: "DeveloperWorker",
+		Status: model.TaskStatusBlocked, RecoveryGeneration: 3, AttemptCount: 4, CurrentRunID: &heldRunID,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewTaskRepository(db)
+	if err := repo.ResumeRework(context.Background(), task.DedupeKey, `{}`); err != nil {
+		t.Fatalf("resume rework after recovery: %v", err)
+	}
+	assertResumedAfterRecovery(t, repo, task.TaskID, 3, 4)
+}
+
+func assertResumedAfterRecovery(t *testing.T, repo *TaskRepository, taskID string, generation uint64, attempts int) {
+	t.Helper()
+	resumed, err := repo.GetByTaskID(context.Background(), taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Status != model.TaskStatusPending || resumed.RecoveryGeneration != generation || resumed.AttemptCount != attempts {
+		t.Fatalf("resumed task state = %+v", resumed)
+	}
+	if resumed.CurrentRunID != nil {
+		t.Fatalf("resumed task kept the old execution identity: %v", *resumed.CurrentRunID)
 	}
 }
 
