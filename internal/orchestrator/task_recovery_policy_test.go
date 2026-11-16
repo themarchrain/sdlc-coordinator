@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,23 +38,15 @@ func TestAssessUnknownRequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestPrerequisiteResolvedCanRecover(t *testing.T) {
+func TestPrerequisiteFailureIsNeverRecoverable(t *testing.T) {
 	facts := eligibleRecoveryFacts()
 	facts.FailureInfo = &failure.Info{Version: failure.VersionV1, Stage: failure.StageInitialization, Source: failure.SourceRunner, Code: failure.CodeCLIMissing, Summary: "codex cli missing"}
-	blocked := EvaluateTaskRecovery(facts)
-	if blocked.Eligible || blocked.ReasonCode != RecoveryReasonFailurePrerequisite {
-		t.Fatalf("unresolved prerequisite = %+v", blocked)
+	assessment := EvaluateTaskRecovery(facts)
+	if assessment.Eligible || assessment.RequiresRiskConfirmation || assessment.ReasonCode != RecoveryReasonFailurePrerequisite {
+		t.Fatalf("prerequisite failure = %+v", assessment)
 	}
-	facts.PrerequisiteResolved = true
-	resolved := EvaluateTaskRecovery(facts)
-	if !resolved.Eligible || resolved.RequiresRiskConfirmation || resolved.ReasonCode != RecoveryReasonPrerequisiteResolved {
-		t.Fatalf("resolved prerequisite = %+v", resolved)
-	}
-	facts.PrerequisiteResolved = false
-	facts.PrerequisiteCheckError = "config check failed"
-	failed := EvaluateTaskRecovery(facts)
-	if failed.Eligible || !hasSafetyBlocker(failed, RecoverySafetyPrerequisiteCheckFailed) {
-		t.Fatalf("prerequisite check failure = %+v", failed)
+	if !strings.Contains(assessment.Remediation, "新建任务") {
+		t.Fatalf("remediation still promises a recovery that cannot happen: %q", assessment.Remediation)
 	}
 }
 

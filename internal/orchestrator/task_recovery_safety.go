@@ -52,16 +52,11 @@ type RecoveryObjectReader interface {
 	ReadRecoveryObject(ctx context.Context, task *model.Task) (RecoveryObjectState, error)
 }
 
-type RecoveryPrerequisiteChecker interface {
-	CheckRecoveryPrerequisite(ctx context.Context, info *failure.Info) (bool, error)
-}
-
 type RecoverySafetyReader struct {
-	Store               *repository.TaskRecoveryRepository
-	RepositoryLookup    RepositoryLookup
-	ObjectReader        RecoveryObjectReader
-	PrerequisiteChecker RecoveryPrerequisiteChecker
-	Now                 func() time.Time
+	Store            *repository.TaskRecoveryRepository
+	RepositoryLookup RepositoryLookup
+	ObjectReader     RecoveryObjectReader
+	Now              func() time.Time
 }
 
 func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (RecoveryFacts, error) {
@@ -105,16 +100,6 @@ func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (Recover
 		facts.FailureInfo = recoveryFailureInfo(snapshot)
 		facts.DispatchProvenNotSentRuns = repository.RecoveryDispatchProvenNotSentRuns(snapshot)
 		facts.DispatchProvenNotSent = facts.DispatchProvenNotSentRuns[sourceRunID(facts)]
-		if facts.FailureInfo != nil && failure.Classify(facts.FailureInfo) == failure.ClassificationPrerequisite && supportsPrerequisiteCheck(facts.FailureInfo.Code) && r.PrerequisiteChecker != nil {
-			checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-			resolved, checkErr := r.PrerequisiteChecker.CheckRecoveryPrerequisite(checkCtx, facts.FailureInfo)
-			checkCancel()
-			if checkErr != nil {
-				facts.PrerequisiteCheckError = checkErr.Error()
-			} else {
-				facts.PrerequisiteResolved = resolved
-			}
-		}
 		if snapshot.Task.RepositoryID != nil && strings.TrimSpace(*snapshot.Task.RepositoryID) != "" {
 			if r.RepositoryLookup == nil {
 				facts.RepositoryLookupError = "repository lookup is unavailable"
@@ -252,11 +237,6 @@ func validateRecoveryTaskObject(task *model.Task) (objectValid bool, objectReaso
 		}
 	}
 	return objectValid, objectReason, contextValid, contextReason, expectedHead
-}
-
-func supportsPrerequisiteCheck(code string) bool {
-	code = strings.TrimSpace(code)
-	return code == failure.CodeCLIMissing || code == failure.CodeMissingConfiguration
 }
 
 func numericValue(value any) (int64, bool) {

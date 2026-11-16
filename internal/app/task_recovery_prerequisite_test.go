@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,13 @@ func TestRecoveryDoesNotTreatConfiguredProviderAsFixedPrerequisite(t *testing.T)
 	}
 	if assessment.ReasonCode != "failure_prerequisite" {
 		t.Fatalf("reason code = %q, want failure_prerequisite", assessment.ReasonCode)
+	}
+	// 没有任何生产探针能证明 CLI 或配置回来了，所以不能承诺"修好后重新评估"。
+	if !strings.Contains(assessment.Remediation, "新建任务") {
+		t.Fatalf("remediation still promises a recovery that cannot happen: %q", assessment.Remediation)
+	}
+	if strings.Contains(assessment.Remediation, "重新评估") {
+		t.Fatalf("remediation still asks the operator to re-assess: %q", assessment.Remediation)
 	}
 	if _, err := repository.NewTaskRecoveryRepository(db).GetByRequest(ctx, task.TaskID, "request-prerequisite"); err == nil {
 		t.Fatal("unexpected recovery record")

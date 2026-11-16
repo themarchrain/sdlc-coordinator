@@ -14,38 +14,36 @@ import (
 )
 
 const (
-	RecoveryReasonEligible             = "eligible"
-	RecoveryReasonUnknownConfirmation  = "unknown_risk_confirmation_required"
-	RecoveryReasonFailurePrerequisite  = "failure_prerequisite"
-	RecoveryReasonFailureFatal         = "failure_fatal"
-	RecoveryReasonPrerequisiteResolved = "prerequisite_resolved"
+	RecoveryReasonEligible            = "eligible"
+	RecoveryReasonUnknownConfirmation = "unknown_risk_confirmation_required"
+	RecoveryReasonFailurePrerequisite = "failure_prerequisite"
+	RecoveryReasonFailureFatal        = "failure_fatal"
 )
 
 const (
-	RecoverySafetyTaskNotFound            = "task_not_found"
-	RecoverySafetyTaskNotBlocked          = "task_not_blocked"
-	RecoverySafetyStopRequested           = "stop_requested"
-	RecoverySafetyExecutionActive         = "execution_active"
-	RecoverySafetyExecutionUnconfirmed    = "execution_unconfirmed"
-	RecoverySafetySubmissionProcessing    = "submission_processing"
-	RecoverySafetySubmissionUnsettled     = "submission_unsettled"
-	RecoverySafetyWritebackPending        = "writeback_pending"
-	RecoverySafetyWritebackUnknown        = "writeback_unknown"
-	RecoverySafetyActionUnsettled         = "action_unsettled"
-	RecoverySafetyCriticalEffectPending   = "critical_effect_pending"
-	RecoverySafetyActiveExecutionLease    = "active_execution_lease"
-	RecoverySafetyMergeAuditUnsettled     = "merge_audit_unsettled"
-	RecoverySafetyRepositoryNotBound      = "repository_not_bound"
-	RecoverySafetyRepositoryLookupFailed  = "repository_lookup_failed"
-	RecoverySafetyRepositoryDisabled      = "repository_disabled"
-	RecoverySafetyTaskObjectInvalid       = "task_object_invalid"
-	RecoverySafetyTaskContextInvalid      = "task_context_invalid"
-	RecoverySafetyPrerequisiteCheckFailed = "prerequisite_check_unavailable"
-	RecoverySafetyHeadCheckUnavailable    = "head_check_unavailable"
-	RecoverySafetyHeadSuperseded          = "head_superseded"
-	RecoverySafetyObjectStateUnavailable  = "object_state_unavailable"
-	RecoverySafetyObjectNotOpen           = "object_not_open"
-	RecoverySafetyCheckUnavailable        = "safety_check_unavailable"
+	RecoverySafetyTaskNotFound           = "task_not_found"
+	RecoverySafetyTaskNotBlocked         = "task_not_blocked"
+	RecoverySafetyStopRequested          = "stop_requested"
+	RecoverySafetyExecutionActive        = "execution_active"
+	RecoverySafetyExecutionUnconfirmed   = "execution_unconfirmed"
+	RecoverySafetySubmissionProcessing   = "submission_processing"
+	RecoverySafetySubmissionUnsettled    = "submission_unsettled"
+	RecoverySafetyWritebackPending       = "writeback_pending"
+	RecoverySafetyWritebackUnknown       = "writeback_unknown"
+	RecoverySafetyActionUnsettled        = "action_unsettled"
+	RecoverySafetyCriticalEffectPending  = "critical_effect_pending"
+	RecoverySafetyActiveExecutionLease   = "active_execution_lease"
+	RecoverySafetyMergeAuditUnsettled    = "merge_audit_unsettled"
+	RecoverySafetyRepositoryNotBound     = "repository_not_bound"
+	RecoverySafetyRepositoryLookupFailed = "repository_lookup_failed"
+	RecoverySafetyRepositoryDisabled     = "repository_disabled"
+	RecoverySafetyTaskObjectInvalid      = "task_object_invalid"
+	RecoverySafetyTaskContextInvalid     = "task_context_invalid"
+	RecoverySafetyHeadCheckUnavailable   = "head_check_unavailable"
+	RecoverySafetyHeadSuperseded         = "head_superseded"
+	RecoverySafetyObjectStateUnavailable = "object_state_unavailable"
+	RecoverySafetyObjectNotOpen          = "object_not_open"
+	RecoverySafetyCheckUnavailable       = "safety_check_unavailable"
 )
 
 type SafetyBlocker struct {
@@ -55,31 +53,29 @@ type SafetyBlocker struct {
 }
 
 type RecoveryFacts struct {
-	Task                   *model.Task
-	Runs                   []model.Run
-	Executions             []model.AgentExecution
-	ResultSubmissions      []model.ResultSubmission
-	Writebacks             []model.Writeback
-	Effects                []model.Effect
-	ActionAdmissions       []model.ActionAdmission
-	WorkItemLeases         []model.WorkItemLease
-	DeliveryCheckpoints    []model.DeveloperDeliveryCheckpoint
-	ExitConfirmations      []model.ExecutionExitConfirmation
-	MergeGateAudit         *model.MergeGateAudit
-	Stop                   *model.StopRequest
-	Repository             *registeredrepo.RegisteredRepository
-	RepositoryLookupError  string
-	TaskObjectValid        *bool
-	TaskObjectReason       string
-	ContextValid           *bool
-	ContextReason          string
-	PrerequisiteResolved   bool
-	PrerequisiteCheckError string
-	ExpectedHeadSHA        string
-	CurrentHeadSHA         string
-	HeadCheckRequired      bool
-	HeadCheckUnavailable   bool
-	HeadCheckError         string
+	Task                  *model.Task
+	Runs                  []model.Run
+	Executions            []model.AgentExecution
+	ResultSubmissions     []model.ResultSubmission
+	Writebacks            []model.Writeback
+	Effects               []model.Effect
+	ActionAdmissions      []model.ActionAdmission
+	WorkItemLeases        []model.WorkItemLease
+	DeliveryCheckpoints   []model.DeveloperDeliveryCheckpoint
+	ExitConfirmations     []model.ExecutionExitConfirmation
+	MergeGateAudit        *model.MergeGateAudit
+	Stop                  *model.StopRequest
+	Repository            *registeredrepo.RegisteredRepository
+	RepositoryLookupError string
+	TaskObjectValid       *bool
+	TaskObjectReason      string
+	ContextValid          *bool
+	ContextReason         string
+	ExpectedHeadSHA       string
+	CurrentHeadSHA        string
+	HeadCheckRequired     bool
+	HeadCheckUnavailable  bool
+	HeadCheckError        string
 	// ObjectStateCheckRequired 表示任务目标（PR/MR 或 issue）必须有可确认的开放状态。
 	ObjectStateCheckRequired  bool
 	CurrentObjectState        string
@@ -215,16 +211,12 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 
 	switch assessment.Classification {
 	case failure.ClassificationPrerequisite:
-		if facts.PrerequisiteResolved {
-			assessment.Eligible = true
-			assessment.ReasonCode = RecoveryReasonPrerequisiteResolved
-			assessment.ReasonSummary = "前置条件已修复，恢复后将按正常策略重新排队"
-			break
-		}
+		// 执行面没有可查询的 CLI 或配置探针，任何"已修复"的判断都是猜测；
+		// 这类失败只能先在环境上修，再新建任务。
 		assessment.Eligible = false
 		assessment.ReasonCode = RecoveryReasonFailurePrerequisite
 		assessment.ReasonSummary = firstNonEmpty(infoSummary(info), "任务前置条件未满足")
-		assessment.Remediation = firstNonEmpty(infoSummary(info), "请先修复错误摘要中的配置或权限后重新评估")
+		assessment.Remediation = "请先修复缺失的 CLI、配置或依赖；修复后请新建任务，此类失败不会被恢复"
 	case failure.ClassificationFatal:
 		assessment.Eligible = false
 		assessment.ReasonCode = RecoveryReasonFailureFatal
@@ -394,9 +386,6 @@ func evaluateObjectAndRepository(facts RecoveryFacts, add func(string, string, s
 	}
 	if facts.ContextValid != nil && !*facts.ContextValid {
 		add(RecoverySafetyTaskContextInvalid, firstNonEmpty(facts.ContextReason, "任务上下文无效"), "请修复任务上下文后重新评估")
-	}
-	if facts.PrerequisiteCheckError != "" {
-		add(RecoverySafetyPrerequisiteCheckFailed, facts.PrerequisiteCheckError, "请稍后重试前置条件检查")
 	}
 	if facts.RepositoryLookupError != "" && facts.Repository == nil {
 		code := RecoverySafetyRepositoryLookupFailed
