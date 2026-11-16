@@ -821,3 +821,55 @@ func TestServiceShutdownReturnsWhenContextExpires(t *testing.T) {
 	close(released)
 	waitForStatus(t, service, request.ExecutionID, runner.StatusFailed)
 }
+
+func TestServiceBoundsAndRedactsFailureCode(t *testing.T) {
+	const secret = "sk-live-code-secret"
+	tests := []struct {
+		name string
+		code string
+		want string
+	}{
+		{name: "known code survives", code: failure.CodeProviderRateLimited, want: failure.CodeProviderRateLimited},
+		{name: "code at the length limit survives", code: strings.Repeat("b", 64), want: strings.Repeat("b", 64)},
+		{name: "overlong code is dropped", code: strings.Repeat("a", 200), want: ""},
+		{name: "code with a newline is dropped", code: "rate_limit\nerror", want: ""},
+		{name: "code echoing a secret is dropped", code: "rate_limit_" + secret, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dataRoot := t.TempDir()
+			provider := &failedProvider{err: &runner.ProviderFailure{
+				Info: failure.Info{
+					Version: failure.VersionV1, Stage: failure.StageProvider, Source: failure.SourceProvider,
+					Code: test.code, Summary: "provider failed",
+				},
+				Cause: errors.New("provider failed"),
+			}}
+			service, err := runner.NewService(dataRoot, map[string]runner.Provider{"fake": provider})
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+			request := sampleRequest()
+			request.ExecutionID = "run-failure-code"
+			request.TaskID = "task-failure-code"
+			request.Provider.APIKey = secret
+			if _, err := service.Create(context.Background(), request); err != nil {
+				t.Fatalf("create execution: %v", err)
+			}
+			completed := waitForStatus(t, service, request.ExecutionID, runner.StatusFailed)
+			if completed.Failure == nil {
+				t.Fatal("structured failure metadata was not persisted")
+			}
+			if completed.Failure.Code != test.want {
+				t.Fatalf("failure code = %q, want %q", completed.Failure.Code, test.want)
+			}
+			raw, err := os.ReadFile(filepath.Join(dataRoot, "executions", request.ExecutionID, "execution.json"))
+			if err != nil {
+				t.Fatalf("read durable execution: %v", err)
+			}
+			if strings.Contains(string(raw), secret) {
+				t.Fatalf("durable execution leaked the provider secret: %s", raw)
+			}
+		})
+	}
+}

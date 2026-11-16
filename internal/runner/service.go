@@ -265,7 +265,7 @@ func sanitizeFailureInfo(info *failure.Info, fallback string, provider ProviderC
 		return nil
 	}
 	sanitized := *info
-	sanitized.Code = strings.TrimSpace(sanitized.Code)
+	sanitized.Code = sanitizeFailureCode(sanitized.Code, provider, channel)
 	sanitized.Stage = strings.TrimSpace(sanitized.Stage)
 	sanitized.Source = strings.TrimSpace(sanitized.Source)
 	summary := strings.TrimSpace(sanitized.Summary)
@@ -277,6 +277,19 @@ func sanitizeFailureInfo(info *failure.Info, fallback string, provider ProviderC
 		sanitized.Summary = sanitized.Summary[:4096]
 	}
 	return &sanitized
+}
+
+// failureCodePattern is the only shape a persisted failure code may take. An
+// unrecognised provider code is dropped rather than truncated, so a mangled
+// code can never be mistaken for a known one and secrets never reach storage.
+var failureCodePattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+
+func sanitizeFailureCode(code string, provider ProviderConfig, channel *ResultSubmissionChannel) string {
+	code = strings.TrimSpace(redactFailureMessage(code, provider, channel))
+	if !failureCodePattern.MatchString(code) {
+		return ""
+	}
+	return code
 }
 
 // persistAndEmitLocked 持久化 execution 快照并追加生命周期事件；两者都发生在
