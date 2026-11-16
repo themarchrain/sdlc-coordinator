@@ -21,6 +21,7 @@ import (
 	"sdlc-coordinator/internal/people"
 	"sdlc-coordinator/internal/registeredrepo"
 	"sdlc-coordinator/internal/requirements"
+	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/tenantdb"
@@ -41,6 +42,7 @@ type fullyWiredWorld struct {
 	TenantStores    tenantdb.Resolver
 	defaultTenantID uint
 	superActor      *controlplane.Actor
+	exitReader      *fakeWorldExecutionExitReader
 }
 
 func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
@@ -51,7 +53,7 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 		&model.StopRequest{}, &model.Task{}, &model.Run{}, &model.Artifact{}, &model.Dependency{},
 		&model.Writeback{}, &model.Effect{}, &model.InboundEvent{},
 		&model.ResultSubmission{}, &model.ResultSubmissionRejection{},
-		&model.AgentExecution{}, &model.TaskRecovery{}, &model.WorkItemLease{}, &model.ActionAdmission{},
+		&model.AgentExecution{}, &model.TaskRecovery{}, &model.ExecutionExitConfirmation{}, &model.WorkItemLease{}, &model.ActionAdmission{},
 		&model.DeveloperDeliveryCheckpoint{}, &model.MergeGateAudit{},
 		&model.ConnectorInstance{},
 	); err != nil {
@@ -82,9 +84,12 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 	runRepo := repository.NewRunRepository(db)
 	inboundRepo := repository.NewInboundEventRepository(db)
 	taskRecoveryRepo := repository.NewTaskRecoveryRepository(db)
+	exitReader := &fakeWorldExecutionExitReader{remote: &runner.Execution{Status: runner.StatusInterrupted}}
 	orch := orchestrator.New(taskRepo, runRepo,
 		orchestrator.WithResultSubmissionRepository(repository.NewResultSubmissionRepository(db)),
 		orchestrator.WithTaskRecoveryRepository(taskRecoveryRepo),
+		orchestrator.WithExecutionExitConfirmationRepository(repository.NewExecutionExitConfirmationRepository(db)),
+		orchestrator.WithExecutionExitReader(func(string) (orchestrator.ExecutionExitReader, error) { return exitReader, nil }),
 		orchestrator.WithRecoveryFactsReader(&orchestrator.RecoverySafetyReader{
 			Store: taskRecoveryRepo, RepositoryLookup: repoStore,
 		}),
@@ -116,6 +121,7 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 		Router:       router,
 		ControlPlane: controlPlane,
 		TenantStores: tenantStores,
+		exitReader:   exitReader,
 	}
 }
 

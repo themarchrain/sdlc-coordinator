@@ -200,6 +200,8 @@ type Orchestrator struct {
 	repositoryLookup               RepositoryLookup
 	recoveryReader                 RecoveryFactsReader
 	recoveries                     TaskRecoveryRepository
+	executionExits                 *repository.ExecutionExitConfirmationRepository
+	executionExitReader            func(string) (ExecutionExitReader, error)
 	assigneeMentionDirectory       AssigneeMentionDirectory
 	developerIMTarget              string
 	reviewerIMMentionsProvider     func(context.Context) []string

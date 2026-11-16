@@ -52,6 +52,7 @@ func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (Recover
 		ActionAdmissions:    snapshot.ActionAdmissions,
 		WorkItemLeases:      snapshot.WorkItemLeases,
 		DeliveryCheckpoints: snapshot.DeliveryCheckpoints,
+		ExitConfirmations:   snapshot.ExitConfirmations,
 		MergeGateAudit:      snapshot.MergeGateAudit,
 		Stop:                snapshot.Stop,
 		SnapshotVersion:     snapshot.Version,

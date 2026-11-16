@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/store/repository"
 
@@ -17,6 +19,15 @@ import (
 type adminTaskRecovery interface {
 	AssessTaskRecovery(context.Context, string) (orchestrator.RecoveryAssessment, error)
 	RecoverBlockedTask(context.Context, string, string, orchestrator.RecoverTaskRequest) (*orchestrator.RecoverTaskResponse, error)
+}
+
+type adminExecutionExitConfirmation interface {
+	ConfirmExecutionExit(context.Context, string, string, orchestrator.ConfirmExecutionExitRequest) (*model.ExecutionExitConfirmation, error)
+}
+
+type confirmExecutionExitBody struct {
+	RequestID string `json:"request_id"`
+	Reason    string `json:"reason"`
 }
 
 type recoverTaskBody struct {
@@ -46,6 +57,70 @@ func (handler *AdminOperationHandler) recoveryFor(c *gin.Context) adminTaskRecov
 	operations := handler.operationsFor(c)
 	recovery, _ := operations.(adminTaskRecovery)
 	return recovery
+}
+
+// ConfirmExecutionExit records a tenant admin reconciliation of an interrupted
+// source execution. It never starts, stops or rewrites an execution.
+func (handler *AdminOperationHandler) ConfirmExecutionExit(c *gin.Context) {
+	actor := currentActor(c)
+	if actor == nil || actor.ID == 0 {
+		writeAdminError(c, http.StatusUnauthorized, "unauthenticated", "请先登录")
+		return
+	}
+	confirmation, _ := handler.operationsFor(c).(adminExecutionExitConfirmation)
+	if confirmation == nil {
+		writeAdminError(c, http.StatusServiceUnavailable, "operations_unavailable", "恢复操作不可用")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
+	var body confirmExecutionExitBody
+	if !decodeAdminConnectorBody(c, &body) {
+		return
+	}
+	if strings.TrimSpace(body.RequestID) == "" || strings.TrimSpace(body.Reason) == "" || utf8.RuneCountInString(body.Reason) > 1000 {
+		writeAdminError(c, http.StatusBadRequest, "invalid_body", "request_id 与 recovery 说明必填，说明最多 1000 个字符")
+		return
+	}
+	stored, err := confirmation.ConfirmExecutionExit(c.Request.Context(), c.Param("task_id"), strconv.FormatUint(uint64(actor.ID), 10), orchestrator.ConfirmExecutionExitRequest{
+		RequestID: body.RequestID, Reason: body.Reason,
+	})
+	if err != nil {
+		writeExecutionExitError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"confirmation_id":   stored.ConfirmationID,
+		"task_id":           stored.TaskID,
+		"run_id":            stored.RunID,
+		"execution_id":      stored.ExecutionID,
+		"remote_state":      stored.RemoteState,
+		"remote_message":    stored.RemoteMessage,
+		"source_generation": stored.SourceGeneration,
+		"confirmed_at":      stored.ConfirmedAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func writeExecutionExitError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, orchestrator.ErrExecutionExitStillRunning):
+		writeAdminError(c, http.StatusConflict, "execution_still_running", "远端执行仍在运行，不能确认退出")
+	case errors.Is(err, repository.ErrExecutionNotInterrupted):
+		writeAdminError(c, http.StatusConflict, "execution_not_interrupted", "当前执行不是中断状态，无需确认退出")
+	case errors.Is(err, repository.ErrExecutionFingerprintChanged):
+		writeAdminError(c, http.StatusConflict, "execution_evidence_changed", "执行证据已变化，请重新读取后确认")
+	case errors.Is(err, repository.ErrRecoveryGenerationMismatch), errors.Is(err, repository.ErrRecoveryRevisionChanged), errors.Is(err, repository.ErrRecoveryStateChanged):
+		writeAdminError(c, http.StatusConflict, "task_recovery_stale", "任务状态已变化，请刷新后重试")
+	case errors.Is(err, repository.ErrRecoveryRequestConflict):
+		writeAdminError(c, http.StatusConflict, "recovery_request_conflict", "同一请求编号已用于其他确认参数")
+	case errors.Is(err, orchestrator.ErrRecoveryInvalid), errors.Is(err, repository.ErrInvalidExecutionConfirmation):
+		writeAdminError(c, http.StatusBadRequest, "invalid_body", "确认请求参数无效")
+	case errors.Is(err, orchestrator.ErrExecutionExitUnavailable):
+		writeAdminError(c, http.StatusServiceUnavailable, "operations_unavailable", "执行退出确认不可用")
+	case errors.Is(err, repository.ErrNotFound):
+		writeAdminError(c, http.StatusNotFound, "not_found", "任务不存在")
+	default:
+		writeAdminError(c, http.StatusInternalServerError, "internal_error", "执行退出确认失败")
+	}
 }
 
 func (handler *AdminOperationHandler) GetTaskRecovery(c *gin.Context) {

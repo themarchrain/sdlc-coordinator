@@ -24,6 +24,7 @@ var (
 type TaskRecoveryRepository interface {
 	GetByRequest(ctx context.Context, taskID, requestID string) (*model.TaskRecovery, error)
 	Accept(ctx context.Context, taskID, actorID string, command repository.RecoveryCommand, proof repository.RecoveryDBProof) (*model.TaskRecovery, bool, error)
+	LoadRecoverySnapshot(ctx context.Context, taskID string) (*repository.RecoverySnapshot, error)
 }
 
 type RecoverTaskRequest struct {

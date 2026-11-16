@@ -120,7 +120,7 @@ func openRecoverySafetyDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}, &model.ActionAdmission{}, &model.WorkItemLease{}, &model.DeveloperDeliveryCheckpoint{}, &model.MergeGateAudit{}, &model.StopRequest{}, &model.TaskRecovery{}); err != nil {
+	if err := store.Migrate(db, &model.Task{}, &model.Run{}, &model.AgentExecution{}, &model.ResultSubmission{}, &model.Writeback{}, &model.Effect{}, &model.ActionAdmission{}, &model.WorkItemLease{}, &model.DeveloperDeliveryCheckpoint{}, &model.MergeGateAudit{}, &model.StopRequest{}, &model.TaskRecovery{}, &model.ExecutionExitConfirmation{}); err != nil {
 		t.Fatal(err)
 	}
 	return db

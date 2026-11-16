@@ -20,6 +20,9 @@ func TestRecoveryMigrationOnMySQL(t *testing.T) {
 	if !db.Migrator().HasTable(&model.TaskRecovery{}) {
 		t.Fatal("task recovery table missing on mysql")
 	}
+	if !db.Migrator().HasTable(&model.ExecutionExitConfirmation{}) {
+		t.Fatal("execution exit confirmation table missing on mysql")
+	}
 	for _, check := range []struct {
 		model any
 		field string

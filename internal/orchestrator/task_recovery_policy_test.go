@@ -208,6 +208,73 @@ func TestOlderTerminalExecutionNeedsFinishRecord(t *testing.T) {
 	}
 }
 
+func TestSourceInterruptedNeedsMatchingExitConfirmation(t *testing.T) {
+	confirmed := func(facts *RecoveryFacts) model.ExecutionExitConfirmation {
+		execution := facts.Executions[len(facts.Executions)-1]
+		return model.ExecutionExitConfirmation{
+			TaskID: facts.Task.TaskID, RunID: execution.RunID, ExecutionID: execution.ExecutionID,
+			SourceGeneration: facts.Task.RecoveryGeneration, ExecutionFingerprint: model.ExecutionExitFingerprint(&execution),
+			RemoteState: model.ExecutionExitRemoteTerminal,
+		}
+	}
+
+	baseline := interruptedRecoveryFacts()
+	if assessment := EvaluateTaskRecovery(baseline); assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
+		t.Fatalf("unconfirmed interrupted source execution = %+v", assessment)
+	}
+
+	confirmedFacts := interruptedRecoveryFacts()
+	confirmedFacts.ExitConfirmations = []model.ExecutionExitConfirmation{confirmed(&confirmedFacts)}
+	if assessment := EvaluateTaskRecovery(confirmedFacts); !assessment.Eligible {
+		t.Fatalf("matching exit confirmation did not clear the gate: %+v", assessment.SafetyBlockers)
+	}
+
+	staleFingerprint := interruptedRecoveryFacts()
+	stale := confirmed(&staleFingerprint)
+	stale.ExecutionFingerprint = "fingerprint-of-another-execution-state"
+	staleFingerprint.ExitConfirmations = []model.ExecutionExitConfirmation{stale}
+	if assessment := EvaluateTaskRecovery(staleFingerprint); !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
+		t.Fatalf("stale fingerprint cleared the gate: %+v", assessment.SafetyBlockers)
+	}
+
+	staleGeneration := interruptedRecoveryFacts()
+	staleGeneration.Task.RecoveryGeneration = 2
+	older := confirmed(&staleGeneration)
+	older.SourceGeneration = 1
+	staleGeneration.ExitConfirmations = []model.ExecutionExitConfirmation{older}
+	if assessment := EvaluateTaskRecovery(staleGeneration); !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
+		t.Fatalf("confirmation from an older generation cleared the gate: %+v", assessment.SafetyBlockers)
+	}
+}
+
+func TestExitConfirmationDoesNotCoverOlderInterruptedExecution(t *testing.T) {
+	finished := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	facts := eligibleRecoveryFacts()
+	olderRunID := "run-older-interrupted-confirmed"
+	facts.Runs = append([]model.Run{{RunID: olderRunID, TaskID: facts.Task.TaskID, Status: model.RunStatusInterrupted}}, facts.Runs...)
+	older := model.AgentExecution{
+		RunID: olderRunID, ExecutionID: olderRunID, Status: model.AgentExecutionStatusInterrupted,
+		RequestHash: "older-request-hash", ErrorCode: "runner_restarted", FinishedAt: &finished,
+	}
+	facts.Executions = append([]model.AgentExecution{older}, facts.Executions...)
+	facts.ExitConfirmations = []model.ExecutionExitConfirmation{{
+		TaskID: facts.Task.TaskID, RunID: older.RunID, ExecutionID: older.ExecutionID,
+		SourceGeneration: facts.Task.RecoveryGeneration, ExecutionFingerprint: model.ExecutionExitFingerprint(&older),
+		RemoteState: model.ExecutionExitRemoteTerminal,
+	}}
+	assessment := EvaluateTaskRecovery(facts)
+	if assessment.Eligible || !hasSafetyBlocker(assessment, RecoverySafetyExecutionUnconfirmed) {
+		t.Fatalf("confirmation covered an older execution: %+v", assessment)
+	}
+}
+
+func interruptedRecoveryFacts() RecoveryFacts {
+	facts := eligibleRecoveryFacts()
+	facts.Executions[0].Status = model.AgentExecutionStatusInterrupted
+	facts.Executions[0].ErrorCode = "runner_restarted"
+	return facts
+}
+
 func TestAssessmentTimeoutHasNoSideEffects(t *testing.T) {
 	task := eligibleRecoveryFacts().Task
 	reader := &fakeRecoveryFactsReader{err: context.DeadlineExceeded}

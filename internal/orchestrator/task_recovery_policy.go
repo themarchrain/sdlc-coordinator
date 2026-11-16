@@ -61,6 +61,7 @@ type RecoveryFacts struct {
 	ActionAdmissions       []model.ActionAdmission
 	WorkItemLeases         []model.WorkItemLease
 	DeliveryCheckpoints    []model.DeveloperDeliveryCheckpoint
+	ExitConfirmations      []model.ExecutionExitConfirmation
 	MergeGateAudit         *model.MergeGateAudit
 	Stop                   *model.StopRequest
 	Repository             *registeredrepo.RegisteredRepository
@@ -221,12 +222,16 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 }
 
 func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, string)) {
+	source := sourceRun(facts)
+	var sourceExecution *model.AgentExecution
+	if source != nil {
+		sourceExecution = latestExecutionForRun(facts.Executions, source.RunID)
+	}
 	for _, execution := range facts.Executions {
-		if blocker, blocked := executionExitBlocker(execution); blocked {
+		if blocker, blocked := executionExitBlocker(facts, sourceExecution, execution); blocked {
 			add(blocker.Code, blocker.Summary, blocker.Remediation)
 		}
 	}
-	source := sourceRun(facts)
 	if source == nil {
 		if !facts.DispatchProvenNotSent {
 			add(RecoverySafetyExecutionUnconfirmed, "缺少前次执行已结束或未开始的受信证据", "请先完成执行对账")
@@ -259,7 +264,7 @@ func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, strin
 // executionExitBlocker reports why one execution record fails to prove that its
 // process is gone. Every execution of the task is checked, not just the source
 // run, because an older uncertain execution can still hold the workspace.
-func executionExitBlocker(execution model.AgentExecution) (SafetyBlocker, bool) {
+func executionExitBlocker(facts RecoveryFacts, sourceExecution *model.AgentExecution, execution model.AgentExecution) (SafetyBlocker, bool) {
 	switch execution.Status {
 	case model.AgentExecutionStatusAccepted, model.AgentExecutionStatusStarting, model.AgentExecutionStatusRunning, model.AgentExecutionStatusDispatching:
 		return SafetyBlocker{Code: RecoverySafetyExecutionActive, Summary: "前次执行仍可能在运行，不能恢复", Remediation: "请等待执行结束并确认退出结果"}, true
@@ -269,9 +274,30 @@ func executionExitBlocker(execution model.AgentExecution) (SafetyBlocker, bool) 
 		}
 		return SafetyBlocker{}, false
 	default:
-		// interrupted 记录的是进程退出未知，FinishedAt 也不能当退出证明。
+		// interrupted 记录的是进程退出未知，FinishedAt 也不能当退出证明；
+		// 只有来源 Run 的最新执行可以由人工退出确认作证。
+		if sourceExecution != nil && sourceExecution.RunID == execution.RunID && sourceExecution.ExecutionID == execution.ExecutionID && exitConfirmationCoversExecution(facts, execution) {
+			return SafetyBlocker{}, false
+		}
 		return SafetyBlocker{Code: RecoverySafetyExecutionUnconfirmed, Summary: "存在没有退出证明的历史执行，不能恢复", Remediation: "请先确认旧执行已退出"}, true
 	}
+}
+
+// exitConfirmationCoversExecution requires the confirmation to describe this
+// exact execution evidence at the task's current recovery generation.
+func exitConfirmationCoversExecution(facts RecoveryFacts, execution model.AgentExecution) bool {
+	if facts.Task == nil {
+		return false
+	}
+	fingerprint := model.ExecutionExitFingerprint(&execution)
+	for index := len(facts.ExitConfirmations) - 1; index >= 0; index-- {
+		confirmation := facts.ExitConfirmations[index]
+		if confirmation.RunID != execution.RunID || confirmation.ExecutionID != execution.ExecutionID {
+			continue
+		}
+		return confirmation.ExecutionFingerprint == fingerprint && confirmation.SourceGeneration == facts.Task.RecoveryGeneration
+	}
+	return false
 }
 
 func evaluateExternalActions(facts RecoveryFacts, add func(string, string, string)) {

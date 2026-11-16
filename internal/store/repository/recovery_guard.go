@@ -134,6 +134,11 @@ func RecoverySafetyDigest(snapshot *RecoverySnapshot) string {
 		checkpoints = append(checkpoints, fmt.Sprintf("%s|%s|%s", checkpoint.RunID, checkpoint.BaselineSHA, checkpoint.CommitSHA))
 	}
 	view["checkpoints"] = checkpoints
+	confirmations := make([]string, 0, len(snapshot.ExitConfirmations))
+	for _, confirmation := range snapshot.ExitConfirmations {
+		confirmations = append(confirmations, fmt.Sprintf("%s|%s|%d|%s", confirmation.ExecutionID, confirmation.ExecutionFingerprint, confirmation.SourceGeneration, confirmation.RemoteState))
+	}
+	view["exit_confirmations"] = confirmations
 	if snapshot.MergeGateAudit != nil {
 		view["merge_audit"] = fmt.Sprintf("%s|%s|%s", snapshot.MergeGateAudit.AuditID, snapshot.MergeGateAudit.Decision, snapshot.MergeGateAudit.HeadSHA)
 	}

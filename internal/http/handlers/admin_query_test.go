@@ -303,7 +303,7 @@ func newAdminQueryHandlerTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 		&model.InboundEvent{},
 		&model.ResultSubmission{},
 		&model.ResultSubmissionRejection{},
-		&model.TaskRecovery{},
+		&model.TaskRecovery{}, &model.ExecutionExitConfirmation{},
 	); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}

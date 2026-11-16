@@ -56,6 +56,9 @@ func TestRecoveryMigrationPreservesLegacyRows(t *testing.T) {
 	if !db.Migrator().HasTable(&model.TaskRecovery{}) {
 		t.Fatal("task recovery table was not created")
 	}
+	if !db.Migrator().HasTable(&model.ExecutionExitConfirmation{}) {
+		t.Fatal("execution exit confirmation table was not created")
+	}
 	for _, check := range []struct {
 		model any
 		field string

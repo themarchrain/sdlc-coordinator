@@ -22,6 +22,7 @@ type RecoverySnapshot struct {
 	ActionAdmissions    []model.ActionAdmission
 	WorkItemLeases      []model.WorkItemLease
 	DeliveryCheckpoints []model.DeveloperDeliveryCheckpoint
+	ExitConfirmations   []model.ExecutionExitConfirmation
 	MergeGateAudit      *model.MergeGateAudit
 	Stop                *model.StopRequest
 	Version             string
@@ -76,6 +77,9 @@ func loadRecoverySnapshot(ctx context.Context, db *gorm.DB, taskID string) (*Rec
 	}
 	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("id ASC").Find(&snapshot.ActionAdmissions).Error; err != nil {
 		return nil, fmt.Errorf("load recovery action admissions: %w", err)
+	}
+	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("id ASC").Find(&snapshot.ExitConfirmations).Error; err != nil {
+		return nil, fmt.Errorf("load recovery execution exit confirmations: %w", err)
 	}
 	var leases []model.WorkItemLease
 	if err := db.WithContext(ctx).Order("scope ASC").Limit(1000).Find(&leases).Error; err != nil {

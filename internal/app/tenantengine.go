@@ -207,6 +207,16 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
 		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),
 		orchestrator.WithTaskRecoveryRepository(taskRecoveryRepo),
+		orchestrator.WithExecutionExitConfirmationRepository(repository.NewExecutionExitConfirmationRepository(db)),
+		orchestrator.WithExecutionExitReader(func(endpoint string) (orchestrator.ExecutionExitReader, error) {
+			if strings.TrimSpace(endpoint) == "" {
+				if shared.defaultRunner == nil {
+					return nil, orchestrator.ErrExecutionExitUnavailable
+				}
+				return shared.defaultRunner, nil
+			}
+			return agentrunner.NewClient(endpoint, nil), nil
+		}),
 		orchestrator.WithRecoveryFactsReader(recoveryReader),
 		orchestrator.WithLogger(shared.logger),
 	)

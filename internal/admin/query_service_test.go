@@ -333,7 +333,7 @@ func newQueryServiceTestDB(t *testing.T) (*QueryService, *gorm.DB) {
 		&model.InboundEvent{},
 		&model.ResultSubmission{},
 		&model.ResultSubmissionRejection{},
-		&model.TaskRecovery{},
+		&model.TaskRecovery{}, &model.ExecutionExitConfirmation{},
 	); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
