@@ -21,32 +21,28 @@ const (
 )
 
 const (
-	RecoverySafetyTaskNotFound              = "task_not_found"
-	RecoverySafetyTaskNotBlocked            = "task_not_blocked"
-	RecoverySafetyTenantInvalid             = "tenant_invalid"
-	RecoverySafetyPermissionDenied          = "permission_denied"
-	RecoverySafetyStopRequested             = "stop_requested"
-	RecoverySafetyExecutionActive           = "execution_active"
-	RecoverySafetyExecutionUnconfirmed      = "execution_unconfirmed"
-	RecoverySafetySubmissionProcessing      = "submission_processing"
-	RecoverySafetySubmissionUnsettled       = "submission_unsettled"
-	RecoverySafetyWritebackPending          = "writeback_pending"
-	RecoverySafetyWritebackUnknown          = "writeback_unknown"
-	RecoverySafetyActionUnsettled           = "action_unsettled"
-	RecoverySafetyCriticalEffectPending     = "critical_effect_pending"
-	RecoverySafetyActiveExecutionLease      = "active_execution_lease"
-	RecoverySafetyMergeAuditUnsettled       = "merge_audit_unsettled"
-	RecoverySafetyRepositoryNotBound        = "repository_not_bound"
-	RecoverySafetyRepositoryLookupFailed    = "repository_lookup_failed"
-	RecoverySafetyRepositoryDisabled        = "repository_disabled"
-	RecoverySafetyTaskObjectInvalid         = "task_object_invalid"
-	RecoverySafetyTaskContextInvalid        = "task_context_invalid"
-	RecoverySafetyExecutionCapabilityFailed = "execution_capability_unavailable"
-	RecoverySafetyPrerequisiteCheckFailed   = "prerequisite_check_unavailable"
-	RecoverySafetyHeadCheckUnavailable      = "head_check_unavailable"
-	RecoverySafetyHeadSuperseded            = "head_superseded"
-	RecoverySafetySuccessorConflict         = "successor_conflict"
-	RecoverySafetyCheckUnavailable          = "safety_check_unavailable"
+	RecoverySafetyTaskNotFound            = "task_not_found"
+	RecoverySafetyTaskNotBlocked          = "task_not_blocked"
+	RecoverySafetyStopRequested           = "stop_requested"
+	RecoverySafetyExecutionActive         = "execution_active"
+	RecoverySafetyExecutionUnconfirmed    = "execution_unconfirmed"
+	RecoverySafetySubmissionProcessing    = "submission_processing"
+	RecoverySafetySubmissionUnsettled     = "submission_unsettled"
+	RecoverySafetyWritebackPending        = "writeback_pending"
+	RecoverySafetyWritebackUnknown        = "writeback_unknown"
+	RecoverySafetyActionUnsettled         = "action_unsettled"
+	RecoverySafetyCriticalEffectPending   = "critical_effect_pending"
+	RecoverySafetyActiveExecutionLease    = "active_execution_lease"
+	RecoverySafetyMergeAuditUnsettled     = "merge_audit_unsettled"
+	RecoverySafetyRepositoryNotBound      = "repository_not_bound"
+	RecoverySafetyRepositoryLookupFailed  = "repository_lookup_failed"
+	RecoverySafetyRepositoryDisabled      = "repository_disabled"
+	RecoverySafetyTaskObjectInvalid       = "task_object_invalid"
+	RecoverySafetyTaskContextInvalid      = "task_context_invalid"
+	RecoverySafetyPrerequisiteCheckFailed = "prerequisite_check_unavailable"
+	RecoverySafetyHeadCheckUnavailable    = "head_check_unavailable"
+	RecoverySafetyHeadSuperseded          = "head_superseded"
+	RecoverySafetyCheckUnavailable        = "safety_check_unavailable"
 )
 
 type SafetyBlocker struct {
@@ -56,42 +52,36 @@ type SafetyBlocker struct {
 }
 
 type RecoveryFacts struct {
-	Task                     *model.Task
-	Runs                     []model.Run
-	Executions               []model.AgentExecution
-	ResultSubmissions        []model.ResultSubmission
-	Writebacks               []model.Writeback
-	Effects                  []model.Effect
-	ActionAdmissions         []model.ActionAdmission
-	WorkItemLeases           []model.WorkItemLease
-	DeliveryCheckpoints      []model.DeveloperDeliveryCheckpoint
-	MergeGateAudit           *model.MergeGateAudit
-	Stop                     *model.StopRequest
-	Repository               *registeredrepo.RegisteredRepository
-	RepositoryLookupError    string
-	TaskObjectValid          *bool
-	TaskObjectReason         string
-	ContextValid             *bool
-	ContextReason            string
-	ExecutionCapabilityError string
-	PrerequisiteResolved     bool
-	PrerequisiteCheckError   string
-	ExpectedHeadSHA          string
-	CurrentHeadSHA           string
-	HeadCheckRequired        bool
-	HeadCheckUnavailable     bool
-	HeadCheckError           string
-	SuccessorConflict        bool
-	SuccessorTaskID          string
-	DispatchProvenNotSent    bool
-	ExpectedRequestHash      string
-	AccessDenied             bool
-	TenantInvalid            bool
-	SafetyBlockers           []SafetyBlocker
-	SnapshotVersion          string
-	SafetyDigest             string
-	CheckedAt                time.Time
-	FailureInfo              *failure.Info
+	Task                   *model.Task
+	Runs                   []model.Run
+	Executions             []model.AgentExecution
+	ResultSubmissions      []model.ResultSubmission
+	Writebacks             []model.Writeback
+	Effects                []model.Effect
+	ActionAdmissions       []model.ActionAdmission
+	WorkItemLeases         []model.WorkItemLease
+	DeliveryCheckpoints    []model.DeveloperDeliveryCheckpoint
+	MergeGateAudit         *model.MergeGateAudit
+	Stop                   *model.StopRequest
+	Repository             *registeredrepo.RegisteredRepository
+	RepositoryLookupError  string
+	TaskObjectValid        *bool
+	TaskObjectReason       string
+	ContextValid           *bool
+	ContextReason          string
+	PrerequisiteResolved   bool
+	PrerequisiteCheckError string
+	ExpectedHeadSHA        string
+	CurrentHeadSHA         string
+	HeadCheckRequired      bool
+	HeadCheckUnavailable   bool
+	HeadCheckError         string
+	DispatchProvenNotSent  bool
+	SafetyBlockers         []SafetyBlocker
+	SnapshotVersion        string
+	SafetyDigest           string
+	CheckedAt              time.Time
+	FailureInfo            *failure.Info
 }
 
 type RecoveryAssessment struct {
@@ -174,12 +164,6 @@ func EvaluateTaskRecovery(facts RecoveryFacts) RecoveryAssessment {
 		blockers = append(blockers, SafetyBlocker{Code: code, Summary: summary, Remediation: remediation})
 	}
 
-	if facts.TenantInvalid {
-		addBlocker(RecoverySafetyTenantInvalid, "任务所属组织无效", "请使用有效组织重新登录后重试")
-	}
-	if facts.AccessDenied {
-		addBlocker(RecoverySafetyPermissionDenied, "当前用户没有本组织恢复权限", "请联系组织管理员")
-	}
 	if facts.Task == nil {
 		addBlocker(RecoverySafetyTaskNotFound, "任务不存在", "")
 	} else {
@@ -269,10 +253,6 @@ func evaluateExecutionSafety(facts RecoveryFacts, add func(string, string, strin
 	}
 	if strings.TrimSpace(execution.RequestHash) == "" {
 		add(RecoverySafetyExecutionUnconfirmed, "执行记录缺少请求身份 hash，不能证明是本次受信执行", "请先完成执行对账")
-		return
-	}
-	if facts.ExpectedRequestHash != "" && execution.RequestHash != facts.ExpectedRequestHash {
-		add(RecoverySafetyExecutionUnconfirmed, "执行请求 hash 与当前旧 Run 不一致", "请先完成执行对账")
 	}
 }
 
@@ -349,9 +329,6 @@ func evaluateObjectAndRepository(facts RecoveryFacts, add func(string, string, s
 	if facts.ContextValid != nil && !*facts.ContextValid {
 		add(RecoverySafetyTaskContextInvalid, firstNonEmpty(facts.ContextReason, "任务上下文无效"), "请修复任务上下文后重新评估")
 	}
-	if facts.ExecutionCapabilityError != "" {
-		add(RecoverySafetyExecutionCapabilityFailed, facts.ExecutionCapabilityError, "请修复受控执行配置后重新评估")
-	}
 	if facts.PrerequisiteCheckError != "" {
 		add(RecoverySafetyPrerequisiteCheckFailed, facts.PrerequisiteCheckError, "请稍后重试前置条件检查")
 	}
@@ -379,9 +356,6 @@ func evaluateConflicts(facts RecoveryFacts, add func(string, string, string)) {
 		} else if facts.ExpectedHeadSHA != "" && facts.CurrentHeadSHA != "" && !strings.EqualFold(facts.ExpectedHeadSHA, facts.CurrentHeadSHA) {
 			add(RecoverySafetyHeadSuperseded, "任务绑定的 head 已被新提交替代", "请创建面向新 head 的新任务")
 		}
-	}
-	if facts.SuccessorConflict {
-		add(RecoverySafetySuccessorConflict, "已存在针对同一对象新 head 的后继任务", "请处理后继任务，不要恢复旧任务")
 	}
 }
 

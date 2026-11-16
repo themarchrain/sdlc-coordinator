@@ -21,12 +21,11 @@ type RecoveryPrerequisiteChecker interface {
 }
 
 type RecoverySafetyReader struct {
-	Store                      *repository.TaskRecoveryRepository
-	RepositoryLookup           RepositoryLookup
-	HeadReader                 RecoveryHeadReader
-	PrerequisiteChecker        RecoveryPrerequisiteChecker
-	ExecutionCapabilityChecker func(context.Context, *model.Task) error
-	Now                        func() time.Time
+	Store               *repository.TaskRecoveryRepository
+	RepositoryLookup    RepositoryLookup
+	HeadReader          RecoveryHeadReader
+	PrerequisiteChecker RecoveryPrerequisiteChecker
+	Now                 func() time.Time
 }
 
 func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (RecoveryFacts, error) {
@@ -111,13 +110,6 @@ func (r *RecoverySafetyReader) Read(ctx context.Context, taskID string) (Recover
 					facts.CurrentHeadSHA = head
 				}
 			}
-		}
-		if r.ExecutionCapabilityChecker != nil {
-			checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-			if checkErr := r.ExecutionCapabilityChecker(checkCtx, snapshot.Task); checkErr != nil {
-				facts.ExecutionCapabilityError = checkErr.Error()
-			}
-			checkCancel()
 		}
 	}
 	return facts, nil

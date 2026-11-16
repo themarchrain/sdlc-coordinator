@@ -105,6 +105,11 @@ func TestUnknownCannotOverrideSafety(t *testing.T) {
 		{name: "active execution lease", mutate: func(f *RecoveryFacts) {
 			f.WorkItemLeases = []model.WorkItemLease{{Scope: "developer-delivery:" + f.Runs[0].RunID, LeaseUntil: f.CheckedAt.Add(time.Minute)}}
 		}, wantCode: "active_execution_lease"},
+		{name: "unsettled cancel effect", mutate: func(f *RecoveryFacts) {
+			f.Effects = []model.Effect{{EffectID: "effect-1", RunID: f.Runs[0].RunID, Status: model.EffectStatusPending, Critical: true}}
+		}, wantCode: "critical_effect_pending"},
+		{name: "unavailable head check", mutate: func(f *RecoveryFacts) { f.HeadCheckUnavailable = true }, wantCode: "head_check_unavailable"},
+		{name: "unbound repository", mutate: func(f *RecoveryFacts) { f.Repository = nil }, wantCode: "repository_not_bound"},
 		{name: "repository disabled", mutate: func(f *RecoveryFacts) {
 			f.Repository = &registeredrepo.RegisteredRepository{RepositoryID: "repo-1", Status: registeredrepo.StatusDisabled}
 		}, wantCode: "repository_disabled"},
@@ -123,6 +128,20 @@ func TestUnknownCannotOverrideSafety(t *testing.T) {
 				t.Fatalf("missing blocker %q: %+v", test.wantCode, assessment.SafetyBlockers)
 			}
 		})
+	}
+}
+
+func TestRetiredSafetyBlockersAreNotEmitted(t *testing.T) {
+	retired := []string{"tenant_invalid", "permission_denied", "successor_conflict", "execution_capability_unavailable"}
+	facts := eligibleRecoveryFacts()
+	assessment := EvaluateTaskRecovery(facts)
+	if !assessment.Eligible {
+		t.Fatalf("baseline assessment = %+v", assessment)
+	}
+	for _, code := range retired {
+		if hasSafetyBlocker(assessment, code) {
+			t.Fatalf("retired blocker %q is still emitted", code)
+		}
 	}
 }
 
