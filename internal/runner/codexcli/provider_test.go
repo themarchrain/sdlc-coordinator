@@ -188,6 +188,13 @@ func TestProviderParsesNestedTurnFailureAndRedactsSecrets(t *testing.T) {
 	if !strings.Contains(message, "[REDACTED]") || strings.Contains(message, "api-secret") || strings.Contains(message, "tenant-secret") {
 		t.Fatalf("nested error message was not safely preserved: %#v", payload)
 	}
+	info := runner.FailureInfo(err)
+	if info == nil || info.Code != failure.CodeInvalidRequest {
+		t.Fatalf("nested error code did not reach the failure evidence: %#v", info)
+	}
+	if got := failure.Classify(info); got != failure.ClassificationFatal {
+		t.Fatalf("Classify() = %q, want fatal", got)
+	}
 }
 
 func TestProviderClassifiesExplicitProviderFailure(t *testing.T) {

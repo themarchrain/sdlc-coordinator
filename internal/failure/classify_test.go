@@ -49,6 +49,11 @@ func TestClassify(t *testing.T) {
 			want: ClassificationPrerequisite,
 		},
 		{
+			name: "permission denied is prerequisite",
+			info: &Info{Version: VersionV1, Stage: StageProvider, Source: SourceProvider, Code: CodePermissionDenied},
+			want: ClassificationPrerequisite,
+		},
+		{
 			name: "invalid request is fatal",
 			info: &Info{Version: VersionV1, Stage: StageProvider, Source: SourceProvider, Code: CodeInvalidRequest},
 			want: ClassificationFatal,
@@ -148,5 +153,21 @@ func TestLegacyStructuredCodeIsPreserved(t *testing.T) {
 	}
 	if got := Classify(info); got != ClassificationPrerequisite {
 		t.Fatalf("Classify() = %q, want prerequisite", got)
+	}
+}
+
+func TestEveryMappedCodeHasAClassification(t *testing.T) {
+	for code, want := range classByCode {
+		if want == ClassificationUnknown {
+			t.Fatalf("code %q is mapped to unknown, which contradicts being mapped", code)
+		}
+		source := SourceProvider
+		if _, runnerOnly := runnerSetupCodes[code]; runnerOnly {
+			source = SourceRunner
+		}
+		info := &Info{Version: VersionV1, Stage: StageProvider, Source: source, Code: code}
+		if got := Classify(info); got != want {
+			t.Fatalf("Classify(%q) = %q, want %q", code, got, want)
+		}
 	}
 }
