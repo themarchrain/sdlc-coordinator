@@ -107,6 +107,47 @@ describe('TaskRecoveryControl', () => {
     expect(screen.getByLabelText('我已了解并确认风险')).not.toBeChecked()
   })
 
+  it('clears the risk confirmation when the block revision changes', async () => {
+    const unknown = { ...transient, classification: 'unknown', requires_risk_confirmation: true, block_revision: 'revision-1' }
+    const load = vi.spyOn(adminApi, 'taskRecovery')
+      .mockResolvedValueOnce(unknown)
+      .mockResolvedValueOnce({ ...unknown, block_revision: 'revision-2', reason_summary: '新的阻塞版本' })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(409, 'task_recovery_stale', '任务状态已变化'))
+    renderControl(unknown)
+
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    fireEvent.click(screen.getByLabelText('我已了解并确认风险'))
+    fireEvent.change(screen.getByLabelText('恢复说明'), { target: { value: '针对旧阻塞版本的说明' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    expect(screen.getByLabelText('我已了解并确认风险')).not.toBeChecked()
+    expect((screen.getByLabelText('恢复说明') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('closes the confirmation when the task is no longer eligible', async () => {
+    const unknown = { ...transient, classification: 'unknown', requires_risk_confirmation: true, block_revision: 'revision-1' }
+    const load = vi.spyOn(adminApi, 'taskRecovery')
+      .mockResolvedValueOnce(unknown)
+      .mockResolvedValueOnce({
+        ...unknown, block_revision: 'revision-2', eligible: false, reason_code: 'object_not_open', reason_summary: '任务目标已关闭',
+        safety_blockers: [{ code: 'object_not_open', summary: '任务目标已关闭或已合并' }],
+      })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(409, 'task_recovery_stale', '任务状态已变化'))
+    renderControl(unknown)
+
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    fireEvent.click(screen.getByLabelText('我已了解并确认风险'))
+    fireEvent.change(screen.getByLabelText('恢复说明'), { target: { value: '旧说明' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('任务目标已关闭')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
   it('reports accepted recovery without claiming it is running', async () => {
     const recovered = { replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-1', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: false, classification: 'transient', attempt_count_before: 2, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-1', status: 'pending' } }
     const onRecovered = vi.fn()

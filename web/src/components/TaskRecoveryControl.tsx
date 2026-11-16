@@ -110,7 +110,13 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
     setError(undefined)
     adminApi.taskRecovery(taskID, controller.signal).then((next) => {
       if (!current) return
-      if (lastRevision.current && lastRevision.current !== next.block_revision) requestID.current = ''
+      if (lastRevision.current && lastRevision.current !== next.block_revision) {
+        requestID.current = ''
+        setRiskOpen(false)
+        setRiskAcknowledged(false)
+        setReason('')
+        setFormError(undefined)
+      }
       lastRevision.current = next.block_revision
       setAssessment(next)
       setLoading(false)
@@ -121,6 +127,15 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
     })
     return () => { current = false; controller.abort() }
   }, [taskID, status, permitted, reloadVersion])
+
+  useEffect(() => {
+    if (!riskOpen || !assessment) return
+    if (assessment.eligible && (assessment.safety_blockers ?? []).length === 0) return
+    setRiskOpen(false)
+    setRiskAcknowledged(false)
+    setReason('')
+    setFormError(undefined)
+  }, [riskOpen, assessment])
 
   if (!permitted || status !== 'blocked') return null
   if (loading && !assessment) return <Alert type="info" message="正在检查恢复资格" />
@@ -148,7 +163,13 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted }: Tas
   }
 
   const submit = async () => {
-    if (sending.current || !assessment || !assessment.eligible || safetyBlockers.length > 0) return
+    if (sending.current || !assessment) return
+    if (!assessment.eligible || safetyBlockers.length > 0) {
+      closeRisk()
+      setError('当前任务已不能恢复，请查看最新的恢复资格')
+      setErrorKind('refused')
+      return
+    }
     if (assessment.requires_risk_confirmation && (!riskAcknowledged || !reason.trim())) {
       setFormError('请确认风险并填写恢复说明')
       return
