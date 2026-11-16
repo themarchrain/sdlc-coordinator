@@ -93,6 +93,11 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, setupFailure(failure.CodeCLIMissing, fmt.Errorf("run claude cli: %w", err))
 		}
+		// 非零退出时 CLI 仍可能先输出结构化的失败结果：类型化的失败码决定
+		// 恢复分类，不能因为进程退出码丢掉它。
+		if parser.terminalError != nil {
+			return nil, parser.terminalError
+		}
 		return nil, fmt.Errorf("run claude cli: %w", err)
 	}
 	if parser.terminalError != nil {

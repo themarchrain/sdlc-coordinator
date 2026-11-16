@@ -149,6 +149,37 @@ func TestProviderClassifiesExplicitProviderFailure(t *testing.T) {
 	}
 }
 
+func TestProviderKeepsTheParsedFailureWhenTheCommandExitsNonZero(t *testing.T) {
+	root := t.TempDir()
+	writeClaudeTestFile(t, root, "prompt.md", "review")
+	writeClaudeTestFile(t, root, "schema.json", `{"type":"object"}`)
+	command := &fakeCommandRunner{
+		lines: [][]byte{
+			[]byte(`{"type":"result","subtype":"error_during_execution","is_error":true,"error":{"type":"rate_limit_error"},"result":"rate limited"}`),
+		},
+		err: errors.New("exit status 1"),
+	}
+	provider := newProvider("claude", command)
+	_, err := provider.Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-exit-nonzero", TaskID: "task-exit-nonzero", Role: "ReviewerWorker", WorkspacePath: root,
+		PromptFile: "prompt.md", SchemaFile: "schema.json",
+		Provider: runner.ProviderConfig{Name: "claude-cli"},
+	}, func(string, map[string]any) {})
+	if err == nil {
+		t.Fatal("expected provider failure")
+	}
+	info := runner.FailureInfo(err)
+	if info == nil {
+		t.Fatalf("the parsed provider failure was replaced by the command error: %v", err)
+	}
+	if info.Code != failure.CodeProviderRateLimited || info.Source != failure.SourceProvider {
+		t.Fatalf("unexpected failure info: %#v", info)
+	}
+	if got := failure.Classify(info); got != failure.ClassificationTransient {
+		t.Fatalf("Classify() = %q, want transient", got)
+	}
+}
+
 func TestProviderClassifiesLocalSetupFailures(t *testing.T) {
 	tests := []struct {
 		name          string
