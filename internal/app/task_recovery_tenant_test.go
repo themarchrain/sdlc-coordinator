@@ -44,6 +44,19 @@ func TestTenantRecoveryStoresAreIsolated(t *testing.T) {
 	if firstTask.Objective != "first tenant" || secondTask.Objective != "second tenant" {
 		t.Fatalf("tenant recovery stores crossed: first=%+v second=%+v", firstTask, secondTask)
 	}
+	if err := first.Create(&model.Task{TaskID: "task-only-first", DedupeKey: "only-first", Type: "bugfix", Role: "DeveloperWorker", Status: model.TaskStatusBlocked, Objective: "first tenant only"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 另一个租户既读不到也恢复不了只存在于第一个租户库里的任务。
+	if _, err := secondEngine.orch.AssessTaskRecovery(context.Background(), "task-only-first"); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("cross tenant assessment error = %v", err)
+	}
+	if _, err := secondEngine.orch.RecoverBlockedTask(context.Background(), "task-only-first", "tenant-admin", orchestrator.RecoverTaskRequest{RequestID: "request-cross-tenant", BlockRevision: "revision"}); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("cross tenant recovery error = %v", err)
+	}
+	if current, err := firstEngine.orch.GetTask(context.Background(), "task-only-first"); err != nil || current.Status != model.TaskStatusBlocked {
+		t.Fatalf("cross tenant recovery touched the owner task: %+v err=%v", current, err)
+	}
 }
 
 func openRecoveryTenantDB(t *testing.T) *gorm.DB {
