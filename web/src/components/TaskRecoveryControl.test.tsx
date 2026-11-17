@@ -316,6 +316,24 @@ describe('TaskRecoveryControl', () => {
     expect(await screen.findByText(/Runner 没有这条执行记录/)).toBeInTheDocument()
   })
 
+  it('keeps the confirmation outcome after the blocker clears', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(interrupted).mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockResolvedValue({
+      confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-1', execution_id: 'exec-1',
+      remote_state: 'terminal', remote_message: 'runner reports failed',
+      source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+    })
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText(/Runner 回报执行已结束/)).toBeInTheDocument()
+  })
+
   it('binds the request id to the execution the operator picked', async () => {
     const twoBlocked: RecoveryAssessment = {
       ...interrupted,

@@ -73,6 +73,8 @@ function newRequestID() {
   return `recovery-${Date.now()}-${requestSequence}`
 }
 
+type ExecutionExitFeedback = { kind: 'success' | 'info'; message: string }
+
 export function TaskRecoveryControl(props: TaskRecoveryControlProps) {
   const { session, role, superAdmin } = useWorkspaceSession()
   const tenantID = session?.scope.tenant?.id
@@ -94,6 +96,7 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
   const [formError, setFormError] = useState<string>()
   const [submitting, setSubmitting] = useState(false)
   const [adopted, setAdopted] = useState<RecoverTaskResponse>()
+  const [exitFeedback, setExitFeedback] = useState<ExecutionExitFeedback>()
   const sending = useRef(false)
   const mounted = useRef(true)
   const requestID = useRef('')
@@ -214,6 +217,7 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
 
   return <section className="drawer-stack" aria-label="任务恢复">
     {adopted ? <Alert type="success" message="恢复已受理" description={`恢复代次 ${adopted.recovery.source_generation} → ${adopted.recovery.target_generation}；任务已进入待派发，尚未开始运行。`} /> : null}
+    {exitFeedback ? <Alert type={exitFeedback.kind} message={exitFeedback.message} /> : null}
     <Descriptions size="small" bordered column={1} items={[
       { key: 'classification', label: '恢复判断', children: classificationLabels[assessment.classification] ?? assessment.classification },
       { key: 'reason', label: '判断说明', children: assessment.reason_summary || '—' },
@@ -225,7 +229,9 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
     {safetyBlockers.length > 0 ? <Alert type="warning" message="存在未解除的安全阻塞" description={<>
       <ul>{safetyBlockers.map((blocker) => <li key={blocker.code}>{blocker.summary}{blocker.remediation ? `；${blocker.remediation}` : ''}</li>)}</ul>
       {canConfirmExit && safetyBlockers.some((blocker) => blocker.code === 'execution_unconfirmed')
-        ? <ExecutionExitConfirm taskID={taskID} executions={assessment.unconfirmed_executions ?? []} onConfirmed={() => setReloadVersion((value) => value + 1)} />
+        ? <ExecutionExitConfirm taskID={taskID} executions={assessment.unconfirmed_executions ?? []}
+          onPick={() => setExitFeedback(undefined)}
+          onConfirmed={(feedback) => { if (feedback) setExitFeedback(feedback); setReloadVersion((value) => value + 1) }} />
         : null}
     </>} /> : null}
     {!canRecover && safetyBlockers.length === 0 ? <Alert type="warning" message={assessment.reason_summary || '当前任务不能恢复'} /> : null}
@@ -252,14 +258,12 @@ function TaskRecoveryControlBody({ taskID, status, onRecovered, permitted, canCo
   </section>
 }
 
-function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: string; executions: UnconfirmedExecution[]; onConfirmed: () => void }) {
+function ExecutionExitConfirm({ taskID, executions, onPick, onConfirmed }: { taskID: string; executions: UnconfirmedExecution[]; onPick: () => void; onConfirmed: (feedback?: ExecutionExitFeedback) => void }) {
   const [target, setTarget] = useState<UnconfirmedExecution>()
   const [acknowledged, setAcknowledged] = useState(false)
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string>()
   const [submitting, setSubmitting] = useState(false)
-  const [outcome, setOutcome] = useState<string>()
-  const [notice, setNotice] = useState<string>()
   const sending = useRef(false)
   const pending = useRef({ id: '', scope: '' })
 
@@ -285,15 +289,14 @@ function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: str
       })
       pending.current = { id: '', scope: '' }
       close()
-      setOutcome(remoteOutcomeCopy(stored))
-      onConfirmed()
+      onConfirmed({ kind: 'success', message: remoteOutcomeCopy(stored) })
     } catch (cause) {
       const failure = describeRecoveryFailure(cause)
       if (failure.refresh) {
-        // 证据已变化：关窗刷新，但把原因留在页面上，否则操作员不知道为什么被拒。
+        // 证据已变化：关窗刷新，但把原因交给父组件留在页面上，
+        // 否则阻断一解除子组件就卸载，操作员不知道为何被拒。
         close()
-        setNotice(failure.message)
-        onConfirmed()
+        onConfirmed({ kind: 'info', message: failure.message })
         return
       }
       setError(failure.message)
@@ -306,12 +309,10 @@ function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: str
   if (executions.length === 0) return null
 
   return <>
-    {notice ? <Alert type="info" message={notice} /> : null}
-    {outcome ? <Alert type="success" message={outcome} /> : null}
     <ul>
       {executions.map((execution) => <li key={execution.execution_id}>
         <code>{execution.execution_id}</code>（Run {execution.run_id}，状态 {execution.status}）
-        {' '}<Button size="small" onClick={() => { setOutcome(undefined); setNotice(undefined); setTarget(execution) }}>确认已退出</Button>
+        {' '}<Button size="small" onClick={() => { onPick(); setTarget(execution) }}>确认已退出</Button>
       </li>)}
     </ul>
     <Modal open={Boolean(target)} title="确认该执行已退出" okText="提交确认" cancelText="取消" confirmLoading={submitting} okButtonProps={{ disabled: !acknowledged || !reason.trim() || submitting }} onCancel={close} onOk={submit}>
