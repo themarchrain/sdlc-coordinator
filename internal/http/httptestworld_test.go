@@ -45,7 +45,7 @@ type fullyWiredWorld struct {
 	exitReader      *fakeWorldExecutionExitReader
 }
 
-func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
+func newFullyWiredWorld(t *testing.T, extra ...RouterOption) *fullyWiredWorld {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db := openHTTPTestDB(t)
@@ -103,7 +103,7 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 	configurationService := configuration.NewService(nil, configuration.Resolution{Mode: configuration.ModeReady})
 	controlPlane := controlplane.NewService(controlPlaneRepository)
 	tenantStores := tenantdb.NewSharedMainResolver(db, 0)
-	router := NewRouter(orch, processor,
+	options := []RouterOption{
 		WithWebhookSecretLookup(repoStore),
 		WithAdminQueryService(admin.NewQueryService(tenantStores.Main().DB)),
 		WithAgentObservability(agentobservability.NewQuery(tenantStores.Main().DB)),
@@ -116,7 +116,15 @@ func newFullyWiredWorld(t *testing.T) *fullyWiredWorld {
 		WithTenantStoreResolver(tenantStores),
 		WithMCPHandler(mcpHandler),
 		WithRuntimeMode(configuration.ModeReady),
-	)
+	}
+	routerArgs := []any{processor}
+	for _, option := range options {
+		routerArgs = append(routerArgs, option)
+	}
+	for _, option := range extra {
+		routerArgs = append(routerArgs, option)
+	}
+	router := NewRouter(orch, routerArgs...)
 	return &fullyWiredWorld{
 		Router:       router,
 		ControlPlane: controlPlane,
