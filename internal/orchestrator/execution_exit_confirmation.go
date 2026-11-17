@@ -66,7 +66,10 @@ func (o *Orchestrator) ConfirmExecutionExit(ctx context.Context, taskID, actorID
 	}
 	existing, err := o.executionExits.GetByRequest(ctx, taskID, requestID)
 	if err == nil {
-		if existing.RequestedBy == actorID && existing.Reason == reason {
+		// 请求编号只对同一条执行、同一份证据可重放：换一条执行再提交是
+		// 新意图，不能把上一份确认当成它的结果返回。
+		if existing.RequestedBy == actorID && existing.Reason == reason &&
+			existing.ExecutionID == executionID && existing.ExecutionFingerprint == expectedFingerprint {
 			return existing, nil
 		}
 		return nil, repository.ErrRecoveryRequestConflict

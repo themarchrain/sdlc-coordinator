@@ -90,6 +90,24 @@ func (f *exitConfirmationFixture) confirm(t *testing.T, request ConfirmExecution
 	return confirmation
 }
 
+// appendExecution adds another run and execution to the same task, so a test
+// can name two rows the operator could have picked.
+func (f *exitConfirmationFixture) appendExecution(t *testing.T, runID string) *model.AgentExecution {
+	t.Helper()
+	if err := f.db.Create(&model.Run{RunID: runID, TaskID: f.task.TaskID, WorkerRole: f.task.Role, Status: model.RunStatusBlocked}).Error; err != nil {
+		t.Fatal(err)
+	}
+	finished := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	execution := &model.AgentExecution{
+		RunID: runID, ExecutionID: runID, Provider: "codex", Status: model.AgentExecutionStatusInterrupted,
+		ErrorCode: "runner_restarted", RequestHash: "request-hash", FinishedAt: &finished,
+	}
+	if err := f.db.Create(execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	return execution
+}
+
 // bound fills the execution binding the operator's page supplied, so each test
 // states only what it actually exercises.
 func (f *exitConfirmationFixture) bound(request ConfirmExecutionExitRequest, execution *model.AgentExecution) ConfirmExecutionExitRequest {
@@ -117,6 +135,21 @@ func TestConfirmingAnExecutionAgainAfterRecoveryReusesTheEvidence(t *testing.T) 
 	var stored int64
 	if err := fixture.db.Model(&model.ExecutionExitConfirmation{}).Where("task_id = ?", fixture.task.TaskID).Count(&stored).Error; err != nil || stored != 1 {
 		t.Fatalf("stored confirmations = %d err=%v", stored, err)
+	}
+}
+
+func TestConfirmExecutionExitRefusesARequestIDBoundToAnotherExecution(t *testing.T) {
+	fixture := openExitConfirmationOrchestrator(t)
+	fixture.confirm(t, ConfirmExecutionExitRequest{RequestID: "request-exit-shared", Reason: "checked the runner host, no process left"})
+	other := fixture.appendExecution(t, "run-exit-confirmation-other")
+	_, err := fixture.orchestrator.ConfirmExecutionExit(context.Background(), fixture.task.TaskID, "tenant-admin-1",
+		fixture.bound(ConfirmExecutionExitRequest{RequestID: "request-exit-shared", Reason: "checked the runner host, no process left"}, other))
+	if !errors.Is(err, repository.ErrRecoveryRequestConflict) {
+		t.Fatalf("reused request id error = %v", err)
+	}
+	var stored int64
+	if err := fixture.db.Model(&model.ExecutionExitConfirmation{}).Where("execution_id = ?", other.ExecutionID).Count(&stored).Error; err != nil || stored != 0 {
+		t.Fatalf("the reused request id confirmed another execution: count=%d err=%v", stored, err)
 	}
 }
 

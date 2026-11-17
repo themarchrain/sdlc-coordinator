@@ -52,6 +52,7 @@ function describeRecoveryFailure(cause: unknown): RecoveryFailure {
       if (cause.code === 'execution_status_unknown') return { kind: 'refused', message: 'Runner 返回了无法识别的执行状态，请联系运维核对后再确认' }
       if (cause.code === 'execution_not_found') return { kind: 'stale', message: '任务下已没有这条执行记录，正在刷新恢复资格', refresh: true }
       if (cause.code === 'execution_evidence_changed') return { kind: 'stale', message: '执行证据已变化，正在刷新恢复资格', refresh: true }
+      if (cause.code === 'recovery_request_conflict') return { kind: 'stale', message: '该请求编号已用于另一份确认，正在刷新恢复资格', refresh: true }
       return { kind: 'stale', message: '任务状态已变化，正在刷新恢复资格', refresh: true }
     case 503:
       return { kind: 'unavailable', message: '恢复安全检查暂不可用，可重试' }
@@ -258,8 +259,9 @@ function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: str
   const [error, setError] = useState<string>()
   const [submitting, setSubmitting] = useState(false)
   const [outcome, setOutcome] = useState<string>()
+  const [notice, setNotice] = useState<string>()
   const sending = useRef(false)
-  const requestID = useRef('')
+  const pending = useRef({ id: '', scope: '' })
 
   const close = () => {
     setTarget(undefined)
@@ -273,20 +275,24 @@ function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: str
     sending.current = true
     setSubmitting(true)
     setError(undefined)
-    if (!requestID.current) requestID.current = newRequestID()
+    // 请求编号只绑定一个确认对象：同一执行、同一指纹重试才复用。
+    const scope = `${target.execution_id}:${target.fingerprint}`
+    if (pending.current.scope !== scope) pending.current = { id: newRequestID(), scope }
     try {
       const stored = await adminApi.confirmExecutionExit(taskID, {
-        request_id: requestID.current, reason: reason.trim(),
+        request_id: pending.current.id, reason: reason.trim(),
         execution_id: target.execution_id, expected_fingerprint: target.fingerprint,
       })
-      requestID.current = ''
+      pending.current = { id: '', scope: '' }
       close()
       setOutcome(remoteOutcomeCopy(stored))
       onConfirmed()
     } catch (cause) {
       const failure = describeRecoveryFailure(cause)
       if (failure.refresh) {
+        // 证据已变化：关窗刷新，但把原因留在页面上，否则操作员不知道为什么被拒。
         close()
+        setNotice(failure.message)
         onConfirmed()
         return
       }
@@ -300,11 +306,12 @@ function ExecutionExitConfirm({ taskID, executions, onConfirmed }: { taskID: str
   if (executions.length === 0) return null
 
   return <>
+    {notice ? <Alert type="info" message={notice} /> : null}
     {outcome ? <Alert type="success" message={outcome} /> : null}
     <ul>
       {executions.map((execution) => <li key={execution.execution_id}>
         <code>{execution.execution_id}</code>（Run {execution.run_id}，状态 {execution.status}）
-        {' '}<Button size="small" onClick={() => { setOutcome(undefined); setTarget(execution) }}>确认已退出</Button>
+        {' '}<Button size="small" onClick={() => { setOutcome(undefined); setNotice(undefined); setTarget(execution) }}>确认已退出</Button>
       </li>)}
     </ul>
     <Modal open={Boolean(target)} title="确认该执行已退出" okText="提交确认" cancelText="取消" confirmLoading={submitting} okButtonProps={{ disabled: !acknowledged || !reason.trim() || submitting }} onCancel={close} onOk={submit}>

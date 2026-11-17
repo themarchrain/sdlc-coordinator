@@ -148,6 +148,30 @@ func TestExecutionExitConfirmationRequestReplay(t *testing.T) {
 	}
 }
 
+func TestExecutionExitConfirmationReplayOutlivesTheRecoveryGeneration(t *testing.T) {
+	db := openExitConfirmationDB(t)
+	task, execution := exitConfirmationFixture(t, db, "task-exit-replay-generation", 0)
+	repo := NewExecutionExitConfirmationRepository(db)
+	confirmation := exitConfirmationFor(task, execution, "request-generation")
+	if _, replay, err := repo.Create(context.Background(), confirmation); err != nil || replay {
+		t.Fatalf("first confirmation: replay=%v err=%v", replay, err)
+	}
+	// 任务恢复到下一代后，同一请求编号仍然指向同一份证据。
+	if err := db.Model(&model.Task{}).Where("task_id = ?", task.TaskID).Update("recovery_generation", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	replayed := exitConfirmationFor(task, execution, "request-generation")
+	replayed.SourceGeneration = 1
+	again, replay, err := repo.Create(context.Background(), replayed)
+	if err != nil || !replay || again.ConfirmationID != confirmation.ConfirmationID {
+		t.Fatalf("cross-generation replay = %+v,%v,%v", again, replay, err)
+	}
+	var count int64
+	if err := db.Model(&model.ExecutionExitConfirmation{}).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("replay duplicated the confirmation: count=%d err=%v", count, err)
+	}
+}
+
 func TestExecutionExitConfirmationConcurrentConfirmsOneRecord(t *testing.T) {
 	dsn := "file:" + t.Name() + "?mode=memory&cache=shared"
 	first, err := store.Open(dsn)

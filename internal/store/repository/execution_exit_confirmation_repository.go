@@ -128,10 +128,11 @@ func exitConfirmationReplayMatches(existing, incoming *model.ExecutionExitConfir
 	if existing == nil || incoming == nil {
 		return false
 	}
+	// 代次不进身份：任务恢复到下一代后，同一条执行的退出证据不变，
+	// 重放继续返回原记录而不是变成冲突。
 	return existing.RequestedBy == incoming.RequestedBy &&
 		existing.RunID == incoming.RunID &&
 		existing.ExecutionID == incoming.ExecutionID &&
 		existing.ExecutionFingerprint == incoming.ExecutionFingerprint &&
-		existing.SourceGeneration == incoming.SourceGeneration &&
 		existing.Reason == incoming.Reason
 }

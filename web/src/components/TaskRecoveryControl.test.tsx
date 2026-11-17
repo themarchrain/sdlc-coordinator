@@ -316,6 +316,54 @@ describe('TaskRecoveryControl', () => {
     expect(await screen.findByText(/Runner 没有这条执行记录/)).toBeInTheDocument()
   })
 
+  it('binds the request id to the execution the operator picked', async () => {
+    const twoBlocked: RecoveryAssessment = {
+      ...interrupted,
+      unconfirmed_executions: [
+        { run_id: 'run-old', execution_id: 'exec-old', fingerprint: 'fp-old', status: 'interrupted' },
+        { run_id: 'run-new', execution_id: 'exec-new', fingerprint: 'fp-new', status: 'interrupted' },
+      ],
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(twoBlocked)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce({
+        confirmation_id: 'c2', task_id: 'task-1', run_id: 'run-new', execution_id: 'exec-new',
+        remote_state: 'terminal', source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+      })
+    renderControl(twoBlocked, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '确认已退出' }))[0])
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认旧执行退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '确认已退出' }))[1])
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认新执行退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[0][1]).toMatchObject({ execution_id: 'exec-old', expected_fingerprint: 'fp-old' })
+    expect(confirm.mock.calls[1][1]).toMatchObject({ execution_id: 'exec-new', expected_fingerprint: 'fp-new' })
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('reports a request id that already names another confirmation', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'recovery_request_conflict', 'conflict'))
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    expect(await screen.findByText(/该请求编号已用于另一份确认/)).toBeInTheDocument()
+  })
+
   it('refuses to record a confirmation for an unrecognised runner status', async () => {
     vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
     vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'execution_status_unknown', 'runner status'))
