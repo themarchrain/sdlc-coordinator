@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
@@ -80,6 +81,35 @@ func TestResumeDeveloperTaskFailsClosedWhenTheObjectIsUnreadable(t *testing.T) {
 				t.Fatalf("unreadable object still resumed the task: %+v", current)
 			}
 		})
+	}
+}
+
+// deadlineObjectReader records the deadline it was given and answers like an
+// unresponsive code host, so the guard has to impose the bound itself.
+type deadlineObjectReader struct {
+	deadline time.Duration
+	called   bool
+}
+
+func (r *deadlineObjectReader) ReadRecoveryObject(ctx context.Context, _ *model.Task) (RecoveryObjectState, error) {
+	r.called = true
+	until, ok := ctx.Deadline()
+	if !ok {
+		return RecoveryObjectState{}, errors.New("object read was given no deadline")
+	}
+	r.deadline = time.Until(until)
+	return RecoveryObjectState{}, context.DeadlineExceeded
+}
+
+func TestResumeDeveloperTaskBoundsTheObjectRead(t *testing.T) {
+	reader := &deadlineObjectReader{}
+	orchestrator, _, task := openDeveloperResumeOrchestrator(t, reader)
+	_, err := orchestrator.ResumeDeveloperTask(context.Background(), developerResumeRequest(task))
+	if !errors.Is(err, model.ErrTaskObjectUnavailable) {
+		t.Fatalf("resume error = %v, want the unavailable gate", err)
+	}
+	if !reader.called || reader.deadline <= 0 || reader.deadline > 10*time.Second {
+		t.Fatalf("object read deadline = %v (called=%v)", reader.deadline, reader.called)
 	}
 }
 

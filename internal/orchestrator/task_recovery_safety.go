@@ -21,6 +21,10 @@ const (
 	RecoveryObjectIssue        RecoveryObjectKind = "issue"
 )
 
+// recoveryObjectReadTimeout bounds every read of the task's live target object,
+// so an unresponsive code host fails the gate instead of holding the caller.
+const recoveryObjectReadTimeout = 5 * time.Second
+
 // RecoveryObjectKind reports which live object a task must still be able to act
 // on. A missing or unknown object yields RecoveryObjectNone so the existing task
 // object validation stays the gate for it.
@@ -144,7 +148,7 @@ func (r *RecoverySafetyReader) readObjectState(ctx context.Context, task *model.
 		unavailable(fmt.Errorf("task object reader is unavailable"))
 		return
 	}
-	objectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	objectCtx, cancel := context.WithTimeout(ctx, recoveryObjectReadTimeout)
 	defer cancel()
 	object, err := r.ObjectReader.ReadRecoveryObject(objectCtx, task)
 	if err != nil {
@@ -265,7 +269,11 @@ func (o *Orchestrator) assertTaskObjectOpen(ctx context.Context, task *model.Tas
 	if o.recoveryObjects == nil {
 		return model.ErrTaskObjectUnavailable
 	}
-	state, err := o.recoveryObjects.ReadRecoveryObject(ctx, task)
+	// 续办入口是同步外呼，必须自带截止时间：对象服务无响应时不能挂住
+	// webhook 投递，也不能占着恢复所依赖的上下文。
+	readCtx, cancel := context.WithTimeout(ctx, recoveryObjectReadTimeout)
+	defer cancel()
+	state, err := o.recoveryObjects.ReadRecoveryObject(readCtx, task)
 	if err != nil {
 		return fmt.Errorf("%w: %v", model.ErrTaskObjectUnavailable, err)
 	}

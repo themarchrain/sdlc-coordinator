@@ -282,8 +282,13 @@ func (p *Processor) ProcessWebhook(ctx context.Context, normalizer Normalizer, r
 		}
 		createdTask, err = resumer.ResumeDeveloperTask(ctx, request)
 		if err != nil {
+			if errors.Is(err, model.ErrTaskObjectUnavailable) {
+				// 对象暂时读不到属于外部依赖的瞬时故障：留在可重放状态，
+				// 同一投递重投时重新评估，不能当终态吞掉。
+				return p.deferInboundEvent(ctx, inbound, err.Error(), duplicate)
+			}
 			if errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrTaskNotClaimable) ||
-				errors.Is(err, model.ErrTaskObjectNotOpen) || errors.Is(err, model.ErrTaskObjectUnavailable) {
+				errors.Is(err, model.ErrTaskObjectNotOpen) {
 				return p.ignoreInboundEvent(ctx, inbound, err.Error(), duplicate)
 			}
 			return nil, p.failInboundEvent(ctx, inbound, err)
@@ -300,8 +305,11 @@ func (p *Processor) ProcessWebhook(ctx context.Context, normalizer Normalizer, r
 		request.RepositoryID = inbound.RepositoryID
 		createdTask, err = handler.StartOrResumeMergeRequestRework(ctx, request)
 		if err != nil {
+			if errors.Is(err, model.ErrTaskObjectUnavailable) {
+				return p.deferInboundEvent(ctx, inbound, err.Error(), duplicate)
+			}
 			if errors.Is(err, model.ErrMergeRequestNotManaged) || errors.Is(err, model.ErrMergeRequestReworkRequesterUnauthorized) || errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrTaskNotClaimable) ||
-				errors.Is(err, model.ErrTaskObjectNotOpen) || errors.Is(err, model.ErrTaskObjectUnavailable) {
+				errors.Is(err, model.ErrTaskObjectNotOpen) {
 				return p.ignoreInboundEvent(ctx, inbound, err.Error(), duplicate)
 			}
 			return nil, p.failInboundEvent(ctx, inbound, err)
