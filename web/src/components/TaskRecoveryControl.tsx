@@ -67,6 +67,12 @@ function formatCheckedAt(value?: string) {
   return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString('zh-CN', { hour12: false })
 }
 
+// isRequestConflict reports the one answer that retires a request id: the
+// server already tied that id to another confirmation.
+function isRequestConflict(cause: unknown) {
+  return cause instanceof AdminApiError && cause.status === 409 && cause.code === 'recovery_request_conflict'
+}
+
 function newRequestID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   requestSequence += 1
@@ -265,7 +271,7 @@ function ExecutionExitConfirm({ taskID, executions, onPick, onConfirmed }: { tas
   const [error, setError] = useState<string>()
   const [submitting, setSubmitting] = useState(false)
   const sending = useRef(false)
-  const pending = useRef({ id: '', scope: '' })
+  const pending = useRef({ id: '', key: '' })
 
   const close = () => {
     setTarget(undefined)
@@ -279,18 +285,23 @@ function ExecutionExitConfirm({ taskID, executions, onPick, onConfirmed }: { tas
     sending.current = true
     setSubmitting(true)
     setError(undefined)
-    // 请求编号只绑定一个确认对象：同一执行、同一指纹重试才复用。
-    const scope = `${target.execution_id}:${target.fingerprint}`
-    if (pending.current.scope !== scope) pending.current = { id: newRequestID(), scope }
+    // 请求编号绑定实际发送的完整确认内容：同一内容重试复用编号，
+    // 换任务、执行、指纹或说明都算新请求。
+    const confirmation = {
+      execution_id: target.execution_id, expected_fingerprint: target.fingerprint, reason: reason.trim(),
+    }
+    const key = JSON.stringify([taskID, confirmation.execution_id, confirmation.expected_fingerprint, confirmation.reason])
+    if (!pending.current.id || pending.current.key !== key) pending.current = { id: newRequestID(), key }
     try {
-      const stored = await adminApi.confirmExecutionExit(taskID, {
-        request_id: pending.current.id, reason: reason.trim(),
-        execution_id: target.execution_id, expected_fingerprint: target.fingerprint,
-      })
-      pending.current = { id: '', scope: '' }
+      const stored = await adminApi.confirmExecutionExit(taskID, { request_id: pending.current.id, ...confirmation })
+      pending.current = { id: '', key: '' }
       close()
       onConfirmed({ kind: 'success', message: remoteOutcomeCopy(stored) })
     } catch (cause) {
+      if (isRequestConflict(cause)) {
+        // 服务端已判定该编号属于另一份确认：废弃它，人工再确认时换新编号。
+        pending.current = { id: '', key: '' }
+      }
       const failure = describeRecoveryFailure(cause)
       if (failure.refresh) {
         // 证据已变化：关窗刷新，但把原因交给父组件留在页面上，

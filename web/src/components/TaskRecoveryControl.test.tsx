@@ -369,6 +369,131 @@ describe('TaskRecoveryControl', () => {
     expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
   })
 
+  const storedExit = {
+    confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-1', execution_id: 'exec-1',
+    remote_state: 'terminal', source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+  }
+
+  async function openExitConfirm(reason: string) {
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: reason } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+  }
+
+  it('reuses the request id when the same confirmation is retried after an unknown outcome', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: ' 已在机器上确认进程退出 ' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.reason).toBe('已在机器上确认进程退出')
+    expect(confirm.mock.calls[1][1]?.request_id).toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('issues a new request id when the reason changes after an unknown outcome', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '换了一台机器重新确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('issues a new request id when the execution evidence changed after an unknown outcome', async () => {
+    const moved = {
+      ...interrupted,
+      unconfirmed_executions: [{ run_id: 'run-1', execution_id: 'exec-1', fingerprint: 'fp-2', status: 'interrupted' }],
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(interrupted).mockResolvedValue(moved)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(409, 'execution_evidence_changed', '证据已变化'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/执行证据已变化/)).toBeInTheDocument()
+    await openExitConfirm('已在机器上确认进程退出')
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.expected_fingerprint).toBe('fp-2')
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('retires the request id after the server reports a conflict', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(409, 'recovery_request_conflict', 'conflict'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/该请求编号已用于另一份确认/)).toBeInTheDocument()
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(screen.getByText(/该请求编号已用于另一份确认/)).toBeInTheDocument()
+
+    await openExitConfirm('已在机器上确认进程退出')
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('starts a new request id for another task', async () => {
+    const otherTask = { ...interrupted, task_id: 'task-2' }
+    vi.spyOn(adminApi, 'taskRecovery').mockImplementation((id) => Promise.resolve(id === 'task-2' ? otherTask : interrupted))
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    const view = renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    view.rerender(<WorkspaceSessionProvider value={adminPersona}><TaskRecoveryControl taskID="task-2" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider>)
+    await openExitConfirm('已在机器上确认进程退出')
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('starts a new request id after the operator switches', async () => {
+    const otherPersona: WorkspaceSessionValue = {
+      ...adminPersona,
+      session: {
+        ...session,
+        user: { ...session.user, id: 99, username: 'other-admin' },
+        scope: { ...session.scope, role: 'tenant_admin' },
+      },
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    const view = renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    view.rerender(<WorkspaceSessionProvider value={otherPersona}><TaskRecoveryControl taskID="task-1" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider>)
+    await openExitConfirm('已在机器上确认进程退出')
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
   it('reports a request id that already names another confirmation', async () => {
     vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
     vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'recovery_request_conflict', 'conflict'))
