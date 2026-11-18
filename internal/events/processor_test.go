@@ -3,10 +3,12 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 
+	"sdlc-coordinator/internal/adapters/codehost"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/orchestrator"
 	"sdlc-coordinator/internal/registeredrepo"
@@ -298,6 +300,104 @@ func TestProcessorDifferentEventUUIDsReuseBusinessTask(t *testing.T) {
 	}
 }
 
+// unreadableOnceObjectReader fails the first read and then reports the object
+// open, so a deferred delivery can prove it was not swallowed.
+type unreadableOnceObjectReader struct{ reads int }
+
+func (r *unreadableOnceObjectReader) ReadRecoveryObject(context.Context, *model.Task) (orchestrator.RecoveryObjectState, error) {
+	r.reads++
+	if r.reads == 1 {
+		return orchestrator.RecoveryObjectState{}, errors.New("code host timed out")
+	}
+	return orchestrator.RecoveryObjectState{State: codehost.MergeRequestStateOpen}, nil
+}
+
+func TestProcessorDefersAResumeWhileTheTaskObjectIsUnreadable(t *testing.T) {
+	processor, _, taskRepo := newProcessorFixtureWithObjectReader(t, &unreadableOnceObjectReader{})
+	ctx := context.Background()
+
+	created, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_opened_developer_agent.json"))
+	if err != nil || created.Task == nil {
+		t.Fatalf("create developer task: %v", err)
+	}
+	task := created.Task
+	task.Status = model.TaskStatusHumanRequired
+	task.LastError = "need API field definition"
+	if err := taskRepo.Update(ctx, task); err != nil {
+		t.Fatalf("mark task human_required: %v", err)
+	}
+
+	deferred, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("resume with an unreadable object: %v", err)
+	}
+	if deferred.Ignored || deferred.Event == nil || deferred.Event.Status != model.InboundEventStatusDeferred {
+		t.Fatalf("temporarily unreadable object was not deferred: %#v", deferred)
+	}
+
+	// 同一投递重放：对象恢复可读后必须继续续办，而不是永久作废。
+	replayed, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("replay the deferred delivery: %v", err)
+	}
+	if replayed.Ignored || replayed.Task == nil || replayed.Task.Status != model.TaskStatusPending {
+		t.Fatalf("the deferred delivery never resumed the task: %#v", replayed)
+	}
+}
+
+// unknownOnceObjectReader answers without a usable state first and reports the
+// object open afterwards, so a deferred delivery can prove it re-checks.
+type unknownOnceObjectReader struct{ reads int }
+
+func (r *unknownOnceObjectReader) ReadRecoveryObject(context.Context, *model.Task) (orchestrator.RecoveryObjectState, error) {
+	r.reads++
+	if r.reads == 1 {
+		return orchestrator.RecoveryObjectState{}, nil
+	}
+	return orchestrator.RecoveryObjectState{State: codehost.MergeRequestStateOpen}, nil
+}
+
+func TestProcessorDefersAResumeWhileTheTaskObjectStateIsUnknown(t *testing.T) {
+	processor, _, taskRepo := newProcessorFixtureWithObjectReader(t, &unknownOnceObjectReader{})
+	ctx := context.Background()
+
+	created, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_opened_developer_agent.json"))
+	if err != nil || created.Task == nil {
+		t.Fatalf("create developer task: %v", err)
+	}
+	task := created.Task
+	task.Status = model.TaskStatusHumanRequired
+	task.LastError = "need API field definition"
+	if err := taskRepo.Update(ctx, task); err != nil {
+		t.Fatalf("mark task human_required: %v", err)
+	}
+
+	// 平台没有给出可用状态：既不能续办，也不能当终态吞掉。
+	deferred, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("resume with an unknown object state: %v", err)
+	}
+	if deferred.Ignored || deferred.Event == nil || deferred.Event.Status != model.InboundEventStatusDeferred {
+		t.Fatalf("unknown object state was not deferred: %#v", deferred)
+	}
+	current, err := taskRepo.GetByTaskID(ctx, task.TaskID)
+	if err != nil {
+		t.Fatalf("read task after the deferred resume: %v", err)
+	}
+	if current.Status != model.TaskStatusHumanRequired {
+		t.Fatalf("unknown object state advanced the task: %+v", current)
+	}
+
+	// 同一投递重放：状态可读后必须继续续办，而不是要求新的投递编号。
+	replayed, err := processor.ProcessGitLabWebhook(ctx, readGitLabFixture(t, "issue_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("replay the deferred delivery: %v", err)
+	}
+	if replayed.Ignored || replayed.Task == nil || replayed.Task.Status != model.TaskStatusPending {
+		t.Fatalf("the deferred delivery never resumed the task: %#v", replayed)
+	}
+}
+
 func TestProcessorResumesHumanRequiredDeveloperTaskFromIssueNote(t *testing.T) {
 	processor, _, taskRepo := newProcessorFixture(t)
 	ctx := context.Background()
@@ -382,6 +482,68 @@ func TestProcessorRoutesMergeRequestReworkRequest(t *testing.T) {
 	}
 }
 
+func TestProcessorDefersAMergeRequestReworkWhileTheObjectIsUnreadable(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db, &model.InboundEvent{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	processor := NewProcessor(repository.NewInboundEventRepository(db), &unreadableObjectReworkHandler{})
+
+	result, err := processor.ProcessGitLabWebhook(context.Background(), readGitLabFixture(t, "merge_request_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("process MR rework note: %v", err)
+	}
+	if result.Ignored || result.Event == nil || result.Event.Status != model.InboundEventStatusDeferred {
+		t.Fatalf("unreadable merge request was not deferred: %#v", result)
+	}
+}
+
+// unknownOnceReworkHandler mirrors the resume entrance contract: an
+// unconfirmed object state is retryable, and the replay can proceed.
+type unknownOnceReworkHandler struct {
+	rejectingMergeRequestReworkHandler
+	attempts int
+}
+
+func (h *unknownOnceReworkHandler) StartOrResumeMergeRequestRework(_ context.Context, request model.MergeRequestReworkRequest) (*model.Task, error) {
+	h.attempts++
+	if h.attempts == 1 {
+		return nil, model.ErrTaskObjectUnavailable
+	}
+	return &model.Task{TaskID: "task-rework", DedupeKey: request.DedupeKey, Type: model.TaskTypeReworkMergeRequest, Role: "DeveloperWorker", Status: model.TaskStatusPending}, nil
+}
+
+func TestProcessorDefersAMergeRequestReworkWhileTheObjectStateIsUnknown(t *testing.T) {
+	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db, &model.InboundEvent{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	handler := &unknownOnceReworkHandler{}
+	processor := NewProcessor(repository.NewInboundEventRepository(db), handler)
+
+	deferred, err := processor.ProcessGitLabWebhook(context.Background(), readGitLabFixture(t, "merge_request_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("process MR rework note: %v", err)
+	}
+	if deferred.Ignored || deferred.Event == nil || deferred.Event.Status != model.InboundEventStatusDeferred {
+		t.Fatalf("unknown merge request state was not deferred: %#v", deferred)
+	}
+
+	replayed, err := processor.ProcessGitLabWebhook(context.Background(), readGitLabFixture(t, "merge_request_resume_note_created.json"))
+	if err != nil {
+		t.Fatalf("replay the deferred delivery: %v", err)
+	}
+	if replayed.Ignored || replayed.Task == nil || replayed.Task.Status != model.TaskStatusPending {
+		t.Fatalf("the deferred delivery never started the rework: %#v", replayed)
+	}
+}
+
 func TestProcessorAppliesGitLabReworkRequesterAllowlist(t *testing.T) {
 	db, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
 	if err != nil {
@@ -456,6 +618,16 @@ func TestProcessorRoutesMergeRequestLifecycle(t *testing.T) {
 type capturingMergeRequestReworkHandler struct {
 	reworkRequest    model.MergeRequestReworkRequest
 	lifecycleRequest model.MergeRequestLifecycleRequest
+}
+
+// unreadableObjectReworkHandler reports the transient object read failure the
+// resume entrance returns when the code host cannot be reached.
+type unreadableObjectReworkHandler struct {
+	rejectingMergeRequestReworkHandler
+}
+
+func (h *unreadableObjectReworkHandler) StartOrResumeMergeRequestRework(_ context.Context, _ model.MergeRequestReworkRequest) (*model.Task, error) {
+	return nil, model.ErrTaskObjectUnavailable
 }
 
 type rejectingMergeRequestReworkHandler struct{}
@@ -573,6 +745,11 @@ func TestProcessorConcurrentSameEventUUIDReusesReceipt(t *testing.T) {
 
 func newProcessorFixture(t *testing.T) (*Processor, *repository.InboundEventRepository, *repository.TaskRepository) {
 	t.Helper()
+	return newProcessorFixtureWithObjectReader(t, openTaskObjectReader{})
+}
+
+func newProcessorFixtureWithObjectReader(t *testing.T, objects orchestrator.RecoveryObjectReader) (*Processor, *repository.InboundEventRepository, *repository.TaskRepository) {
+	t.Helper()
 
 	databaseName := strings.NewReplacer("/", "_", "\\", "_", " ", "_").Replace(t.Name())
 	db, err := store.Open("file:" + databaseName + "_" + model.NewID("testdb") + "?mode=memory&cache=shared")
@@ -586,7 +763,7 @@ func newProcessorFixture(t *testing.T) (*Processor, *repository.InboundEventRepo
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
 	inboundRepo := repository.NewInboundEventRepository(db)
-	orch := orchestrator.New(taskRepo, runRepo)
+	orch := orchestrator.New(taskRepo, runRepo, orchestrator.WithRecoveryObjectReader(objects))
 
 	return NewProcessor(inboundRepo, orch), inboundRepo, taskRepo
 }
@@ -606,9 +783,17 @@ func newProcessorFixtureWithNormalizerOptions(t *testing.T, opts ...GitLabNormal
 	taskRepo := repository.NewTaskRepository(db)
 	runRepo := repository.NewRunRepository(db)
 	inboundRepo := repository.NewInboundEventRepository(db)
-	orch := orchestrator.New(taskRepo, runRepo)
+	orch := orchestrator.New(taskRepo, runRepo, orchestrator.WithRecoveryObjectReader(openTaskObjectReader{}))
 
 	return NewProcessor(inboundRepo, orch, opts...), inboundRepo, taskRepo
+}
+
+// openTaskObjectReader reports the live object as open: these fixtures cover the
+// event plumbing, not the object-state gate.
+type openTaskObjectReader struct{}
+
+func (openTaskObjectReader) ReadRecoveryObject(context.Context, *model.Task) (orchestrator.RecoveryObjectState, error) {
+	return orchestrator.RecoveryObjectState{State: codehost.MergeRequestStateOpen}, nil
 }
 
 type mutableRepositoryLookup struct {

@@ -32,8 +32,15 @@ func (r *ResultSubmissionRepository) Accept(ctx context.Context, submission *mod
 		if task.Status == model.TaskStatusInterrupted {
 			return ErrTaskInterrupted
 		}
+		var run model.Run
+		if err := tx.Where("run_id = ? AND task_id = ?", submission.RunID, submission.TaskID).First(&run).Error; err != nil {
+			return ErrResultNotAcceptable
+		}
+		if run.RecoveryGeneration != task.RecoveryGeneration {
+			return ErrRecoveryGenerationMismatch
+		}
 		taskResult := tx.Model(&model.Task{}).
-			Where("task_id = ? AND current_run_id = ? AND status = ?", submission.TaskID, submission.RunID, model.TaskStatusRunning).
+			Where("task_id = ? AND current_run_id = ? AND status = ? AND recovery_generation = ?", submission.TaskID, submission.RunID, model.TaskStatusRunning, task.RecoveryGeneration).
 			Updates(map[string]any{"status": model.TaskStatusFinalizing, "lease_until": nil})
 		if taskResult.Error != nil {
 			return taskResult.Error
@@ -96,7 +103,24 @@ func (r *ResultSubmissionRepository) Update(ctx context.Context, submission *mod
 		if task.Status == model.TaskStatusInterrupted || current.Status == model.ResultSubmissionStatusInterrupted {
 			return ErrTaskInterrupted
 		}
-		return tx.Save(submission).Error
+		// 只推进调用方负责的列：领取次数与载荷属于领取/受理路径，旧快照
+		// 不得用自己读到的值把它们写回去。
+		updates := map[string]any{
+			"status":        submission.Status,
+			"error_message": submission.ErrorMessage,
+			"lease_until":   submission.LeaseUntil,
+			"completed_at":  submission.CompletedAt,
+		}
+		if err := tx.Model(current).Updates(updates).Error; err != nil {
+			return err
+		}
+		// 调用方拿回的对象要反映写后的状态，不依赖 ORM 把 map 回填进结构体。
+		current.Status = submission.Status
+		current.ErrorMessage = submission.ErrorMessage
+		current.LeaseUntil = submission.LeaseUntil
+		current.CompletedAt = submission.CompletedAt
+		*submission = *current
+		return nil
 	}); err != nil {
 		return fmt.Errorf("update result submission: %w", err)
 	}

@@ -59,7 +59,10 @@ func (o *Orchestrator) SubmitResult(ctx context.Context, req SubmitResultRequest
 	if err != nil {
 		return nil, err
 	}
-	if run.TaskID != task.TaskID || task.CurrentRunID == nil || *task.CurrentRunID != run.RunID {
+	if run.TaskID != task.TaskID {
+		return nil, repository.ErrResultNotAcceptable
+	}
+	if err := AssertRunRecoveryCurrent(task, run); err != nil {
 		return nil, repository.ErrResultNotAcceptable
 	}
 	if err := o.validateCanonicalResultForAcceptance(task, run, req.Canonical); err != nil {

@@ -142,7 +142,7 @@ func (o *Orchestrator) ReconcileReviewerRunner(ctx context.Context, runID string
 			return nil, err
 		}
 	case model.AgentExecutionStatusFailed, model.AgentExecutionStatusCancelled, model.AgentExecutionStatusInterrupted:
-		if err := o.recordReviewerRunnerFailure(ctx, runID, result.Execution.ErrorCode); err != nil {
+		if err := o.recordReviewerRunnerFailure(ctx, runID, result.Execution); err != nil {
 			return nil, err
 		}
 	case model.AgentExecutionStatusSucceeded:
@@ -173,7 +173,7 @@ func (o *Orchestrator) rebuildReviewerRunnerProjection(ctx context.Context, runI
 	})
 }
 
-func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, errorCode string) error {
+func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID string, execution *model.AgentExecution) error {
 	run, err := o.runs.GetByRunID(ctx, runID)
 	if err != nil {
 		return err
@@ -185,10 +185,8 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 	if err != nil {
 		return err
 	}
-	message := strings.TrimSpace(errorCode)
-	if message == "" {
-		message = "agent runner execution failed"
-	}
+	message := executionFailureMessage(execution)
+	info := executionFailureInfo(execution)
 	completedAt := o.now()
 	applied, err := o.runs.UpdateFailedIfInFlight(ctx, run.RunID, message, completedAt)
 	if err != nil {
@@ -208,7 +206,7 @@ func (o *Orchestrator) recordReviewerRunnerFailure(ctx context.Context, runID, e
 	// 推进本身也带 current_run_id 条件：读 task 与本条 UPDATE 之间仍可能
 	// 发生接管，条件写把该窗口一同关闭；0 行即接管已发生，静默收敛。
 	previous := task.Status
-	if err := o.stateMachine.Transition(task, o.policy.NextFailureStatus(task)); err != nil {
+	if err := o.stateMachine.Transition(task, o.policy.NextExecutionFailureStatus(task, info)); err != nil {
 		return err
 	}
 	o.policy.Apply(task, previous, task.Status, o.now())

@@ -129,6 +129,7 @@ func (c *Client) GetMergeRequest(ctx context.Context, repo string, mrIID int) (*
 	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v4/projects/%s/merge_requests/%d", url.PathEscape(repo), mrIID), nil, &mergeRequest); err != nil {
 		return nil, err
 	}
+	mergeRequest.State = codehost.NormalizeMergeRequestState(string(mergeRequest.State), mergeRequest.Merged)
 	return &mergeRequest, nil
 }
 

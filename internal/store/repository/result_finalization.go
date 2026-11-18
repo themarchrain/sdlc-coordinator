@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"sdlc-coordinator/internal/model"
@@ -20,7 +22,7 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 		if current.Status == model.TaskStatusInterrupted {
 			return ErrTaskInterrupted
 		}
-		if (current.Status != model.TaskStatusRunning && current.Status != model.TaskStatusFinalizing) || (current.CurrentRunID != nil && *current.CurrentRunID != run.RunID) {
+		if (current.Status != model.TaskStatusRunning && current.Status != model.TaskStatusFinalizing) || current.CurrentRunID == nil || *current.CurrentRunID != run.RunID {
 			return ErrResultNotAcceptable
 		}
 		query := tx.Where("run_id = ? AND task_id = ?", run.RunID, task.TaskID)
@@ -31,7 +33,7 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 		if err := query.First(&currentRun).Error; err != nil {
 			return stopLookupError(err)
 		}
-		if currentRun.Status != model.RunStatusRunning && currentRun.Status != model.RunStatusFinalizing {
+		if (currentRun.Status != model.RunStatusRunning && currentRun.Status != model.RunStatusFinalizing) || currentRun.RecoveryGeneration != current.RecoveryGeneration {
 			return ErrResultNotAcceptable
 		}
 		if err := tx.Model(current).Updates(map[string]any{"status": task.Status, "current_run_id": task.CurrentRunID, "lease_until": task.LeaseUntil, "last_error": task.LastError, "updated_at": now}).Error; err != nil {
@@ -58,9 +60,22 @@ func (r *TaskRepository) FinalizeResultAtomic(ctx context.Context, task *model.T
 			}
 		}
 		if finalizeSubmission {
-			if err := tx.Model(&model.ResultSubmission{}).Where("task_id = ? AND run_id = ? AND status = ?", task.TaskID, run.RunID, model.ResultSubmissionStatusProcessing).
-				Updates(map[string]any{"status": model.ResultSubmissionStatusSucceeded, "error_message": "", "lease_until": nil, "completed_at": now, "updated_at": now}).Error; err != nil {
-				return err
+			result := tx.Model(&model.ResultSubmission{}).Where("task_id = ? AND run_id = ? AND status = ?", task.TaskID, run.RunID, model.ResultSubmissionStatusProcessing).
+				Updates(map[string]any{"status": model.ResultSubmissionStatusSucceeded, "error_message": "", "lease_until": nil, "completed_at": now, "updated_at": now})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				// 没有待结算的提交行是正常路径（结果未经提交表直达）；但存在一行
+				// 停在非成功状态时不能把任务收口成成功，否则它永久卡住。
+				var existing model.ResultSubmission
+				lookup := tx.Where("task_id = ? AND run_id = ?", task.TaskID, run.RunID).First(&existing).Error
+				if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
+					return lookup
+				}
+				if lookup == nil && existing.Status != model.ResultSubmissionStatusSucceeded {
+					return fmt.Errorf("%w: result submission is %s", ErrResultNotAcceptable, existing.Status)
+				}
 			}
 		}
 		return nil

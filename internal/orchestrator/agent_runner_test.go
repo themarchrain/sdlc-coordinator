@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/store"
@@ -107,5 +108,41 @@ func TestAgentRunnerCoordinatorProjectsFailureMessage(t *testing.T) {
 	}
 	if projected.ErrorCode != remote.ErrorCode || projected.ErrorMessage != remote.ErrorMessage {
 		t.Fatalf("failure detail was not projected: %#v", projected)
+	}
+	if projected.FailureJSON == "" {
+		t.Fatal("legacy failure evidence was not projected")
+	}
+	var info failure.Info
+	if err := json.Unmarshal([]byte(projected.FailureJSON), &info); err != nil {
+		t.Fatalf("decode projected failure: %v", err)
+	}
+	if info.Code != "provider_failed" || failure.Classify(&info) != failure.ClassificationUnknown {
+		t.Fatalf("legacy failure must remain unknown: %#v", info)
+	}
+}
+
+func TestAgentRunnerCoordinatorProjectsStructuredFailure(t *testing.T) {
+	coordinator := &AgentRunnerCoordinator{now: time.Now}
+	remote := &runner.Execution{
+		ExecutionID: "run-typed-failed", Provider: "codex-cli", Status: runner.StatusFailed,
+		RequestHash: "request-hash", ErrorCode: "provider_failed", ErrorMessage: "rate limited",
+		Failure: &failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageProvider,
+			Source:  failure.SourceProvider,
+			Code:    failure.CodeProviderRateLimited,
+			Summary: "rate limited",
+		},
+	}
+	projected, err := coordinator.project(remote, 1, 4, "model-a", "low")
+	if err != nil {
+		t.Fatalf("project failed execution: %v", err)
+	}
+	var info failure.Info
+	if err := json.Unmarshal([]byte(projected.FailureJSON), &info); err != nil {
+		t.Fatalf("decode projected failure: %v", err)
+	}
+	if info.Code != failure.CodeProviderRateLimited || failure.Classify(&info) != failure.ClassificationTransient {
+		t.Fatalf("structured failure was not projected: %#v", info)
 	}
 }

@@ -85,6 +85,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 	stopRepo := repository.NewStopRepository(db)
 	actionAdmissions := repository.NewActionAdmissionRepository(db)
 	workItemLeases := repository.NewWorkItemLeaseRepository(db)
+	taskRecoveryRepo := repository.NewTaskRecoveryRepository(db)
 
 	repoStore := registeredrepo.NewStore(db)
 	opts := []orchestrator.Option{
@@ -140,6 +141,11 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 			Headers: providerHeaders, Model: shared.cfg.AgentRunner.Model, Effort: shared.cfg.AgentRunner.Effort,
 		},
 		ResolveRepository: runnerRepositoryResolver(repoStore),
+	}
+	recoveryReader := &orchestrator.RecoverySafetyReader{
+		Store:            taskRecoveryRepo,
+		RepositoryLookup: repoStore,
+		ObjectReader:     tenantRecoveryObjectReader{repositories: repoStore, resolver: codeHostResolver},
 	}
 	var orch *orchestrator.Orchestrator
 	orchSubmitter := orchestrator.ReviewerResultSubmitterFunc(func(ctx context.Context, request orchestrator.SubmitResultRequest) (*orchestrator.SubmitResultResponse, error) {
@@ -199,6 +205,19 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		// 写回/合并门禁的跨实例执行权:双协调器对同一写回、同一验证任务的
 		// 远端副作用必须单赢家执行(与交付执行权同库同语义)。
 		orchestrator.WithWorkItemLeases(repository.NewWorkItemLeaseRepository(db)),
+		orchestrator.WithTaskRecoveryRepository(taskRecoveryRepo),
+		orchestrator.WithExecutionExitConfirmationRepository(repository.NewExecutionExitConfirmationRepository(db)),
+		orchestrator.WithExecutionExitReader(func(endpoint string) (orchestrator.ExecutionExitReader, error) {
+			if strings.TrimSpace(endpoint) == "" {
+				if shared.defaultRunner == nil {
+					return nil, orchestrator.ErrExecutionExitUnavailable
+				}
+				return shared.defaultRunner, nil
+			}
+			return agentrunner.NewClient(endpoint, nil), nil
+		}),
+		orchestrator.WithRecoveryFactsReader(recoveryReader),
+		orchestrator.WithRecoveryObjectReader(recoveryReader.ObjectReader),
 		orchestrator.WithLogger(shared.logger),
 	)
 	// MCP 结果回传通道：签名密钥仅存内存且全引擎共享；token 声明携带本引擎

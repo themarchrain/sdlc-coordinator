@@ -1,0 +1,546 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { AdminApiError, adminApi } from '../api/client'
+import type { PortalSessionPayload } from '../api/portal'
+import type { RecoveryAssessment } from '../api/types'
+import { WorkspaceSessionProvider, type WorkspaceSessionValue } from '../app/workspaceSession'
+import { TaskRecoveryControl } from './TaskRecoveryControl'
+
+afterEach(() => vi.restoreAllMocks())
+
+const session: PortalSessionPayload = {
+  user: { id: 17, username: 'member', role: 'member', must_change_password: false },
+  scope: { kind: 'tenant', role: 'member', tenant: { id: 1, slug: 'acme', display_name: 'Acme', status: 'active' } },
+}
+const persona: WorkspaceSessionValue = { session, role: 'member', superAdmin: false }
+
+const transient: RecoveryAssessment = {
+  task_id: 'task-1', classification: 'transient', eligible: true, requires_risk_confirmation: false,
+  reason_code: 'eligible', reason_summary: '外部故障已恢复', block_revision: 'revision-1',
+  failure_summary: '上游返回 503', safety_blockers: [], checked_at: '2026-11-16T10:00:00Z',
+}
+const adminPersona: WorkspaceSessionValue = {
+  session: { ...session, user: { ...session.user, role: 'tenant_admin' }, scope: { ...session.scope, role: 'tenant_admin' } },
+  role: 'tenant_admin', superAdmin: false,
+}
+const interrupted: RecoveryAssessment = {
+  ...transient, eligible: false, reason_code: 'execution_unconfirmed', reason_summary: '前次执行未确认退出',
+  safety_blockers: [{ code: 'execution_unconfirmed', summary: '前次执行未确认退出', remediation: '确认该执行已退出后重试' }],
+  unconfirmed_executions: [{ run_id: 'run-1', execution_id: 'exec-1', fingerprint: 'fp-1', status: 'interrupted' }],
+}
+
+function renderControl(assessment: RecoveryAssessment, taskID = 'task-1', status = 'blocked', value: WorkspaceSessionValue = persona) {
+  return render(<WorkspaceSessionProvider value={value}><TaskRecoveryControl taskID={taskID} status={status} onRecovered={() => {}} /></WorkspaceSessionProvider>)
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
+}
+
+describe('TaskRecoveryControl', () => {
+  it('shows member recovery without granting stop', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    renderControl(transient)
+
+    expect(await screen.findByRole('button', { name: '恢复任务' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /停\s*止/ })).not.toBeInTheDocument()
+  })
+
+  it('requires explicit unknown risk and reason', async () => {
+    const unknown = { ...transient, classification: 'unknown', requires_risk_confirmation: true, reason_summary: '无法判定失败原因' }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(unknown)
+    const recover = vi.spyOn(adminApi, 'recoverTask').mockResolvedValue({ replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-1', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: true, classification: 'unknown', attempt_count_before: 2, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-1', status: 'pending' } })
+    renderControl(unknown)
+
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    expect(screen.getByText(/系统无法判定失败原因，恢复后可能立即再次阻塞/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认恢复' })).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('我已了解并确认风险'))
+    fireEvent.change(screen.getByLabelText('恢复说明'), { target: { value: '已确认可以承担风险' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    await waitFor(() => expect(recover).toHaveBeenCalledWith('task-1', expect.objectContaining({ acknowledge_unknown_risk: true, reason: '已确认可以承担风险', block_revision: 'revision-1' })))
+  })
+
+  it('blocks fatal and safety-unknown recoveries', async () => {
+    const fatal = { ...transient, classification: 'fatal', eligible: false, reason_code: 'fatal_not_recoverable', reason_summary: '失败不可恢复', safety_blockers: [{ code: 'execution_unconfirmed', summary: '前次执行未确认退出', remediation: '先完成对账' }] }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(fatal)
+    renderControl(fatal)
+
+    expect(await screen.findByText('失败不可恢复')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '恢复任务' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '风险恢复' })).not.toBeInTheDocument()
+    expect(screen.getByText(/前次执行未确认退出/)).toBeInTheDocument()
+  })
+
+  it('shows the failure stage, source run and assessment time', async () => {
+    const detailed = { ...transient, failure_stage: 'provider', source_run_id: 'run-9' }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(detailed)
+    renderControl(detailed)
+
+    expect(await screen.findByText('失败阶段')).toBeInTheDocument()
+    expect(screen.getByText('provider')).toBeInTheDocument()
+    expect(screen.getByText('来源执行')).toBeInTheDocument()
+    expect(screen.getByText('run-9')).toBeInTheDocument()
+    expect(screen.getByText('资格检查时间')).toBeInTheDocument()
+    expect(screen.getByText(new Date(detailed.checked_at).toLocaleString('zh-CN', { hour12: false }))).toBeInTheDocument()
+  })
+
+  it('renders an empty blocker list when the API omits the array', async () => {
+    const { safety_blockers: _blockers, ...withoutBlockers } = transient
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(withoutBlockers)
+    renderControl(transient)
+
+    expect(await screen.findByRole('button', { name: '恢复任务' })).toBeInTheDocument()
+  })
+
+  it('displays the original redacted error as text', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue({ ...transient, failure_summary: 'token=*** provider timeout' })
+    renderControl(transient)
+
+    expect(await screen.findByText('token=*** provider timeout')).toBeInTheDocument()
+  })
+
+  it('does not request on cancel and clears risk state', async () => {
+    const recover = vi.spyOn(adminApi, 'recoverTask')
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue({ ...transient, requires_risk_confirmation: true })
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    expect(recover).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '风险恢复' }))
+    expect(screen.getByLabelText('我已了解并确认风险')).not.toBeChecked()
+  })
+
+  it('clears the risk confirmation when the block revision changes', async () => {
+    const unknown = { ...transient, classification: 'unknown', requires_risk_confirmation: true, block_revision: 'revision-1' }
+    const load = vi.spyOn(adminApi, 'taskRecovery')
+      .mockResolvedValueOnce(unknown)
+      .mockResolvedValueOnce({ ...unknown, block_revision: 'revision-2', reason_summary: '新的阻塞版本' })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(409, 'task_recovery_stale', '任务状态已变化'))
+    renderControl(unknown)
+
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    fireEvent.click(screen.getByLabelText('我已了解并确认风险'))
+    fireEvent.change(screen.getByLabelText('恢复说明'), { target: { value: '针对旧阻塞版本的说明' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    expect(screen.getByLabelText('我已了解并确认风险')).not.toBeChecked()
+    expect((screen.getByLabelText('恢复说明') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('closes the confirmation when the task is no longer eligible', async () => {
+    const unknown = { ...transient, classification: 'unknown', requires_risk_confirmation: true, block_revision: 'revision-1' }
+    const load = vi.spyOn(adminApi, 'taskRecovery')
+      .mockResolvedValueOnce(unknown)
+      .mockResolvedValueOnce({
+        ...unknown, block_revision: 'revision-2', eligible: false, reason_code: 'object_not_open', reason_summary: '任务目标已关闭',
+        safety_blockers: [{ code: 'object_not_open', summary: '任务目标已关闭或已合并' }],
+      })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(409, 'task_recovery_stale', '任务状态已变化'))
+    renderControl(unknown)
+
+    fireEvent.click(await screen.findByRole('button', { name: '风险恢复' }))
+    fireEvent.click(screen.getByLabelText('我已了解并确认风险'))
+    fireEvent.change(screen.getByLabelText('恢复说明'), { target: { value: '旧说明' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('任务目标已关闭')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('reports accepted recovery without claiming it is running', async () => {
+    const recovered = { replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-1', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: false, classification: 'transient', attempt_count_before: 2, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-1', status: 'pending' } }
+    const onRecovered = vi.fn()
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockResolvedValue(recovered)
+    render(<WorkspaceSessionProvider value={persona}><TaskRecoveryControl taskID="task-1" status="blocked" onRecovered={onRecovered} /></WorkspaceSessionProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText('恢复已受理')).toBeInTheDocument()
+    expect(screen.queryByText(/已运行/)).not.toBeInTheDocument()
+    expect(onRecovered).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits once per click under StrictMode', async () => {
+    const recovered = { replayed: false, recovery: { recovery_id: 'r1', task_id: 'task-1', request_id: 'req', source_generation: 0, target_generation: 1, block_revision: 'revision-1', requested_by: '17', requested_at: '2026-11-10T00:00:00Z', risk_acknowledged: false, classification: 'transient', attempt_count_before: 2, cycle_max_attempts: 3, created_at: '2026-11-10T00:00:00Z' }, task: { task_id: 'task-1', status: 'pending' } }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    const recover = vi.spyOn(adminApi, 'recoverTask').mockResolvedValue(recovered)
+    render(<StrictMode><WorkspaceSessionProvider value={persona}><TaskRecoveryControl taskID="task-1" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider></StrictMode>)
+
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    await waitFor(() => expect(recover).toHaveBeenCalledTimes(1))
+    expect(screen.getAllByText('恢复已受理')).toHaveLength(1)
+  })
+
+  it('refreshes assessment after a 409', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(transient).mockResolvedValueOnce({ ...transient, block_revision: 'revision-2' })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(409, 'task_recovery_stale', '任务状态已变化'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+  })
+
+  it('allows retrying after a 503 and sends only one request per click sequence', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    const recover = vi.spyOn(adminApi, 'recoverTask').mockRejectedValueOnce(new AdminApiError(503, 'recovery_check_unavailable', '暂不可用'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+    expect(await screen.findByText('恢复安全检查暂不可用，可重试')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /重\s*试/ }))
+    await waitFor(() => expect(recover).toHaveBeenCalledTimes(2))
+  })
+
+  it('reports a permission refusal instead of an unknown result', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(403, 'forbidden', '没有权限'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText('当前会话没有恢复权限')).toBeInTheDocument()
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument()
+  })
+
+  it('reports a missing task without offering a retry', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(404, 'not_found', '任务不存在'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText('任务不存在或已被删除')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '刷新任务' })).not.toBeInTheDocument()
+  })
+
+  it('refreshes when the server now requires risk confirmation', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery')
+      .mockResolvedValueOnce(transient)
+      .mockResolvedValueOnce({ ...transient, classification: 'unknown', requires_risk_confirmation: true, reason_summary: '无法判定失败原因' })
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(400, 'recovery_risk_confirmation_required', '需要确认风险'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: '风险恢复' })).toBeInTheDocument()
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument()
+  })
+
+  it('keeps an unknown result only for server failures', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockRejectedValue(new AdminApiError(500, 'internal_error', '内部错误'))
+    renderControl(transient)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+  })
+
+  it('shows members the unconfirmed execution without the admin confirmation', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    renderControl(interrupted)
+
+    expect(await screen.findByText('存在未解除的安全阻塞')).toBeInTheDocument()
+    expect(screen.getByText('前次执行未确认退出；确认该执行已退出后重试')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '确认已退出' })).not.toBeInTheDocument()
+  })
+
+  it('lets a tenant admin confirm that an interrupted execution exited', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(interrupted).mockResolvedValueOnce(transient)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit').mockResolvedValue({
+      confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-1', execution_id: 'exec-1',
+      remote_state: 'terminal', source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+    })
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    expect(screen.getByRole('button', { name: '提交确认' })).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已在机器上确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('task-1', expect.objectContaining({
+      reason: '已在机器上确认进程退出', execution_id: 'exec-1', expected_fingerprint: 'fp-1',
+    })))
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+  })
+
+  it('reports a still running execution instead of an unknown result', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'execution_still_running', '远端执行仍在运行'))
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    expect(await screen.findByText('该执行仍在运行，不能确认退出')).toBeInTheDocument()
+    expect(screen.queryByText(/结果未知/)).not.toBeInTheDocument()
+  })
+
+  it('confirms the execution the operator picked, not the newest one', async () => {
+    const twoBlocked: RecoveryAssessment = {
+      ...interrupted,
+      unconfirmed_executions: [
+        { run_id: 'run-old', execution_id: 'exec-old', fingerprint: 'fp-old', status: 'interrupted' },
+        { run_id: 'run-new', execution_id: 'exec-new', fingerprint: 'fp-new', status: 'interrupted' },
+      ],
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(twoBlocked)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit').mockResolvedValue({
+      confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-old', execution_id: 'exec-old',
+      remote_state: 'not_found', remote_message: 'runner has no record of this execution',
+      source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+    })
+    renderControl(twoBlocked, 'task-1', 'blocked', adminPersona)
+
+    const buttons = await screen.findAllByRole('button', { name: '确认已退出' })
+    expect(buttons).toHaveLength(2)
+    fireEvent.click(buttons[0])
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认旧执行退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('task-1', expect.objectContaining({
+      execution_id: 'exec-old', expected_fingerprint: 'fp-old',
+    })))
+    expect(await screen.findByText(/Runner 没有这条执行记录/)).toBeInTheDocument()
+  })
+
+  it('keeps the confirmation outcome after the blocker clears', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(interrupted).mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockResolvedValue({
+      confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-1', execution_id: 'exec-1',
+      remote_state: 'terminal', remote_message: 'runner reports failed',
+      source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+    })
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText(/Runner 回报执行已结束/)).toBeInTheDocument()
+  })
+
+  it('binds the request id to the execution the operator picked', async () => {
+    const twoBlocked: RecoveryAssessment = {
+      ...interrupted,
+      unconfirmed_executions: [
+        { run_id: 'run-old', execution_id: 'exec-old', fingerprint: 'fp-old', status: 'interrupted' },
+        { run_id: 'run-new', execution_id: 'exec-new', fingerprint: 'fp-new', status: 'interrupted' },
+      ],
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(twoBlocked)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce({
+        confirmation_id: 'c2', task_id: 'task-1', run_id: 'run-new', execution_id: 'exec-new',
+        remote_state: 'terminal', source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+      })
+    renderControl(twoBlocked, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '确认已退出' }))[0])
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认旧执行退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '确认已退出' }))[1])
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认新执行退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[0][1]).toMatchObject({ execution_id: 'exec-old', expected_fingerprint: 'fp-old' })
+    expect(confirm.mock.calls[1][1]).toMatchObject({ execution_id: 'exec-new', expected_fingerprint: 'fp-new' })
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  const storedExit = {
+    confirmation_id: 'c1', task_id: 'task-1', run_id: 'run-1', execution_id: 'exec-1',
+    remote_state: 'terminal', source_generation: 0, confirmed_at: '2026-11-16T10:00:00Z',
+  }
+
+  async function openExitConfirm(reason: string) {
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: reason } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+  }
+
+  it('reuses the request id when the same confirmation is retried after an unknown outcome', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: ' 已在机器上确认进程退出 ' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.reason).toBe('已在机器上确认进程退出')
+    expect(confirm.mock.calls[1][1]?.request_id).toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('issues a new request id when the reason changes after an unknown outcome', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '换了一台机器重新确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('issues a new request id when the execution evidence changed after an unknown outcome', async () => {
+    const moved = {
+      ...interrupted,
+      unconfirmed_executions: [{ run_id: 'run-1', execution_id: 'exec-1', fingerprint: 'fp-2', status: 'interrupted' }],
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValueOnce(interrupted).mockResolvedValue(moved)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(409, 'execution_evidence_changed', '证据已变化'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/执行证据已变化/)).toBeInTheDocument()
+    await openExitConfirm('已在机器上确认进程退出')
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.expected_fingerprint).toBe('fp-2')
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('retires the request id after the server reports a conflict', async () => {
+    const load = vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(409, 'recovery_request_conflict', 'conflict'))
+      .mockResolvedValueOnce(storedExit)
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/该请求编号已用于另一份确认/)).toBeInTheDocument()
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(screen.getByText(/该请求编号已用于另一份确认/)).toBeInTheDocument()
+
+    await openExitConfirm('已在机器上确认进程退出')
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('starts a new request id for another task', async () => {
+    const otherTask = { ...interrupted, task_id: 'task-2' }
+    vi.spyOn(adminApi, 'taskRecovery').mockImplementation((id) => Promise.resolve(id === 'task-2' ? otherTask : interrupted))
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    const view = renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    view.rerender(<WorkspaceSessionProvider value={adminPersona}><TaskRecoveryControl taskID="task-2" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider>)
+    await openExitConfirm('已在机器上确认进程退出')
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('starts a new request id after the operator switches', async () => {
+    const otherPersona: WorkspaceSessionValue = {
+      ...adminPersona,
+      session: {
+        ...session,
+        user: { ...session.user, id: 99, username: 'other-admin' },
+        scope: { ...session.scope, role: 'tenant_admin' },
+      },
+    }
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    const confirm = vi.spyOn(adminApi, 'confirmExecutionExit')
+      .mockRejectedValueOnce(new AdminApiError(500, 'internal_error', '内部错误'))
+      .mockResolvedValueOnce(storedExit)
+    const view = renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    await openExitConfirm('已在机器上确认进程退出')
+    expect(await screen.findByText(/恢复请求结果未知/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    view.rerender(<WorkspaceSessionProvider value={otherPersona}><TaskRecoveryControl taskID="task-1" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider>)
+    await openExitConfirm('已在机器上确认进程退出')
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    expect(confirm.mock.calls[1][1]?.request_id).not.toBe(confirm.mock.calls[0][1]?.request_id)
+  })
+
+  it('reports a request id that already names another confirmation', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'recovery_request_conflict', 'conflict'))
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    expect(await screen.findByText(/该请求编号已用于另一份确认/)).toBeInTheDocument()
+  })
+
+  it('refuses to record a confirmation for an unrecognised runner status', async () => {
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(interrupted)
+    vi.spyOn(adminApi, 'confirmExecutionExit').mockRejectedValue(new AdminApiError(409, 'execution_status_unknown', 'runner status'))
+    renderControl(interrupted, 'task-1', 'blocked', adminPersona)
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认已退出' }))
+    fireEvent.click(screen.getByLabelText('我确认该执行进程已经退出，且不会再回写结果'))
+    fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '已确认进程退出' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交确认' }))
+
+    expect(await screen.findByText(/无法识别的执行状态/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '刷新任务' })).not.toBeInTheDocument()
+  })
+
+  it('ignores a late assessment after switching Tasks', async () => {
+    const old = deferred<RecoveryAssessment>()
+    vi.spyOn(adminApi, 'taskRecovery').mockImplementation((id) => id === 'task-1' ? old.promise : Promise.resolve({ ...transient, task_id: 'task-2' }))
+    const view = renderControl(transient)
+    view.rerender(<WorkspaceSessionProvider value={persona}><TaskRecoveryControl taskID="task-2" status="blocked" onRecovered={() => {}} /></WorkspaceSessionProvider>)
+    expect(await screen.findByText('外部故障已恢复')).toBeInTheDocument()
+    await act(async () => old.resolve({ ...transient, reason_summary: '旧任务资格' }))
+    expect(screen.queryByText('旧任务资格')).not.toBeInTheDocument()
+  })
+
+  it('ignores a late recovery after the task scope changes', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof adminApi.recoverTask>>>()
+    const onRecovered = vi.fn()
+    vi.spyOn(adminApi, 'taskRecovery').mockResolvedValue(transient)
+    vi.spyOn(adminApi, 'recoverTask').mockReturnValue(pending.promise)
+    const view = render(<WorkspaceSessionProvider value={persona}><TaskRecoveryControl taskID="task-1" status="blocked" onRecovered={onRecovered} /></WorkspaceSessionProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+    view.rerender(<WorkspaceSessionProvider value={persona}><TaskRecoveryControl taskID="task-2" status="blocked" onRecovered={onRecovered} /></WorkspaceSessionProvider>)
+    await act(async () => pending.resolve({ replayed: false, recovery: { recovery_id: 'r1' } as never, task: {} }))
+    expect(onRecovered).not.toHaveBeenCalled()
+    expect(screen.queryByText('恢复已受理')).not.toBeInTheDocument()
+  })
+})

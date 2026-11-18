@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"sdlc-coordinator/internal/failure"
 	"sdlc-coordinator/internal/model"
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/store/repository"
@@ -598,13 +599,36 @@ func (c *AgentRunnerCoordinator) project(remote *runner.Execution, revision int6
 		return nil, err
 	}
 	now := c.now().UTC()
+	failureJSON, err := projectFailureJSON(remote)
+	if err != nil {
+		return nil, err
+	}
 	return &model.AgentExecution{
 		RunID: remote.ExecutionID, ExecutionID: remote.ExecutionID, Provider: remote.Provider,
 		ProviderConfigRevision: revision, ProviderModel: providerModel, ProviderEffort: providerEffort,
 		Status: status, RequestHash: remote.RequestHash,
 		LastEventSeq: lastEventSeq, LastObservedAt: &now, ResultHash: remote.ResultHash,
-		ErrorCode: remote.ErrorCode, ErrorMessage: remote.ErrorMessage, StartedAt: remote.StartedAt, FinishedAt: remote.FinishedAt,
+		ErrorCode: remote.ErrorCode, ErrorMessage: remote.ErrorMessage, FailureJSON: failureJSON,
+		StartedAt: remote.StartedAt, FinishedAt: remote.FinishedAt,
 	}, nil
+}
+
+func projectFailureJSON(remote *runner.Execution) (string, error) {
+	if remote == nil {
+		return "", nil
+	}
+	info := remote.Failure
+	if info == nil && (strings.TrimSpace(remote.ErrorCode) != "" || strings.TrimSpace(remote.ErrorMessage) != "") {
+		info = failure.FromLegacy(remote.ErrorCode, remote.ErrorMessage)
+	}
+	if info == nil {
+		return "", nil
+	}
+	raw, err := json.Marshal(info)
+	if err != nil {
+		return "", fmt.Errorf("encode execution failure evidence: %w", err)
+	}
+	return string(raw), nil
 }
 
 func validateAgentRunnerTask(task *model.Task, run *model.Run, request runner.CreateExecutionRequest) error {

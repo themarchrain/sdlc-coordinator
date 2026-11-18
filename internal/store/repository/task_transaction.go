@@ -39,18 +39,42 @@ func withLockedTask(ctx context.Context, db *gorm.DB, taskID string, apply func(
 	})
 }
 
+// RecoveryBudgetExhaustedReason is the operator-facing reason stored on a task
+// the recovery cycle budget stopped.
+const RecoveryBudgetExhaustedReason = "本轮恢复的尝试额度已用尽，任务已停靠：开启新的恢复轮次后才能再次运行"
+
 func (r *TaskRepository) StartRunAtomic(ctx context.Context, taskID string, run *model.Run, leaseUntil, startedAt time.Time) (*model.Task, error) {
 	if run == nil || run.RunID == "" {
 		return nil, ErrTaskNotClaimable
 	}
 	var current *model.Task
 	created := *run
+	budgetExhausted := false
 	err := withLockedTask(ctx, r.db, taskID, func(tx *gorm.DB, task *model.Task, now time.Time) error {
 		if task.Status != model.TaskStatusPending && task.Status != model.TaskStatusRetryPending {
 			return ErrTaskNotClaimable
 		}
+		// 恢复轮开始新 Run 也要消耗本轮额度：额度为 0 时不再启动，避免
+		// 已耗次数超过本轮上限。代次 0 沿用旧策略。
+		if task.RecoveryGeneration > 0 && task.RetryCycleMaxAttempts > 0 {
+			if task.AttemptCount-task.RetryCycleBaseCount >= task.RetryCycleMaxAttempts {
+				// 额度耗尽不是竞态：留在 pending 会被下一次 Tick 反复拾取并
+				// 再次拒绝，任务既不运行也到不了 blocked。这里直接停靠。
+				if err := tx.Model(task).Updates(map[string]any{
+					"status":     model.TaskStatusBlocked,
+					"last_error": RecoveryBudgetExhaustedReason,
+					"updated_at": now,
+				}).Error; err != nil {
+					return err
+				}
+				// 停靠写必须提交：跟着错误回滚掉等于什么都没做。
+				budgetExhausted = true
+				return nil
+			}
+		}
 		created.TaskID = taskID
 		created.Status = model.RunStatusRunning
+		created.RecoveryGeneration = task.RecoveryGeneration
 		created.StartedAt = &startedAt
 		if err := tx.Create(&created).Error; err != nil {
 			return err
@@ -66,6 +90,9 @@ func (r *TaskRepository) StartRunAtomic(ctx context.Context, taskID string, run 
 	})
 	if err != nil {
 		return nil, err
+	}
+	if budgetExhausted {
+		return nil, ErrRecoveryBudgetExhausted
 	}
 	*run = created
 	return current, nil

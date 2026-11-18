@@ -10,6 +10,7 @@ import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import { StatusTag } from '../components/StatusTag'
 import { StopControl } from '../components/StopControl'
+import { TaskRecoveryControl } from '../components/TaskRecoveryControl'
 import { TaskStateMachinePanel } from '../components/TaskStateMachinePanel'
 import { AuditJson, TaskContextDetail } from '../components/StructuredDetail'
 import type { TimelineSlots } from '../themes/types'
@@ -96,12 +97,12 @@ export function TasksPage() {
           />
         )}
       </section>
-      <TaskDrawer taskID={selectedID} onClose={() => setSearchParams(patchSearchParams(searchParams, { task_id: undefined }))} />
+      <TaskDrawer taskID={selectedID} onClose={() => setSearchParams(patchSearchParams(searchParams, { task_id: undefined }))} onRecovered={tasks.reload} />
     </div>
   )
 }
 
-function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void }) {
+function TaskDrawer({ taskID, onClose, onRecovered }: { taskID?: string; onClose: () => void; onRecovered: () => void }) {
   const { theme } = useTheme()
   const tenantID = useWorkspaceSession().session?.scope.tenant?.id
   const request = useRemote(async () => {
@@ -120,11 +121,15 @@ function TaskDrawer({ taskID, onClose }: { taskID?: string; onClose: () => void 
       {request.loading || (!snapshot && !request.error && taskID) ? <LoadingState /> : request.error ? <ErrorState error={request.error} onRetry={request.reload} /> : detail && snapshot ? (
         <div className="drawer-stack">
           <StopControl target="task" id={taskID!} canStop={detail.can_stop === true} initialStop={detail.stop as StopStatus | null | undefined} onChanged={request.reload} />
+          <TaskRecoveryControl taskID={taskID!} status={String(detail.status || '')} onRecovered={() => { request.reload(); onRecovered() }} />
           <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered items={[
             { key: 'status', label: '状态', children: <StatusTag status={String(detail.status || '')} /> },
             { key: 'role', label: '角色', children: String(detail.role || '—') },
             { key: 'type', label: '类型', children: String(detail.type || '—') },
             { key: 'run', label: '当前 Run', children: <span className="mono">{String(detail.current_run_id || '—')}</span> },
+            { key: 'generation', label: '恢复代次', children: String(detail.recovery_generation ?? 0) },
+            { key: 'attempts', label: '累计尝试', children: String(detail.attempt_count ?? '—') },
+            { key: 'cycle', label: '本轮已耗 / 上限', children: `${String(detail.retry_cycle_attempt_count ?? 0)} / ${String(detail.retry_cycle_max_attempts ?? '—')}` },
             { key: 'objective', label: '目标', span: { xs: 1, sm: 2 }, children: String(detail.objective || '—') },
             { key: 'acceptance', label: '验收标准', span: { xs: 1, sm: 2 }, children: String(detail.acceptance_criteria || '—') },
             { key: 'error', label: '错误', span: { xs: 1, sm: 2 }, children: <span className="error-copy">{String(detail.last_error || '—')}</span> },

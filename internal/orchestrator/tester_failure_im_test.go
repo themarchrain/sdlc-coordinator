@@ -117,7 +117,7 @@ func TestRecordReviewerRunnerFailureNotifiesWhenTesterBudgetExhausted(t *testing
 		t.Fatalf("create run: %v", err)
 	}
 
-	if err := orch.recordReviewerRunnerFailure(ctx, runID, "agent runner execution failed"); err != nil {
+	if err := orch.recordReviewerRunnerFailure(ctx, runID, &model.AgentExecution{RunID: runID, ExecutionID: runID, Status: model.AgentExecutionStatusFailed, ErrorCode: "provider_failed", ErrorMessage: "agent runner execution failed"}); err != nil {
 		t.Fatalf("record reviewer runner failure: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestRecordReviewerRunnerFailureKeepsNotificationWhenWritebackFails(t *testi
 	}
 	orch := New(&failingLastErrorTaskRepository{TaskRepository: taskRepo}, runRepo, WithEffectRepository(effectRepo))
 
-	if err := orch.recordReviewerRunnerFailure(ctx, runID, "agent runner execution failed"); err == nil {
+	if err := orch.recordReviewerRunnerFailure(ctx, runID, &model.AgentExecution{RunID: runID, ExecutionID: runID, Status: model.AgentExecutionStatusFailed, ErrorCode: "provider_failed", ErrorMessage: "agent runner execution failed"}); err == nil {
 		t.Fatal("last-error writeback failure must surface")
 	}
 
@@ -192,7 +192,7 @@ func TestRecordReviewerRunnerFailureStaysSilentForTerminalRuns(t *testing.T) {
 		t.Fatalf("create run: %v", err)
 	}
 
-	if err := orch.recordReviewerRunnerFailure(ctx, runID, "late failure after mcp acceptance"); err != nil {
+	if err := orch.recordReviewerRunnerFailure(ctx, runID, &model.AgentExecution{RunID: runID, ExecutionID: runID, Status: model.AgentExecutionStatusFailed, ErrorCode: "provider_failed", ErrorMessage: "late failure after mcp acceptance"}); err != nil {
 		t.Fatalf("record reviewer runner failure: %v", err)
 	}
 

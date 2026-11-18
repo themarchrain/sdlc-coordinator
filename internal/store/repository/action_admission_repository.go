@@ -84,6 +84,9 @@ func (r *ActionAdmissionRepository) AdmitAction(ctx context.Context, request Act
 			if err := query.First(&run).Error; err != nil {
 				return stopLookupError(err)
 			}
+			if run.RecoveryGeneration != task.RecoveryGeneration {
+				return ErrRecoveryGenerationMismatch
+			}
 			if run.Status == model.RunStatusInterrupted {
 				return ErrTaskInterrupted
 			}

@@ -78,6 +78,9 @@ type TaskRepository interface {
 	// RestoreWaitingParentGuarded 把仍在 waiting_upstream 的父任务原子恢复
 	// 为 pending：双实例同时解除同一父任务的依赖链时恰好一个赢家。
 	RestoreWaitingParentGuarded(ctx context.Context, taskID string) (bool, error)
+	// RebindGuarded 在同一锁内复核调用方快照后再改绑定列，旧页面的
+	// rebind 不能覆盖更新的恢复代次或当前 Run。
+	RebindGuarded(ctx context.Context, taskID, repositoryID string, expect repository.RebindExpectation) (*model.Task, error)
 }
 
 type RunRepository interface {
@@ -195,6 +198,11 @@ type Orchestrator struct {
 	reworkMergeRequestFetchTimeout time.Duration
 	writebackAuth                  WritebackAuthHandler
 	repositoryLookup               RepositoryLookup
+	recoveryReader                 RecoveryFactsReader
+	recoveryObjects                RecoveryObjectReader
+	recoveries                     TaskRecoveryRepository
+	executionExits                 *repository.ExecutionExitConfirmationRepository
+	executionExitReader            func(string) (ExecutionExitReader, error)
 	assigneeMentionDirectory       AssigneeMentionDirectory
 	developerIMTarget              string
 	reviewerIMMentionsProvider     func(context.Context) []string
@@ -538,6 +546,26 @@ func WithRepositoryLookup(lookup RepositoryLookup) Option {
 	}
 }
 
+func WithRecoveryFactsReader(reader RecoveryFactsReader) Option {
+	return func(o *Orchestrator) {
+		o.recoveryReader = reader
+	}
+}
+
+// WithRecoveryObjectReader wires the live target-object reader used by the
+// resume entrances; without it those entrances fail closed.
+func WithRecoveryObjectReader(reader RecoveryObjectReader) Option {
+	return func(o *Orchestrator) {
+		o.recoveryObjects = reader
+	}
+}
+
+func WithTaskRecoveryRepository(repo TaskRecoveryRepository) Option {
+	return func(o *Orchestrator) {
+		o.recoveries = repo
+	}
+}
+
 var (
 	ErrRepositoryNotEnabled = errors.New("repository_not_enabled")
 	ErrRepositoryNotBound   = errors.New("repository_not_bound")
@@ -645,21 +673,18 @@ func (o *Orchestrator) RebindTask(ctx context.Context, taskID, repositoryID stri
 	if err != nil {
 		return nil, err
 	}
+	if task.RecoveryGeneration > 0 {
+		return nil, fmt.Errorf("task %s already belongs to recovery generation %d; use audited task recovery", taskID, task.RecoveryGeneration)
+	}
 	switch task.Status {
 	case model.TaskStatusSucceeded, model.TaskStatusRunning, model.TaskStatusClaimed, model.TaskStatusFinalizing, model.TaskStatusWaitingMerge:
 		return nil, fmt.Errorf("task %s cannot be rebound in status %s", taskID, task.Status)
 	}
-	if task.Status == model.TaskStatusBlocked || task.Status == model.TaskStatusHumanRequired {
-		task.Status = model.TaskStatusPending
-	}
-	task.RepositoryID = &repositoryID
-	task.LastError = ""
-	task.CurrentRunID = nil
-	task.LeaseUntil = nil
-	if err := o.tasks.Update(ctx, task); err != nil {
+	rebound, err := o.tasks.RebindGuarded(ctx, taskID, repositoryID, repository.RebindExpectationFromTask(task))
+	if err != nil {
 		return nil, fmt.Errorf("rebind task %s: %w", taskID, err)
 	}
-	return task, nil
+	return rebound, nil
 }
 
 func (o *Orchestrator) parkUnboundTask(ctx context.Context, taskID string) error {
@@ -687,7 +712,7 @@ type RecoveryResult struct {
 }
 
 func (o *Orchestrator) recordDispatchFailure(ctx context.Context, task *model.Task, run *model.Run, cause error) {
-	nextTaskStatus := o.policy.NextFailureStatus(task)
+	nextTaskStatus := o.policy.NextExecutionFailureStatus(task, runner.FailureInfo(cause))
 	// 列级条件更新只碰状态、错误信息与完成时间：本函数持有的是派发前的
 	// 旧快照，分钟级工作区准备窗口内 run 可能已被结果回传通道终态化，
 	// 整行保存会把库中的终态回滚成旧值。
@@ -729,6 +754,9 @@ func (o *Orchestrator) AdvanceTask(ctx context.Context, taskID string, next mode
 	task, err := o.tasks.GetByTaskID(ctx, taskID)
 	if err != nil {
 		return nil, err
+	}
+	if task.Status == model.TaskStatusBlocked && next == model.TaskStatusPending {
+		return nil, ErrRecoveryRequiresAuditedPath
 	}
 
 	previous := task.Status
@@ -937,8 +965,11 @@ func (o *Orchestrator) applyStaleRunResult(ctx context.Context, task *model.Task
 }
 
 func isStaleRunForTask(task *model.Task, runID string) bool {
-	if task == nil || task.CurrentRunID == nil || *task.CurrentRunID == "" {
+	if task == nil {
 		return false
+	}
+	if task.CurrentRunID == nil || *task.CurrentRunID == "" {
+		return task.RecoveryGeneration > 0
 	}
 	return *task.CurrentRunID != runID
 }

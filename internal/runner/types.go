@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"sdlc-coordinator/internal/failure"
 )
 
 var (
@@ -60,18 +62,19 @@ type ResultSubmissionChannel struct {
 }
 
 type Execution struct {
-	ExecutionID  string     `json:"execution_id"`
-	TaskID       string     `json:"task_id"`
-	Role         string     `json:"role"`
-	Provider     string     `json:"provider"`
-	Status       Status     `json:"status"`
-	RequestHash  string     `json:"request_hash"`
-	ResultHash   string     `json:"result_hash,omitempty"`
-	ErrorCode    string     `json:"error_code,omitempty"`
-	ErrorMessage string     `json:"error_message,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	ExecutionID  string        `json:"execution_id"`
+	TaskID       string        `json:"task_id"`
+	Role         string        `json:"role"`
+	Provider     string        `json:"provider"`
+	Status       Status        `json:"status"`
+	RequestHash  string        `json:"request_hash"`
+	ResultHash   string        `json:"result_hash,omitempty"`
+	ErrorCode    string        `json:"error_code,omitempty"`
+	ErrorMessage string        `json:"error_message,omitempty"`
+	Failure      *failure.Info `json:"failure,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	StartedAt    *time.Time    `json:"started_at,omitempty"`
+	FinishedAt   *time.Time    `json:"finished_at,omitempty"`
 }
 
 type Event struct {

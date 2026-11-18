@@ -104,7 +104,7 @@ func (o *Orchestrator) ReconcileDeveloperRunner(ctx context.Context, runID strin
 			return nil, err
 		}
 	case model.AgentExecutionStatusFailed, model.AgentExecutionStatusCancelled, model.AgentExecutionStatusInterrupted:
-		if err := o.recordReviewerRunnerFailure(ctx, runID, result.Execution.ErrorCode); err != nil {
+		if err := o.recordReviewerRunnerFailure(ctx, runID, result.Execution); err != nil {
 			return nil, err
 		}
 	case model.AgentExecutionStatusSucceeded:

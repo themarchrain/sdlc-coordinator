@@ -59,6 +59,9 @@ func (o *Orchestrator) StartOrResumeMergeRequestRework(ctx context.Context, requ
 		if existing.Type != model.TaskTypeReworkMergeRequest || existing.Role != "DeveloperWorker" || normalizedReworkProjectPath(existing.TargetRepo) != normalizedReworkProjectPath(request.ProjectPath) {
 			return nil, repository.ErrTaskNotClaimable
 		}
+		if err := o.assertTaskObjectOpen(ctx, existing); err != nil {
+			return nil, err
+		}
 		if err := o.tasks.ResumeRework(ctx, request.DedupeKey, contextJSON); err != nil {
 			return nil, err
 		}
