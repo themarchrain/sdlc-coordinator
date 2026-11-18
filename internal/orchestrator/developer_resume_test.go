@@ -62,6 +62,36 @@ func TestResumeDeveloperTaskRefusesAClosedIssue(t *testing.T) {
 	}
 }
 
+func TestResumeDeveloperTaskKeepsAnUnconfirmedObjectStateRetryable(t *testing.T) {
+	tests := []struct {
+		name  string
+		state codehost.MergeRequestState
+	}{
+		{name: "empty", state: ""},
+		{name: "unknown", state: "unknown"},
+		{name: "unrecognised", state: "locked"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			orch, tasks, task := openDeveloperResumeOrchestrator(t, fakeRecoveryObjectReader{object: RecoveryObjectState{State: test.state}})
+			_, err := orch.ResumeDeveloperTask(context.Background(), developerResumeRequest(task))
+			if !errors.Is(err, model.ErrTaskObjectUnavailable) {
+				t.Fatalf("resume error = %v, want the unavailable gate", err)
+			}
+			if errors.Is(err, model.ErrTaskObjectNotOpen) {
+				t.Fatalf("unconfirmed state was read as closed: %v", err)
+			}
+			current, err := tasks.GetByTaskID(context.Background(), task.TaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.Status != model.TaskStatusHumanRequired {
+				t.Fatalf("unconfirmed object state advanced the task: %+v", current)
+			}
+		})
+	}
+}
+
 func TestResumeDeveloperTaskFailsClosedWhenTheObjectIsUnreadable(t *testing.T) {
 	for name, reader := range map[string]RecoveryObjectReader{
 		"reader error": fakeRecoveryObjectReader{err: errors.New("code host unreachable")},

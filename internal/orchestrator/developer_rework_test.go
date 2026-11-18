@@ -829,6 +829,8 @@ func TestStartMergeRequestReworkResumesOnlyAnOpenMergeRequest(t *testing.T) {
 		{name: "merged", reader: fakeRecoveryObjectReader{object: RecoveryObjectState{State: codehost.MergeRequestStateMerged}}, wantErr: model.ErrTaskObjectNotOpen},
 		{name: "closed", reader: fakeRecoveryObjectReader{object: RecoveryObjectState{State: codehost.MergeRequestStateClosed}}, wantErr: model.ErrTaskObjectNotOpen},
 		{name: "unreadable", reader: fakeRecoveryObjectReader{err: errors.New("code host unreachable")}, wantErr: model.ErrTaskObjectUnavailable},
+		{name: "empty state", reader: fakeRecoveryObjectReader{object: RecoveryObjectState{State: ""}}, wantErr: model.ErrTaskObjectUnavailable},
+		{name: "unrecognised state", reader: fakeRecoveryObjectReader{object: RecoveryObjectState{State: "locked"}}, wantErr: model.ErrTaskObjectUnavailable},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

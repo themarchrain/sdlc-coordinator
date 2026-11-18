@@ -260,8 +260,10 @@ func numericValue(value any) (int64, bool) {
 }
 
 // assertTaskObjectOpen refuses to resume a task whose live target object is no
-// longer open. A reader that cannot answer fails closed: resuming on an
-// unreadable object is the same bet as resuming on a closed one.
+// longer open. Only a state the platform actually reported as closed or merged
+// is a final refusal: a missing or unrecognised state is an unavailable answer,
+// so the same delivery can re-check instead of being swallowed. A reader that
+// cannot answer fails closed for the same reason.
 func (o *Orchestrator) assertTaskObjectOpen(ctx context.Context, task *model.Task) error {
 	if TaskRecoveryObjectKind(task) == RecoveryObjectNone {
 		return nil
@@ -277,8 +279,12 @@ func (o *Orchestrator) assertTaskObjectOpen(ctx context.Context, task *model.Tas
 	if err != nil {
 		return fmt.Errorf("%w: %v", model.ErrTaskObjectUnavailable, err)
 	}
-	if state.State != codehost.MergeRequestStateOpen {
+	normalized := codehost.MergeRequestState(strings.ToLower(strings.TrimSpace(string(state.State))))
+	if normalized == codehost.MergeRequestStateOpen {
+		return nil
+	}
+	if confirmableObjectState(string(normalized)) {
 		return model.ErrTaskObjectNotOpen
 	}
-	return nil
+	return fmt.Errorf("%w: 任务目标状态缺失或无法识别", model.ErrTaskObjectUnavailable)
 }
