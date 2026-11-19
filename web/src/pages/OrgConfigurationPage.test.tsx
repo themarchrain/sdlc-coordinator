@@ -237,7 +237,7 @@ describe('OrgConfigurationPage', () => {
 
     expect(screen.getAllByText('执行 CLI').length).toBeGreaterThan(0)
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行 CLI' }))
-    fireEvent.click(await screen.findByText('Codex CLI'))
+    fireEvent.click(await screen.findByText('Codex'))
 
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
@@ -302,8 +302,8 @@ describe('OrgConfigurationPage', () => {
   })
 
   describe.each([
-    { label: 'Codex CLI', provider: 'codex-cli', icon: '.agent-icon--codex' },
-    { label: 'Claude CLI', provider: 'claude-cli', icon: '.agent-icon--claude' },
+    { label: 'Codex', provider: 'codex-cli', icon: '.agent-icon--codex' },
+    { label: 'Claude Code', provider: 'claude-cli', icon: '.agent-icon--claude' },
   ])('runner CLI $label', ({ label, provider, icon }) => {
     it('shows both CLI icons in options, selection and summary', async () => {
       vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
@@ -311,12 +311,12 @@ describe('OrgConfigurationPage', () => {
       await screen.findByText('保存启用')
 
       fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行 CLI' }))
-      const codexOption = (await screen.findAllByText('Codex CLI')).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
-      const claudeOption = (await screen.findAllByText('Claude CLI')).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
+      const codexOption = (await screen.findAllByText('Codex')).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
+      const claudeOption = (await screen.findAllByText('Claude Code')).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
       expect(codexOption.querySelector('.agent-icon--codex')).toBeInTheDocument()
-      expect(within(codexOption).getByText('Codex CLI')).toBeInTheDocument()
+      expect(within(codexOption).getByText('Codex')).toBeInTheDocument()
       expect(claudeOption.querySelector('.agent-icon--claude')).toBeInTheDocument()
-      expect(within(claudeOption).getByText('Claude CLI')).toBeInTheDocument()
+      expect(within(claudeOption).getByText('Claude Code')).toBeInTheDocument()
 
       const chosen = [codexOption, claudeOption].find((option) => within(option).queryByText(label))!
       fireEvent.click(within(chosen).getByText(label))
@@ -329,7 +329,8 @@ describe('OrgConfigurationPage', () => {
       fireEvent.click(screen.getByRole('button', { name: '下一步' }))
       const summaryRow = within(document.querySelector('.configuration-summary-grid') as HTMLElement).getByText('执行 CLI').closest('div')!
       expect(summaryRow.querySelector(icon)).toBeInTheDocument()
-      expect(summaryRow.querySelector('strong')).toHaveTextContent(provider)
+      expect(summaryRow.querySelector('strong')).toHaveTextContent(label)
+      expect(summaryRow.querySelector('strong')).not.toHaveTextContent(provider)
     })
 
     it('saves the raw CLI value without changing other runner fields', async () => {
@@ -355,6 +356,32 @@ describe('OrgConfigurationPage', () => {
     })
   })
 
+  it('renders the product name for a stored provider code', async () => {
+    vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue({
+      ...view,
+      config: { ...view.config, runner: { ...view.config.runner, provider: 'claude-cli' } },
+    })
+    vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateTenantConfiguration').mockResolvedValue({ ...view, revision: 4 })
+
+    render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
+    await screen.findByText('保存启用')
+
+    const cliSelect = screen.getByRole('combobox', { name: '执行 CLI' }).closest('.ant-select') as HTMLElement
+    const selection = cliSelect.querySelector('.ant-select-selection-item')!
+    expect(selection).toHaveTextContent('Claude Code')
+    expect(selection.querySelector('.agent-icon--claude')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并生效/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ runner: { provider: 'claude-cli', effort: '', task_timeout: '' } }),
+    }))
+  })
+
   it('preserves inherit-default presentation and empty provider on save', async () => {
     vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
     vi.spyOn(adminApi, 'validateTenantConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
@@ -368,7 +395,7 @@ describe('OrgConfigurationPage', () => {
     expect(cliSelect.querySelector('.agent-icon')).toBeNull()
 
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行 CLI' }))
-    fireEvent.click(await screen.findByText('Claude CLI'))
+    fireEvent.click(await screen.findByText('Claude Code'))
     expect(cliSelect.querySelector('.agent-icon--claude')).toBeInTheDocument()
 
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行 CLI' }))

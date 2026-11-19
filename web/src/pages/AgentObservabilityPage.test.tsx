@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adminApi } from '../api/client'
@@ -12,6 +12,11 @@ const summary: AgentExecutionSummary = {
   p50_duration_seconds: 35, p90_duration_seconds: 61, input_tokens: 150, cached_input_tokens: 100,
   output_tokens: 30, cache_hit_ratio: 2 / 3, turn_count: 2, error_count: 1, timeout_count: 1,
   generated_at: '2026-08-19T10:00:00Z',
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location-search">{location.search}</div>
 }
 
 describe('AgentObservabilityPage', () => {
@@ -33,8 +38,9 @@ describe('AgentObservabilityPage', () => {
     expect(await screen.findByText('缓存命中')).toBeInTheDocument()
     expect(screen.getByText('66.7%')).toBeInTheDocument()
     expect(screen.getByText('150')).toBeInTheDocument()
-    expect(screen.getByText('claude-cli')).toBeInTheDocument()
-    expect(screen.getByText('codex-cli')).toBeInTheDocument()
+    expect(screen.getByText('Claude Code')).toBeInTheDocument()
+    expect(screen.getByText('Codex')).toBeInTheDocument()
+    expect(screen.queryByText('claude-cli')).not.toBeInTheDocument()
     await waitFor(() => expect(adminApi.listAgentExecutions).toHaveBeenNthCalledWith(1, { page: 1, page_size: 10 }))
   })
 
@@ -60,8 +66,9 @@ describe('AgentObservabilityPage', () => {
     expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument()
 
     fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
-    const option = (await screen.findAllByText('codex-cli')).find((element) => element.closest('.ant-select-item-option'))
+    const option = (await screen.findAllByText('Codex')).find((element) => element.closest('.ant-select-item-option'))
     fireEvent.click(option!)
+    expect(document.querySelector('.filter-panel .ant-select-selection-item')).toHaveTextContent('Codex')
     fireEvent.click(screen.getByRole('button', { name: /查\s*询/ }))
     await waitFor(() => expect(adminApi.listAgentExecutions).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'codex-cli' })))
 
@@ -112,7 +119,8 @@ describe('AgentObservabilityPage', () => {
     const drawer = (await screen.findByRole('link', { name: '查看 Task' })).closest('.ant-drawer') as HTMLElement
     const providerRow = within(drawer).getByText('Provider').closest('tr')!
     expect(providerRow.querySelector('.agent-icon--codex')).toBeInTheDocument()
-    expect(providerRow).toHaveTextContent('codex-cli')
+    expect(providerRow).toHaveTextContent('Codex')
+    expect(providerRow).not.toHaveTextContent('codex-cli')
   })
 
   it('keeps provider filter values and clear behavior unchanged', async () => {
@@ -120,15 +128,15 @@ describe('AgentObservabilityPage', () => {
     await screen.findByText('run-claude')
 
     fireEvent.mouseDown(screen.getAllByRole('combobox')[0])
-    const codexOption = (await screen.findAllByText('codex-cli')).find((element) => element.closest('.ant-select-item-option'))!
-    const claudeOption = (await screen.findAllByText('claude-cli')).find((element) => element.closest('.ant-select-item-option'))!
+    const codexOption = (await screen.findAllByText('Codex')).find((element) => element.closest('.ant-select-item-option'))!
+    const claudeOption = (await screen.findAllByText('Claude Code')).find((element) => element.closest('.ant-select-item-option'))!
     expect(codexOption.closest('.ant-select-item-option')!.querySelector('.agent-icon--codex')).toBeInTheDocument()
     expect(claudeOption.closest('.ant-select-item-option')!.querySelector('.agent-icon--claude')).toBeInTheDocument()
 
     fireEvent.click(codexOption)
     const selection = document.querySelector('.ant-select-selection-item')!
     expect(selection.querySelector('.agent-icon--codex')).toBeInTheDocument()
-    expect(selection).toHaveTextContent('codex-cli')
+    expect(selection).toHaveTextContent('Codex')
 
     fireEvent.click(screen.getByRole('button', { name: /查\s*询/ }))
     await waitFor(() => expect(adminApi.listAgentExecutions).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'codex-cli' })))
@@ -168,6 +176,25 @@ describe('AgentObservabilityPage', () => {
     const providerRow = within(drawer).getByText('Provider').closest('tr')!
     expect(providerRow.querySelector('.agent-icon--fallback')).toBeInTheDocument()
     expect(providerRow).toHaveTextContent('future-cli')
+  })
+
+  it('renders the product name for a provider supplied by the URL and keeps the query string', async () => {
+    render(
+      <MemoryRouter initialEntries={['/agents?provider=claude-cli']}>
+        <AgentObservabilityPage />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+
+    const selection = await waitFor(() => {
+      const item = document.querySelector('.filter-panel .ant-select-selection-item')
+      if (!item) throw new Error('provider selection not rendered')
+      return item as HTMLElement
+    })
+    expect(selection).toHaveTextContent('Claude Code')
+    expect(selection.querySelector('.agent-icon--claude')).toBeInTheDocument()
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?provider=claude-cli')
+    await waitFor(() => expect(adminApi.listAgentExecutions).toHaveBeenCalledWith(expect.objectContaining({ provider: 'claude-cli' })))
   })
 
   it('colors error and usage events from both providers and defaults unknown to info', () => {
