@@ -71,11 +71,11 @@ export function AgentObservabilityPage() {
         dataSource={executions.data?.items ?? []}
         onRow={(row) => ({ onClick: () => setSearchParams(patchSearchParams(searchParams, { execution_id: row.execution_id })) })}
         pagination={{ current: page, pageSize, total: executions.data?.total ?? 0, showSizeChanger: true, pageSizeOptions: [10, 20, 50], showTotal: (total) => `共 ${total} 条`, onChange: setPage, onShowSizeChange: (_current, size) => { setPage(1); setPageSize(size) } }}
-        scroll={{ x: 1320 }}
+        scroll={{ x: 1332 }}
         columns={[
           { title: 'Execution', dataIndex: 'execution_id', width: 260, render: (value) => <span className="mono table-cell-wrap">{value}</span> },
           { title: '状态', dataIndex: 'status', width: 120, render: (value) => <StatusTag status={value} /> },
-          { title: 'Provider', dataIndex: 'provider', width: 140, render: (value) => <span className="mono"><span className="agent-provider-label"><AgentIcon provider={value} />{agentProviderLabel(value) || '—'}</span></span> },
+          { title: 'Provider', dataIndex: 'provider', width: 152, render: (value) => <span className="mono"><span className="agent-provider-label"><AgentIcon provider={value} />{agentProviderLabel(value) || '—'}</span></span> },
           { title: '职责', width: 190, render: (_, row) => <div><strong>{row.role}</strong><small className="table-secondary">{taskTypeLabel(row.task_type)}</small></div> },
           { title: '模型', width: 180, render: (_, row) => <div><span className="mono">{row.model || '—'}</span><small className="table-secondary">{row.effort || '—'}</small></div> },
           { title: '仓库', dataIndex: 'repository', width: 220, render: (value) => <span className="mono table-cell-wrap">{value || '—'}</span> },
