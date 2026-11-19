@@ -728,3 +728,10 @@ a:hover { color: var(--link-hover); }
 
 /* 外观主题抽屉：面板作为抽屉唯一内容时去掉页级底边距；入口按钮本身随外壳布局。 */
 .appearance-drawer .appearance-panel { margin-bottom: 0; }
+
+.agent-provider-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.agent-icon { display: inline-block; flex: none; width: 14px; height: 14px; }
+.agent-icon--codex { background-color: currentColor; -webkit-mask-image: url('../assets/agents/openai.svg'); mask-image: url('../assets/agents/openai.svg'); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
+.agent-icon--claude { background-color: currentColor; -webkit-mask-image: url('../assets/agents/claude.svg'); mask-image: url('../assets/agents/claude.svg'); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
+.agent-icon--fallback { font-size: 14px; }
+.configuration-summary-grid .agent-provider-label { display: inline-flex; color: inherit; font-size: inherit; }
