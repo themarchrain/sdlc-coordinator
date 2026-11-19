@@ -26,6 +26,7 @@ import type {
   TenantConfigurationUpdateRequest,
   TenantConfigurationView,
 } from '../api/types'
+import { AgentIcon } from '../components/AgentIcon'
 import { ErrorState, LoadingState } from '../components/PageState'
 import { PageHeading } from '../components/PageHeading'
 import {
@@ -157,7 +158,7 @@ function CodeHostStep({ people, onManagePeople }: { people: Person[]; onManagePe
         <Switch aria-label="自动合并" checkedChildren="启用" unCheckedChildren="停用" />
       </Form.Item>
       <Form.Item name={['runner', 'provider']} label="执行 CLI" extra="组织任务用哪个命令行 Agent 执行。">
-        <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, { value: 'codex-cli', label: 'Codex CLI' }, { value: 'claude-cli', label: 'Claude CLI' }]} />
+        <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, { value: 'codex-cli', label: <span className="agent-provider-label"><AgentIcon provider="codex-cli" />Codex CLI</span> }, { value: 'claude-cli', label: <span className="agent-provider-label"><AgentIcon provider="claude-cli" />Claude CLI</span> }]} />
       </Form.Item>
       <Form.Item name={['runner', 'effort']} label="推理强度" extra="CLI 的思考深度档位；留空跟随系统默认。">
         <Select aria-label="推理强度" allowClear options={['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))} />
@@ -211,7 +212,7 @@ function SummaryStep({ form, fieldErrors }: { form: FormInstance<OrgConfigFormVa
     <div className="configuration-summary-grid">
       <div><span>代码仓库</span><strong>{values?.codehost?.base_url || '未填写'}</strong></div>
       <div><span>IM 通知</span><strong>{values?.im?.provider ? values.im.provider : '未配置'}</strong></div>
-      <div><span>执行 CLI</span><strong>{values?.runner?.provider || '跟随系统默认'}</strong></div>
+      <div><span>执行 CLI</span><strong><span className="agent-provider-label"><AgentIcon provider={values?.runner?.provider} />{values?.runner?.provider || '跟随系统默认'}</span></strong></div>
       <div><span>推理强度</span><strong>{values?.runner?.effort || '跟随系统默认'}</strong></div>
       <div><span>单任务超时</span><strong>{values?.runner?.task_timeout_minutes ? `${values.runner.task_timeout_minutes} 分钟` : '跟随系统默认'}</strong></div>
     </div>
