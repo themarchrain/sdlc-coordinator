@@ -5,10 +5,12 @@ package codexcli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -36,7 +38,9 @@ func TestCancellationWaitsForProcessTreeExit(t *testing.T) {
 		deadline := time.Now().Add(3 * time.Second)
 		for {
 			raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-			if os.IsNotExist(err) {
+			// 进程在 open 与 read 之间被回收时 procfs 的 read 返回 ESRCH
+			// 而非 ENOENT,同样视为已退出。
+			if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 				break
 			}
 			if err != nil {
