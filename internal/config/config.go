@@ -29,6 +29,7 @@ type SchedulerSettings struct {
 type AgentRunnerSettings struct {
 	ServiceURL             string
 	Provider               string
+	PiAPI                  string
 	ProviderBaseURL        string
 	APIKey                 string
 	CustomHeaders          map[string]string
@@ -97,6 +98,7 @@ func Load() Config {
 		AgentRunner: AgentRunnerSettings{
 			ServiceURL:      getEnv("AGENT_RUNNER_SERVICE_URL", "http://agent-runner:8081"),
 			Provider:        getEnv("AGENT_RUNNER_PROVIDER", "codex-cli"),
+			PiAPI:           strings.TrimSpace(getEnv("AGENT_PROVIDER_PI_API", "")),
 			ProviderBaseURL: providerEnv("AGENT_PROVIDER_BASE_URL", "CLAUDE_PROVIDER_BASE_URL", ""),
 			APIKey:          providerEnv("AGENT_PROVIDER_API_KEY", "CLAUDE_PROVIDER_API_KEY", ""),
 			CustomHeaders:   parseStringMap(providerEnv("AGENT_PROVIDER_CUSTOM_HEADERS_JSON", "CLAUDE_PROVIDER_CUSTOM_HEADERS_JSON", "")),

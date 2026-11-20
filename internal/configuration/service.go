@@ -17,6 +17,7 @@ type EditableRuntimeConfig struct {
 type EditableAgentRunnerConfig struct {
 	ServiceURL      string `json:"service_url"`
 	Provider        string `json:"provider"`
+	PiAPI           string `json:"pi_api"`
 	ProviderBaseURL string `json:"provider_base_url"`
 	Model           string `json:"model"`
 	Effort          string `json:"effort"`
@@ -199,8 +200,9 @@ func EditableFromRuntime(cfg RuntimeConfig) EditableRuntimeConfig {
 	return EditableRuntimeConfig{
 		AgentRunner: EditableAgentRunnerConfig{
 			ServiceURL: cfg.AgentRunner.ServiceURL,
-			Provider:   cfg.AgentRunner.Provider, ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
-			Model: cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort, TaskTimeout: cfg.AgentRunner.TaskTimeout,
+			Provider:   cfg.AgentRunner.Provider, PiAPI: cfg.AgentRunner.PiAPI,
+			ProviderBaseURL: cfg.AgentRunner.ProviderBaseURL,
+			Model:           cfg.AgentRunner.Model, Effort: cfg.AgentRunner.Effort, TaskTimeout: cfg.AgentRunner.TaskTimeout,
 		},
 		Scheduler: cfg.Scheduler,
 	}
@@ -230,8 +232,9 @@ func mergeUpdate(current RuntimeConfig, request UpdateRequest) RuntimeConfig {
 	result := RuntimeConfig{
 		AgentRunner: AgentRunnerConfig{
 			ServiceURL: request.Config.AgentRunner.ServiceURL,
-			Provider:   request.Config.AgentRunner.Provider, ProviderBaseURL: request.Config.AgentRunner.ProviderBaseURL,
-			APIKey: current.AgentRunner.APIKey, CustomHeadersJSON: current.AgentRunner.CustomHeadersJSON,
+			Provider:   request.Config.AgentRunner.Provider, PiAPI: request.Config.AgentRunner.PiAPI,
+			ProviderBaseURL: request.Config.AgentRunner.ProviderBaseURL,
+			APIKey:          current.AgentRunner.APIKey, CustomHeadersJSON: current.AgentRunner.CustomHeadersJSON,
 			Model: request.Config.AgentRunner.Model, Effort: request.Config.AgentRunner.Effort, TaskTimeout: request.Config.AgentRunner.TaskTimeout,
 		},
 		Scheduler: func() SchedulerConfig {

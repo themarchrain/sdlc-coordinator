@@ -19,8 +19,9 @@ func FromLegacyConfig(legacy config.Config) (RuntimeConfig, error) {
 	runtimeConfig := RuntimeConfig{
 		AgentRunner: AgentRunnerConfig{
 			ServiceURL: legacy.AgentRunner.ServiceURL,
-			Provider:   legacy.AgentRunner.Provider, ProviderBaseURL: legacy.AgentRunner.ProviderBaseURL,
-			APIKey: legacy.AgentRunner.APIKey, CustomHeadersJSON: customHeadersJSON,
+			Provider:   legacy.AgentRunner.Provider, PiAPI: legacy.AgentRunner.PiAPI,
+			ProviderBaseURL: legacy.AgentRunner.ProviderBaseURL,
+			APIKey:          legacy.AgentRunner.APIKey, CustomHeadersJSON: customHeadersJSON,
 			Model: legacy.AgentRunner.Model, Effort: legacy.AgentRunner.Effort, TaskTimeout: durationString(legacy.AgentRunner.TaskTimeout),
 		},
 		Scheduler: SchedulerConfig{

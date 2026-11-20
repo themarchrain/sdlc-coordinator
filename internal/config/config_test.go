@@ -171,3 +171,14 @@ func TestLoadIgnoresLegacyTranslatorEnv(t *testing.T) {
 		t.Fatalf("provider base url not loaded: %#v", cfg.AgentRunner)
 	}
 }
+
+func TestLoadAgentRunnerPiAPIFromEnvironment(t *testing.T) {
+	t.Setenv("AGENT_PROVIDER_PI_API", "  anthropic-messages  ")
+	if got := Load().AgentRunner.PiAPI; got != "anthropic-messages" {
+		t.Fatalf("pi api from environment = %q", got)
+	}
+	t.Setenv("AGENT_PROVIDER_PI_API", "")
+	if got := Load().AgentRunner.PiAPI; got != "" {
+		t.Fatalf("unset pi api must stay empty for ApplyDefaults: %q", got)
+	}
+}

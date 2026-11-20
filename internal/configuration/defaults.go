@@ -17,6 +17,9 @@ func ApplyDefaults(cfg RuntimeConfig) RuntimeConfig {
 	if strings.TrimSpace(cfg.AgentRunner.Provider) == "" {
 		cfg.AgentRunner.Provider = "codex-cli"
 	}
+	if strings.TrimSpace(cfg.AgentRunner.PiAPI) == "" {
+		cfg.AgentRunner.PiAPI = "openai-completions"
+	}
 	if strings.TrimSpace(cfg.AgentRunner.Effort) == "" {
 		cfg.AgentRunner.Effort = "high"
 	}
@@ -64,6 +67,7 @@ func ToEffectiveConfig(bootstrap config.BootstrapConfig, runtimeConfig RuntimeCo
 		AgentRunner: config.AgentRunnerSettings{
 			ServiceURL:      strings.TrimRight(strings.TrimSpace(runtimeConfig.AgentRunner.ServiceURL), "/"),
 			Provider:        strings.TrimSpace(runtimeConfig.AgentRunner.Provider),
+			PiAPI:           strings.TrimSpace(runtimeConfig.AgentRunner.PiAPI),
 			ProviderBaseURL: strings.TrimRight(strings.TrimSpace(runtimeConfig.AgentRunner.ProviderBaseURL), "/"),
 			APIKey:          runtimeConfig.AgentRunner.APIKey,
 			CustomHeaders:   customHeaders,
