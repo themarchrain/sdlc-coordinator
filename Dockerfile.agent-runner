@@ -51,6 +51,7 @@ ENV TZ=Asia/Shanghai \
     AGENT_RUNNER_CACHE_ROOT=/app/dependency-cache \
     AGENT_RUNNER_CLI_LAUNCHER=/usr/local/bin/agent-runner-cli-launcher \
     AGENT_RUNNER_CODEX_BINARY=/opt/codex/bin/codex \
+    AGENT_RUNNER_PI_BINARY=/opt/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js \
     AGENT_RUNNER_LOG_DIR=/app/logs/agent-runner \
     GOPROXY=${GOPROXY} \
     DISABLE_AUTOUPDATER=1 \
@@ -81,6 +82,8 @@ RUN chmod 0755 /app/agent-runner /usr/local/bin/agent-runner-entrypoint /usr/loc
     && test -x /opt/codex/bin/codex \
     && command -v su-exec \
     && /opt/codex/bin/codex --version \
+    && test -x "$AGENT_RUNNER_PI_BINARY" \
+    && su-exec agent "$AGENT_RUNNER_PI_BINARY" --version \
     && git --version \
     && go version \
     && for shell in /bin/sh /bin/bash; do \

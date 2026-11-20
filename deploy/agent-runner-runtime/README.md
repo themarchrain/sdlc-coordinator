@@ -8,6 +8,7 @@ Codex 官方包放到本目录后，Dockerfile 只 `COPY` 再展开，不在构�
 |---|---|---|
 | codex | **本目录投放** `codex-package/` | **必投**；musl 静态二进制，alpine 原生兼容 |
 | claude | **本目录投放**（可选） | 只投 musl 变体；目录为空或缺席时跳过 |
+| pi | **本目录投放**（可选） | npm 安装树打包；镜像内解到 `/opt/pi`，版本钉 1.5.2 |
 | go 1.25 | 镜像内复制自 builder 阶段 | 不投放；`GOPROXY` 默认 `proxy.golang.org` |
 | JDK 8 / 17 / 21 | Alpine 3.24 apk | 默认使用 21，通过 JAVA8_HOME、JAVA17_HOME、JAVA21_HOME 选择版本 |
 | Node.js 24 / npm / pnpm 11 / Maven 3.9 | Alpine 3.24 apk | 构建时必装，不再从投放目录覆盖 |
@@ -40,6 +41,30 @@ file deploy/agent-runner-runtime/claude/bin/claude
 
 **易错点**：glibc 变体在 alpine 底座上经 gcompat 运行会在 `__pthread_key_create` 符号处崩（exit 127）——构建期只告警不阻断，运行期必炸。不要用「glibc + gcompat 兜底」的旧结论投放 claude。
 
+## 可选子目录：`pi/`（npm 安装树 tar）
+
+pi 以 npm 安装树投放，镜像内解到 `/opt/pi`，入口是 `/opt/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js`。版本钉 **1.5.2**，需要 Node ≥ 22.19（镜像已装 `nodejs~24`，不再单独投放 node）。launcher 允许列表已包含该入口路径。
+
+**获取步骤（部署机，需联网）**：
+
+```bash
+npm install --omit=dev --prefix /tmp/pi-vendor @earendil-works/pi-coding-agent@1.5.2
+tar -C /tmp/pi-vendor -czf /tmp/pi-1.5.2.tar.gz .
+mkdir -p <repo>/deploy/agent-runner-runtime/pi
+cp /tmp/pi-1.5.2.tar.gz <repo>/deploy/agent-runner-runtime/pi/
+```
+
+打包根必须就是 `npm --prefix` 的安装树（tar 内容以 `./node_modules/...` 开头）；解压后才会是 `/opt/pi/node_modules/...`。安装树约 160MB，tar 后约 25MB。目录为空或缺席时跳过，pi 在运行时按 `AGENT_RUNNER_PI_BINARY` 找不到入口即报 `cli_missing`。
+
+**投放后验证（必做）**：
+
+```bash
+docker run --rm --entrypoint /opt/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js <镜像> --version
+# 期望输出 1.5.2
+```
+
+构建期也会以 `agent` 用户跑同一条 `--version` 校验，失败即构建失败。
+
 ## 必备子目录：`codex-package/`
 
 二选一：**已经解压好的树**（含 `bin/`、`codex-package.json`、`codex-path/`、`codex-resources/`），或 **一个** tar（`.tar` / `.tar.gz` / `.tar.xz`）。不要只丢单个 `codex` 文件。
@@ -59,5 +84,6 @@ cp -a /path/to/codex-all/. deploy/agent-runner-runtime/codex-package/
 `runner` 用户（uid 10001）能直接调用：`codex`（`/opt/codex/bin/codex`）、`git`、`go`、`python3`、`pip3`、`bash`。
 
 - `AGENT_RUNNER_CODEX_BINARY=/opt/codex/bin/codex`
+- `AGENT_RUNNER_PI_BINARY=/opt/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js`
 - `GOPROXY=https://proxy.golang.org,direct`（agent 在容器内跑 `go test` 拉依赖用）
 - codex 进程由 runner 注入隔离 `CODEX_HOME` 并带 `--ephemeral --ignore-user-config`，镜像层无用户级配置
