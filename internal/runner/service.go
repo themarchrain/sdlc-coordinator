@@ -513,11 +513,13 @@ func normalizeRequest(request CreateExecutionRequest) (CreateExecutionRequest, s
 	hashInput := struct {
 		ExecutionID, TaskID, Role, WorkspacePath, PromptFile, SchemaFile string
 		ProviderName, BaseURL, Model, Effort                             string
+		ProviderAPI                                                      string `json:"api,omitempty"`
 		Revision, TimeoutSeconds                                         int64
 		HeaderNames                                                      []string
 	}{
 		request.ExecutionID, request.TaskID, request.Role, request.WorkspacePath, request.PromptFile, request.SchemaFile,
 		request.Provider.Name, request.Provider.BaseURL, request.Provider.Model, request.Provider.Effort,
+		request.Provider.API,
 		request.Provider.Revision, request.TimeoutSeconds, headerNames,
 	}
 	raw, _ := json.Marshal(hashInput)

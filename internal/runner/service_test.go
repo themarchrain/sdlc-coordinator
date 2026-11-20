@@ -873,3 +873,47 @@ func TestServiceBoundsAndRedactsFailureCode(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestHashKeepsLegacyHashWithoutProviderAPI(t *testing.T) {
+	request := runner.CreateExecutionRequest{
+		ExecutionID: "run-probe", TaskID: "task-probe", Role: "ReviewerWorker",
+		WorkspacePath: "/workspaces/probe", PromptFile: "prompt.md", SchemaFile: "result-schema.json",
+		TimeoutSeconds: 1800,
+		Provider: runner.ProviderConfig{
+			Name: "pi-cli", Revision: 7, BaseURL: "https://gateway.example/v1",
+			Model: "deepseek-v4-flash", Effort: "high",
+			Headers: map[string]string{"X-B": "2", "X-A": "1"},
+		},
+	}
+	hash, err := runner.RequestHash(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != "cc288a2a96f4e8e4ea42f32007198edc0e8fd293615d1fac2e1f1b203ae8b572" {
+		t.Fatalf("legacy request hash drifted: %s", hash)
+	}
+}
+
+func TestRequestHashIncludesProviderAPI(t *testing.T) {
+	base := runner.CreateExecutionRequest{
+		ExecutionID: "run-api", TaskID: "task-api", Role: "ReviewerWorker",
+		WorkspacePath: "/workspaces/api", PromptFile: "prompt.md", SchemaFile: "result-schema.json",
+		TimeoutSeconds: 1800,
+		Provider:       runner.ProviderConfig{Name: "pi-cli", BaseURL: "https://gateway.example/v1", Model: "m", Effort: "high"},
+	}
+	completions := base
+	completions.Provider.API = "openai-completions"
+	anthropic := base
+	anthropic.Provider.API = "anthropic-messages"
+	first, err := runner.RequestHash(completions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := runner.RequestHash(anthropic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("provider api must participate in the request hash")
+	}
+}
