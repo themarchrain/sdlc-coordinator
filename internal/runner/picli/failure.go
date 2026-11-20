@@ -12,12 +12,18 @@ import (
 )
 
 // httpStatusPrefix 是 pi 透传网关错误时加在前面的三位状态码前缀。
-var httpStatusPrefix = regexp.MustCompile(`^\d{3}:\s*`)
+var httpStatusPrefix = regexp.MustCompile(`^(\d{3}):\s*`)
 
 // classifyProviderError 把 pi 报告的失败文本归一成共享失败词表的 code 与
-// 可读消息:先剥状态码前缀,再按 error 对象或顶层信封解包,最后映射 code。
+// 可读消息:先剥状态码前缀,再按 error 对象或顶层信封解包,最后按 code、
+// 状态码、稳定错误前缀的顺序映射。
 func classifyProviderError(raw string) (string, string) {
-	trimmed := httpStatusPrefix.ReplaceAllString(strings.TrimSpace(raw), "")
+	trimmed := strings.TrimSpace(raw)
+	status := ""
+	if match := httpStatusPrefix.FindStringSubmatch(trimmed); match != nil {
+		status = match[1]
+		trimmed = strings.TrimSpace(trimmed[len(match[0]):])
+	}
 	extracted := runner.ExtractProviderError(map[string]any{"message": trimmed})
 	rawCode := strings.TrimSpace(extracted.Code)
 	message := strings.TrimSpace(extracted.Message)
@@ -43,7 +49,13 @@ func classifyProviderError(raw string) (string, string) {
 	if message == "" {
 		message = trimmed
 	}
-	return providerFailureCode(rawCode), message
+	if rawCode != "" {
+		return providerFailureCode(rawCode), message
+	}
+	if code := statusFailureCode(status); code != "" {
+		return code, message
+	}
+	return messageFailureCode(trimmed), message
 }
 
 // providerFailureCode 把网关与上游厂商的 code 别名映射到共享失败词表。
@@ -68,6 +80,54 @@ func providerFailureCode(rawCode string) string {
 		return failure.CodeInvalidRequest
 	case "unsupported_schema", "schema_rejected":
 		return failure.CodeUnsupportedSchema
+	default:
+		return failure.CodeProviderFailed
+	}
+}
+
+// statusFailureCode 映射残缺的 HTTP 状态码证据:没有结构化信封时,状态码
+// 是唯一可信的分类来源。
+func statusFailureCode(status string) string {
+	switch status {
+	case "401":
+		return failure.CodeInvalidCredentials
+	case "402":
+		return failure.CodeInsufficientQuota
+	case "403":
+		return failure.CodePermissionDenied
+	case "408", "504":
+		return failure.CodeConnectionFailed
+	case "404", "409", "413", "422":
+		return failure.CodeInvalidRequest
+	case "429":
+		return failure.CodeProviderRateLimited
+	case "500", "502", "503":
+		return failure.CodeProviderUnavailable
+	case "529":
+		return failure.CodeProviderOverloaded
+	default:
+		return ""
+	}
+}
+
+// messageFailureCode 只认 pi 与网关的稳定错误前缀,不做散文猜测:
+// 这里的输入来自 provider 错误字段,不是模型输出。
+func messageFailureCode(message string) string {
+	lower := strings.ToLower(message)
+	switch {
+	case strings.HasPrefix(lower, "connection error"):
+		return failure.CodeConnectionFailed
+	case strings.Contains(lower, "rate limit"):
+		return failure.CodeProviderRateLimited
+	case strings.Contains(lower, "overloaded"):
+		return failure.CodeProviderOverloaded
+	case strings.Contains(lower, "insufficient quota"):
+		return failure.CodeInsufficientQuota
+	case strings.Contains(lower, "context length"), strings.Contains(lower, "maximum context"):
+		return failure.CodeInvalidRequest
+	case strings.Contains(lower, "invalid api key"), strings.Contains(lower, "incorrect api key"),
+		strings.Contains(lower, "authentication"):
+		return failure.CodeInvalidCredentials
 	default:
 		return failure.CodeProviderFailed
 	}

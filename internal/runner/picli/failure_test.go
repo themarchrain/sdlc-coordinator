@@ -76,3 +76,30 @@ func TestSetupFailureIsRunnerSide(t *testing.T) {
 		t.Fatalf("unexpected failure info: %#v", info)
 	}
 }
+
+func TestClassifyProviderErrorMapsStatusOnlyEvidence(t *testing.T) {
+	tests := map[string]string{
+		"429: rate limited by the gateway": failure.CodeProviderRateLimited,
+		"503: upstream unavailable":        failure.CodeProviderUnavailable,
+		"401: bad key":                     failure.CodeInvalidCredentials,
+		"403: region blocked":              failure.CodePermissionDenied,
+		"422: schema rejected":             failure.CodeInvalidRequest,
+		"504: gateway timeout":             failure.CodeConnectionFailed,
+	}
+	for raw, want := range tests {
+		code, _ := classifyProviderError(raw)
+		if code != want {
+			t.Errorf("classifyProviderError(%q) code = %q, want %q", raw, code, want)
+		}
+	}
+}
+
+func TestClassifyProviderErrorMapsPIConnectionPrefix(t *testing.T) {
+	code, message := classifyProviderError("Connection error.: connect ECONNREFUSED 127.0.0.1:8080")
+	if code != failure.CodeConnectionFailed {
+		t.Fatalf("classifyProviderError() code = %q, want %q", code, failure.CodeConnectionFailed)
+	}
+	if message != "Connection error.: connect ECONNREFUSED 127.0.0.1:8080" {
+		t.Fatalf("classifyProviderError() message = %q", message)
+	}
+}
