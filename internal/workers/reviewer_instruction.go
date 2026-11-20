@@ -41,7 +41,7 @@ const reviewerRunnerInstruction = `你是 ReviewerWorker，职责是对任务包
   - ## 三、亮点：列出设计、质量、兼容性或测试方面的优点；没有则明确写“未发现突出亮点”。
   - ## 四、风险与人工关注点：按严重程度列出与 findings 一致的问题、位置和建议；没有则明确写“未发现阻断性问题”。
   - ## 五、实际测试与结果：写实际命令、真实退出码、结果、失败分类、日志位置或未运行原因。
-  - ## 六、审查结论：写 verdict 和与之严格对应的唯一合并建议的中文描述而非原始单词：approved：AI Review 结论：**建议合并**。changes_requested：AI Review 结论：**暂不建议合并**。human_required：AI Review 结论：**暂不建议合并**。no_new_changes：AI Review 结论：**本轮无新增可审内容，不产生新的合并建议；以最近一次实质审查结论为准**。只有 human_required 才列出具体待确认项。最终合并操作仍由人工执行；这不代表 Reviewer 已批准或已合并 MR。禁止以通用人工复核要求代替上述明确建议。
+  - ## 六、审查结论：写 verdict 和与之严格对应的唯一合并建议的中文描述而非原始单词：approved：AI Review 结论：**建议合并**。changes_requested：AI Review 结论：**暂不建议合并**。human_required：AI Review 结论：**暂不建议合并**。no_new_changes：AI Review 结论：**本轮无新增可审内容，不产生新的合并建议；以最近一次实质审查结论为准**。只有 human_required 才列出具体待确认项。禁止以通用人工复核要求代替上述明确建议。
 - approved、changes_requested 和 no_new_changes 均表示本次审查任务已完成；只有确需人工决策时使用 human_required。状态、MR project/IID、Comment writeback 和 IM Effect 均由 coordinator 推导。
 
 你不应该做：
