@@ -147,9 +147,9 @@ function ExecutionDetailBody({ data }: { data: AgentExecutionDetail }) {
 }
 
 export function eventTypeColor(type: string, slots: EventTypeSlots) {
-  return type === 'codex_error' || type === 'claude_error'
+  return type === 'codex_error' || type === 'claude_error' || type === 'pi_error'
     ? slots.error
-    : type === 'codex_usage' || type === 'claude_usage'
+    : type === 'codex_usage' || type === 'claude_usage' || type === 'pi_usage'
       ? slots.usage
       : slots.info
 }
@@ -172,6 +172,20 @@ type ExecutionUsage = { input: number; cached: number; output: number; cost?: nu
 // claude 口径与汇总页一致：缓存读/写在 Anthropic 语义里与 input_tokens
 // 互斥，折入输入总数使「其中缓存」呈子集关系；codex 的 input 已含缓存。
 function executionUsage(events: AgentExecutionEvent[]): ExecutionUsage | undefined {
+  // pi 的 pi_usage 是逐条 assistant 消息的用量（带工具回合时会多次出现），
+  // 口径是 OpenAI 语义：input 已含缓存读；cost 只在模型配了价格时才有值。
+  const piTurnEvents = events.filter((event) => event.type === 'pi_usage')
+  if (piTurnEvents.length) {
+    return piTurnEvents.reduce<ExecutionUsage>((total, event) => {
+      const usage = isRecord(event.payload.usage) ? event.payload.usage : {}
+      total.input += toNumber(usage.input)
+      total.cached += toNumber(usage.cacheRead)
+      total.output += toNumber(usage.output)
+      const cost = isRecord(usage.cost) ? toNumber(usage.cost.total) : 0
+      if (cost > 0) total.cost = (total.cost ?? 0) + cost
+      return total
+    }, { input: 0, cached: 0, output: 0 })
+  }
   const result = [...events].reverse().find((event) => event.type === 'claude_result')
   const resultUsage = result && isRecord(result.payload.usage) ? result.payload.usage : undefined
   if (result && resultUsage) {

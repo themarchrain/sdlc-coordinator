@@ -21,6 +21,7 @@ import (
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/runner/claudecli"
 	"sdlc-coordinator/internal/runner/codexcli"
+	"sdlc-coordinator/internal/runner/picli"
 	"sdlc-coordinator/internal/store"
 	"sdlc-coordinator/internal/store/repository"
 	"sdlc-coordinator/internal/workspace"
@@ -37,6 +38,10 @@ func TestReviewerRunnerPersistedFlowThroughCLIProcess(t *testing.T) {
 
 func TestReviewerRunnerPersistedFlowThroughCodexCLIProcess(t *testing.T) {
 	testReviewerRunnerPersistedFlow(t, "codex-cli", codexcli.New(createFakeCodexExecutable(t)), 5*time.Second)
+}
+
+func TestReviewerRunnerPersistedFlowThroughPiCLIProcess(t *testing.T) {
+	testReviewerRunnerPersistedFlow(t, "pi-cli", picli.New(createFakePiExecutable(t)), 5*time.Second)
 }
 
 func TestReviewerRunnerPersistedFlowThroughRealClaudeCLI(t *testing.T) {
@@ -122,7 +127,11 @@ func testReviewerRunnerPersistedFlow(t *testing.T, providerName string, provider
 			Project: task.TargetRepo, RepositoryURL: origin,
 			SourceBranch: "feature/review", TargetBranch: "master", HeadSHA: headSHA, RequestedReviewMode: workspace.ReviewModeFull,
 		},
-		Provider: runner.ProviderConfig{Name: providerName, Revision: 1},
+		// 假 claude/codex 二进制忽略网关地址;pi 的配置生成要求两项非空。
+		Provider: runner.ProviderConfig{
+			Name: providerName, Revision: 1,
+			BaseURL: "https://gateway.example/v1", Model: "fake-model",
+		},
 	})
 	if err != nil {
 		t.Fatalf("start persisted reviewer flow: %v", err)
@@ -240,6 +249,39 @@ func main() {
 	command := exec.Command("go", "build", "-o", path, source)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build fake Codex CLI: %v\n%s", err, output)
+	}
+	return path
+}
+
+func createFakePiExecutable(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	source := filepath.Join(root, "main.go")
+	content := `package main
+import (
+  "fmt"
+  "io"
+  "os"
+)
+func main() {
+  _, _ = io.Copy(io.Discard, os.Stdin)
+  result := "{\"task_id\":\"task-persisted-reviewer\",\"run_id\":\"run-persisted-reviewer\",\"verdict\":\"approved\",\"summary\":\"no blocking issue\",\"findings\":[],\"test_summary\":\"not run: fake CLI\",\"comment_body\":\"AI Review 结论：建议合并。\"}"
+  fmt.Println("{\"type\":\"session\",\"version\":3,\"id\":\"fake-pi\",\"cwd\":\".\"}")
+  fmt.Println("{\"type\":\"message_start\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"pending\"}}")
+  fmt.Printf("{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":%q}],\"stopReason\":\"stop\"}}\n", result)
+  fmt.Println("{\"type\":\"agent_settled\",\"aborted\":false}")
+}`
+	if err := os.WriteFile(source, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	name := "fake-pi"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	path := filepath.Join(root, name)
+	command := exec.Command("go", "build", "-o", path, source)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build fake pi CLI: %v\n%s", err, output)
 	}
 	return path
 }
