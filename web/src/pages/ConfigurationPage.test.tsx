@@ -105,6 +105,7 @@ describe('ConfigurationPage', () => {
     expect(screen.queryByLabelText('推理强度')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('单任务超时（分钟）')).not.toBeInTheDocument()
     expect(screen.getByText('裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。')).toBeInTheDocument()
+    expect(screen.getByText('由使用者自行提供，且协议必须兼容当前执行 Provider：Codex 要求 Responses API，Claude Code 要求 Messages API。Coordinator 只做透传，不做协议适配。')).toBeInTheDocument()
     expect(screen.getAllByText('已配置').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByDisplayValue('runner-api-key')).not.toBeInTheDocument()
   })
@@ -117,7 +118,32 @@ describe('ConfigurationPage', () => {
     await screen.findByText('运行配置')
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 
-    expect(screen.getByText('裸 Agent，不加载个人 Claude 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。')).toBeInTheDocument()
+    expect(screen.getByText('裸 Agent，不加载个人 Claude Code 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。')).toBeInTheDocument()
+    expect(screen.getByText('由使用者自行提供，且协议必须兼容当前执行 Provider：Codex 要求 Responses API，Claude Code 要求 Messages API。Coordinator 只做透传，不做协议适配。')).toBeInTheDocument()
+    expect(screen.queryByText(/个人 Claude 配置/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the hidden claude provider code in the save payload', async () => {
+    const claudeConfiguration: ConfigurationView = { ...configuration, config: { ...configuration.config, agent_runner: { ...configuration.config.agent_runner, provider: 'claude-cli' } } }
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(claudeConfiguration)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
+      mode: 'restart_required', revision: 3, source: 'ui', configuration: { ...claudeConfiguration, revision: 3 },
+    })
+    vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        agent_runner: expect.objectContaining({ provider: 'claude-cli' }),
+      }),
+    }))
   })
 
   it('saves runtime settings without workspace paths', async () => {

@@ -4,6 +4,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { adminApi } from '../api/client'
 import { useWorkspaceSession } from '../app/workspaceSession'
+import { AgentIcon } from '../components/AgentIcon'
+import { agentProviderLabel } from '../content/agent-providers'
 import { StopControl } from '../components/StopControl'
 import type { AgentExecution, AgentExecutionDetail, AgentExecutionEvent, Query } from '../api/types'
 import { patchSearchParams } from '../app/searchParams'
@@ -53,7 +55,7 @@ export function AgentObservabilityPage() {
 
     <section className="surface-panel filter-panel codex-filter-panel">
       <Form form={form} layout="inline" onFinish={submit}>
-        <Form.Item name="provider"><Select allowClear placeholder="Provider（全部）" options={providers.map((value) => ({ value }))} style={{ width: 180 }} /></Form.Item>
+        <Form.Item name="provider"><Select allowClear placeholder="Provider（全部）" options={providers.map((value) => ({ value, label: <span className="agent-provider-label"><AgentIcon provider={value} />{agentProviderLabel(value)}</span> }))} style={{ width: 180 }} /></Form.Item>
         <Form.Item name="status"><Select allowClear placeholder="执行状态" options={statuses.map((value) => ({ value, label: statusLabel(value) }))} style={{ width: 170 }} /></Form.Item>
         <Form.Item name="role"><Select allowClear placeholder="Worker 角色" options={roles.map((value) => ({ value }))} style={{ width: 180 }} /></Form.Item>
         <Form.Item name="task_id"><Input allowClear placeholder="Task ID" /></Form.Item>
@@ -69,11 +71,11 @@ export function AgentObservabilityPage() {
         dataSource={executions.data?.items ?? []}
         onRow={(row) => ({ onClick: () => setSearchParams(patchSearchParams(searchParams, { execution_id: row.execution_id })) })}
         pagination={{ current: page, pageSize, total: executions.data?.total ?? 0, showSizeChanger: true, pageSizeOptions: [10, 20, 50], showTotal: (total) => `共 ${total} 条`, onChange: setPage, onShowSizeChange: (_current, size) => { setPage(1); setPageSize(size) } }}
-        scroll={{ x: 1290 }}
+        scroll={{ x: 1332 }}
         columns={[
           { title: 'Execution', dataIndex: 'execution_id', width: 260, render: (value) => <span className="mono table-cell-wrap">{value}</span> },
           { title: '状态', dataIndex: 'status', width: 120, render: (value) => <StatusTag status={value} /> },
-          { title: 'Provider', dataIndex: 'provider', width: 110, render: (value) => <span className="mono">{value || '—'}</span> },
+          { title: 'Provider', dataIndex: 'provider', width: 152, render: (value) => <span className="mono"><span className="agent-provider-label"><AgentIcon provider={value} />{agentProviderLabel(value) || '—'}</span></span> },
           { title: '职责', width: 190, render: (_, row) => <div><strong>{row.role}</strong><small className="table-secondary">{taskTypeLabel(row.task_type)}</small></div> },
           { title: '模型', width: 180, render: (_, row) => <div><span className="mono">{row.model || '—'}</span><small className="table-secondary">{row.effort || '—'}</small></div> },
           { title: '仓库', dataIndex: 'repository', width: 220, render: (value) => <span className="mono table-cell-wrap">{value || '—'}</span> },
@@ -127,7 +129,7 @@ function ExecutionDetailBody({ data }: { data: AgentExecutionDetail }) {
     <div className="detail-actions"><Link to={`/tasks?task_id=${encodeURIComponent(data.task_id)}`}>查看 Task</Link><Link to={`/explorer?entity=runs&run_id=${encodeURIComponent(data.run_id)}`}>查看 Run</Link></div>
     <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} items={[
       { key: 'status', label: '状态', children: <StatusTag status={data.status} /> },
-      { key: 'provider', label: 'Provider', children: <span className="mono">{data.provider || '—'}</span> },
+      { key: 'provider', label: 'Provider', children: <span className="mono"><span className="agent-provider-label"><AgentIcon provider={data.provider} />{agentProviderLabel(data.provider) || '—'}</span></span> },
       { key: 'role', label: '职责', children: data.role },
       { key: 'model', label: '模型', children: <span className="mono">{data.model || '—'}</span> },
       { key: 'effort', label: '推理强度', children: data.effort || '—' },
