@@ -18,7 +18,7 @@ import { useRemote } from '../hooks/useRemote'
 
 const statuses = ['accepted', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']
 const roles = ['ReviewerWorker', 'DeveloperWorker']
-const providers = ['codex-cli', 'claude-cli']
+const providers = ['codex-cli', 'claude-cli', 'pi-cli']
 const filterKeys = ['provider', 'status', 'role', 'task_id', 'run_id'] as const
 
 export function AgentObservabilityPage() {

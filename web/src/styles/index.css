@@ -733,5 +733,6 @@ a:hover { color: var(--link-hover); }
 .agent-icon { display: inline-block; flex: none; width: 14px; height: 14px; }
 .agent-icon--codex { background-color: currentColor; -webkit-mask-image: url('../assets/agents/openai.svg'); mask-image: url('../assets/agents/openai.svg'); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
 .agent-icon--claude { background-color: currentColor; -webkit-mask-image: url('../assets/agents/claude.svg'); mask-image: url('../assets/agents/claude.svg'); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
+.agent-icon--pi { background-color: currentColor; -webkit-mask-image: url('../assets/agents/pi.svg'); mask-image: url('../assets/agents/pi.svg'); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
 .agent-icon--fallback { font-size: 14px; }
 .configuration-summary-grid .agent-provider-label { display: inline-flex; color: inherit; font-size: inherit; }

@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { agentProviderLabel } from './agent-providers'
 
 describe('agentProviderLabel', () => {
-  it('maps the two known provider codes to their product names', () => {
+  it('maps the three known provider codes to their product names', () => {
     expect(agentProviderLabel('codex-cli')).toBe('Codex')
     expect(agentProviderLabel('claude-cli')).toBe('Claude Code')
+    expect(agentProviderLabel('pi-cli')).toBe('Pi')
   })
 
   it('returns unknown non-empty codes unchanged', () => {
