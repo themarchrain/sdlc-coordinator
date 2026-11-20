@@ -647,3 +647,26 @@ func TestRecoverRunWorkspacesAcceptsRelativeAndTrailingSlashRoots(t *testing.T) 
 		}
 	}
 }
+
+// TestLaunchAllowsConfiguredPiBinary 锁定 launcher 的允许列表:镜像内 pi 的
+// bundle 入口必须是默认可执行项,未列入的路径一律拒绝。
+func TestLaunchAllowsConfiguredPiBinary(t *testing.T) {
+	const piBundle = "/opt/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+	found := false
+	for _, allowed := range allowedBinaries {
+		if allowed == piBundle {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pi bundle is not an allowed binary: %#v", allowedBinaries)
+	}
+
+	unlisted := filepath.Join(t.TempDir(), "unlisted-cli")
+	if err := os.WriteFile(unlisted, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveAllowedBinary(unlisted); err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("unlisted binary must be rejected, got %v", err)
+	}
+}
