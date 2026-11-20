@@ -437,3 +437,27 @@ func writePiTestFile(t *testing.T, root, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+// launcher 只把 run 工作区 chown 给 agent 用户;/tmp 下的私有目录对 agent
+// 不可读,所以隔离配置必须落在工作区内并被清理干净。
+func TestProviderKeepsAgentConfigInsideTheRunWorkspace(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	writePiTestFile(t, workspaceRoot, "prompt.md", "review")
+	writePiTestFile(t, workspaceRoot, "schema.json", `{"type":"object"}`)
+	command := &fakeCommandRunner{lines: [][]byte{finalMessageLine(`{"verdict":"approved"}`)}}
+	var agentDir string
+	command.onRun = func(spec commandSpec) { agentDir = environmentMap(spec.Env)[agentDirEnv] }
+	if _, err := newProvider("pi-test", command).Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-pi-layout", TaskID: "task-pi-layout", Role: "ReviewerWorker",
+		WorkspacePath: workspaceRoot, PromptFile: "prompt.md", SchemaFile: "schema.json",
+		Provider: providerConfigForTest(),
+	}, func(string, map[string]any) {}); err != nil {
+		t.Fatalf("execute provider: %v", err)
+	}
+	if !strings.HasPrefix(agentDir, workspaceRoot+string(os.PathSeparator)) {
+		t.Fatalf("pi agent dir must live inside the run workspace: %q", agentDir)
+	}
+	if _, err := os.Stat(filepath.Dir(agentDir)); !os.IsNotExist(err) {
+		t.Fatalf("pi runtime root must be removed after the run: %v", err)
+	}
+}

@@ -52,7 +52,10 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if _, err := readTaskFile(request.WorkspacePath, request.SchemaFile); err != nil {
 		return nil, wrapSetupFailure("read pi result schema", err)
 	}
-	runtimeRoot, err := os.MkdirTemp("", "agent-runner-pi-")
+	// 运行时根放在 run 工作区里:launcher 以 agent 用户拉起 CLI 前会把整个
+	// 工作区 chown 给 agent,而 /tmp 下的 0700 目录对 agent 不可读,pi 就读
+	// 不到 models.json 了。位置与 codex 相同,不落进 repos/ 里的 git 工作树。
+	runtimeRoot, err := os.MkdirTemp(request.WorkspacePath, ".agent-runner-pi-")
 	if err != nil {
 		return nil, wrapSetupFailure("create isolated pi runtime root", err)
 	}
