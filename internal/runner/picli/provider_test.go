@@ -107,6 +107,42 @@ func TestProviderSkipsThinkingWhenEffortEmpty(t *testing.T) {
 	}
 }
 
+func TestProviderOffersTheResultToolToPi(t *testing.T) {
+	channel := &runner.ResultSubmissionChannel{
+		EndpointURL: "http://coordinator.example:8080/mcp", BearerToken: "run-token",
+	}
+	cases := []struct {
+		name    string
+		role    string
+		channel *runner.ResultSubmissionChannel
+		want    string
+	}{
+		{"reviewer tool", "ReviewerWorker", channel, "read,bash,edit,write,grep,find,ls,mcp__coordinator__submit_reviewer_result"},
+		{"developer tool", "DeveloperWorker", channel, "read,bash,edit,write,grep,find,ls,mcp__coordinator__submit_developer_result"},
+		{"closed channel", "ReviewerWorker", nil, "read,bash,edit,write,grep,find,ls"},
+		{"role without a result tool", "ArchivistWorker", channel, "read,bash,edit,write,grep,find,ls"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workspaceRoot := t.TempDir()
+			writePiTestFile(t, workspaceRoot, "prompt.md", "review")
+			writePiTestFile(t, workspaceRoot, "schema.json", `{"type":"object"}`)
+			command := &fakeCommandRunner{lines: [][]byte{finalMessageLine(`{"verdict":"approved"}`)}}
+			_, err := newProvider("pi-test", command).Execute(context.Background(), runner.ProviderRequest{
+				ExecutionID: "run-pi-tools", TaskID: "task-pi-tools", Role: tc.role,
+				WorkspacePath: workspaceRoot, PromptFile: "prompt.md", SchemaFile: "schema.json",
+				Provider: providerConfigForTest(), ResultSubmission: tc.channel,
+			}, func(string, map[string]any) {})
+			if err != nil {
+				t.Fatalf("execute provider: %v", err)
+			}
+			if got := flagValue(t, command.spec.Args, "--tools"); got != tc.want {
+				t.Fatalf("--tools = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestProviderReturnsFinalAssistantJSON(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	writePiTestFile(t, workspaceRoot, "prompt.md", "review")
@@ -402,6 +438,17 @@ func providerConfigForTest() runner.ProviderConfig {
 		Name: "pi-cli", Revision: 1, API: "openai-completions",
 		BaseURL: "https://gw.example/v1", APIKey: "sk-test", Model: "deepseek-v4-flash",
 	}
+}
+
+func flagValue(t *testing.T, args []string, flag string) string {
+	t.Helper()
+	for index, arg := range args {
+		if arg == flag && index+1 < len(args) {
+			return args[index+1]
+		}
+	}
+	t.Fatalf("%s missing from args: %#v", flag, args)
+	return ""
 }
 
 func finalMessageLine(text string) []byte {

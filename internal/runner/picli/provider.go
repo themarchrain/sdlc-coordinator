@@ -70,6 +70,13 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		"PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0",
 	)
 
+	// pi 的 --tools 同时过滤内置工具与 MCP 工具,结果工具必须列进去,
+	// 否则模型看不到提交入口。
+	toolName, hasTool := results.ToolNameForWorkerRole(request.Role)
+	tools := toolSet
+	if hasTool && request.ResultSubmission != nil {
+		tools = toolSet + ",mcp__" + mcpServerName + "__" + toolName
+	}
 	args := []string{
 		"--mode", "json", "--no-session",
 		"--provider", providerID, "--model", strings.TrimSpace(request.Provider.Model),
@@ -83,14 +90,14 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	args = append(args,
 		"--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes",
 		"--no-approve", "--offline",
-		"--tools", toolSet,
+		"--tools", tools,
 	)
 
 	parser := streamParser{
 		emit: emit, provider: request.Provider, channel: request.ResultSubmission,
 		taskID: request.TaskID, runID: request.ExecutionID,
 	}
-	if toolName, ok := results.ToolNameForWorkerRole(request.Role); ok {
+	if hasTool {
 		parser.expectedTool = toolName
 	}
 	err = p.command.Run(ctx, commandSpec{
