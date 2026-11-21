@@ -178,7 +178,8 @@ func Validate(cfg RuntimeConfig) ValidationErrors {
 	default:
 		errs["agent_runner.pi_api"] = "仅支持 openai-completions、openai-responses 或 anthropic-messages"
 	}
-	requireAbsoluteHTTPURL(errs, "agent_runner.provider_base_url", cfg.AgentRunner.ProviderBaseURL, false)
+	requireAbsoluteHTTPURL(errs, "agent_runner.provider_base_url", cfg.AgentRunner.ProviderBaseURL,
+		strings.TrimSpace(cfg.AgentRunner.Provider) == "pi-cli")
 	requireTrimmed(errs, "agent_runner.api_key", cfg.AgentRunner.APIKey)
 	requireTrimmed(errs, "agent_runner.model", cfg.AgentRunner.Model)
 	if !validAgentRunnerEffort(cfg.AgentRunner.Effort) {

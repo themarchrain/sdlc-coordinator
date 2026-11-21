@@ -292,3 +292,23 @@ func TestValidateAcceptsPiProviderAndAPI(t *testing.T) {
 		t.Fatalf("unknown provider was accepted: %#v", errs)
 	}
 }
+
+func TestValidateRequiresGatewayURLForPiCLI(t *testing.T) {
+	missing := validRuntimeConfig()
+	missing.AgentRunner.Provider = "pi-cli"
+	missing.AgentRunner.ProviderBaseURL = ""
+	if errs := Validate(missing); !errs.Has("agent_runner.provider_base_url") {
+		t.Fatalf("pi-cli without a gateway url was accepted: %#v", errs)
+	}
+	codex := validRuntimeConfig()
+	codex.AgentRunner.ProviderBaseURL = ""
+	if errs := Validate(codex); errs.Has("agent_runner.provider_base_url") {
+		t.Fatalf("codex-cli must not require a gateway url: %#v", errs)
+	}
+	malformed := validRuntimeConfig()
+	malformed.AgentRunner.Provider = "pi-cli"
+	malformed.AgentRunner.ProviderBaseURL = "gateway.example"
+	if errs := Validate(malformed); !errs.Has("agent_runner.provider_base_url") {
+		t.Fatalf("malformed pi-cli gateway url was accepted: %#v", errs)
+	}
+}
