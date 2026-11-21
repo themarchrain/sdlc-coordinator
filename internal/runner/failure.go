@@ -52,19 +52,19 @@ func ProviderCodeInfo(rawCode string) (failure.Info, bool) {
 	switch strings.ToLower(strings.TrimSpace(rawCode)) {
 	case "provider_unavailable", "service_unavailable":
 		code = failure.CodeProviderUnavailable
-	case "provider_overloaded", "overloaded_error":
+	case "provider_overloaded", "overloaded_error", "overloaded":
 		code = failure.CodeProviderOverloaded
-	case "provider_rate_limited", "rate_limit_error", "rate_limited":
+	case "provider_rate_limited", "rate_limit_error", "rate_limited", "rate_limit_exceeded", "too_many_requests":
 		code = failure.CodeProviderRateLimited
 	case "connection_failed", "api_connection_error", "connection_error":
 		code = failure.CodeConnectionFailed
-	case "invalid_credentials", "authentication_error":
+	case "invalid_credentials", "authentication_error", "invalid_api_key", "unauthorized":
 		code = failure.CodeInvalidCredentials
 	case "permission_denied", "permission_error":
 		code = failure.CodePermissionDenied
-	case "insufficient_quota", "billing_hard_limit_reached":
+	case "insufficient_quota", "quota_exceeded", "billing_hard_limit_reached":
 		code = failure.CodeInsufficientQuota
-	case "invalid_request", "invalid_request_error":
+	case "invalid_request", "invalid_request_error", "context_length_exceeded":
 		code = failure.CodeInvalidRequest
 	case "unsupported_schema", "schema_rejected":
 		code = failure.CodeUnsupportedSchema

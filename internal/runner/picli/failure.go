@@ -61,28 +61,10 @@ func classifyProviderError(raw string) (string, string) {
 // providerFailureCode 把网关与上游厂商的 code 别名映射到共享失败词表。
 // 未识别的 code 归入 provider_failed,保持未知分类。
 func providerFailureCode(rawCode string) string {
-	switch strings.ToLower(strings.TrimSpace(rawCode)) {
-	case "provider_unavailable", "service_unavailable":
-		return failure.CodeProviderUnavailable
-	case "provider_overloaded", "overloaded_error", "overloaded":
-		return failure.CodeProviderOverloaded
-	case "provider_rate_limited", "rate_limit_error", "rate_limited", "rate_limit_exceeded", "too_many_requests":
-		return failure.CodeProviderRateLimited
-	case "connection_failed", "api_connection_error", "connection_error":
-		return failure.CodeConnectionFailed
-	case "invalid_credentials", "authentication_error", "invalid_api_key", "unauthorized":
-		return failure.CodeInvalidCredentials
-	case "permission_denied", "permission_error":
-		return failure.CodePermissionDenied
-	case "insufficient_quota", "quota_exceeded", "billing_hard_limit_reached":
-		return failure.CodeInsufficientQuota
-	case "invalid_request", "invalid_request_error", "context_length_exceeded":
-		return failure.CodeInvalidRequest
-	case "unsupported_schema", "schema_rejected":
-		return failure.CodeUnsupportedSchema
-	default:
-		return failure.CodeProviderFailed
+	if info, ok := runner.ProviderCodeInfo(rawCode); ok {
+		return info.Code
 	}
+	return failure.CodeProviderFailed
 }
 
 // statusFailureCode 映射残缺的 HTTP 状态码证据:没有结构化信封时,状态码
