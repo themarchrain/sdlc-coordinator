@@ -113,4 +113,23 @@ func (b *limitedBuffer) Write(data []byte) (int, error) {
 	return original, nil
 }
 
+// ReadFrom 收口 io.Copy:内嵌 bytes.Buffer 提升出的 ReadFrom 会绕过 Write 的上限。
+func (b *limitedBuffer) ReadFrom(source io.Reader) (int64, error) {
+	total := int64(0)
+	chunk := make([]byte, 32<<10)
+	for {
+		read, err := source.Read(chunk)
+		if read > 0 {
+			total += int64(read)
+			_, _ = b.Write(chunk[:read])
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return total, nil
+			}
+			return total, err
+		}
+	}
+}
+
 var _ io.Writer = (*limitedBuffer)(nil)

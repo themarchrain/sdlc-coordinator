@@ -36,6 +36,27 @@ func TestProcessRunnerReturnsBoundedStderrForNonZeroExit(t *testing.T) {
 	}
 }
 
+func TestProcessRunnerTruncatesOversizedStderr(t *testing.T) {
+	runner := newProcessRunner()
+	err := runner.Run(context.Background(), helperCommandSpec("noisy", ""), func([]byte) error { return nil })
+	if err == nil {
+		t.Fatal("expected the noisy helper to fail")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "stderr-head") {
+		t.Fatalf("stderr head was dropped: %d bytes", len(message))
+	}
+	if strings.Contains(message, "stderr-tail") {
+		t.Fatal("stderr written past the limit reached the error")
+	}
+	if len(message) < maxProcessErrorBytes {
+		t.Fatalf("stderr was cut below the limit: %d bytes", len(message))
+	}
+	if len(message) > maxProcessErrorBytes+1024 {
+		t.Fatalf("process error was not bounded: %d bytes", len(message))
+	}
+}
+
 func TestProcessRunnerCancelsLongRunningCommand(t *testing.T) {
 	runner := newProcessRunner()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -71,6 +92,14 @@ func TestPiCommandHelper(t *testing.T) {
 		os.Exit(0)
 	case "failure":
 		fmt.Fprintln(os.Stderr, "helper failed")
+		os.Exit(7)
+	case "noisy":
+		fmt.Fprintln(os.Stderr, "stderr-head")
+		filler := strings.Repeat("x", 1024)
+		for written := 0; written < 4*maxProcessErrorBytes; written += len(filler) {
+			fmt.Fprint(os.Stderr, filler)
+		}
+		fmt.Fprintln(os.Stderr, "stderr-tail")
 		os.Exit(7)
 	case "wait":
 		time.Sleep(30 * time.Second)
