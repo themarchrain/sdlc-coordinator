@@ -917,3 +917,31 @@ func TestRequestHashIncludesProviderAPI(t *testing.T) {
 		t.Fatal("provider api must participate in the request hash")
 	}
 }
+
+func TestRequestHashScopesProviderAPIToPiCLI(t *testing.T) {
+	hashFor := func(provider, api string) string {
+		request := runner.CreateExecutionRequest{
+			ExecutionID: "run-scope", TaskID: "task-scope", Role: "ReviewerWorker",
+			WorkspacePath: "/workspaces/scope", PromptFile: "prompt.md", SchemaFile: "result-schema.json",
+			TimeoutSeconds: 1800,
+			Provider: runner.ProviderConfig{
+				Name: provider, API: api, Revision: 3, BaseURL: "https://gateway.example/v1",
+				Model: "deepseek-v4-flash", Effort: "high",
+			},
+		}
+		hash, err := runner.RequestHash(request)
+		if err != nil {
+			t.Fatalf("hash %s/%q: %v", provider, api, err)
+		}
+		return hash
+	}
+	if legacy, filled := hashFor("codex-cli", ""), hashFor("codex-cli", "openai-completions"); legacy != filled {
+		t.Fatalf("codex-cli hash changed when api was filled: %s != %s", legacy, filled)
+	}
+	if completions, anthropic := hashFor("pi-cli", "openai-completions"), hashFor("pi-cli", "anthropic-messages"); completions == anthropic {
+		t.Fatal("pi-cli protocol must decide the request hash")
+	}
+	if completions, empty := hashFor("pi-cli", "openai-completions"), hashFor("pi-cli", ""); completions == empty {
+		t.Fatal("pi-cli api must decide the request hash")
+	}
+}
