@@ -2,7 +2,7 @@
 set -eu
 
 # Materialize vendored agent tools from /opt/vendor into /opt/*.
-# Codex is required; Claude and Pi are optional. Development tools come from the image.
+# Codex and Pi are required; Claude is optional. Development tools come from the image.
 # Each component dir is either an unpacked tree (with bin/) or a single tar.
 
 vendor_root="${1:-/opt/vendor}"
@@ -64,7 +64,7 @@ materialize() {
 
 materialize codex-package /opt/codex 1
 materialize claude /opt/claude 0
-materialize pi /opt/pi 0
+materialize pi /opt/pi 1
 
 for name in codex claude pi; do
 	dir="/opt/${name}"
