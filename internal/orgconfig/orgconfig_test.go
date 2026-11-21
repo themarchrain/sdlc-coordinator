@@ -231,11 +231,11 @@ func TestValidateChecksIMOutboundURLs(t *testing.T) {
 	}
 }
 
-// 执行 CLI 选择三态:空(跟随系统默认)与两个合法 CLI 通过,其他值拒绝。
+// 执行 CLI 选择四态:空(跟随系统默认)与三个合法 CLI 通过,其他值拒绝。
 func TestValidateRunnerProvider(t *testing.T) {
 	base := Config{CodeHost: configuration.CodeHostConfig{Provider: "gitlab", BaseURL: "https://gitlab.example.com"}}
 
-	for _, provider := range []string{"", "codex-cli", "claude-cli"} {
+	for _, provider := range []string{"", "codex-cli", "claude-cli", "pi-cli"} {
 		candidate := base
 		candidate.Runner.Provider = provider
 		if errs := Validate(candidate); len(errs) != 0 {

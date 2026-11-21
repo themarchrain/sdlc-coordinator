@@ -270,3 +270,45 @@ func TestRuntimeConfigTypeHasNoControlPlaneField(t *testing.T) {
 		t.Fatalf("snapshot JSON must omit control_plane: %s", encoded)
 	}
 }
+
+func TestValidateAcceptsPiProviderAndAPI(t *testing.T) {
+	for _, api := range []string{"", "openai-completions", "openai-responses", "anthropic-messages"} {
+		cfg := validRuntimeConfig()
+		cfg.AgentRunner.Provider = "pi-cli"
+		cfg.AgentRunner.PiAPI = api
+		if errs := Validate(cfg); errs.Has("agent_runner.provider") || errs.Has("agent_runner.pi_api") {
+			t.Fatalf("pi provider with api %q was rejected: %#v", api, errs)
+		}
+	}
+	cfg := validRuntimeConfig()
+	cfg.AgentRunner.Provider = "pi-cli"
+	cfg.AgentRunner.PiAPI = "chat"
+	if errs := Validate(cfg); !errs.Has("agent_runner.pi_api") {
+		t.Fatalf("unknown pi api was accepted: %#v", errs)
+	}
+	unknown := validRuntimeConfig()
+	unknown.AgentRunner.Provider = "gemini-cli"
+	if errs := Validate(unknown); !errs.Has("agent_runner.provider") {
+		t.Fatalf("unknown provider was accepted: %#v", errs)
+	}
+}
+
+func TestValidateRequiresGatewayURLForPiCLI(t *testing.T) {
+	missing := validRuntimeConfig()
+	missing.AgentRunner.Provider = "pi-cli"
+	missing.AgentRunner.ProviderBaseURL = ""
+	if errs := Validate(missing); !errs.Has("agent_runner.provider_base_url") {
+		t.Fatalf("pi-cli without a gateway url was accepted: %#v", errs)
+	}
+	codex := validRuntimeConfig()
+	codex.AgentRunner.ProviderBaseURL = ""
+	if errs := Validate(codex); errs.Has("agent_runner.provider_base_url") {
+		t.Fatalf("codex-cli must not require a gateway url: %#v", errs)
+	}
+	malformed := validRuntimeConfig()
+	malformed.AgentRunner.Provider = "pi-cli"
+	malformed.AgentRunner.ProviderBaseURL = "gateway.example"
+	if errs := Validate(malformed); !errs.Has("agent_runner.provider_base_url") {
+		t.Fatalf("malformed pi-cli gateway url was accepted: %#v", errs)
+	}
+}

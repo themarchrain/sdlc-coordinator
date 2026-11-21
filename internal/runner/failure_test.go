@@ -42,20 +42,27 @@ func TestProviderCodeInfoMapsProviderAliases(t *testing.T) {
 		"service_unavailable":        failure.CodeProviderUnavailable,
 		"provider_overloaded":        failure.CodeProviderOverloaded,
 		"overloaded_error":           failure.CodeProviderOverloaded,
+		"overloaded":                 failure.CodeProviderOverloaded,
 		"provider_rate_limited":      failure.CodeProviderRateLimited,
 		"rate_limit_error":           failure.CodeProviderRateLimited,
 		"rate_limited":               failure.CodeProviderRateLimited,
+		"rate_limit_exceeded":        failure.CodeProviderRateLimited,
+		"too_many_requests":          failure.CodeProviderRateLimited,
 		"connection_failed":          failure.CodeConnectionFailed,
 		"api_connection_error":       failure.CodeConnectionFailed,
 		"connection_error":           failure.CodeConnectionFailed,
 		"invalid_credentials":        failure.CodeInvalidCredentials,
 		"authentication_error":       failure.CodeInvalidCredentials,
+		"invalid_api_key":            failure.CodeInvalidCredentials,
+		"unauthorized":               failure.CodeInvalidCredentials,
 		"permission_denied":          failure.CodePermissionDenied,
 		"permission_error":           failure.CodePermissionDenied,
 		"insufficient_quota":         failure.CodeInsufficientQuota,
+		"quota_exceeded":             failure.CodeInsufficientQuota,
 		"billing_hard_limit_reached": failure.CodeInsufficientQuota,
 		"invalid_request":            failure.CodeInvalidRequest,
 		"invalid_request_error":      failure.CodeInvalidRequest,
+		"context_length_exceeded":    failure.CodeInvalidRequest,
 		"unsupported_schema":         failure.CodeUnsupportedSchema,
 		"schema_rejected":            failure.CodeUnsupportedSchema,
 	}
@@ -74,9 +81,8 @@ func TestProviderCodeInfoMapsProviderAliases(t *testing.T) {
 
 func TestProviderCodeInfoLeavesUnmappedCodesUnknown(t *testing.T) {
 	for _, raw := range []string{
-		"api_error", "server_error", "not_found_error", "rate_limit_exceeded",
-		"invalid_api_key", "model_not_found", "context_length_exceeded", "request_too_large",
-		"", "   ",
+		"api_error", "server_error", "not_found_error",
+		"model_not_found", "request_too_large", "", "   ",
 	} {
 		if info, ok := runner.ProviderCodeInfo(raw); ok {
 			t.Fatalf("ProviderCodeInfo(%q) = %#v, want no classification", raw, info)

@@ -225,8 +225,8 @@ func Validate(config Config) configuration.ValidationErrors {
 	// 执行 CLI 选择可空(空=跟随系统默认),非空时合法值与系统段
 	// agent_runner.provider 规则一致。
 	runnerProvider := strings.TrimSpace(config.Runner.Provider)
-	if runnerProvider != "" && runnerProvider != "codex-cli" && runnerProvider != "claude-cli" {
-		errs["runner.provider"] = "执行 CLI 仅支持 codex-cli 或 claude-cli"
+	if runnerProvider != "" && runnerProvider != "codex-cli" && runnerProvider != "claude-cli" && runnerProvider != "pi-cli" {
+		errs["runner.provider"] = "执行 CLI 仅支持 codex-cli、claude-cli 或 pi-cli"
 	}
 	// 推理强度可空(空=跟随系统默认),非空时合法值与系统段
 	// agent_runner.effort 规则一致(五档)。

@@ -419,7 +419,8 @@ export interface ConnectorConfigurationUpdate {
 export interface EditableRuntimeConfiguration {
   agent_runner: {
     service_url: string
-    provider: 'codex-cli' | 'claude-cli'
+    provider: 'codex-cli' | 'claude-cli' | 'pi-cli'
+    pi_api: string
     provider_base_url: string
     model: string
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -464,7 +465,7 @@ export interface TenantConfigurationConfig {
     reviewer_mentions: string[]
   }
   runner: {
-    provider: '' | 'codex-cli' | 'claude-cli'
+    provider: '' | 'codex-cli' | 'claude-cli' | 'pi-cli'
     effort: '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     task_timeout: string
   }

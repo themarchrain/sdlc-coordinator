@@ -41,6 +41,7 @@ type RuntimeConfig struct {
 type AgentRunnerConfig struct {
 	ServiceURL        string `json:"service_url"`
 	Provider          string `json:"provider"`
+	PiAPI             string `json:"pi_api"`
 	ProviderBaseURL   string `json:"provider_base_url"`
 	APIKey            string `json:"api_key"`
 	CustomHeadersJSON string `json:"custom_headers_json"`
@@ -167,10 +168,18 @@ func Validate(cfg RuntimeConfig) ValidationErrors {
 	errs := ValidationErrors{}
 	requireAbsoluteHTTPURL(errs, "agent_runner.service_url", cfg.AgentRunner.ServiceURL, true)
 	agentProvider := strings.TrimSpace(cfg.AgentRunner.Provider)
-	if agentProvider != "codex-cli" && agentProvider != "claude-cli" {
-		errs["agent_runner.provider"] = "仅支持 codex-cli 或 claude-cli"
+	if agentProvider != "codex-cli" && agentProvider != "claude-cli" && agentProvider != "pi-cli" {
+		errs["agent_runner.provider"] = "执行 CLI 仅支持 codex-cli、claude-cli 或 pi-cli"
 	}
-	requireAbsoluteHTTPURL(errs, "agent_runner.provider_base_url", cfg.AgentRunner.ProviderBaseURL, false)
+	// pi_api 只与 pi-cli 绑定:空值由 ApplyDefaults 补默认,非空时必须是 pi
+	// 支持的三种网关协议之一。
+	switch strings.TrimSpace(cfg.AgentRunner.PiAPI) {
+	case "", "openai-completions", "openai-responses", "anthropic-messages":
+	default:
+		errs["agent_runner.pi_api"] = "仅支持 openai-completions、openai-responses 或 anthropic-messages"
+	}
+	requireAbsoluteHTTPURL(errs, "agent_runner.provider_base_url", cfg.AgentRunner.ProviderBaseURL,
+		strings.TrimSpace(cfg.AgentRunner.Provider) == "pi-cli")
 	requireTrimmed(errs, "agent_runner.api_key", cfg.AgentRunner.APIKey)
 	requireTrimmed(errs, "agent_runner.model", cfg.AgentRunner.Model)
 	if !validAgentRunnerEffort(cfg.AgentRunner.Effort) {

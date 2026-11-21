@@ -25,7 +25,7 @@ func TestLoadConfigUsesRunnerDefaults(t *testing.T) {
 	if config.HTTPAddr != ":8081" || config.DataRoot != "/app/runner-data" {
 		t.Fatalf("unexpected runner defaults: %#v", config)
 	}
-	if config.ClaudeBinary != "" || config.CodexBinary != "" {
+	if config.ClaudeBinary != "" || config.CodexBinary != "" || config.PiBinary != "" {
 		t.Fatalf("unexpected cli binary defaults: %#v", config)
 	}
 	if config.LogLevel != "info" || config.LogDir != "logs/agent-runner" {
@@ -42,6 +42,7 @@ func TestLoadConfigReadsExplicitRunnerSettings(t *testing.T) {
 		"AGENT_RUNNER_DATA_ROOT":         "/tmp/runner-data",
 		"AGENT_RUNNER_CLAUDE_BINARY":     "/home/runner/.local/bin/claude",
 		"AGENT_RUNNER_CODEX_BINARY":      "/home/runner/.local/bin/codex",
+		"AGENT_RUNNER_PI_BINARY":         "/home/runner/.local/bin/pi",
 		"AGENT_RUNNER_LOG_LEVEL":         "warn",
 		"AGENT_RUNNER_LOG_DIR":           "/var/log/agent-runner",
 		"AGENT_RUNNER_WORKSPACE_ROOT":    " /tmp/workspaces ",
@@ -52,7 +53,7 @@ func TestLoadConfigReadsExplicitRunnerSettings(t *testing.T) {
 	if config.HTTPAddr != "127.0.0.1:19081" || config.DataRoot != "/tmp/runner-data" {
 		t.Fatalf("unexpected custom runner config: %#v", config)
 	}
-	if config.ClaudeBinary != "/home/runner/.local/bin/claude" || config.CodexBinary != "/home/runner/.local/bin/codex" {
+	if config.ClaudeBinary != "/home/runner/.local/bin/claude" || config.CodexBinary != "/home/runner/.local/bin/codex" || config.PiBinary != "/home/runner/.local/bin/pi" {
 		t.Fatalf("unexpected cli binary paths: %#v", config)
 	}
 	if config.LogLevel != "warn" || config.LogDir != "/var/log/agent-runner" {
@@ -336,7 +337,7 @@ func TestNewServiceRegistersCodeLevelCLIProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runner service: %v", err)
 	}
-	if names := service.ProviderNames(); !reflect.DeepEqual(names, []string{"claude-cli", "codex-cli"}) {
+	if names := service.ProviderNames(); !reflect.DeepEqual(names, []string{"claude-cli", "codex-cli", "pi-cli"}) {
 		t.Fatalf("unexpected provider registry: %#v", names)
 	}
 }

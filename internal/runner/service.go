@@ -510,14 +510,22 @@ func normalizeRequest(request CreateExecutionRequest) (CreateExecutionRequest, s
 		headerNames = append(headerNames, name)
 	}
 	sort.Strings(headerNames)
+	// 只有 pi-cli 的网关协议决定请求身份;其他 provider 的该字段恒等于默认值,
+	// 纳入哈希会让升级前落库的执行行无法对账。
+	providerAPI := ""
+	if request.Provider.Name == "pi-cli" {
+		providerAPI = request.Provider.API
+	}
 	hashInput := struct {
 		ExecutionID, TaskID, Role, WorkspacePath, PromptFile, SchemaFile string
 		ProviderName, BaseURL, Model, Effort                             string
+		ProviderAPI                                                      string `json:"api,omitempty"`
 		Revision, TimeoutSeconds                                         int64
 		HeaderNames                                                      []string
 	}{
 		request.ExecutionID, request.TaskID, request.Role, request.WorkspacePath, request.PromptFile, request.SchemaFile,
 		request.Provider.Name, request.Provider.BaseURL, request.Provider.Model, request.Provider.Effort,
+		providerAPI,
 		request.Provider.Revision, request.TimeoutSeconds, headerNames,
 	}
 	raw, _ := json.Marshal(hashInput)

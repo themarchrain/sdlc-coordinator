@@ -29,13 +29,16 @@ const (
 )
 
 type ProviderConfig struct {
-	Name     string            `json:"name"`
-	Revision int64             `json:"revision"`
-	BaseURL  string            `json:"base_url,omitempty"`
-	APIKey   string            `json:"api_key,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
-	Model    string            `json:"model,omitempty"`
-	Effort   string            `json:"effort,omitempty"`
+	Name     string `json:"name"`
+	Revision int64  `json:"revision"`
+	// API 是 CLI 需要显式声明的网关协议，目前只有 pi-cli 消费它；
+	// 其他 Provider 忽略该字段。
+	API     string            `json:"api,omitempty"`
+	BaseURL string            `json:"base_url,omitempty"`
+	APIKey  string            `json:"api_key,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Model   string            `json:"model,omitempty"`
+	Effort  string            `json:"effort,omitempty"`
 }
 
 type CreateExecutionRequest struct {

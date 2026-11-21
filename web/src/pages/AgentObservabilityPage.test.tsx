@@ -197,12 +197,40 @@ describe('AgentObservabilityPage', () => {
     await waitFor(() => expect(adminApi.listAgentExecutions).toHaveBeenCalledWith(expect.objectContaining({ provider: 'claude-cli' })))
   })
 
-  it('colors error and usage events from both providers and defaults unknown to info', () => {
+  it('derives drawer tokens from per-turn pi usage events', async () => {
+    const detail: AgentExecutionDetail = {
+      execution_id: 'run-pi', run_id: 'run-pi', task_id: 'task-pi', task_type: 'review_mr', role: 'ReviewerWorker', repository: 'group/project', provider: 'pi-cli', status: 'succeeded', model: 'deepseek-v4-flash', effort: 'high', request_hash: 'hash', duration_seconds: 42, created_at: '2026-11-20T10:00:00Z',
+      events: [
+        { seq: 1, type: 'pi_session', occurred_at: '2026-11-20T10:00:00Z', payload: { session_id: 'pi-session', cwd: '.' } },
+        { seq: 2, type: 'pi_usage', occurred_at: '2026-11-20T10:00:10Z', payload: { usage: { input: 1200, output: 300, cacheRead: 800, cacheWrite: 0, totalTokens: 1500, cost: { total: 0 } }, stop_reason: 'toolUse' } },
+        { seq: 3, type: 'pi_usage', occurred_at: '2026-11-20T10:00:20Z', payload: { usage: { input: 800, output: 200, cacheRead: 400, cacheWrite: 0, totalTokens: 1000, cost: { total: 0 } }, stop_reason: 'stop' } },
+      ],
+    }
+    vi.spyOn(adminApi, 'getAgentExecution').mockResolvedValue(detail)
+    vi.spyOn(adminApi, 'listAgentExecutions').mockResolvedValue({
+      items: [
+        { execution_id: 'run-pi', run_id: 'run-pi', task_id: 'task-pi', task_type: 'review_mr', role: 'ReviewerWorker', repository: 'group/project', provider: 'pi-cli', status: 'succeeded', model: 'deepseek-v4-flash', effort: 'high', request_hash: 'hash', duration_seconds: 42, created_at: '2026-11-20T10:00:00Z' },
+      ],
+      page: 1, page_size: 10, total: 1,
+    })
+    render(<MemoryRouter><AgentObservabilityPage /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByText('run-pi'))
+    expect(await screen.findByText(/输入 2,000 · 其中缓存 1,200 · 输出 500/)).toBeInTheDocument()
+    const drawer = (await screen.findByRole('link', { name: '查看 Task' })).closest('.ant-drawer') as HTMLElement
+    const costRow = within(drawer).getByText('估算费用').closest('tr')!
+    // 我们不下发模型价格，0 不是"免费"，费用保持未知。
+    expect(costRow).toHaveTextContent('—')
+  })
+
+  it('colors error and usage events from every provider and defaults unknown to info', () => {
     const slots = THEMES.default.slots.eventType
     expect(eventTypeColor('codex_error', slots)).toBe(slots.error)
     expect(eventTypeColor('claude_error', slots)).toBe(slots.error)
     expect(eventTypeColor('codex_usage', slots)).toBe(slots.usage)
     expect(eventTypeColor('claude_usage', slots)).toBe(slots.usage)
+    expect(eventTypeColor('pi_error', slots)).toBe(slots.error)
+    expect(eventTypeColor('pi_usage', slots)).toBe(slots.usage)
     expect(eventTypeColor('claude_result', slots)).toBe(slots.info)
     expect(eventTypeColor('brand_new_event', slots)).toBe(slots.info)
   })

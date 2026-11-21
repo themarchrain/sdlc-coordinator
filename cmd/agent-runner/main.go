@@ -19,6 +19,7 @@ import (
 	"sdlc-coordinator/internal/runner"
 	"sdlc-coordinator/internal/runner/claudecli"
 	"sdlc-coordinator/internal/runner/codexcli"
+	"sdlc-coordinator/internal/runner/picli"
 	"sdlc-coordinator/internal/workspaceproto"
 )
 
@@ -32,6 +33,7 @@ type config struct {
 	DataRoot      string
 	ClaudeBinary  string
 	CodexBinary   string
+	PiBinary      string
 	WorkspaceRoot string
 	LogLevel      string
 	LogDir        string
@@ -69,6 +71,7 @@ func loadConfig(getenv func(string) string) config {
 		DataRoot:         dataRoot,
 		ClaudeBinary:     strings.TrimSpace(getenv("AGENT_RUNNER_CLAUDE_BINARY")),
 		CodexBinary:      strings.TrimSpace(getenv("AGENT_RUNNER_CODEX_BINARY")),
+		PiBinary:         strings.TrimSpace(getenv("AGENT_RUNNER_PI_BINARY")),
 		WorkspaceRoot:    workspaceRoot,
 		InternalToken:    strings.TrimSpace(getenv("AGENT_RUNNER_INTERNAL_TOKEN")),
 		AuthorizationURL: strings.TrimSpace(getenv("AGENT_RUNNER_AUTHORIZATION_URL")),
@@ -191,5 +194,6 @@ func newService(config config, logger *zap.Logger) (*runner.Service, error) {
 	return runner.NewService(config.DataRoot, map[string]runner.Provider{
 		"claude-cli": claudecli.New(config.ClaudeBinary),
 		"codex-cli":  codexcli.New(config.CodexBinary),
+		"pi-cli":     picli.New(config.PiBinary),
 	}, runner.WithLogger(logger))
 }

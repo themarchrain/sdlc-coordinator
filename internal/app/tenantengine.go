@@ -137,6 +137,7 @@ func buildTenantEngine(db *gorm.DB, tenantID uint, shared engineShared) (*tenant
 		TaskTimeout: shared.cfg.AgentRunner.TaskTimeout,
 		Provider: runner.ProviderConfig{
 			Name: shared.cfg.AgentRunner.Provider, Revision: int64(shared.cfg.AgentRunner.ProviderConfigRevision),
+			API:     shared.cfg.AgentRunner.PiAPI,
 			BaseURL: shared.cfg.AgentRunner.ProviderBaseURL, APIKey: shared.cfg.AgentRunner.APIKey,
 			Headers: providerHeaders, Model: shared.cfg.AgentRunner.Model, Effort: shared.cfg.AgentRunner.Effort,
 		},
