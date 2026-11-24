@@ -53,7 +53,10 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if err != nil {
 		return nil, setupFailure(failure.CodeUnsupportedSchema, fmt.Errorf("decode claude result schema: %w", err))
 	}
-	runtimeRoot, err := os.MkdirTemp("", "agent-runner-claude-")
+	// 运行时根放在 run 工作区里:launcher 以 agent 用户拉起 CLI 前只会把工作区
+	// chown 给 agent,/tmp 下的 0700 目录对 agent 不可读,claude 读不到
+	// --mcp-config 就会在启动阶段直接退出。
+	runtimeRoot, err := os.MkdirTemp(request.WorkspacePath, ".agent-runner-claude-")
 	if err != nil {
 		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("create isolated claude config root: %w", err))
 	}
@@ -72,7 +75,7 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	}
 	if request.ResultSubmission != nil {
 		// claude 的 http MCP 头只接受字面值，token 写进 --mcp-config 文件；
-		// 文件放进程临时目录（工作区之外），随 runtimeRoot 一起删除。
+		// 文件放 run 工作区内的运行时根，随 runtimeRoot 一起删除。
 		mcpConfigPath, err := writeMCPConfig(runtimeRoot, request.ResultSubmission)
 		if err != nil {
 			return nil, err

@@ -30,8 +30,8 @@ func TestProviderInjectsCoordinatorMCPConfigWhenChannelPresent(t *testing.T) {
 			t.Errorf("--mcp-config missing: %#v", spec.Args)
 			return
 		}
-		if !filepath.IsAbs(configFlag) || strings.Contains(configFlag, workspaceRoot) {
-			t.Errorf("mcp config must live outside the workspace: %q", configFlag)
+		if !filepath.IsAbs(configFlag) || !strings.HasPrefix(configFlag, workspaceRoot+string(os.PathSeparator)) {
+			t.Errorf("mcp config must live inside the run workspace: %q", configFlag)
 			return
 		}
 		raw, err := os.ReadFile(configFlag)

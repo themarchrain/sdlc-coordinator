@@ -489,3 +489,30 @@ func TestProviderReadsErrorEnvelopeEmbeddedInMessage(t *testing.T) {
 		t.Fatalf("Classify() = %q, want fatal", got)
 	}
 }
+
+func TestProviderKeepsAgentConfigInsideTheRunWorkspace(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	writeClaudeTestFile(t, workspaceRoot, "prompt.md", "review")
+	writeClaudeTestFile(t, workspaceRoot, "schema.json", `{"type":"object"}`)
+	command := &fakeCommandRunner{lines: [][]byte{
+		[]byte(`{"type":"result","subtype":"success","is_error":false,"structured_output":{"ok":true}}`),
+	}}
+	var configDir string
+	command.onRun = func(spec commandSpec) { configDir = environmentMap(spec.Env)["CLAUDE_CONFIG_DIR"] }
+	if _, err := newProvider("claude-test", command).Execute(context.Background(), runner.ProviderRequest{
+		ExecutionID: "run-claude-layout", TaskID: "task-claude-layout", Role: "ReviewerWorker",
+		WorkspacePath: workspaceRoot, PromptFile: "prompt.md", SchemaFile: "schema.json",
+		Provider: runner.ProviderConfig{Name: "claude-cli", Revision: 2},
+	}, func(string, map[string]any) {}); err != nil {
+		t.Fatalf("execute provider: %v", err)
+	}
+	if !strings.HasPrefix(configDir, workspaceRoot+string(os.PathSeparator)) {
+		t.Fatalf("claude config dir must live inside the run workspace: %q", configDir)
+	}
+	if filepath.Dir(filepath.Dir(configDir)) != filepath.Clean(workspaceRoot) {
+		t.Fatalf("claude runtime root must be a direct child of the run workspace: %q", configDir)
+	}
+	if _, err := os.Stat(filepath.Dir(configDir)); !os.IsNotExist(err) {
+		t.Fatalf("claude runtime root must be removed after the run: %v", err)
+	}
+}
