@@ -1,6 +1,7 @@
 package resulttoken
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -130,7 +131,7 @@ func TestNewSecretIsRandom(t *testing.T) {
 	if string(first) == string(second) {
 		t.Fatal("secrets must be random")
 	}
-	if strings.Contains(string(first), "\x00") && strings.Contains(string(second), "\x00") {
+	if bytes.Equal(first, make([]byte, len(first))) || bytes.Equal(second, make([]byte, len(second))) {
 		t.Fatal("degenerate secret")
 	}
 }
