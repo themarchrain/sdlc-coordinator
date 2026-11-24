@@ -304,21 +304,18 @@ describe('OrgConfigurationPage', () => {
   describe.each([
     { label: 'Codex', provider: 'codex-cli', icon: '.agent-icon--codex' },
     { label: 'Claude Code', provider: 'claude-cli', icon: '.agent-icon--claude' },
+    { label: 'Pi', provider: 'pi-cli', icon: '.agent-icon--pi' },
   ])('runner CLI $label', ({ label, provider, icon }) => {
-    it('shows both CLI icons in options, selection and summary', async () => {
+    it('shows the CLI brand icon in options, selection and summary', async () => {
       vi.spyOn(adminApi, 'tenantConfiguration').mockResolvedValue(view)
       render(<MemoryRouter initialEntries={['/org/settings']}><OrgConfigurationPage /></MemoryRouter>)
       await screen.findByText('保存启用')
 
       fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行 CLI' }))
-      const codexOption = (await screen.findAllByText('Codex')).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
-      const claudeOption = (await screen.findAllByText('Claude Code')).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
-      expect(codexOption.querySelector('.agent-icon--codex')).toBeInTheDocument()
-      expect(within(codexOption).getByText('Codex')).toBeInTheDocument()
-      expect(claudeOption.querySelector('.agent-icon--claude')).toBeInTheDocument()
-      expect(within(claudeOption).getByText('Claude Code')).toBeInTheDocument()
+      const chosen = (await screen.findAllByText(label)).find((element) => element.closest('.ant-select-item-option'))!.closest('.ant-select-item-option') as HTMLElement
+      expect(chosen.querySelector(icon)).toBeInTheDocument()
+      expect(within(chosen).getByText(label)).toBeInTheDocument()
 
-      const chosen = [codexOption, claudeOption].find((option) => within(option).queryByText(label))!
       fireEvent.click(within(chosen).getByText(label))
       const cliSelect = screen.getByRole('combobox', { name: '执行 CLI' }).closest('.ant-select') as HTMLElement
       const selection = cliSelect.querySelector('.ant-select-selection-item')!

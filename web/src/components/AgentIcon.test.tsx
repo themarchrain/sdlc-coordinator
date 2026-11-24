@@ -22,6 +22,14 @@ describe('AgentIcon', () => {
     delete document.documentElement.dataset.theme
   })
 
+  it('renders the pi brand mask without falling back to a glyph', () => {
+    const { container } = render(<AgentIcon provider="pi-cli" />)
+
+    expect(container.querySelector('.agent-icon--pi')).toHaveAttribute('aria-hidden', 'true')
+    expect(container.querySelector('.agent-icon--pi')).toHaveStyle({ width: '14px', height: '14px', color: '#111111' })
+    expect(container.querySelector('.agent-icon--fallback')).toBeNull()
+  })
+
   it('renders the exact provider brands as decorative icons', () => {
     const { container } = render(<><AgentIcon provider="codex-cli" /><AgentIcon provider="claude-cli" /></>)
 

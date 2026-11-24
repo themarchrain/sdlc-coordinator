@@ -25,7 +25,11 @@ const (
 	agentRunLockPath = "/app/runner-data/operations/agent-cli.lock"
 )
 
-var allowedBinaries = []string{"/opt/codex/bin/codex", "/opt/claude/bin/claude"}
+var allowedBinaries = []string{
+	"/opt/codex/bin/codex",
+	"/opt/claude/bin/claude",
+	"/opt/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
+}
 
 func main() {
 	if len(os.Args) == 4 && os.Args[1] == "--share-workspace" {

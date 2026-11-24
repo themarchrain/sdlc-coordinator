@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   message,
+  Select,
   Steps,
   Switch,
   Tag,
@@ -227,7 +228,20 @@ function AgentRunnerStep({ secrets }: { secrets: ConfigurationView['secrets'] })
           保留隐藏注册字段让保存 payload 原样回传加载值——后端整行替换语义下
           缺键会把系统默认 CLI 静默清空。 */}
       <Form.Item name={['agent_runner', 'provider']} hidden><Input className="mono" /></Form.Item>
-      <div className="configuration-provider-note">{provider === 'codex-cli' ? '裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。' : '裸 Agent，不加载个人 Claude Code 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。'}</div>
+      <div className="configuration-provider-note">{provider === 'pi-cli'
+        ? '裸 Agent，不加载个人 Pi 配置、MCP、skills 或历史会话。协议按下方"pi 协议"选择，网关需兼容所选协议。'
+        : provider === 'claude-cli'
+          ? '裸 Agent，不加载个人 Claude Code 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。'
+          : '裸 Agent，不加载个人 Codex 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 OpenAI Responses API。'}</div>
+      {provider === 'pi-cli'
+        ? <Form.Item name={['agent_runner', 'pi_api']} label="pi 协议" extra="网关必须兼容所选协议；Coordinator 只做透传，不做协议适配。">
+            <Select aria-label="pi 协议" options={[
+              { value: 'openai-completions', label: 'OpenAI Completions' },
+              { value: 'openai-responses', label: 'OpenAI Responses' },
+              { value: 'anthropic-messages', label: 'Anthropic Messages' },
+            ]} />
+          </Form.Item>
+        : <Form.Item name={['agent_runner', 'pi_api']} hidden><Input className="mono" /></Form.Item>}
       <Form.Item name={['agent_runner', 'provider_base_url']} label="模型接入地址" rules={[{ validator: validateHTTPURL }]} extra="由使用者自行提供，且协议必须兼容当前执行 Provider：Codex 要求 Responses API，Claude Code 要求 Messages API。Coordinator 只做透传，不做协议适配。"><Input placeholder="https://llm.example.com/v1" /></Form.Item>
       <Form.Item name={['agent_runner', 'model']} label="执行模型" rules={[{ required: true }]}><Input className="mono" placeholder="模型 ID" /></Form.Item>
       {/* 推理强度已下沉组织配置（组织可选、系统兜底）；保留隐藏注册字段让

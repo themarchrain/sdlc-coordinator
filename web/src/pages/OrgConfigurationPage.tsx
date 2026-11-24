@@ -159,7 +159,7 @@ function CodeHostStep({ people, onManagePeople }: { people: Person[]; onManagePe
         <Switch aria-label="自动合并" checkedChildren="启用" unCheckedChildren="停用" />
       </Form.Item>
       <Form.Item name={['runner', 'provider']} label="执行 CLI" extra="组织任务用哪个命令行 Agent 执行。">
-        <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, ...['codex-cli', 'claude-cli'].map((value) => ({ value, label: <span className="agent-provider-label"><AgentIcon provider={value} />{agentProviderLabel(value)}</span> }))]} />
+        <Select aria-label="执行 CLI" options={[{ value: '', label: '跟随系统默认' }, ...['codex-cli', 'claude-cli', 'pi-cli'].map((value) => ({ value, label: <span className="agent-provider-label"><AgentIcon provider={value} />{agentProviderLabel(value)}</span> }))]} />
       </Form.Item>
       <Form.Item name={['runner', 'effort']} label="推理强度" extra="CLI 的思考深度档位；留空跟随系统默认。">
         <Select aria-label="推理强度" allowClear options={['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))} />

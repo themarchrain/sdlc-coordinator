@@ -1,0 +1,158 @@
+package picli
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"sdlc-coordinator/internal/failure"
+	"sdlc-coordinator/internal/runner"
+)
+
+// httpStatusPrefix 是 pi 透传网关错误时加在前面的三位状态码前缀。
+var httpStatusPrefix = regexp.MustCompile(`^(\d{3}):\s*`)
+
+// classifyProviderError 把 pi 报告的失败文本归一成共享失败词表的 code 与
+// 可读消息:先剥状态码前缀,再按 error 对象或顶层信封解包,最后按 code、
+// 状态码、稳定错误前缀的顺序映射。
+func classifyProviderError(raw string) (string, string) {
+	trimmed := strings.TrimSpace(raw)
+	status := ""
+	if match := httpStatusPrefix.FindStringSubmatch(trimmed); match != nil {
+		status = match[1]
+		trimmed = strings.TrimSpace(trimmed[len(match[0]):])
+	}
+	extracted := runner.ExtractProviderError(map[string]any{"message": trimmed})
+	rawCode := strings.TrimSpace(extracted.Code)
+	message := strings.TrimSpace(extracted.Message)
+	if rawCode == "" {
+		// ExtractProviderError 只解包 {"error":{...}};网关也常把 code 与
+		// message 放在顶层,这里补一层。
+		var flat struct {
+			Code    string `json:"code"`
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal([]byte(trimmed), &flat) == nil {
+			candidate := strings.TrimSpace(flat.Code)
+			if candidate == "" {
+				candidate = strings.TrimSpace(flat.Type)
+			}
+			if candidate != "" {
+				rawCode = candidate
+				message = strings.TrimSpace(flat.Message)
+			}
+		}
+	}
+	if message == "" {
+		message = trimmed
+	}
+	if rawCode != "" {
+		return providerFailureCode(rawCode), message
+	}
+	if code := statusFailureCode(status); code != "" {
+		return code, message
+	}
+	return messageFailureCode(trimmed), message
+}
+
+// providerFailureCode 把网关与上游厂商的 code 别名映射到共享失败词表。
+// 未识别的 code 归入 provider_failed,保持未知分类。
+func providerFailureCode(rawCode string) string {
+	if info, ok := runner.ProviderCodeInfo(rawCode); ok {
+		return info.Code
+	}
+	return failure.CodeProviderFailed
+}
+
+// statusFailureCode 映射残缺的 HTTP 状态码证据:没有结构化信封时,状态码
+// 是唯一可信的分类来源。
+func statusFailureCode(status string) string {
+	switch status {
+	case "401":
+		return failure.CodeInvalidCredentials
+	case "402":
+		return failure.CodeInsufficientQuota
+	case "403":
+		return failure.CodePermissionDenied
+	case "408", "504":
+		return failure.CodeConnectionFailed
+	case "404", "409", "413", "422":
+		return failure.CodeInvalidRequest
+	case "429":
+		return failure.CodeProviderRateLimited
+	case "500", "502", "503":
+		return failure.CodeProviderUnavailable
+	case "529":
+		return failure.CodeProviderOverloaded
+	default:
+		return ""
+	}
+}
+
+// messageFailureCode 只认 pi 与网关的稳定错误前缀,不做散文猜测:
+// 这里的输入来自 provider 错误字段,不是模型输出。
+func messageFailureCode(message string) string {
+	lower := strings.ToLower(message)
+	switch {
+	case strings.HasPrefix(lower, "connection error"):
+		return failure.CodeConnectionFailed
+	case strings.Contains(lower, "rate limit"):
+		return failure.CodeProviderRateLimited
+	case strings.Contains(lower, "overloaded"):
+		return failure.CodeProviderOverloaded
+	case strings.Contains(lower, "insufficient quota"):
+		return failure.CodeInsufficientQuota
+	case strings.Contains(lower, "context length"), strings.Contains(lower, "maximum context"):
+		return failure.CodeInvalidRequest
+	case strings.Contains(lower, "invalid api key"), strings.Contains(lower, "incorrect api key"),
+		strings.Contains(lower, "authentication"):
+		return failure.CodeInvalidCredentials
+	default:
+		return failure.CodeProviderFailed
+	}
+}
+
+func executionFailure(code, detail string, cause error) error {
+	info, known := runner.ProviderCodeInfo(code)
+	if !known {
+		info = failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageProvider,
+			Source:  failure.SourceProvider,
+			Code:    strings.TrimSpace(code),
+		}
+	}
+	info.Summary = strings.TrimSpace(detail)
+	if code := strings.TrimSpace(code); code != "" && !strings.Contains(info.Summary, code) {
+		info.Summary = code + ": " + info.Summary
+	}
+	if cause == nil {
+		cause = errors.New(info.Summary)
+	}
+	return &runner.ProviderFailure{Info: info, Cause: cause}
+}
+
+func setupFailure(code string, cause error) error {
+	return &runner.ProviderFailure{
+		Info: failure.Info{
+			Version: failure.VersionV1,
+			Stage:   failure.StageInitialization,
+			Source:  failure.SourceRunner,
+			Code:    code,
+		},
+		Cause: cause,
+	}
+}
+
+func redactProviderError(message string, provider runner.ProviderConfig, channel *runner.ResultSubmissionChannel) string {
+	return runner.RedactSecrets(message, runner.ProviderSecrets(provider, channel))
+}
+
+// wrapSetupFailure 把写配置、建临时目录一类的初始化故障统一标注为 runner
+// 侧缺配置,调用点只需给出动作描述。
+func wrapSetupFailure(action string, err error) error {
+	return setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("%s: %w", action, err))
+}

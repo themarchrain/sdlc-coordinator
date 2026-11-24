@@ -25,7 +25,7 @@ function RouteProbe({ label }: { label: string }) {
 const configuration: ConfigurationView = {
   revision: 2,
   config: {
-    agent_runner: { service_url: 'http://agent-runner:8081', provider: 'codex-cli', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
+    agent_runner: { service_url: 'http://agent-runner:8081', provider: 'codex-cli', pi_api: 'openai-completions', provider_base_url: 'https://gateway.example', model: 'deepseek-v4-flash-0731', effort: 'high', task_timeout: '30m' },
     scheduler: {
       enabled: true, interval: '30s',
       callback_base_url: 'http://127.0.0.1:8080',
@@ -121,6 +121,48 @@ describe('ConfigurationPage', () => {
     expect(screen.getByText('裸 Agent，不加载个人 Claude Code 配置、MCP、skills 或历史会话。协议要求：接入地址必须兼容 Anthropic Messages API。')).toBeInTheDocument()
     expect(screen.getByText('由使用者自行提供，且协议必须兼容当前执行 Provider：Codex 要求 Responses API，Claude Code 要求 Messages API。Coordinator 只做透传，不做协议适配。')).toBeInTheDocument()
     expect(screen.queryByText(/个人 Claude 配置/)).not.toBeInTheDocument()
+  })
+
+  it('edits the pi wire protocol only for the pi provider', async () => {
+    const piConfiguration: ConfigurationView = { ...configuration, config: { ...configuration.config, agent_runner: { ...configuration.config.agent_runner, provider: 'pi-cli', pi_api: 'openai-completions' } } }
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(piConfiguration)
+    vi.spyOn(adminApi, 'validateConfiguration').mockResolvedValue({ valid: true, field_errors: {} })
+    const update = vi.spyOn(adminApi, 'updateConfiguration').mockResolvedValue({
+      mode: 'restart_required', revision: 3, source: 'ui', configuration: { ...piConfiguration, revision: 3 },
+    })
+    vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+
+    expect(screen.getByText('裸 Agent，不加载个人 Pi 配置、MCP、skills 或历史会话。协议按下方"pi 协议"选择，网关需兼容所选协议。')).toBeInTheDocument()
+    const protocol = screen.getByRole('combobox', { name: 'pi 协议' })
+    expect(protocol.closest('.ant-select')).toHaveTextContent('OpenAI Completions')
+    fireEvent.mouseDown(protocol)
+    fireEvent.click(await screen.findByText('Anthropic Messages'))
+
+    for (let index = 0; index < 2; index += 1) fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存并启用/ }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        agent_runner: expect.objectContaining({ provider: 'pi-cli', pi_api: 'anthropic-messages' }),
+      }),
+    }))
+  })
+
+  it('hides the pi protocol selector for other providers', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+
+    expect(screen.queryByRole('combobox', { name: 'pi 协议' })).not.toBeInTheDocument()
   })
 
   it('keeps the hidden claude provider code in the save payload', async () => {
