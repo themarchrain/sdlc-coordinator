@@ -384,12 +384,10 @@ func recoverRunWorkspaceTrees(workspaceRoot string) error {
 		if err != nil {
 			return fmt.Errorf("recover run workspace %q: %w", entry.Name(), err)
 		}
-		for _, path := range workspacePaths {
-			if path.hardLinked {
-				return fmt.Errorf("hard-linked file is not allowed in a recoverable workspace: %q", path.path)
-			}
-		}
 		paths = append(paths, workspacePaths...)
+	}
+	if err := requireHardLinksInsideWorkspace(paths); err != nil {
+		return err
 	}
 	return restoreRunnerWorkspaceOwnership(paths)
 }
@@ -402,6 +400,7 @@ type recoveryEntry struct {
 	hardLinked   bool
 	device       uint64
 	inode        uint64
+	linkCount    uint64
 }
 
 func inspectRunWorkspaceTree(runRoot string, expectedDev uint64) ([]recoveryEntry, error) {
@@ -425,12 +424,30 @@ func inspectRunWorkspaceTree(runRoot string, expectedDev uint64) ([]recoveryEntr
 		if !((int(stat.Uid) == runnerUID && int(stat.Gid) == runnerGID) || (int(stat.Uid) == agentUID && (int(stat.Gid) == agentGID || int(stat.Gid) == runnerGID))) {
 			return fmt.Errorf("workspace entry %q has an untrusted owner %d:%d", path, stat.Uid, stat.Gid)
 		}
-		paths = append(paths, recoveryEntry{path: path, mode: info.Mode(), runRoot: filepath.Clean(path) == filepath.Clean(runRoot), preserveMode: preserveMode, hardLinked: info.Mode().IsRegular() && stat.Nlink != 1, device: stat.Dev, inode: stat.Ino})
+		paths = append(paths, recoveryEntry{path: path, mode: info.Mode(), runRoot: filepath.Clean(path) == filepath.Clean(runRoot), preserveMode: preserveMode, hardLinked: info.Mode().IsRegular() && stat.Nlink != 1, device: stat.Dev, inode: stat.Ino, linkCount: stat.Nlink})
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("preflight workspace tree: %w", err)
 	}
 	return paths, nil
+}
+
+func requireHardLinksInsideWorkspace(paths []recoveryEntry) error {
+	links := make(map[[2]uint64]uint64, len(paths))
+	for _, path := range paths {
+		if path.hardLinked {
+			links[[2]uint64{path.device, path.inode}]++
+		}
+	}
+	for _, path := range paths {
+		if !path.hardLinked {
+			continue
+		}
+		if links[[2]uint64{path.device, path.inode}] != path.linkCount {
+			return fmt.Errorf("hard-linked file is not allowed in a recoverable workspace: %q", path.path)
+		}
+	}
+	return nil
 }
 
 func restoreRunnerWorkspaceOwnership(paths []recoveryEntry) error {
