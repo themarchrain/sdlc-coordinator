@@ -440,6 +440,31 @@ func TestRecoverRunWorkspacesRejectsUnsafeTreesWithoutPartialChown(t *testing.T)
 	}
 }
 
+func TestRecoverRunWorkspacesAcceptsHardLinksInsideTheWorkspace(t *testing.T) {
+	workspaceRoot, runRoot := newRecoveryWorkspace(t)
+	first := filepath.Join(runRoot, "a-first")
+	second := filepath.Join(runRoot, "b-second")
+	if err := os.WriteFile(first, []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(first, second); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(runRoot, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(first, agentUID, agentGID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := recoverRunWorkspaces(workspaceRoot, filepath.Join(t.TempDir(), "agent-cli.lock")); err != nil {
+		t.Fatalf("recover workspace with in-tree hard links: %v", err)
+	}
+	assertOwner(t, runRoot, runnerUID, runnerGID)
+	assertOwner(t, first, runnerUID, runnerGID)
+	assertOwner(t, second, runnerUID, runnerGID)
+}
+
 func TestRecoverRunWorkspacesRestoresFIFO(t *testing.T) {
 	workspaceRoot, runRoot := newRecoveryWorkspace(t)
 	fifo := filepath.Join(runRoot, "pipe")
