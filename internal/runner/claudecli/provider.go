@@ -18,7 +18,10 @@ import (
 
 var headerNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]+$`)
 
-const diagnosticsDirectoryName = ".agent-runner-diagnostics"
+const (
+	diagnosticsDirectoryName = ".agent-runner-diagnostics"
+	runTokenEnv              = "COORDINATOR_RUN_TOKEN"
+)
 
 type Provider struct {
 	binary  string
@@ -53,7 +56,10 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 	if err != nil {
 		return nil, setupFailure(failure.CodeUnsupportedSchema, fmt.Errorf("decode claude result schema: %w", err))
 	}
-	runtimeRoot, err := os.MkdirTemp("", "agent-runner-claude-")
+	// 运行时根放在 run 工作区里:launcher 以 agent 用户拉起 CLI 前只会把工作区
+	// chown 给 agent,/tmp 下的 0700 目录对 agent 不可读,claude 读不到
+	// --mcp-config 就会在启动阶段直接退出。
+	runtimeRoot, err := os.MkdirTemp(request.WorkspacePath, ".agent-runner-claude-")
 	if err != nil {
 		return nil, setupFailure(failure.CodeMissingConfiguration, fmt.Errorf("create isolated claude config root: %w", err))
 	}
@@ -71,13 +77,14 @@ func (p *Provider) Execute(ctx context.Context, request runner.ProviderRequest, 
 		"--dangerously-skip-permissions", "--json-schema", string(schema),
 	}
 	if request.ResultSubmission != nil {
-		// claude 的 http MCP 头只接受字面值，token 写进 --mcp-config 文件；
-		// 文件放进程临时目录（工作区之外），随 runtimeRoot 一起删除。
+		// claude 的 http MCP 头支持 ${VAR} 展开:文件里只写变量名,run token
+		// 只进进程环境,不落盘也不进 argv。
 		mcpConfigPath, err := writeMCPConfig(runtimeRoot, request.ResultSubmission)
 		if err != nil {
 			return nil, err
 		}
 		args = append(args, "--mcp-config", mcpConfigPath, "--strict-mcp-config")
+		environment = append(environment, runTokenEnv+"="+request.ResultSubmission.BearerToken)
 	}
 	if model := strings.TrimSpace(request.Provider.Model); model != "" {
 		args = append(args, "--model", model)
@@ -119,8 +126,9 @@ type streamParser struct {
 }
 
 // writeMCPConfig materializes the coordinator MCP server definition for the
-// claude CLI. The file sits in the provider's temp runtime root, never in the
-// agent workspace, and is removed with the runtime root after the run.
+// claude CLI inside the run workspace. The header carries only the run token
+// variable name; claude expands ${VAR} when it loads the file, so the token
+// stays in the process environment and never reaches disk or argv.
 func writeMCPConfig(runtimeRoot string, channel *runner.ResultSubmissionChannel) (string, error) {
 	config := map[string]any{
 		"mcpServers": map[string]any{
@@ -128,7 +136,7 @@ func writeMCPConfig(runtimeRoot string, channel *runner.ResultSubmissionChannel)
 				"type": "http",
 				"url":  channel.EndpointURL,
 				"headers": map[string]string{
-					"Authorization": "Bearer " + channel.BearerToken,
+					"Authorization": "Bearer ${" + runTokenEnv + "}",
 				},
 			},
 		},

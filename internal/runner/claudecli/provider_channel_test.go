@@ -30,8 +30,8 @@ func TestProviderInjectsCoordinatorMCPConfigWhenChannelPresent(t *testing.T) {
 			t.Errorf("--mcp-config missing: %#v", spec.Args)
 			return
 		}
-		if !filepath.IsAbs(configFlag) || strings.Contains(configFlag, workspaceRoot) {
-			t.Errorf("mcp config must live outside the workspace: %q", configFlag)
+		if !filepath.IsAbs(configFlag) || !strings.HasPrefix(configFlag, workspaceRoot+string(os.PathSeparator)) {
+			t.Errorf("mcp config must live inside the run workspace: %q", configFlag)
 			return
 		}
 		raw, err := os.ReadFile(configFlag)
@@ -81,8 +81,14 @@ func TestProviderInjectsCoordinatorMCPConfigWhenChannelPresent(t *testing.T) {
 	if !ok || server.Type != "http" || server.URL != "http://coordinator.example:8080/mcp" {
 		t.Fatalf("unexpected mcp config: %s", configRaw)
 	}
-	if server.Headers["Authorization"] != "Bearer run-token-secret-value" {
-		t.Fatalf("authorization header missing: %#v", server.Headers)
+	if server.Headers["Authorization"] != "Bearer ${COORDINATOR_RUN_TOKEN}" {
+		t.Fatalf("authorization header must reference the run token variable: %#v", server.Headers)
+	}
+	if environmentMap(command.spec.Env)["COORDINATOR_RUN_TOKEN"] != channel.BearerToken {
+		t.Fatalf("run token missing from the provider environment")
+	}
+	if strings.Contains(string(configRaw), channel.BearerToken) {
+		t.Fatalf("run token must not be written to the mcp config file")
 	}
 }
 
@@ -149,7 +155,7 @@ func TestProviderInjectsCoordinatorMCPConfigForTesterWorker(t *testing.T) {
 		t.Fatalf("decode mcp config: %v", err)
 	}
 	server := config.MCPServers["coordinator"]
-	if server.URL != channel.EndpointURL || server.Headers["Authorization"] != "Bearer "+channel.BearerToken {
+	if server.URL != channel.EndpointURL || server.Headers["Authorization"] != "Bearer ${COORDINATOR_RUN_TOKEN}" {
 		t.Fatalf("TesterWorker MCP config missing endpoint or run credential: %#v", server)
 	}
 }
