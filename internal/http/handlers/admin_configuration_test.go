@@ -104,6 +104,106 @@ func TestAdminConfigurationValidateReturnsFieldErrorsWithoutSaving(t *testing.T)
 	}
 }
 
+func TestAdminConfigurationRevisionsListMasksSecrets(t *testing.T) {
+	handler, _, repository := newAdminConfigurationHandlerTest(t)
+	second := configurationHandlerRuntimeConfig()
+	second.AgentRunner.APIKey = "rotated-key"
+	second.AgentRunner.Model = "model-b"
+	if _, err := repository.Save(context.Background(), configuration.StatusRestartRequired, configuration.SourceUI, second); err != nil {
+		t.Fatalf("seed second revision: %v", err)
+	}
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/admin"))
+
+	response := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions", nil)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, secret := range []string{"runner-key", "rotated-key"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("revision history API leaked secret %q: %s", secret, body)
+		}
+	}
+	for _, flag := range []string{`"total":2`, `"page":1`, `"page_size":20`, `"restorable":true`, `"source":"ui"`} {
+		if !strings.Contains(body, flag) {
+			t.Fatalf("missing revision list field %s: %s", flag, body)
+		}
+	}
+	if strings.Index(body, `"revision":2`) == -1 || strings.Index(body, `"revision":2`) > strings.Index(body, `"revision":1`) {
+		t.Fatalf("revision list is not newest-first: %s", body)
+	}
+}
+
+func TestAdminConfigurationRevisionsPaginationAndInvalidParams(t *testing.T) {
+	handler, _, repository := newAdminConfigurationHandlerTest(t)
+	for index := 0; index < 2; index++ {
+		if _, err := repository.Save(context.Background(), configuration.StatusReady, configuration.SourceUI, configurationHandlerRuntimeConfig()); err != nil {
+			t.Fatalf("seed revision: %v", err)
+		}
+	}
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/admin"))
+
+	response := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions?page=2&page_size=2", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", response.Code, response.Body.String())
+	}
+	var page struct {
+		Revisions []configuration.RevisionView `json:"revisions"`
+		Total     int64                        `json:"total"`
+		Page      int                          `json:"page"`
+		PageSize  int                          `json:"page_size"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode revision page: %v", err)
+	}
+	if page.Total != 3 || page.Page != 2 || page.PageSize != 2 || len(page.Revisions) != 1 || page.Revisions[0].Revision != 1 {
+		t.Fatalf("unexpected second revision page: %#v", page)
+	}
+
+	capped := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions?page_size=500", nil)
+	if capped.Code != http.StatusOK || !strings.Contains(capped.Body.String(), `"page_size":100`) {
+		t.Fatalf("page_size above the cap was not normalized %d: %s", capped.Code, capped.Body.String())
+	}
+
+	invalid := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions?page=abc", nil)
+	if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), "invalid_request") {
+		t.Fatalf("unexpected invalid page response %d: %s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestAdminConfigurationRevisionDetailMasksAndMapsNotFound(t *testing.T) {
+	handler, _, _ := newAdminConfigurationHandlerTest(t)
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/admin"))
+
+	detail := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions/1", nil)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("unexpected detail status %d: %s", detail.Code, detail.Body.String())
+	}
+	body := detail.Body.String()
+	if strings.Contains(body, "runner-key") {
+		t.Fatalf("revision detail leaked secret value: %s", body)
+	}
+	for _, flag := range []string{`"revision":1`, `"restorable":true`, `"agent_runner_api_key_configured":true`, "http://agent-runner:8081"} {
+		if !strings.Contains(body, flag) {
+			t.Fatalf("missing revision detail field %s: %s", flag, body)
+		}
+	}
+
+	missing := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions/999", nil)
+	if missing.Code != http.StatusNotFound || !strings.Contains(missing.Body.String(), "revision_not_found") {
+		t.Fatalf("unexpected missing revision response %d: %s", missing.Code, missing.Body.String())
+	}
+
+	malformed := performAdminConfigurationRequest(t, router, http.MethodGet, "/api/admin/configuration/revisions/abc", nil)
+	if malformed.Code != http.StatusBadRequest || !strings.Contains(malformed.Body.String(), "invalid_request") {
+		t.Fatalf("unexpected malformed revision response %d: %s", malformed.Code, malformed.Body.String())
+	}
+}
+
 func TestAdminConfigurationRestartRespondsBeforeRequestingShutdown(t *testing.T) {
 	handler, service, _ := newAdminConfigurationHandlerTest(t)
 	restart := &recordingShutdownRequester{called: make(chan struct{}, 1)}
