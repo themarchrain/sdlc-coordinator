@@ -389,7 +389,8 @@ export interface RepositoryPatchInput {
 }
 
 export type ConfigurationMode = 'setup_pending' | 'ready' | 'restart_required' | 'configuration_error'
-export type ConfigurationSource = 'ui' | 'env_import'
+export type ConfigurationSource = 'ui' | 'env_import' | 'restore'
+export type ConfigurationSnapshotStatus = 'ready' | 'restart_required'
 
 export interface ConfigurationStatus {
   mode: ConfigurationMode
@@ -522,6 +523,32 @@ export interface ConfigurationValidationResult {
 
 export interface ConfigurationUpdateResult extends ConfigurationStatus {
   configuration: ConfigurationView
+}
+
+// 历史 revision 的脱敏视图：config/secrets 仅在 payload 可按当前结构解码时返回；
+// restorable 是服务端按当前校验规则重演恢复路径后的预检结论。
+export interface ConfigurationRevisionView {
+  revision: number
+  status: ConfigurationSnapshotStatus
+  source: ConfigurationSource
+  applied_at?: string | null
+  created_at: string
+  restorable: boolean
+  unrestorable_reason?: string
+  config?: EditableRuntimeConfiguration
+  secrets?: ConfigurationSecretStatus
+}
+
+export interface ConfigurationRevisionPage {
+  revisions: ConfigurationRevisionView[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ConfigurationRestoreRequest {
+  revision: number
+  expected_revision: number
 }
 
 export interface CodeHostIdentity {

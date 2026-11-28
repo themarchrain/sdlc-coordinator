@@ -91,6 +91,21 @@ describe('admin API client', () => {
     expect(fetchMock.mock.calls[4][1]).toEqual(expect.objectContaining({ method: 'POST' }))
   })
 
+  it('reads configuration revision history and posts restore with the expected revision', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response({ revisions: [], total: 0, page: 1, page_size: 20 })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await adminApi.configurationRevisions({ page: 2, page_size: 20 })
+    await adminApi.restoreConfiguration({ revision: 1, expected_revision: 3 })
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/api/admin/configuration/revisions?page=2&page_size=20',
+      '/api/admin/configuration/restore',
+    ])
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({ revision: 1, expected_revision: 3 })
+  })
+
   it('uses the person directory and transient GitLab lookup contracts', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response({ items: [], page: 1, page_size: 20, total: 0 })))
     vi.stubGlobal('fetch', fetchMock)
