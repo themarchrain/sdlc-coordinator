@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -341,6 +341,94 @@ describe('ConfigurationPage', () => {
     await screen.findByText('首次启动')
 
     expect(screen.queryByRole('button', { name: '历史版本' })).not.toBeInTheDocument()
+  })
+
+  it('shows the masked diff and restores a revision with the loaded expected revision', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configurationRevisions').mockResolvedValue({
+      revisions: [
+        {
+          revision: 1, status: 'ready', source: 'ui', created_at: '2026-11-27T10:00:00Z',
+          restorable: true,
+          config: { ...configuration.config, agent_runner: { ...configuration.config.agent_runner, model: 'claude-sonnet-4-5' } },
+          secrets: configuration.secrets,
+        },
+      ],
+      total: 1, page: 1, page_size: 20,
+    })
+    const restore = vi.spyOn(adminApi, 'restoreConfiguration').mockResolvedValue({
+      mode: 'restart_required', revision: 3, source: 'restore', configuration: { ...configuration, revision: 3 },
+    })
+    const restart = vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '历史版本' }))
+    fireEvent.click(await screen.findByRole('button', { name: /恢\s*复/ }))
+
+    // diff 只承载脱敏值：字段值与 configured 状态，不出现密钥值。
+    expect(await screen.findByText('恢复 rev 1')).toBeInTheDocument()
+    expect(screen.getByText('claude-sonnet-4-5')).toBeInTheDocument()
+    expect(screen.getByText('deepseek-v4-flash-0731')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('session-secret')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    await waitFor(() => expect(restore).toHaveBeenCalledWith({ revision: 1, expected_revision: 2 }))
+    await waitFor(() => expect(restart).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('服务正在重启')).toBeInTheDocument()
+  })
+
+  it('surfaces restore conflicts without entering the restart flow', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configurationRevisions').mockResolvedValue({
+      revisions: [
+        {
+          revision: 1, status: 'ready', source: 'ui', created_at: '2026-11-27T10:00:00Z',
+          restorable: true, config: configuration.config, secrets: configuration.secrets,
+        },
+      ],
+      total: 1, page: 1, page_size: 20,
+    })
+    const restore = vi.spyOn(adminApi, 'restoreConfiguration').mockRejectedValue(new AdminApiError(409, 'revision_conflict', '运行配置已被其他管理员更新，请刷新页面后重新提交'))
+    const restart = vi.spyOn(adminApi, 'restartConfiguration').mockResolvedValue({ status: 'shutdown_scheduled' })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '历史版本' }))
+    fireEvent.click(await screen.findByRole('button', { name: /恢\s*复/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认恢复' }))
+
+    expect(await screen.findByText('运行配置已被其他管理员更新，请刷新页面后重新提交')).toBeInTheDocument()
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('shows rule-expired restore rejections with field errors in the dialog', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    vi.spyOn(adminApi, 'configurationRevisions').mockResolvedValue({
+      revisions: [
+        {
+          revision: 1, status: 'ready', source: 'ui', created_at: '2026-11-27T10:00:00Z',
+          restorable: true, config: configuration.config, secrets: configuration.secrets,
+        },
+      ],
+      total: 1, page: 1, page_size: 20,
+    })
+    const restore = vi.spyOn(adminApi, 'restoreConfiguration').mockRejectedValue(new AdminApiError(422, 'validation_failed', '运行配置校验失败', { agent_runner_model: '不能为空' }))
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    fireEvent.click(screen.getByRole('button', { name: '历史版本' }))
+    fireEvent.click(await screen.findByRole('button', { name: /恢\s*复/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认恢复' }))
+
+    expect(await screen.findByText('恢复被拒绝：所选版本未通过当前校验规则')).toBeInTheDocument()
+    expect(screen.getByText(/agent_runner_model/)).toBeInTheDocument()
+    expect(restore).toHaveBeenCalledTimes(1)
   })
 
   it('lands on the workspace after restart and navigates admin routes without bouncing back to setup', async () => {

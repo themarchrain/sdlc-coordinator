@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   message,
+  Modal,
   Select,
   Steps,
   Switch,
@@ -28,6 +29,7 @@ import type {
   ConfigurationSecretChanges,
   ConfigurationStatus,
   ConfigurationUpdateRequest,
+  ConfigurationUpdateResult,
   ConfigurationView,
   EditableRuntimeConfiguration,
 } from '../api/types'
@@ -132,6 +134,16 @@ export function ConfigurationPage() {
     }
   }
 
+  // 恢复成功后与手工保存走同一条重启路径：刷新状态、请求重启、进入轮询。
+  const handleRestored = async (result: ConfigurationUpdateResult) => {
+    setStatus(result)
+    sync(result)
+    setView(result.configuration)
+    await adminApi.restartConfiguration()
+    setRestarting(true)
+    message.success('已恢复历史版本，Coordinator 正在重启')
+  }
+
   if (loading) return <LoadingState />
   if (error) return <ErrorState error={error} />
   if (!status || !view) return <ErrorState error={new Error('配置状态不完整')} />
@@ -175,7 +187,7 @@ export function ConfigurationPage() {
       </div>
     </section>
 
-    {status.revision > 0 ? <ConfigurationHistoryPanel /> : null}
+    {status.revision > 0 && view ? <ConfigurationHistoryPanel current={view} onRestored={handleRestored} /> : null}
   </div>
 }
 
@@ -185,14 +197,40 @@ const historySourceLabels: Record<ConfigurationRevisionView['source'], string> =
   restore: '历史恢复',
 }
 
-// 历史版本面板：懒加载（展开才请求），列表一律来自服务端脱敏视图。
-function ConfigurationHistoryPanel() {
+const agentRunnerDiffLabels = [
+  ['service_url', 'Runner 服务地址'],
+  ['provider', '执行 Provider'],
+  ['pi_api', 'pi 协议'],
+  ['provider_base_url', '模型接入地址'],
+  ['model', '执行模型'],
+  ['effort', '推理强度'],
+  ['task_timeout', '任务超时'],
+] as const
+
+const schedulerDiffLabels = [
+  ['enabled', 'Scheduler 启用'],
+  ['interval', '执行间隔'],
+  ['callback_base_url', '回调地址'],
+  ['dispatch_limit', '派发上限'],
+  ['poll_limit', '轮询上限'],
+  ['reconciliation_limit', '写回对账上限'],
+  ['finalization_limit', '结果完成上限'],
+  ['recovery_limit', '租约恢复上限'],
+  ['effect_limit', '通知执行上限'],
+] as const
+
+// 历史版本面板：懒加载（展开才请求），列表与 diff 一律来自服务端脱敏视图，
+// 密钥只保留 configured 状态、任何界面不出现密钥值。
+function ConfigurationHistoryPanel({ current, onRestored }: { current: ConfigurationView; onRestored: (result: ConfigurationUpdateResult) => void }) {
   const [open, setOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [history, setHistory] = useState<ConfigurationRevisionPage>()
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<unknown>()
+  const [selected, setSelected] = useState<ConfigurationRevisionView>()
+  const [restoring, setRestoring] = useState(false)
+  const [restoreFieldErrors, setRestoreFieldErrors] = useState<Record<string, string>>({})
 
   const loadHistory = useCallback((nextPage: number, nextPageSize: number) => {
     setHistoryLoading(true)
@@ -205,6 +243,41 @@ function ConfigurationHistoryPanel() {
       .catch(setHistoryError)
       .finally(() => setHistoryLoading(false))
   }, [])
+
+  const closeDialog = () => {
+    setSelected(undefined)
+    setRestoreFieldErrors({})
+  }
+
+  const confirmRestore = async () => {
+    if (!selected) return
+    setRestoring(true)
+    setRestoreFieldErrors({})
+    try {
+      const result = await adminApi.restoreConfiguration({ revision: selected.revision, expected_revision: current.revision })
+      closeDialog()
+      await onRestored(result)
+    } catch (reason) {
+      if (reason instanceof AdminApiError && reason.code === 'revision_conflict') {
+        message.error('运行配置已被其他管理员更新，请刷新页面后重新提交')
+      } else if (reason instanceof AdminApiError && reason.code === 'validation_failed') {
+        setRestoreFieldErrors(asFieldErrors(reason.details))
+      } else if (reason instanceof AdminApiError && reason.code === 'revision_schema_expired') {
+        message.error('历史版本 schema 过期，无法恢复')
+        closeDialog()
+      } else {
+        message.error(reason instanceof Error ? reason.message : '恢复历史版本失败')
+      }
+    } finally {
+      setRestoring(false)
+    }
+  }
+
+  const diffRows = useMemo(
+    () => selected?.config ? revisionDiffRows(current.config, selected.config) : [],
+    [current, selected],
+  )
+  const selectedSecrets = selected?.secrets
 
   if (!open) {
     return <div className="surface-panel configuration-history-entry">
@@ -242,9 +315,73 @@ function ConfigurationHistoryPanel() {
             ? <Tag color="success">可恢复</Tag>
             : <div className="configuration-history-blocked"><Tag color="error">不可恢复</Tag><span>{record.unrestorable_reason}</span></div>,
         },
+        {
+          title: '操作',
+          render: (_, record) => <Button size="small" disabled={!record.restorable} onClick={() => { setRestoreFieldErrors({}); setSelected(record) }}>恢复</Button>,
+        },
       ]}
     />
+    <Modal
+      title={selected ? `恢复 rev ${selected.revision}` : '恢复历史版本'}
+      open={selected !== undefined}
+      onCancel={closeDialog}
+      footer={[
+        <Button key="cancel" onClick={closeDialog}>取消</Button>,
+        <Button key="confirm" type="primary" loading={restoring} onClick={confirmRestore}>确认恢复</Button>,
+      ]}
+    >
+      <Alert
+        className="configuration-alert"
+        type="warning"
+        showIcon
+        message="恢复会以所选历史版本为候选追加一版新配置，并按现行流程重启后生效；历史记录本身不会被改写。"
+      />
+      {Object.keys(restoreFieldErrors).length > 0
+        ? <Alert type="error" showIcon message="恢复被拒绝：所选版本未通过当前校验规则" description={<ul>{Object.entries(restoreFieldErrors).map(([field, detail]) => <li key={field}><code>{field}</code>：{detail}</li>)}</ul>} />
+        : null}
+      {selected?.config
+        ? <table className="configuration-diff">
+            <thead><tr><th>字段</th><th>当前</th><th>所选</th></tr></thead>
+            <tbody>
+              {diffRows.length === 0
+                ? <tr><td colSpan={3}>所选版本与当前配置的非密钥字段一致</td></tr>
+                : diffRows.map((row) => <tr key={row.field}><td>{row.field}</td><td>{row.current}</td><td>{row.incoming}</td></tr>)}
+            </tbody>
+          </table>
+        : null}
+      {selectedSecrets
+        ? <div className="configuration-diff-secrets">
+            <div><span>API Key</span><strong>{current.secrets.agent_runner_api_key_configured ? '已配置' : '未配置'} → {selectedSecrets.agent_runner_api_key_configured ? '已配置' : '未配置'}</strong></div>
+            <div><span>自定义 Header</span><strong>{current.secrets.agent_runner_custom_headers_configured ? '已配置' : '未配置'} → {selectedSecrets.agent_runner_custom_headers_configured ? '已配置' : '未配置'}</strong></div>
+          </div>
+        : null}
+    </Modal>
   </section>
+}
+
+function revisionDiffRows(current: EditableRuntimeConfiguration, incoming: EditableRuntimeConfiguration) {
+  const rows: Array<{ field: string; current: string; incoming: string }> = []
+  const describe = (value: unknown) => typeof value === 'boolean' ? (value ? '启用' : '停用') : String(value)
+  for (const [key, label] of agentRunnerDiffLabels) {
+    if (current.agent_runner[key] !== incoming.agent_runner[key]) {
+      rows.push({ field: label, current: describe(current.agent_runner[key]), incoming: describe(incoming.agent_runner[key]) })
+    }
+  }
+  for (const [key, label] of schedulerDiffLabels) {
+    if (current.scheduler[key] !== incoming.scheduler[key]) {
+      rows.push({ field: label, current: describe(current.scheduler[key]), incoming: describe(incoming.scheduler[key]) })
+    }
+  }
+  return rows
+}
+
+function asFieldErrors(details: unknown): Record<string, string> {
+  if (!details || typeof details !== 'object') return {}
+  const result: Record<string, string> = {}
+  for (const [field, detail] of Object.entries(details as Record<string, unknown>)) {
+    result[field] = String(detail)
+  }
+  return result
 }
 
 function formatTime(value: string) {
