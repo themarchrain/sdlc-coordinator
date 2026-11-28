@@ -3,6 +3,8 @@ package configuration
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -164,6 +166,168 @@ func TestServiceValidationDoesNotPersistConfiguration(t *testing.T) {
 	}
 	if status := service.Status(); status.Revision != 1 || status.Mode != ModeReady {
 		t.Fatalf("validation persisted changes: %#v", status)
+	}
+}
+
+func TestServiceRevisionsListsMaskedRestorableHistoryNewestFirst(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	ctx := context.Background()
+	first := validRuntimeConfig()
+	first.AgentRunner.Model = "model-one"
+	second := validRuntimeConfig()
+	second.AgentRunner.Model = "model-two"
+	second.AgentRunner.APIKey = "rotated-key"
+	if _, err := repository.Save(ctx, StatusReady, SourceEnvImport, first); err != nil {
+		t.Fatalf("save first snapshot: %v", err)
+	}
+	if _, err := repository.Save(ctx, StatusRestartRequired, SourceUI, second); err != nil {
+		t.Fatalf("save second snapshot: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady})
+
+	revisions, total, err := service.Revisions(ctx, 1, 20)
+	if err != nil {
+		t.Fatalf("list revisions: %v", err)
+	}
+	if total != 2 || len(revisions) != 2 {
+		t.Fatalf("expected two revisions, got total=%d len=%d", total, len(revisions))
+	}
+	if revisions[0].Revision != 2 || revisions[1].Revision != 1 {
+		t.Fatalf("expected newest-first [2 1], got %#v", revisions)
+	}
+	if revisions[0].Source != SourceUI || revisions[1].Source != SourceEnvImport {
+		t.Fatalf("revision sources were not carried: %#v", revisions)
+	}
+	if revisions[0].Status != StatusRestartRequired || revisions[1].Status != StatusReady {
+		t.Fatalf("revision statuses were not carried: %#v", revisions)
+	}
+	for _, view := range revisions {
+		if !view.Restorable {
+			t.Fatalf("valid historical revision marked unrestorable: %#v", view)
+		}
+		if view.Config == nil || view.Secrets == nil {
+			t.Fatalf("decodable revision is missing masked view: %#v", view)
+		}
+	}
+	if !revisions[0].Secrets.AgentRunnerAPIKeyConfigured {
+		t.Fatalf("secret configured state missing: %#v", revisions[0].Secrets)
+	}
+	raw, err := json.Marshal(revisions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "rotated-key") {
+		t.Fatalf("revision history leaks secret values: %s", raw)
+	}
+}
+
+func TestServiceRevisionsMarksSchemaExpiredRowUnrestorable(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	if err := repository.db.Create(&SnapshotRecord{
+		Revision:    7,
+		Status:      string(StatusReady),
+		Source:      string(SourceUI),
+		PayloadJSON: "{not-json",
+	}).Error; err != nil {
+		t.Fatalf("seed schema-expired row: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady})
+
+	revisions, total, err := service.Revisions(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("list revisions with schema-expired row: %v", err)
+	}
+	if total != 1 || len(revisions) != 1 {
+		t.Fatalf("expected the legacy row to be listed, got total=%d len=%d", total, len(revisions))
+	}
+	view := revisions[0]
+	if view.Restorable {
+		t.Fatalf("schema-expired row must not be restorable: %#v", view)
+	}
+	if !strings.Contains(view.UnrestorableReason, "schema 过期") {
+		t.Fatalf("unreadable schema-expired reason: %q", view.UnrestorableReason)
+	}
+	if view.Config != nil || view.Secrets != nil {
+		t.Fatalf("undecodable row must not carry a config view: %#v", view)
+	}
+}
+
+func TestServiceRevisionsMarksConfigFailingCurrentRulesUnrestorable(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	invalid := validRuntimeConfig()
+	invalid.AgentRunner.Model = ""
+	payload, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.db.Create(&SnapshotRecord{
+		Revision:    1,
+		Status:      string(StatusReady),
+		Source:      string(SourceUI),
+		PayloadJSON: string(payload),
+	}).Error; err != nil {
+		t.Fatalf("seed rule-expired row: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady})
+
+	revisions, _, err := service.Revisions(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("list revisions with rule-expired row: %v", err)
+	}
+	if len(revisions) != 1 {
+		t.Fatalf("expected one revision, got %#v", revisions)
+	}
+	if revisions[0].Restorable {
+		t.Fatalf("config failing current rules must not be restorable: %#v", revisions[0])
+	}
+	if !strings.Contains(revisions[0].UnrestorableReason, "校验") {
+		t.Fatalf("unreadable rule-expired reason: %q", revisions[0].UnrestorableReason)
+	}
+	if revisions[0].Config == nil {
+		t.Fatalf("rule-expired row is still decodable and should show a masked view: %#v", revisions[0])
+	}
+}
+
+func TestServiceRevisionReturnsSingleMaskedViewAndNotFound(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	initial := validRuntimeConfig()
+	if _, err := repository.Save(context.Background(), StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("save snapshot: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady})
+
+	view, err := service.Revision(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("load revision 1: %v", err)
+	}
+	if view.Revision != 1 || !view.Restorable || view.Config == nil || !view.Secrets.AgentRunnerAPIKeyConfigured {
+		t.Fatalf("unexpected revision view: %#v", view)
+	}
+
+	_, err = service.Revision(context.Background(), 42)
+	if !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("expected snapshot not found, got %v", err)
+	}
+}
+
+func TestServiceRevisionsPaginatesNewestFirst(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	ctx := context.Background()
+	for index := 0; index < 3; index++ {
+		config := validRuntimeConfig()
+		config.AgentRunner.Model = fmt.Sprintf("model-%d", index)
+		if _, err := repository.Save(ctx, StatusReady, SourceUI, config); err != nil {
+			t.Fatalf("save snapshot %d: %v", index, err)
+		}
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady})
+
+	revisions, total, err := service.Revisions(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("list second page: %v", err)
+	}
+	if total != 3 || len(revisions) != 1 || revisions[0].Revision != 1 {
+		t.Fatalf("unexpected second page: total=%d revisions=%#v", total, revisions)
 	}
 }
 

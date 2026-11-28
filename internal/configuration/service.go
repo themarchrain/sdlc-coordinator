@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,6 +59,21 @@ type ConfigurationView struct {
 	Revision uint64                `json:"revision"`
 	Config   EditableRuntimeConfig `json:"config"`
 	Secrets  SecretStatus          `json:"secrets"`
+}
+
+// RevisionView 是历史 revision 的脱敏视图：config/secrets 仅在 payload 可按
+// 当前结构解码时返回；restorable 是按当前校验规则重演恢复路径后的预检结论，
+// 不可恢复时 unrestorable_reason 给出可读原因（恢复入口据此 fail closed）。
+type RevisionView struct {
+	Revision           uint64                 `json:"revision"`
+	Status             SnapshotStatus         `json:"status"`
+	Source             SnapshotSource         `json:"source"`
+	AppliedAt          *time.Time             `json:"applied_at,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	Restorable         bool                   `json:"restorable"`
+	UnrestorableReason string                 `json:"unrestorable_reason,omitempty"`
+	Config             *EditableRuntimeConfig `json:"config,omitempty"`
+	Secrets            *SecretStatus          `json:"secrets,omitempty"`
 }
 
 type StatusView struct {
@@ -141,6 +157,57 @@ func (service *Service) HasNewerRevision(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return latest.Revision > status.Revision, nil
+}
+
+// Revisions 分页返回脱敏历史视图（revision 倒序）；page/pageSize 的合法化
+// 由 HTTP 层负责，调用方须传 page>=1、pageSize>=1。
+func (service *Service) Revisions(ctx context.Context, page, pageSize int) ([]RevisionView, int64, error) {
+	records, total, err := service.repository.ListRecords(ctx, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list runtime configuration revisions: %w", err)
+	}
+	views := make([]RevisionView, 0, len(records))
+	for _, record := range records {
+		views = append(views, revisionViewFromRecord(record))
+	}
+	return views, total, nil
+}
+
+func (service *Service) Revision(ctx context.Context, revision uint64) (*RevisionView, error) {
+	record, err := service.repository.GetRecord(ctx, revision)
+	if err != nil {
+		return nil, err
+	}
+	view := revisionViewFromRecord(*record)
+	return &view, nil
+}
+
+// revisionViewFromRecord 重演恢复路径的前半段做预检：payload 先按当前结构
+// 解码（失败即 schema 过期），再 ApplyDefaults+Validate 按当前校验规则重验
+// ——两者都拒绝恢复；视图本身始终脱敏，密钥只保留 configured 状态。
+func revisionViewFromRecord(record SnapshotRecord) RevisionView {
+	view := RevisionView{
+		Revision:  record.Revision,
+		Status:    SnapshotStatus(record.Status),
+		Source:    SnapshotSource(record.Source),
+		AppliedAt: record.AppliedAt,
+		CreatedAt: record.CreatedAt,
+	}
+	var cfg RuntimeConfig
+	if err := json.Unmarshal([]byte(record.PayloadJSON), &cfg); err != nil {
+		view.UnrestorableReason = "历史快照 schema 过期，无法按当前结构解析"
+		return view
+	}
+	cfg = ApplyDefaults(cfg)
+	masked := MaskRuntimeConfig(cfg)
+	view.Config = &masked.Config
+	view.Secrets = &masked.Secrets
+	if validationErrors := Validate(cfg); len(validationErrors) > 0 {
+		view.UnrestorableReason = "按当前校验规则不合格：" + formatValidationErrors(validationErrors)
+		return view
+	}
+	view.Restorable = true
+	return view
 }
 
 func (service *Service) Validate(request UpdateRequest) ValidationErrors {
