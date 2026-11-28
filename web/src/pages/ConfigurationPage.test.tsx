@@ -298,6 +298,51 @@ describe('ConfigurationPage', () => {
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
   })
 
+  it('lists masked revision history with restore precheck after expanding the panel', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'ready', revision: 2, source: 'ui' })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue(configuration)
+    const revisions = vi.spyOn(adminApi, 'configurationRevisions').mockResolvedValue({
+      revisions: [
+        {
+          revision: 2, status: 'restart_required', source: 'ui', created_at: '2026-11-28T10:00:00Z',
+          restorable: true,
+          config: configuration.config,
+          secrets: configuration.secrets,
+        },
+        {
+          revision: 1, status: 'ready', source: 'env_import', created_at: '2026-11-27T10:00:00Z',
+          restorable: false, unrestorable_reason: '历史快照 schema 过期，无法按当前结构解析',
+        },
+      ],
+      total: 2, page: 1, page_size: 20,
+    })
+
+    render(<MemoryRouter initialEntries={['/settings']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('运行配置')
+    expect(revisions).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '历史版本' }))
+
+    expect(await screen.findByText('rev 2')).toBeInTheDocument()
+    expect(screen.getByText('rev 1')).toBeInTheDocument()
+    expect(screen.getByText('管理员保存')).toBeInTheDocument()
+    expect(screen.getByText('环境导入')).toBeInTheDocument()
+    expect(screen.getByText('可恢复')).toBeInTheDocument()
+    expect(screen.getByText('历史快照 schema 过期，无法按当前结构解析')).toBeInTheDocument()
+    // 历史视图与当前配置一样只承载 configured 状态，不出现密钥值。
+    expect(screen.queryByDisplayValue('session-secret')).not.toBeInTheDocument()
+  })
+
+  it('does not render the history panel during first-time setup', async () => {
+    vi.spyOn(adminApi, 'configurationStatus').mockResolvedValue({ mode: 'setup_pending', revision: 0 })
+    vi.spyOn(adminApi, 'configuration').mockResolvedValue({ ...configuration, revision: 0 })
+
+    render(<MemoryRouter initialEntries={['/setup']}><ConfigurationPage /></MemoryRouter>)
+    await screen.findByText('首次启动')
+
+    expect(screen.queryByRole('button', { name: '历史版本' })).not.toBeInTheDocument()
+  })
+
   it('lands on the workspace after restart and navigates admin routes without bouncing back to setup', async () => {
     // 02-admin-setup-stale-configuration-boundary 全链回归：
     // 初始 setup_pending → 保存重启 → 轮询 ready → 访问各管理路由不再弹回 /setup。

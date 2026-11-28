@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -11,6 +11,7 @@ import {
   Select,
   Steps,
   Switch,
+  Table,
   Tag,
 } from 'antd'
 import type { FormInstance } from 'antd'
@@ -22,6 +23,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { AdminApiError, adminApi } from '../api/client'
 import { APP_VERSION } from '../app/version'
 import type {
+  ConfigurationRevisionPage,
+  ConfigurationRevisionView,
   ConfigurationSecretChanges,
   ConfigurationStatus,
   ConfigurationUpdateRequest,
@@ -171,7 +174,82 @@ export function ConfigurationPage() {
         </div>
       </div>
     </section>
+
+    {status.revision > 0 ? <ConfigurationHistoryPanel /> : null}
   </div>
+}
+
+const historySourceLabels: Record<ConfigurationRevisionView['source'], string> = {
+  ui: '管理员保存',
+  env_import: '环境导入',
+  restore: '历史恢复',
+}
+
+// 历史版本面板：懒加载（展开才请求），列表一律来自服务端脱敏视图。
+function ConfigurationHistoryPanel() {
+  const [open, setOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [history, setHistory] = useState<ConfigurationRevisionPage>()
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<unknown>()
+
+  const loadHistory = useCallback((nextPage: number, nextPageSize: number) => {
+    setHistoryLoading(true)
+    adminApi.configurationRevisions({ page: nextPage, page_size: nextPageSize })
+      .then((result) => {
+        setHistory(result)
+        setPage(result.page)
+        setPageSize(result.page_size)
+      })
+      .catch(setHistoryError)
+      .finally(() => setHistoryLoading(false))
+  }, [])
+
+  if (!open) {
+    return <div className="surface-panel configuration-history-entry">
+      <Button onClick={() => { setOpen(true); loadHistory(1, 20) }}>历史版本</Button>
+      <span>从不可变的配置历史中挑选一版恢复。</span>
+    </div>
+  }
+
+  return <section className="surface-panel configuration-history">
+    <div className="configuration-inline-title">
+      <div><h3>历史版本</h3></div>
+      <Button onClick={() => setOpen(false)}>收起</Button>
+    </div>
+    {historyError ? <Alert type="error" showIcon message="历史版本读取失败" description={historyError instanceof Error ? historyError.message : undefined} /> : null}
+    <Table
+      size="small"
+      loading={historyLoading}
+      rowKey="revision"
+      dataSource={history?.revisions ?? []}
+      pagination={{
+        current: page,
+        pageSize,
+        total: history?.total ?? 0,
+        showSizeChanger: false,
+        onChange: loadHistory,
+      }}
+      columns={[
+        { title: '版本', dataIndex: 'revision', render: (revision: number) => `rev ${revision}` },
+        { title: '时间', dataIndex: 'created_at', render: (value: string) => formatTime(value) },
+        { title: '来源', dataIndex: 'source', render: (source: ConfigurationRevisionView['source']) => historySourceLabels[source] ?? source },
+        {
+          title: '恢复预检',
+          dataIndex: 'restorable',
+          render: (restorable: boolean, record) => restorable
+            ? <Tag color="success">可恢复</Tag>
+            : <div className="configuration-history-blocked"><Tag color="error">不可恢复</Tag><span>{record.unrestorable_reason}</span></div>,
+        },
+      ]}
+    />
+  </section>
+}
+
+function formatTime(value: string) {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
 function RuntimeBoundaryStep({ status }: { status: ConfigurationStatus }) {
