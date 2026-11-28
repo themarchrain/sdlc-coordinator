@@ -31,6 +31,9 @@ type SnapshotSource string
 const (
 	SourceUI        SnapshotSource = "ui"
 	SourceEnvImport SnapshotSource = "env_import"
+	// SourceRestore 标记从历史 revision 恢复产生的新快照：恢复产生的
+	// revision 与手工保存不可区分地参与后续历史，仅来源字段可追溯。
+	SourceRestore SnapshotSource = "restore"
 )
 
 type RuntimeConfig struct {

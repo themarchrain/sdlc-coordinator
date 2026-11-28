@@ -331,6 +331,246 @@ func TestServiceRevisionsPaginatesNewestFirst(t *testing.T) {
 	}
 }
 
+func TestServiceRestoreAppendsRestoredRevisionFromHistory(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	ctx := context.Background()
+	initial := validRuntimeConfig()
+	initial.AgentRunner.APIKey = "old-runner-key"
+	initial.AgentRunner.CustomHeadersJSON = `{"X-Old":"v"}`
+	initial.AgentRunner.Model = "model-a"
+	if _, err := repository.Save(ctx, StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("seed revision 1: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: mustLatest(t, repository)})
+	broken := EditableFromRuntime(initial)
+	broken.AgentRunner.Model = "model-b"
+	newerRevision := uint64(1)
+	result, validationErrors, err := service.Update(ctx, UpdateRequest{
+		Config: broken, ExpectedRevision: &newerRevision,
+		Secrets: SecretChanges{
+			AgentRunnerAPIKey:                 stringPointer("new-runner-key"),
+			ClearAgentRunnerCustomHeadersJSON: true,
+		},
+	})
+	if err != nil || len(validationErrors) != 0 {
+		t.Fatalf("prepare broken revision: validation=%#v error=%v", validationErrors, err)
+	}
+	if result.Revision != 2 {
+		t.Fatalf("unexpected broken revision: %d", result.Revision)
+	}
+	secondRecord, err := repository.GetRecord(ctx, 2)
+	if err != nil {
+		t.Fatalf("load broken record: %v", err)
+	}
+	if secondRecord.Source != string(SourceUI) {
+		t.Fatalf("manual save must keep the ui source: %s", secondRecord.Source)
+	}
+
+	restoreExpected := uint64(2)
+	restored, validationErrors, err := service.Restore(ctx, 1, &restoreExpected)
+	if err != nil || len(validationErrors) != 0 {
+		t.Fatalf("restore revision 1: validation=%#v error=%v", validationErrors, err)
+	}
+	if restored.Revision != 3 || restored.Mode != ModeRestartRequired {
+		t.Fatalf("unexpected restore result: %#v", restored)
+	}
+	if restored.Source != SourceRestore {
+		t.Fatalf("restored revision must carry the restore source: %#v", restored.StatusView)
+	}
+
+	latest, err := repository.Latest(ctx)
+	if err != nil {
+		t.Fatalf("load restored revision: %v", err)
+	}
+	if latest.Revision != 3 || latest.Status != StatusRestartRequired || latest.Source != SourceRestore {
+		t.Fatalf("unexpected restored snapshot: %#v", latest)
+	}
+	if latest.Config.AgentRunner.Model != "model-a" {
+		t.Fatalf("non-secret fields were not restored: %#v", latest.Config.AgentRunner)
+	}
+	if latest.Config.AgentRunner.APIKey != "old-runner-key" {
+		t.Fatalf("historical api key was not restored (方案 A): %#v", latest.Config.AgentRunner)
+	}
+	if latest.Config.AgentRunner.CustomHeadersJSON != `{"X-Old":"v"}` {
+		t.Fatalf("historical headers were not restored: %#v", latest.Config.AgentRunner)
+	}
+	for revision := uint64(1); revision <= 2; revision++ {
+		record, err := repository.GetRecord(ctx, revision)
+		if err != nil {
+			t.Fatalf("load history revision %d: %v", revision, err)
+		}
+		if revision == 1 && (record.Source != string(SourceUI) || record.Revision != 1) {
+			t.Fatalf("restoring mutated historical revision 1: %#v", record)
+		}
+	}
+	view, err := service.Revision(ctx, 1)
+	if err != nil {
+		t.Fatalf("reload revision 1 view: %v", err)
+	}
+	if !view.Restorable {
+		t.Fatalf("history view changed after restore: %#v", view)
+	}
+}
+
+func TestServiceRestoreRejectsStaleExpectedRevisionWithoutWriting(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	ctx := context.Background()
+	initial := validRuntimeConfig()
+	if _, err := repository.Save(ctx, StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("seed revision 1: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: mustLatest(t, repository)})
+	updated := EditableFromRuntime(initial)
+	updated.AgentRunner.Model = "model-b"
+	newerRevision := uint64(1)
+	if _, validationErrors, err := service.Update(ctx, UpdateRequest{Config: updated, ExpectedRevision: &newerRevision}); err != nil || len(validationErrors) != 0 {
+		t.Fatalf("prepare revision 2: validation=%#v error=%v", validationErrors, err)
+	}
+
+	stale := uint64(1)
+	result, validationErrors, err := service.Restore(ctx, 1, &stale)
+
+	if !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("expected revision conflict, got err=%v result=%#v", err, result)
+	}
+	if result != nil || validationErrors != nil {
+		t.Fatalf("conflict must not carry a result: result=%#v validation=%#v", result, validationErrors)
+	}
+	latest, err := repository.Latest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.Revision != 2 || latest.Config.AgentRunner.Model != "model-b" {
+		t.Fatalf("stale restore wrote a revision: %#v", latest)
+	}
+}
+
+func TestServiceRestoreRejectsMissingRevision(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	initial := validRuntimeConfig()
+	if _, err := repository.Save(context.Background(), StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("seed revision 1: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: mustLatest(t, repository)})
+
+	expected := uint64(1)
+	result, validationErrors, err := service.Restore(context.Background(), 42, &expected)
+
+	if !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("expected snapshot not found, got err=%v result=%#v", err, result)
+	}
+	if result != nil || validationErrors != nil {
+		t.Fatalf("missing revision must not carry a result: result=%#v validation=%#v", result, validationErrors)
+	}
+}
+
+func TestServiceRestoreRejectsSchemaExpiredRevision(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	ctx := context.Background()
+	initial := validRuntimeConfig()
+	if _, err := repository.Save(ctx, StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("seed revision 1: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: mustLatest(t, repository)})
+	if err := repository.db.Create(&SnapshotRecord{
+		Revision:    2,
+		Status:      string(StatusReady),
+		Source:      string(SourceUI),
+		PayloadJSON: "{not-json",
+	}).Error; err != nil {
+		t.Fatalf("seed schema-expired row: %v", err)
+	}
+
+	expected := uint64(2)
+	result, validationErrors, err := service.Restore(ctx, 2, &expected)
+
+	if !errors.Is(err, ErrSnapshotSchemaExpired) {
+		t.Fatalf("expected schema expired error, got err=%v result=%#v", err, result)
+	}
+	if result != nil || validationErrors != nil {
+		t.Fatalf("schema expired restore must not carry a result: result=%#v validation=%#v", result, validationErrors)
+	}
+	record, err := repository.GetRecord(ctx, 1)
+	if err != nil || record.Revision != 1 {
+		t.Fatalf("failed restore disturbed history revision 1: record=%#v err=%v", record, err)
+	}
+	var rows int64
+	if err := repository.db.Model(&SnapshotRecord{}).Count(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rows != 2 {
+		t.Fatalf("failed restore wrote a revision: %d rows", rows)
+	}
+}
+
+func TestServiceRestoreRejectsHistoricalConfigFailingCurrentRules(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	ctx := context.Background()
+	initial := validRuntimeConfig()
+	if _, err := repository.Save(ctx, StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("seed revision 1: %v", err)
+	}
+	invalid := validRuntimeConfig()
+	invalid.AgentRunner.Model = ""
+	payload, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.db.Create(&SnapshotRecord{
+		Revision:    2,
+		Status:      string(StatusReady),
+		Source:      string(SourceUI),
+		PayloadJSON: string(payload),
+	}).Error; err != nil {
+		t.Fatalf("seed rule-expired row: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: mustLatest(t, repository)})
+
+	expected := uint64(2)
+	result, validationErrors, err := service.Restore(ctx, 2, &expected)
+
+	if err != nil {
+		t.Fatalf("rule failures must come back as field errors, got %v", err)
+	}
+	if result != nil || !validationErrors.Has("agent_runner.model") {
+		t.Fatalf("restore must fail closed with field errors: result=%#v validation=%#v", result, validationErrors)
+	}
+	latest, err := repository.Latest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.Revision != 2 {
+		t.Fatalf("failed restore wrote a revision: %#v", latest)
+	}
+}
+
+func TestServiceRestoreRequiresExpectedRevision(t *testing.T) {
+	repository := newConfigurationRepositoryTestDB(t)
+	initial := validRuntimeConfig()
+	if _, err := repository.Save(context.Background(), StatusReady, SourceUI, initial); err != nil {
+		t.Fatalf("seed revision 1: %v", err)
+	}
+	service := NewService(repository, Resolution{Mode: ModeReady, Prefill: initial, Snapshot: mustLatest(t, repository)})
+
+	result, validationErrors, err := service.Restore(context.Background(), 1, nil)
+
+	if !errors.Is(err, ErrExpectedRevisionRequired) {
+		t.Fatalf("expected expected-revision-required, got err=%v result=%#v", err, result)
+	}
+	if result != nil || validationErrors != nil {
+		t.Fatalf("missing expected revision must not carry a result: result=%#v validation=%#v", result, validationErrors)
+	}
+}
+
+func mustLatest(t *testing.T, repository *Repository) *Snapshot {
+	t.Helper()
+	snapshot, err := repository.Latest(context.Background())
+	if err != nil {
+		t.Fatalf("load latest snapshot: %v", err)
+	}
+	return snapshot
+}
+
 func newReadyConfigurationService(t *testing.T) *Service {
 	t.Helper()
 	repository := newConfigurationRepositoryTestDB(t)
