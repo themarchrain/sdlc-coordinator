@@ -31,6 +31,9 @@ type SnapshotSource string
 const (
 	SourceUI        SnapshotSource = "ui"
 	SourceEnvImport SnapshotSource = "env_import"
+	// SourceRestore 标记从历史 revision 恢复产生的新快照：恢复产生的
+	// revision 与手工保存不可区分地参与后续历史，仅来源字段可追溯。
+	SourceRestore SnapshotSource = "restore"
 )
 
 type RuntimeConfig struct {
@@ -136,6 +139,12 @@ func (e ValidationErrors) Error() string {
 	if len(e) == 0 {
 		return ""
 	}
+	return fmt.Sprintf("runtime configuration has %d validation error(s): %s", len(e), formatValidationErrors(e))
+}
+
+// formatValidationErrors 生成按字段名排序的可读错误清单（field: 原因; …），
+// 供 Error() 与历史 revision 预检原因共用。
+func formatValidationErrors(e ValidationErrors) string {
 	fields := make([]string, 0, len(e))
 	for field := range e {
 		fields = append(fields, field)
@@ -145,7 +154,7 @@ func (e ValidationErrors) Error() string {
 	for _, field := range fields {
 		parts = append(parts, field+": "+e[field])
 	}
-	return fmt.Sprintf("runtime configuration has %d validation error(s): %s", len(e), strings.Join(parts, "; "))
+	return strings.Join(parts, "; ")
 }
 
 func validAgentRunnerEffort(value string) bool {

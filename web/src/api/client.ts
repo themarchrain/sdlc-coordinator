@@ -20,6 +20,8 @@ import type {
   ConfigurationUpdateResult,
   ConfigurationValidationResult,
   ConfigurationView,
+  ConfigurationRevisionPage,
+  ConfigurationRestoreRequest,
   EntityKey,
   Overview,
   Page,
@@ -127,6 +129,8 @@ export const adminApi = {
 	configuration: (signal?: AbortSignal) => request<ConfigurationView>('/api/admin/configuration', { signal }),
 	validateConfiguration: (value: ConfigurationUpdateRequest) => request<ConfigurationValidationResult>('/api/admin/configuration/validate', { method: 'POST', body: jsonBody(value) }),
 	updateConfiguration: (value: ConfigurationUpdateRequest) => request<ConfigurationUpdateResult>('/api/admin/configuration', { method: 'PUT', body: jsonBody(value) }),
+	configurationRevisions: (query: Query = {}, signal?: AbortSignal) => request<ConfigurationRevisionPage>(`/api/admin/configuration/revisions${queryString(query)}`, { signal }),
+	restoreConfiguration: (value: ConfigurationRestoreRequest) => request<ConfigurationUpdateResult>('/api/admin/configuration/restore', { method: 'POST', body: jsonBody(value) }),
 	restartConfiguration: () => request<{ status: string }>('/api/admin/configuration/restart', { method: 'POST', body: jsonBody({}) }),
 
   tenantConfiguration: (signal?: AbortSignal) => request<TenantConfigurationView>('/api/admin/tenant-configuration', { signal }),

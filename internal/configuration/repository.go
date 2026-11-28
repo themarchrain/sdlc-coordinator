@@ -46,6 +46,32 @@ func (repository *Repository) Latest(ctx context.Context) (*Snapshot, error) {
 	return decodeSnapshotRecord(record)
 }
 
+// GetRecord 按 revision 取历史快照原始行，payload 解码交由调用方处理：旧
+// schema 行即使无法解码也要原样返回，供历史视图标注"不可恢复"。
+func (repository *Repository) GetRecord(ctx context.Context, revision uint64) (*SnapshotRecord, error) {
+	var record SnapshotRecord
+	if err := repository.db.WithContext(ctx).Where("revision = ?", revision).First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSnapshotNotFound
+		}
+		return nil, fmt.Errorf("load runtime configuration snapshot revision %d: %w", revision, err)
+	}
+	return &record, nil
+}
+
+// ListRecords 按 revision 倒序分页返回历史快照原始行，total 为链上总条数。
+func (repository *Repository) ListRecords(ctx context.Context, offset, limit int) ([]SnapshotRecord, int64, error) {
+	var total int64
+	if err := repository.db.WithContext(ctx).Model(&SnapshotRecord{}).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count runtime configuration snapshots: %w", err)
+	}
+	var records []SnapshotRecord
+	if err := repository.db.WithContext(ctx).Order("revision DESC").Offset(offset).Limit(limit).Find(&records).Error; err != nil {
+		return nil, 0, fmt.Errorf("list runtime configuration snapshots: %w", err)
+	}
+	return records, total, nil
+}
+
 // Save 追加一个新快照（读取库内最新 revision 后受保护写入）。多实例下由
 // Latest+SaveGuarded 两步构成：期间若有并发写入，返回 ErrRevisionConflict。
 func (repository *Repository) Save(ctx context.Context, status SnapshotStatus, source SnapshotSource, cfg RuntimeConfig) (*Snapshot, error) {

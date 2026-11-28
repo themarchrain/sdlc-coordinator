@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"sdlc-coordinator/internal/configuration"
@@ -13,6 +14,11 @@ import (
 )
 
 const defaultConfigurationRestartDelay = 150 * time.Millisecond
+
+const (
+	defaultRevisionPageSize = 20
+	maxRevisionPageSize     = 100
+)
 
 type AdminConfigurationHandler struct {
 	service      *configuration.Service
@@ -29,7 +35,112 @@ func (handler *AdminConfigurationHandler) RegisterRoutes(group *gin.RouterGroup)
 	group.GET("/configuration", handler.Get)
 	group.POST("/configuration/validate", handler.Validate)
 	group.PUT("/configuration", handler.Update)
+	group.GET("/configuration/revisions", handler.Revisions)
+	group.GET("/configuration/revisions/:revision", handler.Revision)
+	group.POST("/configuration/restore", handler.Restore)
 	group.POST("/configuration/restart", handler.Restart)
+}
+
+// RestoreConfigurationRequest 的 expected_revision 与手工保存同义：恢复本质
+// 是一次保存，CAS 基于当前最新 revision，过期即冲突。
+type RestoreConfigurationRequest struct {
+	Revision         uint64  `json:"revision"`
+	ExpectedRevision *uint64 `json:"expected_revision"`
+}
+
+func (handler *AdminConfigurationHandler) Restore(c *gin.Context) {
+	var request RestoreConfigurationRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求 JSON 不符合恢复契约")
+		return
+	}
+	if err := ensureConfigurationJSONEOF(decoder); err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求只能包含一个 JSON 对象")
+		return
+	}
+	result, validationErrors, err := handler.service.Restore(c.Request.Context(), request.Revision, request.ExpectedRevision)
+	if err != nil {
+		switch {
+		case errors.Is(err, configuration.ErrRevisionConflict):
+			writeAdminError(c, http.StatusConflict, "revision_conflict", "运行配置已被其他管理员更新，请刷新页面后重新提交")
+		case errors.Is(err, configuration.ErrExpectedRevisionRequired):
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求缺少 expected_revision")
+		case errors.Is(err, configuration.ErrSnapshotNotFound):
+			writeAdminError(c, http.StatusNotFound, "revision_not_found", "指定的历史版本不存在")
+		case errors.Is(err, configuration.ErrSnapshotSchemaExpired):
+			writeAdminError(c, http.StatusUnprocessableEntity, "revision_schema_expired", "历史版本 schema 过期，无法恢复")
+		default:
+			writeAdminError(c, http.StatusInternalServerError, "internal_error", "恢复运行配置失败")
+		}
+		return
+	}
+	if len(validationErrors) > 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": gin.H{
+			"code": "validation_failed", "message": "运行配置校验失败", "request_id": "", "details": validationErrors,
+		}})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (handler *AdminConfigurationHandler) Revisions(c *gin.Context) {
+	page, pageSize, ok := parseRevisionPageParams(c)
+	if !ok {
+		return
+	}
+	revisions, total, err := handler.service.Revisions(c.Request.Context(), page, pageSize)
+	if err != nil {
+		writeAdminError(c, http.StatusInternalServerError, "internal_error", "读取运行配置历史失败")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"revisions": revisions, "total": total, "page": page, "page_size": pageSize})
+}
+
+func (handler *AdminConfigurationHandler) Revision(c *gin.Context) {
+	revision, err := strconv.ParseUint(c.Param("revision"), 10, 64)
+	if err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "revision 必须是非负整数")
+		return
+	}
+	view, err := handler.service.Revision(c.Request.Context(), revision)
+	if err != nil {
+		if errors.Is(err, configuration.ErrSnapshotNotFound) {
+			writeAdminError(c, http.StatusNotFound, "revision_not_found", "指定的历史版本不存在")
+			return
+		}
+		writeAdminError(c, http.StatusInternalServerError, "internal_error", "读取运行配置历史失败")
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+// parseRevisionPageParams 规范化历史列表分页：语法非法或 page<1/page_size<1
+// 拒绝为 400，page_size 上限 100 由服务端收敛（防自伤式大页）。
+func parseRevisionPageParams(c *gin.Context) (int, int, bool) {
+	page := 1
+	if raw := c.Query("page"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "page 必须是不小于 1 的整数")
+			return 0, 0, false
+		}
+		page = parsed
+	}
+	pageSize := defaultRevisionPageSize
+	if raw := c.Query("page_size"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "page_size 必须是不小于 1 的整数")
+			return 0, 0, false
+		}
+		pageSize = parsed
+	}
+	if pageSize > maxRevisionPageSize {
+		pageSize = maxRevisionPageSize
+	}
+	return page, pageSize, true
 }
 
 func (handler *AdminConfigurationHandler) Status(c *gin.Context) {

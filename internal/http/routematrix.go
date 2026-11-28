@@ -215,6 +215,9 @@ var adminConfigurationRows = []MatrixRow{
 	mr("POST", "/api/admin/configuration/validate", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
 	mr("PUT", "/api/admin/configuration", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
 	mr("POST", "/api/admin/configuration/restart", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "仅 super_admin"),
+	mr("GET", "/api/admin/configuration/revisions", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "运行配置历史列表；视图一律脱敏，仅 super_admin"),
+	mr("GET", "/api/admin/configuration/revisions/:revision", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "单条历史 revision 脱敏视图；仅 super_admin"),
+	mr("POST", "/api/admin/configuration/restore", ClassAdmin, allow, deny, deny, deny, ChannelNone, false, mwPortalSuperAdmin, mwPortalSuperAdmin, "从历史 revision 恢复（本质是一次保存）；仅 super_admin"),
 }
 
 var adminTenantConfigurationRows = []MatrixRow{
